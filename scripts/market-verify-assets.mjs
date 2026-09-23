@@ -214,6 +214,21 @@ export async function reverifySerially(origin, targets, {
   return { results, gaveUp }
 }
 
+/**
+ * What a sweep the edge refused outright means.
+ *
+ * From a cloud range the edge can answer every failed path with 403 for the
+ * whole run while serving every other path; the same paths answer 200 with the
+ * committed byte lengths from other networks, so the refusal is a policy on
+ * this vantage rather than a verdict about the asset. Naming it in the output
+ * is what keeps the lane's red from being read as a deployment defect.
+ */
+export function refusalNotice(failures) {
+  if (failures.length === 0) return ''
+  if (!failures.every(entry => entry.result.reason === 'HTTP 403')) return ''
+  return `[market-verify-assets] all ${failures.length} failure(s) are HTTP 403 and the same paths serve the committed byte lengths from other networks: read this as an edge policy on this vantage, not as missing assets`
+}
+
 /** Run `worker` over `items` with bounded concurrency, preserving order. */
 export async function runPool(items, concurrency, worker) {
   const results = new Array(items.length)
@@ -322,6 +337,8 @@ async function main() {
     console.error(`[market-verify-assets] FAIL ${entry.target.kind}/${entry.target.id}: ${entry.target.path} - ${entry.result.reason}`)
   }
   if (failures.length > 20) console.error(`[market-verify-assets] ... and ${failures.length - 20} more`)
+  const notice = refusalNotice(failures)
+  if (notice !== '') console.error(notice)
 
   if (failures.length > 0) {
     console.error(`[market-verify-assets] ${failures.length}/${targets.length} path(s) failed`)

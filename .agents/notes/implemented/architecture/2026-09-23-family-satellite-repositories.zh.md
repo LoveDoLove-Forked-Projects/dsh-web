@@ -32,7 +32,9 @@ Status: implemented
 
 市场构建不再从工作树读皮肤或宠物资产，也不从工作树读社区索引。`market-inputs.lock.json` 记录每个内容仓与要读的提交，`scripts/market-fetch-inputs.mjs` 只解包该提交的内容目录到 `.market-inputs/`（幂等；`--check` 只校验不下载；缺失或过期直接让运行失败），`scripts/market-build` 从那里读取。社区索引同样按提交固定，而不是"npm 解析到什么算什么"：在固定它之前，删掉仓内包会让构建静默读到一份陈旧的已发布索引，产出与已提交 `market/dist` 不再一致的 `manifest/plugins.json`。
 
-`scripts/market-verify-assets.mjs` 走遍生成清单承诺的每个路径，对 `market/dist` 或已部署站点校验，并把服务端字节数与本地文件比对。它必须用 Range GET 而不是 HEAD——Workers 静态资产层对 HEAD 返回 `content-length: 0`。部署流程在 `market:check` 之前拉取，部署之后再对 `dsh-market.com` 校验。这条走查从云厂商 IP 段发出时，突发请求的一部分会被 Cloudflare 以 403 挡下直到其速率窗口重置，因此突发内部先重试这些状态，突发结束后再把仍然失败的路径逐条重核：门禁仍然只报告站点会重复给出的结论，而纯由突发造成、站点其实在服务的状态不再让车道变红。
+`scripts/market-verify-assets.mjs` 走遍生成清单承诺的每个路径，对 `market/dist` 或已部署站点校验，并把服务端字节数与本地文件比对。它必须用 Range GET 而不是 HEAD——Workers 静态资产层对 HEAD 返回 `content-length: 0`。部署流程在 `market:check` 之前拉取，部署之后再对 `dsh-market.com` 校验。
+
+这条部署后走查从 GitHub runner 发出，边缘会把其中一部分以 403 挡下：连续六次运行报告的始终是同样的约 150 个路径，串行重核在三分钟探测后一个也没能恢复，而这些路径从住宅网络、两个公共云端抓取器、以及一次完整的本机 3075/3075 走查都返回 200 且字节数与提交一致。因此该拒绝是该出口上的策略，而不是对资产的判决：走查在突发内部重试瞬时状态，突发结束后逐条重核，并在整批失败都是 403 时在输出里点名这是出口被拒。于是市场推送上的红车道读作该 zone 对 runner IP 段的策略，而已部署产物仍由 `market:check` 对照固定输入、以及从策略允许的网络跑一次走查来覆盖，直到该 IP 段被明确放行，或这项检查搬进 Cloudflare 内部。
 
 ### 发布顺序
 

@@ -12,6 +12,7 @@ import {
   assetPaths,
   collectTargets,
   loadManifest,
+  refusalNotice,
   remoteLength,
   reverifySerially,
   runPool,
@@ -307,6 +308,17 @@ test('reverifySerially keeps a repeated verdict and stops on a run of failures',
   } finally {
     rmSync(dist, { recursive: true, force: true })
   }
+})
+
+test('refusalNotice names a sweep the edge refused as a vantage policy', () => {
+  // Given sweeps that failed for the statuses the edge can answer with,
+  const refused = [{ result: { ok: false, reason: 'HTTP 403' } }, { result: { ok: false, reason: 'HTTP 403' } }]
+  // When each is summarised,
+  // Then only an all-403 sweep is named as a refusal rather than a defect.
+  assert.match(refusalNotice(refused), /edge policy on this vantage/)
+  assert.equal(refusalNotice([{ result: { ok: false, reason: 'HTTP 403' } }, { result: { ok: false, reason: 'HTTP 404' } }]), '')
+  assert.equal(refusalNotice([{ result: { ok: false, reason: 'HTTP 404' } }]), '')
+  assert.equal(refusalNotice([]), '')
 })
 
 test('runPool keeps result order and never exceeds the concurrency bound', async () => {
