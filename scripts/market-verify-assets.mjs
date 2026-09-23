@@ -9,6 +9,12 @@
  * the first mismatch, which makes a partial upload or a stale manifest loud
  * instead of silent.
  *
+ * A cloud IP range gets a burst answered with 403 until Cloudflare's rate
+ * window resets, which reports paths the origin serves as missing. Transient
+ * statuses are retried inside the burst, and the paths still failing after it
+ * are re-checked serially once the burst has stopped, so what the gate reports
+ * is a verdict the origin repeats rather than one the burst provoked.
+ *
  * Usage:
  *   node scripts/market-verify-assets.mjs [--dist]
  *   node scripts/market-verify-assets.mjs --origin https://dsh-market.com
@@ -89,6 +95,18 @@ export function isTransientStatus(status) {
 }
 
 /**
+ * Whether a reported failure is one the edge may have produced under the burst,
+ * and therefore one worth re-checking once the burst has stopped. A status the
+ * origin means (404) or a size mismatch is a verdict and is reported as it
+ * stands.
+ */
+export function transientFailure(reason) {
+  const status = /^HTTP (\d{3})$/.exec(reason)
+  if (status !== null) return isTransientStatus(Number(status[1]))
+  return reason.startsWith('request failed')
+}
+
+/**
  * Total byte length a deployed origin serves for one path.
  *
  * A HEAD request is not enough: the Workers static-asset layer answers it with
@@ -139,6 +157,61 @@ export async function verifyOrigin(origin, target, { fetchImpl = fetch, distDir,
     if (measured.bytes !== local) return { ok: false, reason: `served ${measured.bytes} bytes, dist has ${local}` }
   }
   return { ok: true, bytes: measured.bytes }
+}
+
+/**
+ * Re-check the paths a burst reported once it has stopped.
+ *
+ * The edge answers part of a fast sweep from a cloud IP range with 403 until
+ * its rate window resets, which is a statement about the burst rather than
+ * about the asset. The re-check first probes the first failed path until it
+ * answers, inside a budget, so the pass does not read a window still in force
+ * as a verdict; then it walks the paths one at a time, so a path the origin
+ * serves comes back served while a path it really refuses fails again.
+ *
+ * A run of consecutive failures after the probe means the origin is not
+ * answering, so the pass stops there and the remaining paths keep the status
+ * the burst reported rather than being excused by an outage.
+ *
+ * @param origin - deployed origin to re-check against.
+ * @param targets - targets whose burst status was transient, in walk order.
+ * @param options - distDir plus injected delay and fetch, probe budget, pacing, streak bound.
+ * @returns the per-path results keyed by path, and whether the pass gave up.
+ */
+export async function reverifySerially(origin, targets, {
+  distDir,
+  delay = sleep,
+  fetchImpl,
+  attempts = 3,
+  probeStepMs = 5_000,
+  probeBudgetMs = 180_000,
+  spacingMs = 300,
+  giveUpAfter = 20,
+} = {}) {
+  const results = new Map()
+  if (targets.length === 0) return { results, gaveUp: false }
+  const check = (target) => verifyOrigin(origin, target, { distDir, attempts, delay, fetchImpl })
+
+  let probed = await check(targets[0])
+  for (let waited = 0; !probed.ok && waited < probeBudgetMs; waited += probeStepMs) {
+    await delay(probeStepMs)
+    probed = await check(targets[0])
+  }
+  results.set(targets[0].path, probed)
+
+  let streak = probed.ok ? 0 : 1
+  let gaveUp = false
+  for (const [index, target] of targets.slice(1).entries()) {
+    if (streak >= giveUpAfter) {
+      gaveUp = true
+      break
+    }
+    if (index > 0) await delay(spacingMs)
+    const result = await check(target)
+    results.set(target.path, result)
+    streak = result.ok ? 0 : streak + 1
+  }
+  return { results, gaveUp }
 }
 
 /** Run `worker` over `items` with bounded concurrency, preserving order. */
@@ -219,6 +292,29 @@ async function main() {
       : verifyLocal(DIST_DIR, target)
     return { target, result }
   })
+
+  // A cloud IP range gets part of a burst answered with a transient status, so
+  // the paths the burst failed are re-checked serially after the burst has
+  // stopped. A verdict the origin repeats survives that pass and is reported.
+  const retryable = options.mode === 'origin'
+    ? results.filter(entry => !entry.result.ok && transientFailure(entry.result.reason))
+    : []
+  if (retryable.length > 0) {
+    const { results: rechecked, gaveUp } = await reverifySerially(
+      options.origin,
+      retryable.map(entry => entry.target),
+      { distDir: DIST_DIR },
+    )
+    let recovered = 0
+    for (const entry of retryable) {
+      const updated = rechecked.get(entry.target.path)
+      if (updated === undefined) continue
+      if (updated.ok) recovered += 1
+      entry.result = updated
+    }
+    const outcome = gaveUp ? '; stopped on a run of failures' : ''
+    console.log(`[market-verify-assets] re-checked ${retryable.length} transient path(s) serially: ${recovered} recovered${outcome}`)
+  }
 
   const failures = results.filter(entry => !entry.result.ok)
   const bytes = results.reduce((total, entry) => total + (entry.result.bytes ?? 0), 0)

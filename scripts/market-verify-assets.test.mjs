@@ -13,7 +13,9 @@ import {
   collectTargets,
   loadManifest,
   remoteLength,
+  reverifySerially,
   runPool,
+  transientFailure,
   verifyLocal,
   verifyOrigin,
 } from './market-verify-assets.mjs'
@@ -187,6 +189,124 @@ test('remoteLength does not retry a status the origin means', async () => {
   // Then it reports the status on the first answer.
   assert.deepEqual(measured, { error: 'HTTP 404' })
   assert.equal(calls, 1)
+})
+
+test('transientFailure separates a status the burst provoked from a verdict', () => {
+  // Given the reasons the sweep can report,
+  // When each is classified,
+  // Then only the ones the edge may have produced under the burst are re-checked.
+  assert.equal(transientFailure('HTTP 403'), true)
+  assert.equal(transientFailure('HTTP 503'), true)
+  assert.equal(transientFailure('request failed: fetch failed'), true)
+  assert.equal(transientFailure('HTTP 404'), false)
+  assert.equal(transientFailure('served 40 bytes, dist has 100'), false)
+})
+
+test('reverifySerially probes the window and re-checks one path at a time', async () => {
+  // Given two paths a burst failed and an origin still inside its rate window,
+  const dist = fixtureDist({ skins: [{ id: 'harbor', files: ['skin.json'] }, { id: 'xp', files: ['skin.json'] }] })
+  try {
+    writeAsset(dist, 'assets/skins/harbor/skin.json', 12)
+    writeAsset(dist, 'assets/skins/xp/skin.json', 12)
+    const targets = collectTargets(dist, ['skins'])
+    const waits = []
+    let calls = 0
+    let inFlight = 0
+    let peak = 0
+    const fetchImpl = async () => {
+      calls += 1
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+      await Promise.resolve()
+      inFlight -= 1
+      // The window is open for the first two probes, then the origin serves.
+      return calls > 2
+        ? new Response('', { status: 206, headers: { 'content-range': 'bytes 0-0/12' } })
+        : new Response('', { status: 403 })
+    }
+
+    // When the failures are re-checked,
+    const { results, gaveUp } = await reverifySerially('https://example.test', targets, {
+      distDir: dist,
+      delay: async (ms) => { waits.push(ms) },
+      fetchImpl,
+      attempts: 1,
+      probeStepMs: 5_000,
+    })
+
+    // Then every path was re-checked, and the pass never ran two at once.
+    assert.equal(gaveUp, false)
+    assert.deepEqual([...results.keys()], targets.map(target => target.path))
+    assert.deepEqual([...results.values()].map(result => result.ok), [true, true])
+    assert.equal(peak, 1, `peak concurrency was ${peak}`)
+    // Then it waited for the window to reset before believing the re-check.
+    assert.deepEqual(waits, [5_000, 5_000])
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('reverifySerially clears a status that only the burst produced', async () => {
+  // Given a re-check whose first probe still lands inside the window,
+  const dist = fixtureDist({ skins: [{ id: 'harbor', files: ['skin.json'] }] })
+  try {
+    writeAsset(dist, 'assets/skins/harbor/skin.json', 12)
+    const targets = collectTargets(dist, ['skins'])
+    let calls = 0
+    const fetchImpl = async () => {
+      calls += 1
+      return calls === 1
+        ? new Response('', { status: 403 })
+        : new Response('', { status: 206, headers: { 'content-range': 'bytes 0-0/12' } })
+    }
+
+    // When the path is re-checked,
+    const { results } = await reverifySerially('https://example.test', targets, {
+      distDir: dist,
+      delay: async () => {},
+      fetchImpl,
+      attempts: 1,
+    })
+
+    // Then the probe that follows the window reports the asset the origin serves.
+    assert.deepEqual(results.get('assets/skins/harbor/skin.json'), { ok: true, bytes: 12 })
+    assert.equal(calls, 2)
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('reverifySerially keeps a repeated verdict and stops on a run of failures', async () => {
+  // Given an origin that refuses every re-check and five failed paths,
+  const dist = fixtureDist({
+    skins: Array.from({ length: 5 }, (_, index) => ({ id: `skin-${index}`, files: ['skin.json'] })),
+  })
+  try {
+    for (let index = 0; index < 5; index++) writeAsset(dist, `assets/skins/skin-${index}/skin.json`, 12)
+    const targets = collectTargets(dist, ['skins'])
+    assert.equal(targets.length, 5)
+
+    // When the failures are re-checked,
+    const { results, gaveUp } = await reverifySerially('https://example.test', targets, {
+      distDir: dist,
+      delay: async () => {},
+      attempts: 1,
+      probeBudgetMs: 10_000,
+      giveUpAfter: 3,
+      fetchImpl: async () => new Response('', { status: 403 }),
+    })
+
+    // Then the pass stopped after the streak instead of walking the whole list,
+    assert.equal(gaveUp, true)
+    assert.equal(results.size, 3)
+    // And every path it did re-check kept the status rather than being excused.
+    for (const result of results.values()) {
+      assert.equal(result.ok, false)
+      assert.equal(result.reason, 'HTTP 403')
+    }
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
 })
 
 test('runPool keeps result order and never exceeds the concurrency bound', async () => {
