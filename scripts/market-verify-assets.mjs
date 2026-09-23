@@ -17,7 +17,7 @@
  *   --dist            check the local market/dist tree (default)
  *   --origin <url>    check a deployed origin over HTTP
  *   --kind a,b        restrict to skins and/or pets (default: both)
- *   --concurrency N   parallel requests (default 8)
+ *   --concurrency N   parallel requests (default 4)
  *   --limit N         stop after N paths (smoke runs)
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -76,6 +76,18 @@ export function verifyLocal(distDir, target) {
   return { ok: true, bytes: statSync(abs).size }
 }
 
+/** Backoff between retries; injected by tests so they stay deterministic. */
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+/**
+ * Statuses an edge origin returns transiently under a burst: the deploy sweep
+ * walks thousands of paths and Cloudflare answers part of a fast run with 403
+ * before the rate window resets, which says nothing about the asset.
+ */
+export function isTransientStatus(status) {
+  return status === 403 || status === 408 || status === 429 || status >= 500
+}
+
 /**
  * Total byte length a deployed origin serves for one path.
  *
@@ -83,28 +95,40 @@ export function verifyLocal(distDir, target) {
  * `content-length: 0`, which would report every asset as truncated. A one-byte
  * ranged GET reports the real total in `content-range` while still transferring
  * a single byte.
+ *
+ * A transient status is retried with backoff so a burst cannot fail the sweep
+ * for an asset the origin serves; a status that survives every attempt is
+ * reported as it came back.
  */
-export async function remoteLength(url, fetchImpl = fetch) {
-  const res = await fetchImpl(url, { headers: { Range: 'bytes=0-0' } })
-  try {
-    if (!res.ok && res.status !== 206) return { error: `HTTP ${res.status}` }
-    const contentRange = res.headers.get('content-range')
-    const ranged = contentRange === null ? Number.NaN : Number(contentRange.split('/').pop())
-    if (Number.isFinite(ranged)) return { bytes: ranged }
-    const length = Number(res.headers.get('content-length'))
-    return { bytes: Number.isFinite(length) ? length : undefined }
-  } finally {
-    // Drain the single byte (or cancel) so the connection is released.
-    await res.arrayBuffer().catch(() => {})
+export async function remoteLength(url, fetchImpl = fetch, { attempts = 3, delay = sleep } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    const res = await fetchImpl(url, { headers: { Range: 'bytes=0-0' } })
+    let retry = false
+    try {
+      if (!res.ok && res.status !== 206) {
+        retry = attempt < attempts && isTransientStatus(res.status)
+        if (!retry) return { error: `HTTP ${res.status}` }
+      } else {
+        const contentRange = res.headers.get('content-range')
+        const ranged = contentRange === null ? Number.NaN : Number(contentRange.split('/').pop())
+        if (Number.isFinite(ranged)) return { bytes: ranged }
+        const length = Number(res.headers.get('content-length'))
+        return { bytes: Number.isFinite(length) ? length : undefined }
+      }
+    } finally {
+      // Drain the single byte (or cancel) so the connection is released.
+      await res.arrayBuffer().catch(() => {})
+    }
+    if (retry) await delay(attempt * 500)
   }
 }
 
 /** Verify one target against a deployed origin. */
-export async function verifyOrigin(origin, target, { fetchImpl = fetch, distDir } = {}) {
+export async function verifyOrigin(origin, target, { fetchImpl = fetch, distDir, attempts, delay } = {}) {
   const url = `${origin.replace(/\/+$/, '')}/${target.path}`
   let measured
   try {
-    measured = await remoteLength(url, fetchImpl)
+    measured = await remoteLength(url, fetchImpl, { attempts, delay })
   } catch (error) {
     return { ok: false, reason: `request failed: ${error.message}` }
   }
@@ -133,7 +157,7 @@ export async function runPool(items, concurrency, worker) {
 }
 
 function parseArgs(argv) {
-  const options = { mode: 'dist', origin: DEFAULT_ORIGIN, kinds: [...KINDS], concurrency: 8, limit: 0 }
+  const options = { mode: 'dist', origin: DEFAULT_ORIGIN, kinds: [...KINDS], concurrency: 4, limit: 0 }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--dist') options.mode = 'dist'

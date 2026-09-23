@@ -145,6 +145,50 @@ test('verifyOrigin surfaces a non-2xx status', async () => {
   assert.equal(result.reason, 'HTTP 404')
 })
 
+test('remoteLength retries a transient edge status and reports the served length', async () => {
+  // Given a burst against an edge origin that answers 403 once and then serves,
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    return calls === 1
+      ? new Response('', { status: 403 })
+      : new Response('', { status: 206, headers: { 'content-range': 'bytes 0-0/4242' } })
+  }
+  // When the probe reads the length,
+  const measured = await remoteLength('https://example.test/a.webp', fetchImpl, { delay: async () => {} })
+  // Then it retries the transient status and reports the real length.
+  assert.deepEqual(measured, { bytes: 4242 })
+  assert.equal(calls, 2)
+})
+
+test('remoteLength reports a transient status that survives every attempt', async () => {
+  // Given an origin that answers 403 for the whole retry budget,
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    return new Response('', { status: 403 })
+  }
+  // When the probe reads the length,
+  const measured = await remoteLength('https://example.test/a.webp', fetchImpl, { delay: async () => {} })
+  // Then it gives up and reports the status rather than inventing a length.
+  assert.deepEqual(measured, { error: 'HTTP 403' })
+  assert.equal(calls, 3)
+})
+
+test('remoteLength does not retry a status the origin means', async () => {
+  // Given an origin that answers 404, which is a verdict rather than a hiccup,
+  let calls = 0
+  const fetchImpl = async () => {
+    calls += 1
+    return new Response('', { status: 404 })
+  }
+  // When the probe reads the length,
+  const measured = await remoteLength('https://example.test/a.webp', fetchImpl, { delay: async () => {} })
+  // Then it reports the status on the first answer.
+  assert.deepEqual(measured, { error: 'HTTP 404' })
+  assert.equal(calls, 1)
+})
+
 test('runPool keeps result order and never exceeds the concurrency bound', async () => {
   let inFlight = 0
   let peak = 0
