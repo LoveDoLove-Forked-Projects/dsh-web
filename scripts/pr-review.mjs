@@ -306,14 +306,18 @@ export function checkLockfile(changes) {
   }))
 }
 
-/** 皮肤变更识别：返回 { isSkin, skinIds }。仅源码类变更触发（README/preview/文档不算）。
-    v2 布局（issue #506）：皮肤事实源是 skin-center 包内的资产目录。 */
+/** 皮肤目录前缀：dsh-skins 卫星仓是 skins/<id>/，本仓拆分前是
+    packages/skins/skin-center/skins/<id>/；--repo 可指向两者，故两种布局都认。 */
+const SKIN_DIR_PREFIXES = ['skins/', 'packages/skins/skin-center/skins/']
+const SKIN_DIR_RE = new RegExp(`^(?:${SKIN_DIR_PREFIXES.join('|')})([^/]+)/`)
+
+/** 皮肤变更识别：返回 { isSkin, skinIds }。仅源码类变更触发（README/preview/文档不算）。 */
 export function checkSkinChanges(changes) {
   const ids = new Set()
   const SKIP_RE = /(README(\.zh)?\.md|README\.i18n\.yaml|preview\/|^docs\/)/i
   for (const c of changes) {
     if (SKIP_RE.test(c.path)) continue
-    const m = c.path.match(/^packages\/skins\/skin-center\/skins\/([^/]+)\//)
+    const m = c.path.match(SKIN_DIR_RE)
     if (m) ids.add(m[1])
   }
   return { isSkin: ids.size > 0, skinIds: [...ids] }
@@ -337,11 +341,11 @@ export function checkSkinPreviews(changes, skinIds) {
   const findings = []
   for (const id of skinIds) {
     const isNew = changes.some((c) => c.status === `A` &&
-      c.path.startsWith(`packages/skins/skin-center/skins/` + id + `/`))
+      SKIN_DIR_PREFIXES.some((prefix) => c.path.startsWith(prefix + id + `/`)))
     if (!isNew) continue
     for (const mode of [`light`, `dark`]) {
       const hasPreview = changes.some((c) =>
-        c.path === `packages/skins/skin-center/skins/` + id + `/preview/` + mode + `.jpg`)
+        SKIN_DIR_PREFIXES.some((prefix) => c.path === prefix + id + `/preview/` + mode + `.jpg`))
       if (!hasPreview) {
         findings.push({ severity: `warn`, rule: `preview`, message: `新皮肤 ` + id + ` 未提供 ` + mode + ` 预览图：请运行 node scripts/capture-previews ` + id + ` 并提交 preview/` + mode + `.jpg` })
       }

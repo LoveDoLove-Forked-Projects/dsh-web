@@ -357,7 +357,7 @@ test(`提交信息检查`, () => {
 
 // ---------------------------------------------------------------- 皮肤识别与版权
 
-test(`皮肤变更识别：源码类命中，README 与 skin-center 排除`, () => {
+test(`皮肤变更识别：源码类命中，README 与 skin-center 排除，卫星仓 skins/<id>/ 同样命中`, () => {
   const f1 = checkSkinChanges([
     { status: `A`, path: `packages/skins/skin-center/skins/xp/skin.css` },
     { status: `A`, path: `packages/skins/skin-center/skins/xp/skin.json` },
@@ -371,6 +371,11 @@ test(`皮肤变更识别：源码类命中，README 与 skin-center 排除`, () 
   assert.deepEqual(f2, { isSkin: false, skinIds: [] })
   const f3 = checkSkinChanges([{ status: `M`, path: `packages/skins/skin-center/src/routes.ts` }])
   assert.equal(f3.isSkin, false)
+  const f4 = checkSkinChanges([
+    { status: `A`, path: `skins/xp/skin.css` },
+    { status: `M`, path: `skins/xp/preview/light.jpg` },
+  ])
+  assert.deepEqual(f4, { isSkin: true, skinIds: [`xp`] })
 })
 
 test(`版权提醒：外部贡献者皮肤 PR 未声明时 warn，已声明或仓库所有者豁免`, () => {
@@ -384,7 +389,7 @@ test(`版权提醒：外部贡献者皮肤 PR 未声明时 warn，已声明或�
   assert.equal(checkCopyright(pr, false, `owner`).length, 0)
   assert.equal(checkCopyright(pr, true, `someone`).length, 0)
 })
-test(`市场预览：新皮肤缺 preview/{light,dark}.jpg 时警告，齐图或存量皮肤豁免`, () => {
+test(`市场预览：新皮肤缺 preview/{light,dark}.jpg 时警告，齐图、卫星仓布局或存量皮肤豁免`, () => {
   const base = [
     { status: `A`, path: `packages/skins/skin-center/skins/xp/skin.css` },
   ]
@@ -399,6 +404,14 @@ test(`市场预览：新皮肤缺 preview/{light,dark}.jpg 时警告，齐图或
   assert.equal(checkSkinPreviews(complete, [`xp`]).length, 0)
   const modified = [{ status: `M`, path: `packages/skins/skin-center/skins/xp/skin.css` }]
   assert.equal(checkSkinPreviews(modified, [`xp`]).length, 0)
+  const satellite = [{ status: `A`, path: `skins/xp/skin.css` }]
+  assert.equal(checkSkinPreviews(satellite, [`xp`]).length, 2)
+  const satelliteComplete = [
+    { status: `A`, path: `skins/xp/skin.css` },
+    { status: `A`, path: `skins/xp/preview/light.jpg` },
+    { status: `A`, path: `skins/xp/preview/dark.jpg` },
+  ]
+  assert.equal(checkSkinPreviews(satelliteComplete, [`xp`]).length, 0)
 })
 test(`视觉指标判定：过曝与对比度不足警告`, () => {
   const f1 = judgeVisualMetrics([
