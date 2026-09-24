@@ -43,9 +43,31 @@ export function matchesTagFilter(task: TaskRecord, selected: readonly string[]):
  * re-renders only when its own task changes — not when a sibling card status,
  * the filter, or the selection moves.
  */
-const MemoTaskCard = memo(function MemoTaskCard({ task, pending, timeZone, onOpen }: { task: TaskRecord; pending: boolean; timeZone?: string; onOpen: (id: string) => void }) {
+const MemoTaskCard = memo(function MemoTaskCard({ task, pending, timeZone, onOpen, subtaskCount, isSubtask, subtasksDone, subtasksRunning, subtasksFailed }: {
+  task: TaskRecord
+  pending: boolean
+  timeZone?: string
+  onOpen: (id: string) => void
+  subtaskCount: number
+  isSubtask: boolean
+  subtasksDone: number
+  subtasksRunning: number
+  subtasksFailed: number
+}) {
   const onClick = useCallback(() => { onOpen(task.id) }, [task.id, onOpen])
-  return <TaskCard task={task} pending={pending} timeZone={timeZone} onClick={onClick} />
+  return (
+    <TaskCard
+      task={task}
+      pending={pending}
+      timeZone={timeZone}
+      onClick={onClick}
+      subtaskCount={subtaskCount}
+      isSubtask={isSubtask}
+      subtasksDone={subtasksDone}
+      subtasksRunning={subtasksRunning}
+      subtasksFailed={subtasksFailed}
+    />
+  )
 })
 
 /** Board component; subscribes to the controller snapshot. */
@@ -57,6 +79,11 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
   )
   const [filter, setFilter] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
+  // Subtask cards are real board cards, but a tree with dozens of children
+  // turns a column into a wall: the board starts from the parent cards only and
+  // the header switch reveals the flat view. A text or label filter re-enables
+  // them automatically, so searching a subtask title still finds it.
+  const [hideSubtasks, setHideSubtasks] = useState(true)
   const [showNew, setShowNew] = useState(false)
   // Project partition (#1536): '' means "all projects". A selected project
   // narrows the board and becomes the new-task form's default workspace.
@@ -70,10 +97,29 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
   // Every label in use across the ledger (board and archive alike), so the
   // filter never loses an option just because its task was archived.
   const knownTags = collectKnownTags(snapshot.tasks)
-  // Archived tasks leave the columns; the archive view shows them instead.
-  const visible = snapshot.tasks.filter(task =>
-    (archiveView ? task.archivedAt !== undefined : task.archivedAt === undefined)
-    && (projectId === '' || task.workspaceId === projectId)
+  // The family of cards this view owns: the board columns, or the archive.
+  const onBoard = snapshot.tasks.filter(task =>
+    archiveView ? task.archivedAt !== undefined : task.archivedAt === undefined,
+  )
+  // Direct subtask count and state roll-up per task, for the card badge: a
+  // hidden tree still has to report how many children run, fail, or finish.
+  const subtaskCounts = new Map<string, number>()
+  const subtaskRollup = new Map<string, { done: number; running: number; failed: number }>()
+  for (const task of onBoard) {
+    if (task.parentId === undefined) continue
+    subtaskCounts.set(task.parentId, (subtaskCounts.get(task.parentId) ?? 0) + 1)
+    const rollup = subtaskRollup.get(task.parentId) ?? { done: 0, running: 0, failed: 0 }
+    if (task.status === 'done') rollup.done += 1
+    else if (task.status === 'running') rollup.running += 1
+    else if (task.status === 'failed') rollup.failed += 1
+    subtaskRollup.set(task.parentId, rollup)
+  }
+  const hasSubtasks = subtaskCounts.size > 0
+  const searchActive = filter.trim() !== '' || tagFilter.length > 0
+  const hidingSubtasks = hideSubtasks && !searchActive
+  const visible = onBoard.filter(task =>
+    (projectId === '' || task.workspaceId === projectId)
+    && (!hidingSubtasks || task.parentId === undefined)
     && matchesFilter(task, filter)
     && matchesTagFilter(task, tagFilter),
   )
@@ -159,6 +205,18 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
           onChange={event => { setFilter(event.target.value) }}
           aria-label={t('board.search')}
         />
+        {hasSubtasks && (
+          <button
+            type="button"
+            className={hidingSubtasks ? css.primaryButton : css.ghostButton}
+            data-dsh-part="subtask-filter"
+            aria-pressed={hidingSubtasks}
+            title={t('board.subtaskFilterHint')}
+            onClick={() => { setHideSubtasks(value => !value) }}
+          >
+            {hidingSubtasks ? t('board.showSubtasks') : t('board.hideSubtasks')}
+          </button>
+        )}
         <button
           type="button"
           className={archiveView ? css.primaryButton : css.ghostButton}
@@ -257,7 +315,18 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
             </header>
             <div className={css.cards}>
               {visible.map(task => (
-                <MemoTaskCard key={task.id} task={task} pending={snapshot.pendingTaskIds.includes(task.id)} timeZone={snapshot.host?.scheduler.timeZone} onOpen={openTask} />
+                <MemoTaskCard
+                  key={task.id}
+                  task={task}
+                  pending={snapshot.pendingTaskIds.includes(task.id)}
+                  timeZone={snapshot.host?.scheduler.timeZone}
+                  onOpen={openTask}
+                  subtaskCount={subtaskCounts.get(task.id) ?? 0}
+                  isSubtask={task.parentId !== undefined}
+                  subtasksDone={subtaskRollup.get(task.id)?.done ?? 0}
+                  subtasksRunning={subtaskRollup.get(task.id)?.running ?? 0}
+                  subtasksFailed={subtaskRollup.get(task.id)?.failed ?? 0}
+                />
               ))}
               {visible.length === 0 && (
                 <div className={css.columnEmpty}>{tagFilter.length > 0 ? t('board.tagEmpty') : t('archive.empty')}</div>
@@ -295,7 +364,18 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
                 </header>
                 <div className={css.cards}>
                   {tasks.map(task => (
-                    <MemoTaskCard key={task.id} task={task} pending={snapshot.pendingTaskIds.includes(task.id)} timeZone={snapshot.host?.scheduler.timeZone} onOpen={openTask} />
+                    <MemoTaskCard
+                      key={task.id}
+                      task={task}
+                      pending={snapshot.pendingTaskIds.includes(task.id)}
+                      timeZone={snapshot.host?.scheduler.timeZone}
+                      onOpen={openTask}
+                      subtaskCount={subtaskCounts.get(task.id) ?? 0}
+                      isSubtask={task.parentId !== undefined}
+                      subtasksDone={subtaskRollup.get(task.id)?.done ?? 0}
+                      subtasksRunning={subtaskRollup.get(task.id)?.running ?? 0}
+                      subtasksFailed={subtaskRollup.get(task.id)?.failed ?? 0}
+                    />
                   ))}
                   {tasks.length === 0 && (
                     <div className={css.columnEmpty}>{tagFilter.length > 0 ? t('board.tagEmpty') : t('board.empty')}</div>

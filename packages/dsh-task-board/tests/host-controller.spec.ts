@@ -76,6 +76,64 @@ describe('Host-backed BoardController', () => {
     controller.dispose()
   })
 
+  it('user keeps the subtask depth and session default in the mirror across a heartbeat frame', async () => {
+    // Given a Host snapshot carrying the deployment constants
+    let onEvent: ((event?: TaskBoardEventPayload) => void) | undefined
+    const full: TaskBoardSnapshot = {
+      ...snapshot(2),
+      sessionDefaultPermission: 'workspace-write',
+      maxSubtaskDepth: 3,
+    }
+    const transport: TaskBoardTransport = {
+      bootstrap: async () => full,
+      state: async () => full,
+      action: async () => full,
+      subscribe: listener => { onEvent = listener; return () => undefined },
+    }
+    const controller = new BoardController({ store: new InMemoryTaskStore(), sessions: sessions(), transport })
+    controller.start()
+    await vi.waitFor(() => { expect(controller.getSnapshot().host?.maxSubtaskDepth).toBe(3) })
+
+    // When a same-revision heartbeat frame arrives without the constants
+    onEvent?.({ revision: 2, scheduler: full.scheduler, power: full.power })
+
+    // Then the mirror keeps them instead of dropping the frame's absent fields
+    expect(controller.getSnapshot().host?.maxSubtaskDepth).toBe(3)
+    expect(controller.getSnapshot().host?.sessionDefaultPermission).toBe('workspace-write')
+    controller.dispose()
+  })
+
+  it('user creating a subtask of a subtask reaches the Host when the deployment allows the depth', async () => {
+    // Given a Host snapshot whose depth limit is three and a root with one subtask
+    const rootTask = createTask({ title: 'root', description: '', prompt: '' }, 1, 'root')
+    const childTask: TaskRecord = { ...createTask({ title: 'child', description: '', prompt: '' }, 1, 'child'), parentId: 'root' }
+    const grandchild: TaskRecord = { ...createTask({ title: 'grand', description: '', prompt: '' }, 1, 'grand'), parentId: 'child' }
+    const initial: TaskBoardSnapshot = { ...snapshot(2, [rootTask, childTask]), maxSubtaskDepth: 3 }
+    const action = vi.fn(async () => snapshot(3, [rootTask, childTask, grandchild]))
+    const transport: TaskBoardTransport = {
+      bootstrap: async () => initial,
+      state: async () => initial,
+      action,
+      subscribe: () => () => undefined,
+    }
+    const controller = new BoardController({
+      store: new InMemoryTaskStore(), sessions: sessions(), transport, uuid: () => 'grand', now: () => 1,
+    })
+    controller.start()
+    await vi.waitFor(() => { expect(controller.getSnapshot().host?.maxSubtaskDepth).toBe(3) })
+
+    // When the user creates a subtask under the depth-one task
+    const created = await controller.createTaskConfirmed({ title: 'grand', description: '', prompt: '', parentId: 'child' })
+
+    // Then the local preview accepts it and the Host receives the create action
+    expect(created?.id).toBe('grand')
+    expect(action).toHaveBeenCalledWith(
+      { kind: 'create', id: 'grand', input: expect.objectContaining({ parentId: 'child' }) },
+      undefined,
+    )
+    controller.dispose()
+  })
+
   it('retains the v1 view and does not subscribe to SSE until migration succeeds', async () => {
     const legacy = createTask({ title: 'legacy', description: '', prompt: '' }, 1, 'legacy')
     const confirmed = createTask({ title: 'confirmed', description: '', prompt: '' }, 2, 'confirmed')

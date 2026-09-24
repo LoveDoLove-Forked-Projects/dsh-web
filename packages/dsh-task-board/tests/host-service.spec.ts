@@ -4,11 +4,12 @@ import { join } from 'node:path'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HostTaskLedger } from '../src/host-ledger.ts'
-import { TaskBoardHostService, installStreamErrorGuards, safeConsoleError } from '../src/host-service.ts'
+import { TaskBoardHostService, installStreamErrorGuards, safeConsoleError, type TeamSpawnInput } from '../src/host-service.ts'
 import { PowerInhibitor } from '../src/power-inhibitor.ts'
 import { createTask, EXECUTION_HISTORY_LIMIT, startExecution, withSchedule } from '../src/core/tasks.ts'
 
 const roots: string[] = []
+const NOW = 1_700_000_000_000
 
 type GatewayRequest = {
   namespace: string
@@ -39,6 +40,15 @@ function snapshot(records: readonly unknown[], cursor: number, hasMore: boolean)
   return { type: 'snapshot' as const, header: {}, cursor, records, hasMore, projections: {} }
 }
 
+/**
+ * Drain the fire-and-forget launch chain. The chain is gateway promises and
+ * teammate spawns only, so flushing the microtask queue is deterministic and
+ * needs no timer.
+ */
+async function flushLaunchChain(): Promise<void> {
+  for (let turn = 0; turn < 50; turn += 1) await Promise.resolve()
+}
+
 function root(): string {
   const value = mkdtempSync(join(tmpdir(), 'dsh-task-board-service-'))
   roots.push(value)
@@ -47,6 +57,177 @@ function root(): string {
 
 afterEach(() => {
   for (const value of roots.splice(0)) rmSync(value, { recursive: true, force: true })
+})
+
+
+describe('team-run dispatch', () => {
+  /**
+   * The gateway a run needs: create, rename, then prompt each session. When
+   * given a sink it records every prompt the Host queued, in order.
+   */
+  function sessionGateway(leadId: string, prompts?: Array<{ sessionId: string; text: string }>) {
+    let created = 0
+    return makeGateway(request => {
+      if (request.namespace !== 'session') throw new Error('unexpected namespace')
+      if (request.method === 'create') {
+        created += 1
+        return { sessionId: created === 1 ? leadId : `session-${created}` }
+      }
+      if (request.method === 'rename') return { title: 'root', seq: 1 }
+      if (request.method === 'prompt') {
+        const args = request.args.request as { sessionId: string; content: Array<{ text: string }> }
+        prompts?.push({ sessionId: args.sessionId, text: args.content[0].text })
+        return { accepted: true }
+      }
+      throw new Error('unexpected gateway call')
+    })
+  }
+
+  /**
+   * Drain the fire-and-forget launch chain. The chain is gateway promises and
+   * teammate spawns only, so flushing the microtask queue is deterministic and
+   * needs no timer.
+   */
+  async function settleMicrotasks(): Promise<void> {
+    for (let turn = 0; turn < 50; turn += 1) await Promise.resolve()
+  }
+
+  function seedTeam(ledger: HostTaskLedger): void {
+    ledger.applyRequest('seed-root', {
+      kind: 'create', id: 'root', input: { title: 'root', description: '', prompt: 'root', teamRun: true },
+    })
+    ledger.applyRequest('seed-a', { kind: 'create', id: 'a', input: { title: 'collect carbon', description: '', prompt: 'collect', parentId: 'root' } })
+    ledger.applyRequest('seed-b', { kind: 'create', id: 'b', input: { title: 'model', description: '', prompt: 'model', parentId: 'root' } })
+  }
+
+  it('user running a team card spawns one teammate per subtask inside the Lead session', async () => {
+    // Given a team-mode root with two subtasks and a working team dispatcher
+    let now = new Date(2026, 7, 16, 10, 0, 0).getTime()
+    const ledger = new HostTaskLedger(root(), () => now)
+    seedTeam(ledger)
+    const spawns: TeamSpawnInput[] = []
+    const prompts: Array<{ sessionId: string; text: string }> = []
+    const { gateway } = sessionGateway('session-lead', prompts)
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      now: () => now,
+      team: {
+        async spawn(input) {
+          spawns.push(input)
+          return { sessionId: 'member-' + input.name }
+        },
+      },
+    })
+
+    // When the user runs the root
+    service.apply('run-1', { kind: 'run', taskId: 'root' })
+    await settleMicrotasks()
+
+    // Then the teammates hang off the Lead session, one per subtask, named and prompted
+    // (the full snapshot advertises that this deployment can serve team runs)
+    expect(service.snapshot().teamRunAvailable).toBe(true)
+    expect(prompts[0].sessionId).toBe('session-lead')
+    expect(prompts[0].text).toContain('Agent Team 的 Lead')
+    // Only the Lead is prompted by the Host: the teammates are spawned, and
+    // their prompt travels with the spawn call instead.
+    expect(prompts).toHaveLength(1)
+    expect(spawns.map(input => input.leadSessionId)).toEqual(['session-lead', 'session-lead'])
+    expect(spawns.map(input => input.name)).toEqual([
+      expect.stringMatching(/^collect-carbon-[0-9a-f]{8}$/),
+      expect.stringMatching(/^model-[0-9a-f]{8}$/),
+    ])
+    expect(spawns[0].prompt).toContain('collect')
+    const tasks = ledger.state().tasks
+    expect(tasks.find(task => task.id === 'root')?.executions.at(-1)?.sessionId).toBe('session-lead')
+    expect(tasks.find(task => task.id === 'a')?.executions.at(-1)?.sessionId).toBe('member-' + spawns[0].name)
+    expect(tasks.find(task => task.id === 'b')?.executions.at(-1)?.sessionId).toBe('member-' + spawns[1].name)
+  })
+
+  it('user running a team card in a deployment without Agent Teams is refused before anything opens', () => {
+    // Given a team-mode root and a service that serves no team dispatcher
+    const ledger = new HostTaskLedger(root(), () => NOW)
+    seedTeam(ledger)
+    const { gateway } = sessionGateway('session-lead')
+    const service = new TaskBoardHostService(gateway, { ledger, power: new PowerInhibitor({ platform: 'linux' }), now: () => NOW })
+
+    // When the user runs it
+    // Then the run is refused and no execution is opened
+    expect(() => service.apply('run-1', { kind: 'run', taskId: 'root' })).toThrow('Agent Teams is unavailable')
+    expect(ledger.state().tasks.every(task => task.executions.length === 0)).toBe(true)
+    expect(service.snapshot().teamRunAvailable).toBe(false)
+  })
+
+  it('operator whose teammate cannot be provisioned sees a failed subtask fold into the Lead', async () => {
+    // Given a team dispatcher that reports a provisioning failure
+    const ledger = new HostTaskLedger(root(), () => NOW)
+    seedTeam(ledger)
+    const { gateway } = sessionGateway('session-lead')
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      now: () => NOW,
+      team: { async spawn() { return { error: 'provider missing' } } },
+    })
+
+    // When the user runs it and the Lead turn settles
+    service.apply('run-1', { kind: 'run', taskId: 'root' })
+    await settleMicrotasks()
+    const leadExecution = ledger.state().tasks.find(task => task.id === 'root')?.executions.at(-1)?.id
+    if (leadExecution === undefined) throw new Error('no Lead execution')
+    ledger.settle('root', leadExecution, 'succeeded')
+
+    // Then each subtask records the spawn failure and the Lead fails with them
+    const child = ledger.state().tasks.find(task => task.id === 'a')
+    expect(child?.executions.at(-1)?.result).toBe('failed')
+    expect(child?.executions.at(-1)?.error).toContain('provider missing')
+    expect(ledger.state().tasks.find(task => task.id === 'root')?.status).toBe('failed')
+  })
+})
+describe('run prompt shape', () => {
+  it('user running a plain cascade sees the independent sessions named in the root prompt', async () => {
+    // Given a root with one subtask and no team opt-in
+    const ledger = new HostTaskLedger(root(), () => NOW)
+    ledger.applyRequest('seed-root', { kind: 'create', id: 'root', input: { title: 'root', description: '', prompt: 'do it' } })
+    ledger.applyRequest('seed-a', {
+      kind: 'create', id: 'a', input: { title: 'collect carbon', description: '', prompt: 'collect', parentId: 'root' },
+    })
+    const prompts: Array<{ sessionId: string; text: string }> = []
+    const { gateway } = ((): ReturnType<typeof makeGateway> => {
+      let created = 0
+      return makeGateway(request => {
+        if (request.namespace !== 'session') throw new Error('unexpected namespace')
+        if (request.method === 'create') {
+          created += 1
+          return { sessionId: `session-${created}` }
+        }
+        if (request.method === 'rename') return { title: 'x', seq: 1 }
+        if (request.method === 'prompt') {
+          const args = request.args.request as { sessionId: string; content: Array<{ text: string }> }
+          prompts.push({ sessionId: args.sessionId, text: args.content[0].text })
+          return { accepted: true }
+        }
+        throw new Error('unexpected gateway call')
+      })
+    })()
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      now: () => NOW,
+    })
+
+    // When the user runs the parent
+    service.apply('run-1', { kind: 'run', taskId: 'root' })
+    await flushLaunchChain()
+
+    // Then the root prompt names the independent session it opens...
+    const rootPrompt = prompts.find(entry => entry.sessionId === 'session-1')?.text ?? ''
+    expect(rootPrompt).toContain('并发开启 1 个独立 DSH 会话')
+    expect(rootPrompt).toContain('collect carbon')
+
+    // ...while the subtask prompt stays its own instruction
+    expect(prompts.find(entry => entry.sessionId === 'session-2')?.text).toBe('collect')
+  })
 })
 
 describe('TaskBoardHostService scheduling without a browser', () => {
@@ -261,6 +442,52 @@ describe('TaskBoardHostService poll heartbeat', () => {
     items = [{ sessionId: 'session-a', running: true }]
     await poll.pollSessions()
     expect(pushes).toBe(before + 1)
+    service.dispose()
+  })
+
+  it('user running a parent starts one session per subtask with the inherited contract', async () => {
+    // Given a parent and a subtask that inherits its pinned permission
+    const now = new Date(2026, 7, 16, 10, 0, 30).getTime()
+    const ledger = new HostTaskLedger(root(), () => now)
+    ledger.applyRequest('create-parent', {
+      kind: 'create', id: 'parent', input: { title: 'Parent', description: '', prompt: 'work', permission: 'read-only' },
+    })
+    ledger.applyRequest('create-child', {
+      kind: 'create', id: 'child', input: { title: 'Child', description: '', prompt: 'child work', parentId: 'parent' },
+    })
+    const sessions: string[] = []
+    const permissions: string[] = []
+    const { gateway } = makeGateway(request => {
+      if (request.namespace !== 'session') throw new Error('unexpected namespace')
+      if (request.method === 'create') {
+        const sessionId = 'session-' + String(sessions.length + 1)
+        sessions.push(sessionId)
+        return { sessionId }
+      }
+      if (request.method === 'rename') return { title: 'renamed', seq: 1 }
+      if (request.method === 'prompt') return { accepted: true }
+      throw new Error('unexpected gateway call')
+    })
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      now: () => now,
+      commandDispatcher: {
+        execute: async (_sessionId, line) => { permissions.push(line); return { kind: 'success', text: 'ok' } as const },
+      },
+    })
+
+    // When the user runs the parent
+    service.apply('run-1', { kind: 'run', taskId: 'parent' })
+
+    // Then both cards run in their own session under the inherited permission
+    await vi.waitFor(() => {
+      const attached = ledger.state().tasks.map(task => task.executions[0]?.sessionId)
+      expect(new Set(attached).size).toBe(2)
+    })
+    expect([...sessions].sort()).toEqual(['session-1', 'session-2'])
+    expect([...permissions].sort()).toEqual(['/permission read-only', '/permission read-only'])
+    expect(ledger.state().tasks.map(task => task.status)).toEqual(['running', 'running'])
     service.dispose()
   })
 

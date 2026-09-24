@@ -37,7 +37,32 @@ export function formatTime(ms: number, timeZone?: string): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function TaskCardInner({ task, pending, timeZone, onClick }: { task: TaskRecord; pending: boolean; timeZone?: string; onClick: () => void }) {
+function TaskCardInner({
+  task,
+  pending,
+  timeZone,
+  onClick,
+  subtaskCount = 0,
+  isSubtask = false,
+  subtasksDone = 0,
+  subtasksRunning = 0,
+  subtasksFailed = 0,
+}: {
+  task: TaskRecord
+  pending: boolean
+  timeZone?: string
+  onClick: () => void
+  /** Direct subtasks of this card, shown as a badge (0 hides it). */
+  subtaskCount?: number
+  /** Whether this card is itself a subtask. */
+  isSubtask?: boolean
+  /** Direct subtasks already settled as done, for the roll-up badge. */
+  subtasksDone?: number
+  /** Direct subtasks currently running, for the roll-up badge. */
+  subtasksRunning?: number
+  /** Direct subtasks that failed, for the roll-up badge. */
+  subtasksFailed?: number
+}) {
   const latest = task.executions[task.executions.length - 1]
   const runs = task.executions.length
   const archived = task.archivedAt !== undefined
@@ -77,6 +102,29 @@ function TaskCardInner({ task, pending, timeZone, onClick }: { task: TaskRecord;
       )}
       {task.description !== '' && <span className={css.cardExcerpt}>{task.description}</span>}
       <span className={css.cardMeta}>
+        {isSubtask && (
+          <span className={css.cardSubtask} data-dsh-part="subtask-badge">{t('card.subtask')}</span>
+        )}
+        {subtaskCount > 0 && (
+          // A board that hides subtask cards still has to report them: the badge
+          // rolls up the direct children and takes the tone of the worst state,
+          // so a hidden failing tree cannot look green.
+          <span
+            className={css.cardSubtask}
+            data-dsh-part="subtask-count"
+            data-tone={subtasksFailed > 0 ? 'failed' : subtasksRunning > 0 ? 'running' : subtasksDone === subtaskCount ? 'done' : undefined}
+            title={t('card.subtasksBreakdown', {
+              total: String(subtaskCount),
+              done: String(subtasksDone),
+              running: String(subtasksRunning),
+              failed: String(subtasksFailed),
+            })}
+          >
+            {t('card.subtasks', { count: String(subtaskCount) })}
+            {subtasksFailed > 0 ? ' · ' + t('card.subtasksFailed', { count: String(subtasksFailed) }) : ''}
+            {subtasksFailed === 0 && subtasksRunning > 0 ? ' · ' + t('card.subtasksRunning', { count: String(subtasksRunning) }) : ''}
+          </span>
+        )}
         <span className={css.cardTime}>{t('board.updated')} {formatTime(task.updatedAt)}</span>
         {task.freeze !== undefined && (
           <span className={css.cardSchedule} title={task.freeze.goal}>{t('card.frozen')}</span>
@@ -103,7 +151,9 @@ function TaskCardInner({ task, pending, timeZone, onClick }: { task: TaskRecord;
       </span>
       {!archived && pending && <span className={css.cardRunningLabel}>{t('board.pending')}…</span>}
       {!archived && latest !== undefined && executionLabel(latest) === 'running' && (
-        <span className={css.cardRunningLabel}>{t('detail.result.running')}…</span>
+        <span className={css.cardRunningLabel}>
+          {latest.ownResult === undefined ? t('detail.result.running') : t('detail.subtasks.waiting')}…
+        </span>
       )}
     </button>
   )

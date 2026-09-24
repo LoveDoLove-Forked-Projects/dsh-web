@@ -104,6 +104,33 @@ describe('HostTaskLedger', () => {
     expect(ledger.state().revision).toBe(revision + 1)
   })
 
+  it('operator applies a live subtask-depth edit, clamps it, and notifies only on change', () => {
+    // Given a ledger with the default single-level limit and a subscriber
+    const root = tempRoot()
+    const ledger = new HostTaskLedger(root, () => NOW)
+    let notified = 0
+    ledger.subscribe(() => { notified += 1 })
+    expect(ledger.maxSubtaskDepth).toBe(1)
+
+    // When a settings commit raises the limit
+    ledger.setMaxSubtaskDepth(3)
+
+    // Then the new limit holds and the subscriber heard exactly one change
+    expect(ledger.maxSubtaskDepth).toBe(3)
+    expect(notified).toBe(1)
+
+    // When the same limit is committed again and an out-of-range value follows
+    ledger.setMaxSubtaskDepth(3)
+    ledger.setMaxSubtaskDepth(99)
+
+    // Then the repeat is a no-op and the out-of-range value lands clamped
+    expect(ledger.maxSubtaskDepth).toBe(3)
+    expect(notified).toBe(1)
+    ledger.setMaxSubtaskDepth(0)
+    expect(ledger.maxSubtaskDepth).toBe(1)
+    expect(notified).toBe(2)
+  })
+
   it('persists atomically, restores revision, and returns the first duplicate request result', () => {
     const root = tempRoot()
     const ledger = new HostTaskLedger(root, () => NOW)
@@ -150,9 +177,11 @@ describe('HostTaskLedger', () => {
       enabled: true, cron: '* * * * *', nextRunAt: NOW, lastTriggeredAt: undefined,
     }, NOW)
     ledger.applyRequest('import', { kind: 'import', sourceId: 'source', tasks: [due] })
+    // openScheduled now answers with the cascade run list: one entry for a
+    // plain task, an empty list when nothing may run.
     const opened = ledger.openScheduled('scheduled', NOW + 60_000, NOW)
-    expect(opened).toBeDefined()
-    expect(ledger.openScheduled('scheduled', NOW + 120_000, NOW + 60_000)).toBeUndefined()
+    expect(opened).toHaveLength(1)
+    expect(ledger.openScheduled('scheduled', NOW + 120_000, NOW + 60_000)).toEqual([])
     const current = ledger.state().tasks[0]
     expect(current.executions).toHaveLength(1)
     expect(current.schedule?.nextRunAt).toBe(NOW + 120_000)
@@ -497,7 +526,7 @@ describe('HostTaskLedger', () => {
     expect(() => ledger.applyRequest('rerun-archived', {
       kind: 'rerun', taskId: 'archived',
     })).toThrow('archived task is read-only')
-    expect(ledger.openScheduled('archived', NOW + 60_000, NOW)).toBeUndefined()
+    expect(ledger.openScheduled('archived', NOW + 60_000, NOW)).toEqual([])
     expect(ledger.state().tasks[0].executions).toEqual([])
   })
 

@@ -9,6 +9,40 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { bindSettingsForm } from '../src/client/index.ts'
+import { TaskBoardSettingsCardController } from '../src/client/TaskBoardSettingsCard.tsx'
+
+/**
+ * A settings form double that applies the batched writes so the card's
+ * read-back judgment can settle.
+ */
+function depthForm(initial: Record<string, unknown>) {
+  const user: Record<string, unknown> = { ...initial }
+  const ops: Array<{ op: 'set' | 'unset'; path: string[]; value?: unknown }> = []
+  const form = {
+    entryId: 'task-board',
+    getSnapshot: () => ({
+      status: 'ready' as const,
+      value: { ...user },
+      base: undefined,
+      user: { ...user },
+      revision: 1,
+      writable: true,
+      mode: 'host' as const,
+    }),
+    subscribe: () => () => {},
+    set: async () => true,
+    unset: async () => true,
+    mutate: async (batch: Array<{ op: 'set' | 'unset'; path: string[]; value?: unknown }>) => {
+      ops.push(...batch)
+      for (const op of batch) {
+        if (op.op === 'set') user[op.path[0]] = op.value
+        else delete user[op.path[0]]
+      }
+      return true
+    },
+  }
+  return { form, ops }
+}
 
 /** A form double: the card only reads the settled snapshot and subscribes to it. */
 function fakeForm(entryId = 'unbound') {
@@ -54,6 +88,40 @@ function context(services: { binder?: unknown; servedNamespaces?: string[] }) {
   }
   return { ctx, boundEntryIds }
 }
+
+describe('task-board settings card fields', () => {
+  it('user choosing a deeper subtask limit stages the numeric value the Host schema expects', async () => {
+    // Given a card bound to a form whose depth already is the default
+    const { form, ops } = depthForm({ maxSubtaskDepth: 1 })
+    const controller = new TaskBoardSettingsCardController(form as never)
+    const face = controller.inject()
+
+    // When the user picks three levels and saves
+    face.edit('maxSubtaskDepth', '3')
+    await (controller as unknown as { form: { save(): Promise<void> } }).form.save()
+
+    // Then the Host receives a number and the field settles as overridden
+    expect(ops).toEqual([{ op: 'set', path: ['maxSubtaskDepth'], value: 3 }])
+    expect(face.hooks.taskBoardSettingsCard.getSnapshot().maxSubtaskDepth).toEqual({ text: '3', overridden: true, invalid: false })
+    controller.dispose()
+  })
+
+  it('user clearing the subtask limit lets the deployment default apply again', async () => {
+    // Given a card whose stored depth was overridden to two levels
+    const { form, ops } = depthForm({ maxSubtaskDepth: 2 })
+    const controller = new TaskBoardSettingsCardController(form as never)
+    const face = controller.inject()
+
+    // When the user resets the field to the inherited value and saves
+    face.resetField('maxSubtaskDepth')
+    await (controller as unknown as { form: { save(): Promise<void> } }).form.save()
+
+    // Then the user layer entry is dropped instead of writing a value
+    expect(ops).toEqual([{ op: 'unset', path: ['maxSubtaskDepth'] }])
+    expect(face.hooks.taskBoardSettingsCard.getSnapshot().maxSubtaskDepth.overridden).toBe(false)
+    controller.dispose()
+  })
+})
 
 describe('task-board settings binding', () => {
   it('user with the family group loaded sees the card bound through the family namespace', () => {

@@ -465,6 +465,49 @@ describe('scheduling', () => {
   })
 })
 
+describe('legacy parent links', () => {
+  it('user linking a task to a parent through the in-memory controller stores the link and can detach it', async () => {
+    // Given two stored tasks and a controller without a Host transport
+    const { controller, store } = makeController()
+    store.save([
+      createTask({ title: 'Root', description: '', prompt: 'root' }, NOW, 'root'),
+      createTask({ title: 'Free', description: '', prompt: 'free' }, NOW, 'free'),
+    ])
+    controller.reloadFromStore()
+
+    // When the user links the free task under the root
+    const applied = await controller.setParent('free', 'root')
+
+    // Then the link is stored and visible in the snapshot
+    expect(applied).toBe(true)
+    expect(controller.getSnapshot().tasks.find(entry => entry.id === 'free')?.parentId).toBe('root')
+
+    // When the user detaches it again
+    await controller.setParent('free', null)
+
+    // Then the task is a root once more
+    expect(controller.getSnapshot().tasks.find(entry => entry.id === 'free')?.parentId).toBeUndefined()
+  })
+
+  it('user linking a task under a subtask is refused by the in-memory controller at the default depth', async () => {
+    // Given a root with a subtask and one free task
+    const { controller, store } = makeController()
+    store.save([
+      createTask({ title: 'Root', description: '', prompt: 'root' }, NOW, 'root'),
+      createTask({ title: 'Child', description: '', prompt: 'child', parentId: 'root' }, NOW, 'child'),
+      createTask({ title: 'Free', description: '', prompt: 'free' }, NOW, 'free'),
+    ])
+    controller.reloadFromStore()
+
+    // When the user tries to attach the free task under the subtask
+    const applied = await controller.setParent('free', 'child')
+
+    // Then the refusal leaves the task a root
+    expect(applied).toBe(false)
+    expect(controller.getSnapshot().tasks.find(entry => entry.id === 'free')?.parentId).toBeUndefined()
+  })
+})
+
 /** Store that can simulate a sibling tab writing the ledger. */
 class ExternalAwareStore extends InMemoryTaskStore {
   listeners = new Set<() => void>()

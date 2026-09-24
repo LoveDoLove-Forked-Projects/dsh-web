@@ -2,7 +2,7 @@
  * Announcement default (issue #839): announceToAgent resolves to false so
  * agent system prompts stay clean unless the user opts in.
  *
- * On the 0.1.7 cohort the three fields the settings card edits are
+ * On the 0.1.7 cohort the fields the settings card edits are
  * schema-volatile: the Loader hands them to the plugin as stable references it
  * commits in place, and the Host generates this row's settings page from
  * exactly the volatile fields of its Config — so the defaults are read through
@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { Config, readConfigField } from '../src/index.ts'
 
 /** The fields the browser settings card edits. */
-const CARD_FIELDS = ['enabled', 'announceToAgent', 'preventIdleSleep'] as const
+const CARD_FIELDS = ['enabled', 'announceToAgent', 'preventIdleSleep', 'maxSubtaskDepth'] as const
 
 /** Deployment-level fields the profile patch carries instead of the settings page. */
 const DEPLOYMENT_FIELDS = ['trustedProxyHosts', 'proxyTokenEnv', 'sessionDefaultPermission'] as const
@@ -33,6 +33,7 @@ describe('announcement default (issue #839)', () => {
     const value = Config({})
     expect(readConfigField(value.announceToAgent, true)).toBe(false)
     expect(readConfigField(value.enabled, false)).toBe(true)
+    expect(readConfigField(value.maxSubtaskDepth, 0)).toBe(1)
   })
 
   it('keeps an explicit true override', () => {

@@ -4776,6 +4776,7 @@ window.__ModuleLoader__.load({
 				title: input.title.trim(),
 				description: input.description.trim(),
 				prompt: input.prompt.trim(),
+				parentId: normalizeTargetId(input.parentId),
 				status: "todo",
 				createdAt: now,
 				updatedAt: now,
@@ -4785,6 +4786,7 @@ window.__ModuleLoader__.load({
 				permission: isTaskPermission(input.permission) ? input.permission : void 0,
 				model: normalizeTargetId(input.model),
 				reuseSession: input.reuseSession === true ? true : void 0,
+				teamRun: input.teamRun === true ? true : void 0,
 				...input.freeze === void 0 ? {} : { freeze: freezeOf(input.freeze, now) },
 				...input.handover === void 0 ? {} : { handover: {
 					...input.handover,
@@ -4832,20 +4834,173 @@ window.__ModuleLoader__.load({
 			if (execution.result === "cancelled") return "cancelled";
 			return "running";
 		}
+		/**
+		* Clamp a configured depth into the supported range. Anything unusable
+		* (absent, non-numeric, not finite) falls back to the default, so a bad
+		* configuration narrows the tree instead of lifting the guard.
+		*/
+		function normalizeSubtaskDepth(value) {
+			if (typeof value !== "number" || !Number.isFinite(value)) return 1;
+			const depth = Math.trunc(value);
+			if (depth < 1) return 1;
+			if (depth > 3) return 3;
+			return depth;
+		}
+		/** Whether an unknown value is a settled execution outcome. */
+		function isExecutionOutcome(value) {
+			return value === "succeeded" || value === "failed" || value === "cancelled";
+		}
+		function indexOf(tasks) {
+			return new Map(tasks.map((task) => [task.id, task]));
+		}
+		/**
+		* Nearest-first ancestor chain of a task. The walk is cycle-safe and bounded
+		* by the ledger size rather than by the deployment maximum: a chain stored
+		* under a larger limit survives that limit being lowered, and restore and
+		* inheritance must still see all of it.
+		*/
+		function ancestorChain(tasks, task) {
+			const index = indexOf(tasks);
+			const chain = [];
+			const seen = /* @__PURE__ */ new Set([task.id]);
+			let current = task.parentId === void 0 ? void 0 : index.get(task.parentId);
+			while (current !== void 0 && chain.length < tasks.length) {
+				if (seen.has(current.id)) break;
+				seen.add(current.id);
+				chain.push(current);
+				current = current.parentId === void 0 ? void 0 : index.get(current.parentId);
+			}
+			return chain;
+		}
+		/** Root-to-task depth: a root task is 0, its subtask 1, and so on. */
+		function taskDepth(tasks, id) {
+			const task = indexOf(tasks).get(id);
+			return task === void 0 ? 0 : ancestorChain(tasks, task).length;
+		}
+		/** Direct subtasks of a task, in ledger order. */
+		function directSubtasks(tasks, id) {
+			return tasks.filter((task) => task.parentId === id);
+		}
+		/**
+		* Descendants of a task in breadth-first order, bounded by maxSubtaskDepth
+		* total depth. The visited set keeps a malformed ledger from looping.
+		*/
+		function descendantTasks(tasks, id, maxSubtaskDepth) {
+			const visited = /* @__PURE__ */ new Set([id]);
+			const found = [];
+			let frontier = [id];
+			for (let depth = 1; depth <= maxSubtaskDepth && frontier.length > 0; depth += 1) {
+				const next = [];
+				for (const parentId of frontier) for (const task of tasks) {
+					if (task.parentId !== parentId || visited.has(task.id)) continue;
+					visited.add(task.id);
+					found.push(task);
+					next.push(task.id);
+				}
+				frontier = next;
+			}
+			return found;
+		}
+		/**
+		* Height of a task's own subtree (0 for a leaf), bounded by the hard maximum.
+		* The visited set makes the walk terminate on a cyclic hand-edited ledger
+		* instead of recursing until the stack overflows.
+		*/
+		function subtreeHeight(tasks, id, visited = /* @__PURE__ */ new Set()) {
+			if (visited.has(id)) return 0;
+			const seen = /* @__PURE__ */ new Set([...visited, id]);
+			const children = directSubtasks(tasks, id);
+			if (children.length === 0) return 0;
+			let height = 0;
+			for (const child of children) height = Math.max(height, 1 + subtreeHeight(tasks, child.id, seen));
+			return Math.min(height, 3);
+		}
+		/**
+		* Whether childId may be attached under parentId. A null parent detaches and
+		* is always allowed for a known task. Otherwise the link must name an
+		* on-board task that is neither the child itself nor one of its descendants,
+		* and the resulting depth (parent depth + 1 + the child own subtree height)
+		* must stay within maxSubtaskDepth.
+		*/
+		function checkParentLink(tasks, childId, parentId, maxSubtaskDepth) {
+			if (tasks.find((task) => task.id === childId) === void 0) return {
+				ok: false,
+				reason: "unknown-task"
+			};
+			if (parentId === null || parentId === "") return { ok: true };
+			if (parentId === childId) return {
+				ok: false,
+				reason: "self-parent"
+			};
+			const parent = tasks.find((task) => task.id === parentId);
+			if (parent === void 0) return {
+				ok: false,
+				reason: "unknown-parent"
+			};
+			if (parent.archivedAt !== void 0) return {
+				ok: false,
+				reason: "archived-parent"
+			};
+			if (descendantTasks(tasks, childId, 3).some((task) => task.id === parentId)) return {
+				ok: false,
+				reason: "cycle"
+			};
+			if (taskDepth(tasks, parentId) + 1 + subtreeHeight(tasks, childId) > maxSubtaskDepth) return {
+				ok: false,
+				reason: "depth-exceeded"
+			};
+			return { ok: true };
+		}
+		/**
+		* The permission a task would actually run under: its handover bundle's pin
+		* wins over the plain pin field, exactly as the runner resolves it.
+		*/
+		function effectiveTaskPermission(task) {
+			return task.handover?.permission ?? task.permission;
+		}
 		//#endregion
 		//#region ../dsh-task-board/src/core/use-cases/task-archive.ts
 		/**
-		* Archive one task: only a `running` task stays on the board (its runner
-		* still owns its lifecycle until the execution settles); every other status
-		* can be archived. Archiving disarms a schedule; already-archived tasks are
-		* a no-op.
+		* Archive/restore task use case: move a task off the main board and back,
+		* whatever its status but running. The task keeps its status, execution
+		* history, and transcript references, while archiving disarms any schedule so
+		* it cannot create more execution records until the user restores and
+		* re-enables it.
+		*
+		* Subtask trees move as a unit: archiving takes the whole subtree (an on-board
+		* subtask under an archived parent would be unreachable from its parent) and
+		* refuses the whole group while any member is running. Restoring brings the
+		* task, its ancestors and its subtree back together.
 		*/
-		function applyArchiveTask(tasks, id, now) {
+		/** The archive/restore id set: the task, its subtree, and (for restore) its ancestors. */
+		function groupIds(tasks, id, maxSubtaskDepth, withAncestors) {
+			const target = tasks.find((task) => task.id === id);
+			const ids = /* @__PURE__ */ new Set([id]);
+			for (const task of descendantTasks(tasks, id, normalizeSubtaskDepth(maxSubtaskDepth))) ids.add(task.id);
+			if (withAncestors && target !== void 0) for (const ancestor of ancestorChain(tasks, target)) ids.add(ancestor.id);
+			return ids;
+		}
+		/**
+		* Archive one task and its subtasks: only a running member keeps the group on
+		* the board (its runner still owns its lifecycle until the execution settles);
+		* any other status can be archived. Archiving disarms schedules; an
+		* already-archived task is a no-op.
+		*/
+		function applyArchiveTask(tasks, id, now, maxSubtaskDepth = 1) {
+			const target = tasks.find((task) => task.id === id);
+			if (target === void 0 || target.archivedAt !== void 0) return {
+				tasks,
+				archived: false
+			};
+			const ids = groupIds(tasks, id, maxSubtaskDepth, false);
+			if (tasks.some((task) => ids.has(task.id) && !ARCHIVABLE_STATUSES.includes(task.status))) return {
+				tasks,
+				archived: false
+			};
 			let applied = false;
 			return {
 				tasks: tasks.map((task) => {
-					if (task.id !== id || task.archivedAt !== void 0) return task;
-					if (!ARCHIVABLE_STATUSES.includes(task.status)) return task;
+					if (!ids.has(task.id) || task.archivedAt !== void 0) return task;
 					applied = true;
 					const schedule = task.schedule === void 0 ? void 0 : {
 						...task.schedule,
@@ -4862,12 +5017,21 @@ window.__ModuleLoader__.load({
 				archived: applied
 			};
 		}
-		/** Restore one task back onto the main board (clears the archive marker). */
-		function applyRestoreTask(tasks, id, now) {
+		/**
+		* Restore one task back onto the main board, together with its ancestors (an
+		* on-board subtask must not point at an archived parent) and its subtasks.
+		*/
+		function applyRestoreTask(tasks, id, now, maxSubtaskDepth = 1) {
+			const target = tasks.find((task) => task.id === id);
+			if (target === void 0 || target.archivedAt === void 0) return {
+				tasks,
+				archived: false
+			};
+			const ids = groupIds(tasks, id, maxSubtaskDepth, true);
 			let applied = false;
 			return {
 				tasks: tasks.map((task) => {
-					if (task.id !== id || task.archivedAt === void 0) return task;
+					if (!ids.has(task.id) || task.archivedAt === void 0) return task;
 					applied = true;
 					const { archivedAt: _archived, ...rest } = task;
 					return {
@@ -5051,23 +5215,57 @@ window.__ModuleLoader__.load({
 		//#region ../dsh-task-board/src/core/use-cases/task-create.ts
 		/**
 		* Create-task use case: mint a new task from user input, rejecting a blank
-		* title. Pure ledger transition (no persistence or notify — the controller
-		* orchestrates those), so it is unit-testable without any runtime face.
+		* title and any parent link the lineage gate refuses. Pure ledger transition
+		* (no persistence or notify - the controller orchestrates those), so it is
+		* unit-testable without any runtime face.
 		*/
 		/**
 		* Apply a create against the current ledger. Returns the new task and the
-		* appended ledger, or the unchanged ledger when the title is blank.
+		* appended ledger, or the unchanged ledger when the title is blank or the
+		* requested parent link is refused.
+		*
+		* A subtask inherits the execution targets its parent already pins (workspace,
+		* agent preset, permission, model) unless the form supplied its own; the
+		* parent human permission confirmation travels with an inherited permission,
+		* so a subtask of an already-confirmed elevated card is runnable at once.
 		* @param tasks - current ledger.
-		* @param input - raw user input (title/description/prompt + optional schedule).
+		* @param input - raw user input (title/description/prompt + optional schedule/parent).
 		* @param now - clock instant (ms epoch).
 		* @param id - minted task id.
+		* @param maxSubtaskDepth - deployment subtask depth limit.
 		*/
-		function applyCreateTask(tasks, input, now, id) {
+		function applyCreateTask(tasks, input, now, id, maxSubtaskDepth = 1) {
 			if (input.title.trim() === "") return {
 				task: void 0,
-				tasks
+				tasks,
+				error: "title is required"
 			};
-			let task = createTask(input, now, id);
+			const limit = normalizeSubtaskDepth(maxSubtaskDepth);
+			let parent;
+			if (input.parentId !== void 0) {
+				parent = tasks.find((task) => task.id === input.parentId);
+				if (parent === void 0) return {
+					task: void 0,
+					tasks,
+					error: "parent task not found"
+				};
+				if (parent.archivedAt !== void 0) return {
+					task: void 0,
+					tasks,
+					error: "parent task is archived"
+				};
+				if (taskDepth(tasks, parent.id) + 1 > limit) return {
+					task: void 0,
+					tasks,
+					error: `subtask depth limit (${limit}) exceeded`
+				};
+			}
+			let task = createTask(parent === void 0 ? input : {
+				...input,
+				workspaceId: input.workspaceId ?? parent.workspaceId,
+				mode: input.mode ?? parent.mode,
+				model: input.model ?? parent.model
+			}, now, id);
 			const requested = input.schedule;
 			if (requested?.enabled === true && requested.cron.trim() !== "" && isValidCron(requested.cron)) {
 				const cron = requested.cron.trim();
@@ -5092,9 +5290,15 @@ window.__ModuleLoader__.load({
 		* @param id - the task to remove.
 		*/
 		function applyDeleteTask(tasks, selectedTaskId, id) {
+			if (tasks.some((task) => task.parentId === id)) return {
+				tasks,
+				selectionCleared: false,
+				blocked: true
+			};
 			return {
 				tasks: tasks.filter((task) => task.id !== id),
-				selectionCleared: selectedTaskId === id
+				selectionCleared: selectedTaskId === id,
+				blocked: false
 			};
 		}
 		//#endregion
@@ -5156,6 +5360,70 @@ window.__ModuleLoader__.load({
 				nextRunAt,
 				lastTriggeredAt
 			}, now) : task);
+		}
+		//#endregion
+		//#region ../dsh-task-board/src/core/use-cases/task-parent.ts
+		/**
+		* Parent-link use case: attach an existing on-board task under another as a
+		* subtask, or detach it back to the root. The lineage gate is the same one
+		* creation uses (unknown or archived parent, self, cycle, depth), so the two
+		* ways into the tree cannot disagree. Pure ledger transition.
+		*/
+		/** Host error text per refusal reason (the wire carries the same strings). */
+		const REJECTION_TEXT = {
+			"unknown-task": "task not found",
+			"unknown-parent": "parent task not found",
+			"archived-parent": "parent task is archived",
+			"self-parent": "a task cannot be its own parent",
+			"cycle": "a task cannot be attached under its own subtask",
+			"depth-exceeded": "subtask depth limit exceeded"
+		};
+		/**
+		* Attach or detach one task. A null (or blank) parent detaches, which is always
+		* allowed for a known on-board task; attaching validates the whole chain so a
+		* cyclic or too-deep ledger can never be stored.
+		* @param tasks - current ledger.
+		* @param id - the task being moved.
+		* @param parentId - the new parent, or null to detach.
+		* @param now - clock instant (ms epoch).
+		* @param maxSubtaskDepth - deployment subtask depth limit.
+		*/
+		function applySetParent(tasks, id, parentId, now, maxSubtaskDepth = 1) {
+			const task = tasks.find((candidate) => candidate.id === id);
+			if (task === void 0) return {
+				tasks,
+				applied: false,
+				error: REJECTION_TEXT["unknown-task"]
+			};
+			if (task.archivedAt !== void 0) return {
+				tasks,
+				applied: false,
+				error: "archived task is read-only"
+			};
+			if (task.status === "running" || task.executions.some((execution) => execution.endedAt === void 0)) return {
+				tasks,
+				applied: false,
+				error: "running task cannot be re-parented"
+			};
+			const check = checkParentLink(tasks, id, parentId, normalizeSubtaskDepth(maxSubtaskDepth));
+			if (!check.ok) return {
+				tasks,
+				applied: false,
+				error: REJECTION_TEXT[check.reason ?? "unknown-task"]
+			};
+			const nextParentId = parentId === null || parentId === "" ? void 0 : parentId;
+			if (nextParentId === task.parentId) return {
+				tasks: [...tasks],
+				applied: true
+			};
+			return {
+				tasks: tasks.map((candidate) => candidate.id === id ? {
+					...candidate,
+					parentId: nextParentId,
+					updatedAt: now
+				} : candidate),
+				applied: true
+			};
 		}
 		//#endregion
 		//#region ../dsh-task-board/src/core/use-cases/task-update.ts
@@ -5226,6 +5494,7 @@ window.__ModuleLoader__.load({
 				if ("tags" in patch) next.tags = tagsPatch == null ? void 0 : normalizeTags(tagsPatch);
 				if ("permission" in patch && patch.permission !== void 0 && patch.permission !== task.permission || "handover" in patch) next.permissionConfirmedAt = void 0;
 				if ("reuseSession" in patch) next.reuseSession = patch.reuseSession === true ? true : void 0;
+				if ("teamRun" in patch) next.teamRun = patch.teamRun === true ? true : void 0;
 				if (workspaceId !== void 0 || "workspaceId" in patch) next.workspaceId = workspaceId;
 				if (mode !== void 0 || "mode" in patch) next.mode = mode;
 				if (permission !== void 0 || "permission" in patch) next.permission = permission;
@@ -5373,7 +5642,7 @@ window.__ModuleLoader__.load({
 			}
 			createTask(input) {
 				const id = this.uuid();
-				const { task, tasks } = applyCreateTask(this.tasks, input, this.now(), id);
+				const { task, tasks } = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth());
 				if (task === void 0) return void 0;
 				this.tasks = [...tasks];
 				this.persistAndNotify();
@@ -5383,7 +5652,7 @@ window.__ModuleLoader__.load({
 			async createTaskConfirmed(input) {
 				if (this.deps.transport === void 0) return this.createTask(input);
 				const id = this.uuid();
-				if (applyCreateTask(this.tasks, input, this.now(), id).task === void 0) return void 0;
+				if (applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth()).task === void 0) return void 0;
 				return await this.commitRemote({
 					kind: "create",
 					id,
@@ -5477,7 +5746,7 @@ window.__ModuleLoader__.load({
 			* @returns true when applied.
 			*/
 			archiveTask(id) {
-				const { tasks, archived } = applyArchiveTask(this.tasks, id, this.now());
+				const { tasks, archived } = applyArchiveTask(this.tasks, id, this.now(), this.mirrorDepth());
 				if (!archived) return false;
 				if (this.deps.transport !== void 0) {
 					this.commitRemote({
@@ -5490,9 +5759,30 @@ window.__ModuleLoader__.load({
 				this.persistAndNotify();
 				return true;
 			}
+			/**
+			* Attach an existing task under a parent (or detach it with a null parent)
+			* through the Host. The lineage gate — parent exists and is on-board, no
+			* cycle, depth within the deployment limit — belongs to the Host; a refusal
+			* surfaces through the transport error like every other rejected action.
+			* @returns true when the link was accepted by the authority.
+			*/
+			async setParent(id, parentId) {
+				if (this.deps.transport === void 0) {
+					const result = applySetParent(this.tasks, id, parentId, this.now(), this.mirrorDepth());
+					if (!result.applied) return false;
+					this.tasks = [...result.tasks];
+					this.persistAndNotify();
+					return true;
+				}
+				return await this.commitRemote({
+					kind: "set-parent",
+					taskId: id,
+					parentId
+				}, id);
+			}
 			/** Restore an archived task back onto the board (same status column). */
 			restoreTask(id) {
-				const { tasks, archived } = applyRestoreTask(this.tasks, id, this.now());
+				const { tasks, archived } = applyRestoreTask(this.tasks, id, this.now(), this.mirrorDepth());
 				if (!archived) return false;
 				if (this.deps.transport !== void 0) {
 					this.commitRemote({
@@ -5684,6 +5974,7 @@ window.__ModuleLoader__.load({
 			onRemoteEvent(event) {
 				if (event !== void 0 && this.hostState !== void 0 && event.revision === this.hostState.revision && typeof event.scheduler === "object" && event.scheduler !== null && typeof event.power === "object" && event.power !== null) {
 					this.hostState = {
+						...this.hostState,
 						revision: event.revision,
 						scheduler: event.scheduler,
 						power: event.power
@@ -5692,6 +5983,35 @@ window.__ModuleLoader__.load({
 					return;
 				}
 				this.refreshRemote();
+			}
+			/**
+			* Deployment subtask depth limit the browser mirrors from the last Host
+			* snapshot; the fallback is the deployment default for the legacy path (no
+			* transport) and for the window before the first snapshot arrives.
+			*/
+			mirrorDepth() {
+				return this.hostState?.maxSubtaskDepth ?? 1;
+			}
+			/**
+			* Project a Host snapshot onto the browser's mirror. SSE frames and partial
+			* snapshots carry only the volatile subset (revision/scheduler/power), so the
+			* deployment constants the UI reads — the session-default permission the
+			* confirmation banner compares against and the subtask depth limit — are
+			* carried over from the last full snapshot instead of being dropped by a
+			* heartbeat frame.
+			*/
+			mirrorOf(snapshot) {
+				const sessionDefaultPermission = snapshot.sessionDefaultPermission ?? this.hostState?.sessionDefaultPermission;
+				const maxSubtaskDepth = snapshot.maxSubtaskDepth ?? this.hostState?.maxSubtaskDepth;
+				const teamRunAvailable = snapshot.teamRunAvailable ?? this.hostState?.teamRunAvailable;
+				return {
+					revision: snapshot.revision,
+					scheduler: snapshot.scheduler,
+					power: snapshot.power,
+					...sessionDefaultPermission === void 0 ? {} : { sessionDefaultPermission },
+					...maxSubtaskDepth === void 0 ? {} : { maxSubtaskDepth },
+					...teamRunAvailable === void 0 ? {} : { teamRunAvailable }
+				};
 			}
 			async refreshRemote(preserveError) {
 				const transport = this.deps.transport;
@@ -5712,11 +6032,7 @@ window.__ModuleLoader__.load({
 			acceptRemote(snapshot) {
 				if (this.hostState?.scheduler.ledgerId === snapshot.scheduler.ledgerId && this.hostState !== void 0 && snapshot.revision < this.hostState.revision) return false;
 				this.tasks = [...snapshot.tasks];
-				this.hostState = {
-					revision: snapshot.revision,
-					scheduler: snapshot.scheduler,
-					power: snapshot.power
-				};
+				this.hostState = this.mirrorOf(snapshot);
 				this.transportError = void 0;
 				if (this.selectedTaskId !== void 0 && !this.tasks.some((task) => task.id === this.selectedTaskId)) this.selectedTaskId = void 0;
 				if (!this.archiveView && this.selectedTaskId !== void 0 && this.tasks.find((task) => task.id === this.selectedTaskId)?.archivedAt !== void 0) this.selectedTaskId = void 0;
@@ -6014,6 +6330,7 @@ window.__ModuleLoader__.load({
 			if (typeof record.prompt !== "string") return false;
 			if (typeof record.createdAt !== "number") return false;
 			if (typeof record.updatedAt !== "number") return false;
+			if (record.parentId !== void 0 && typeof record.parentId !== "string") return false;
 			if (record.workspaceId !== void 0 && typeof record.workspaceId !== "string") return false;
 			if (record.mode !== void 0 && typeof record.mode !== "string") return false;
 			if (record.permission !== void 0 && typeof record.permission !== "string") return false;
@@ -6123,6 +6440,13 @@ window.__ModuleLoader__.load({
 					status: normalizeStatus(row.status)
 				};
 				task.schedule = normalizeSchedule(row.schedule);
+				task.parentId = normalizeTargetId(row.parentId);
+				task.executions = task.executions.map((execution) => ({
+					...execution,
+					runGroupId: normalizeTargetId(execution.runGroupId),
+					ownResult: isExecutionOutcome(execution.ownResult) ? execution.ownResult : void 0,
+					ownError: typeof execution.ownError === "string" ? execution.ownError : void 0
+				}));
 				task.workspaceId = normalizeTargetId(row.workspaceId);
 				task.mode = normalizeTargetId(row.mode);
 				task.archivedAt = typeof row.archivedAt === "number" && Number.isFinite(row.archivedAt) ? row.archivedAt : void 0;
@@ -6373,19 +6697,23 @@ window.__ModuleLoader__.load({
 			"exec.mode.brokenSuffix": "（不可用）",
 			"exec.mode.removed": "（已移除）",
 			"exec.permission.default": "会话默认",
+			"exec.permission.inheritParent": "继承父任务（{permission}）",
 			"exec.permission.read-only": "只读",
 			"exec.permission.workspace-write": "工作区可写",
 			"exec.permission.danger-full-access": "完全访问",
 			"exec.model.default": "宿主默认（agent-default-model）",
 			"exec.model.unknown": "（未知模型/回退默认）",
 			"exec.reuseSession": "在同一对话继续",
+			"exec.teamRun": "用 Agent Team 执行（Leader/teammate）",
+			"exec.teamRunHint": "开启后：执行本任务只启动一个 Leader 会话，每个子任务由它派生为 teammate 并在该会话内并行工作（子任务自身的权限钉住不适用）。关闭则每个成员各开独立会话。",
+			"exec.teamRunUnavailable": "当前部署未提供 Agent Teams 服务，无法启用。",
 			"exec.reuseSessionHint": "开启后，本任务的后续执行在上一次会话里继续（该会话空闲且仍存在时），不再每次新建对话；每次复用时都会重新应用上面钉住的权限与模型。",
 			"detail.executionSettings": "执行设置",
 			"exec.hint": "执行时生效：工作区决定执行会话落在哪个工作区；模式决定会话的 agent 预设；权限经 /permission 命令应用到会话。留空则使用运行时默认。",
 			"settings.title": "任务看板",
 			"settings.description": "控制 Host 任务看板、agent 播报与运行期间的系统空闲睡眠保护。",
 			"settings.enabled": "启用任务看板",
-			"settings.enabledHint": "关闭后隐藏侧边栏入口与看板视图。",
+			"settings.enabledHint": "关闭后隐藏侧边栏入口与看板视图，并注销 task_board_* agent 工具；开启时任何会话都可以通过这些工具读写看板、子任务与定时计划。",
 			"settings.announceToAgent": "向 agent 播报任务看板",
 			"settings.announceToAgentHint": "开启：每条 agent 系统提示都会包含本看板的说明；关闭：不播报，agent 仅在用户主动提及时了解看板。",
 			"settings.preventIdleSleep": "阻止系统空闲睡眠",
@@ -6408,7 +6736,36 @@ window.__ModuleLoader__.load({
 			"settings.discard": "放弃",
 			"settings.unsaved": "未保存",
 			"settings.saveFailed": "部署未接受这些值，已保留供你修改。",
-			"settings.invalidNumber": "请输入数字，留空则使用默认值。"
+			"settings.invalidNumber": "请输入数字，留空则使用默认值。",
+			"settings.maxSubtaskDepth": "子任务深度上限",
+			"settings.maxSubtaskDepthHint": "默认 1：一个任务只允许一层子任务，子任务不能再创建或关联子任务。最大 3。执行父任务会并发执行它的整棵子任务树，层级越深，一次执行开启的会话越多。",
+			"settings.maxSubtaskDepthOption": "{depth} 层",
+			"detail.parent": "父任务",
+			"detail.parent.open": "打开父任务",
+			"detail.subtasks": "子任务",
+			"detail.subtasks.empty": "还没有子任务",
+			"detail.subtasks.add": "添加子任务",
+			"detail.subtasks.link": "关联现有任务",
+			"detail.subtasks.detach": "解除关联",
+			"detail.subtasks.runningLock": "子任务正在执行，结算后才能解除关联或改挂父任务",
+			"detail.subtasks.runHint": "执行本任务会同时并发执行它的 {count} 个子任务；子任务失败不影响其它子任务继续执行。",
+			"detail.subtasks.waiting": "等待子任务结算",
+			"detail.subtasks.depthLimit": "当前子任务深度上限为 {depth} 层，子任务不能再创建或关联子任务。",
+			"detail.subtasks.hostOnly": "连接 Host 后才能创建或关联子任务。",
+			"new.subtaskTitle": "新建子任务",
+			"new.subtaskInherit": "未单独选择的执行设置继承父任务（工作区、模式、权限、模型），可在此覆盖。",
+			"link.subtask.title": "关联现有任务",
+			"link.subtask.hint": "只能关联没有父任务的在看板任务；关联后它成为本任务的子任务。",
+			"link.subtask.empty": "没有可关联的任务",
+			"link.subtask.confirm": "关联",
+			"card.subtask": "子任务",
+			"card.subtasks": "{count} 子任务",
+			"card.subtasksFailed": "{count} 失败",
+			"card.subtasksRunning": "{count} 运行中",
+			"card.subtasksBreakdown": "子任务 {total}：已完成 {done}，运行中 {running}，失败 {failed}",
+			"board.hideSubtasks": "隐藏子任务",
+			"board.showSubtasks": "显示子任务",
+			"board.subtaskFilterHint": "看板默认只显示父任务；搜索或按标签筛选时会自动展开子任务。"
 		};
 		/** en dictionary, complete against the zh key set. */
 		const en$8 = {
@@ -6562,19 +6919,23 @@ window.__ModuleLoader__.load({
 			"exec.mode.brokenSuffix": " (unavailable)",
 			"exec.mode.removed": " (removed)",
 			"exec.permission.default": "Session default",
+			"exec.permission.inheritParent": "Inherit parent ({permission})",
 			"exec.permission.read-only": "Read-only",
 			"exec.permission.workspace-write": "Workspace Write",
 			"exec.permission.danger-full-access": "Full Access",
 			"exec.model.default": "Host default (agent-default-model)",
 			"exec.model.unknown": " (unknown / fallback to default)",
 			"exec.reuseSession": "Continue in the same conversation",
+			"exec.teamRun": "Run with an Agent Team (Lead + teammates)",
+			"exec.teamRunHint": "On: running this task starts one Lead session and spawns a teammate per subtask inside it, working in parallel (a subtask permission pin does not apply). Off: every member gets its own independent session.",
+			"exec.teamRunUnavailable": "This deployment serves no Agent Teams service, so team runs cannot be enabled.",
 			"exec.reuseSessionHint": "When on, later runs continue in the previous session (when that session is idle and still exists) instead of starting a new conversation each time; the pinned permission and model above are re-applied on every reuse.",
 			"detail.executionSettings": "Execution Settings",
 			"exec.hint": "Applied when the task runs: the workspace decides where the execution session lands; the mode composes the session's agent preset; the permission is applied through the /permission command. Blank = runtime default.",
 			"settings.title": "Task Board",
 			"settings.description": "Configure the Host task board, agent announcement, and idle-system-sleep protection while work is pending.",
 			"settings.enabled": "Enable the task board",
-			"settings.enabledHint": "When off, the sidebar entry and board view are hidden.",
+			"settings.enabledHint": "When off, the sidebar entry and board view are hidden and the task_board_* agent tools are unregistered; while on, any session can read and drive the board, its subtasks and its schedules through those tools.",
 			"settings.announceToAgent": "Announce the task board to agents",
 			"settings.announceToAgentHint": "On: every agent system prompt includes a note about this board. Off: no announcement; agents learn about the board only when you mention it.",
 			"settings.preventIdleSleep": "Prevent idle system sleep",
@@ -6597,7 +6958,36 @@ window.__ModuleLoader__.load({
 			"settings.discard": "Discard",
 			"settings.unsaved": "Unsaved",
 			"settings.saveFailed": "The deployment did not accept these values; they were left for you to correct.",
-			"settings.invalidNumber": "Enter a number, or leave blank to use the default."
+			"settings.invalidNumber": "Enter a number, or leave blank to use the default.",
+			"settings.maxSubtaskDepth": "Subtask depth limit",
+			"settings.maxSubtaskDepthHint": "Default 1: a task may carry one level of subtasks, and a subtask cannot create or link further subtasks. Maximum 3. Running a task also runs its whole subtask tree concurrently, and every extra level opens more sessions per run.",
+			"settings.maxSubtaskDepthOption": "{depth} levels",
+			"detail.parent": "Parent task",
+			"detail.parent.open": "Open parent task",
+			"detail.subtasks": "Subtasks",
+			"detail.subtasks.empty": "No subtasks yet",
+			"detail.subtasks.add": "Add subtask",
+			"detail.subtasks.link": "Link existing task",
+			"detail.subtasks.detach": "Detach",
+			"detail.subtasks.runningLock": "This subtask is running; it can be detached or re-linked once it settles",
+			"detail.subtasks.runHint": "Running this task also runs its {count} subtasks concurrently; one subtask failing does not stop the others.",
+			"detail.subtasks.waiting": "Waiting for subtasks",
+			"detail.subtasks.depthLimit": "The subtask depth limit is {depth}; a subtask cannot create or link further subtasks.",
+			"detail.subtasks.hostOnly": "Connect to the Host to create or link subtasks.",
+			"new.subtaskTitle": "New Subtask",
+			"new.subtaskInherit": "Execution settings left unset inherit the parent (workspace, mode, permission, model); override any of them here.",
+			"link.subtask.title": "Link an existing task",
+			"link.subtask.hint": "Only an on-board task without a parent can be linked; it then becomes a subtask of this task.",
+			"link.subtask.empty": "No task can be linked",
+			"link.subtask.confirm": "Link",
+			"card.subtask": "subtask",
+			"card.subtasks": "{count} subtasks",
+			"card.subtasksFailed": "{count} failed",
+			"card.subtasksRunning": "{count} running",
+			"card.subtasksBreakdown": "Subtasks {total}: {done} done, {running} running, {failed} failed",
+			"board.hideSubtasks": "Hide subtasks",
+			"board.showSubtasks": "Show subtasks",
+			"board.subtaskFilterHint": "The board shows parent tasks only; a text or label filter reveals the subtasks automatically."
 		};
 		/** Active dictionary, picked by the document language at call time. */
 		function dictionary$5() {
@@ -6624,7 +7014,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-task-board/src/client/board.module.css.mjs
-		const css$11 = "[data-pane=conversation],[class*=centerCol]{position:relative}[data-dsh-taskboard-view]{z-index:60;background:var(--dsw-alias-bg-base);display:none;position:absolute;inset:0;container:_7D6uKa_task-board-view/inline-size}html[data-dsh-taskboard-active]:not([data-dsh-ssh-active]) [data-dsh-taskboard-view]{display:block}html[data-dsh-taskboard-active]:not([data-dsh-ssh-active]) [data-pane=conversation]>:not([data-dsh-taskboard-view]),html[data-dsh-taskboard-active]:not([data-dsh-ssh-active]) [class*=centerCol]>:not([data-dsh-taskboard-view]){display:none!important}._7D6uKa_entry{box-sizing:border-box;min-height:36px;color:var(--dsw-alias-label-primary);cursor:pointer;font:inherit;text-align:left;white-space:nowrap;background:0 0;border:none;border-radius:12px;align-items:center;gap:8px;margin:0 2px;padding:7px 8px;font-size:14px;line-height:22px;display:flex}._7D6uKa_entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._7D6uKa_entry[data-active]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary);font-weight:600}._7D6uKa_entryIcon{flex:none;justify-content:center;align-items:center;width:16px;height:16px;display:inline-flex}._7D6uKa_entryIcon svg{width:16px;height:16px;display:block}._7D6uKa_entryLabel{text-overflow:ellipsis;overflow:hidden}[data-dsh-frame][data-sidebar-collapsed] ._7D6uKa_entry,[data-sidebar-collapsed] ._7D6uKa_entry{border-radius:12px;justify-content:center;width:36px;height:36px;margin:0 auto 12px;padding:0}[data-dsh-frame][data-sidebar-collapsed] ._7D6uKa_entryIcon,[data-sidebar-collapsed] ._7D6uKa_entryIcon,[data-dsh-frame][data-sidebar-collapsed] ._7D6uKa_entryIcon svg,[data-sidebar-collapsed] ._7D6uKa_entryIcon svg{width:18px;height:18px}[data-dsh-frame][data-sidebar-collapsed] ._7D6uKa_entryLabel,[data-sidebar-collapsed] ._7D6uKa_entryLabel{display:none}._7D6uKa_board{box-sizing:border-box;background:var(--dsw-alias-bg-base);min-width:0;height:100%;min-height:0;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);flex-direction:column;gap:12px;padding:14px 16px 16px;display:flex}._7D6uKa_boardHeader{flex:none;align-items:center;gap:10px;display:flex}._7D6uKa_boardTitle{color:var(--dsw-alias-label-primary);white-space:nowrap;margin:0;font-size:16px;font-weight:700}._7D6uKa_backButton{align-items:center;gap:4px;display:inline-flex}._7D6uKa_search{min-width:120px;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;flex:0 260px;padding:6px 10px;font-size:13px}._7D6uKa_search::placeholder{color:var(--dsw-alias-label-tertiary)}._7D6uKa_columns{overscroll-behavior-inline:contain;scrollbar-color:var(--dsw-alias-border-l3) var(--dsw-alias-interactive-bg-hover);scrollbar-width:thin;flex:1;grid-auto-columns:minmax(220px,1fr);grid-auto-flow:column;gap:12px;min-height:0;padding-bottom:6px;display:grid;overflow:auto hidden}._7D6uKa_columns::-webkit-scrollbar{height:10px}._7D6uKa_columns::-webkit-scrollbar-track{background:var(--dsw-alias-interactive-bg-hover);border-radius:999px}._7D6uKa_columns::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l3);background-clip:content-box;border:2px solid #0000;border-radius:999px}._7D6uKa_columns::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-border-l4);background-clip:content-box}._7D6uKa_column{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:12px;flex-direction:column;min-height:0;display:flex;overflow:hidden}._7D6uKa_columnHeader{flex:none;align-items:center;gap:6px;padding:10px 12px;display:flex}._7D6uKa_columnTitle{color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0;font-size:13px;font-weight:700;overflow:hidden}._7D6uKa_columnCount{min-width:0;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:1px 8px;font-size:12px}._7D6uKa_statusDot{border-radius:50%;flex:none;width:8px;height:8px}._7D6uKa_statusDot[data-status=backlog]{background:var(--dsw-alias-label-tertiary)}._7D6uKa_statusDot[data-status=todo]{background:var(--dsw-alias-state-business-primary)}._7D6uKa_statusDot[data-status=running]{background:var(--dsw-alias-state-warn-primary)}._7D6uKa_statusDot[data-status=done]{background:var(--dsw-alias-state-success-primary)}._7D6uKa_statusDot[data-status=failed]{background:var(--dsw-alias-state-error-primary)}._7D6uKa_cards{flex-direction:column;flex:1;gap:8px;min-height:0;padding:2px 8px 10px;display:flex;overflow-y:auto}._7D6uKa_columnEmpty{text-align:center;color:var(--dsw-alias-label-tertiary);padding:24px 8px;font-size:12px}._7D6uKa_card{text-align:left;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;color:var(--dsw-alias-label-primary);border-radius:10px;flex-direction:column;gap:6px;padding:10px 12px;font-family:inherit;transition:box-shadow .12s,border-color .12s,transform .12s;display:flex}._7D6uKa_card:hover{box-shadow:var(--dsw-shadow-lv2);border-color:var(--dsw-alias-border-l3);transform:translateY(-1px)}._7D6uKa_card[data-status=running]{border-color:var(--dsw-alias-state-warn-primary)}._7D6uKa_cardTitle{-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:13px;font-weight:600;line-height:1.35;display:-webkit-box;overflow:hidden}._7D6uKa_cardExcerpt{color:var(--dsw-alias-label-secondary);-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12px;line-height:1.4;display:-webkit-box;overflow:hidden}._7D6uKa_cardMeta{color:var(--dsw-alias-label-tertiary);align-items:center;gap:8px;font-size:11px;display:flex}._7D6uKa_cardTime{text-overflow:ellipsis;white-space:nowrap;flex:1;overflow:hidden}._7D6uKa_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:2px 6px;font-size:12px;line-height:1}._7D6uKa_cardRun{flex:none}._7D6uKa_cardRun[data-result=failed]{color:var(--dsw-alias-state-error-primary)}._7D6uKa_cardRun[data-result=succeeded]{color:var(--dsw-alias-state-success-primary)}._7D6uKa_cardSession{color:var(--dsw-alias-state-business-primary);flex:none}._7D6uKa_cardRunningLabel{color:var(--dsw-alias-state-warn-primary);font-size:11px}._7D6uKa_cardSpinner{border:2px solid var(--dsw-alias-state-warn-primary);border-top-color:#0000;border-radius:50%;flex:none;width:10px;height:10px;animation:.8s linear infinite _7D6uKa_dshTbSpin}@keyframes _7D6uKa_dshTbSpin{to{transform:rotate(360deg)}}._7D6uKa_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-info-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}._7D6uKa_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}._7D6uKa_primaryButton:disabled{opacity:.5;cursor:default}._7D6uKa_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}._7D6uKa_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}._7D6uKa_ghostButton:disabled{opacity:.45;cursor:default}._7D6uKa_dangerButton{color:#fff;background:var(--dsw-alias-state-error-primary);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}._7D6uKa_dangerButton:hover:not(:disabled){filter:brightness(1.08)}._7D6uKa_dangerButton:active:not(:disabled){filter:brightness(.94)}._7D6uKa_dangerButton:disabled{opacity:.5;cursor:default}._7D6uKa_iconButton{width:26px;height:26px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:6px;justify-content:center;align-items:center;padding:0;font-size:13px;display:inline-flex}._7D6uKa_iconButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._7D6uKa_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}._7D6uKa_linkButton:hover{text-decoration:underline}._7D6uKa_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}._7D6uKa_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:12px;padding:18px;display:flex;overflow-y:auto}._7D6uKa_modalTitle{margin:0;font-size:15px;font-weight:700}._7D6uKa_confirmMessage{color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.5}._7D6uKa_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}._7D6uKa_field{flex-direction:column;gap:5px;display:flex}._7D6uKa_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}._7D6uKa_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}._7D6uKa_input:focus{border-color:var(--dsw-alias-state-business-primary)}._7D6uKa_select{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;max-width:100%;padding:7px 10px;font-family:inherit;font-size:13px}._7D6uKa_input::placeholder{color:var(--dsw-alias-label-tertiary)}._7D6uKa_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}._7D6uKa_detail{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(640px,100vw - 48px);max-height:calc(100vh - 80px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;display:flex;overflow:hidden}._7D6uKa_detailHeader{border-bottom:1px solid var(--dsw-alias-separator-primary);flex:none;align-items:center;gap:10px;padding:14px 18px;display:flex}._7D6uKa_detailTitle{overflow-wrap:anywhere;flex:1;margin:0;font-size:15px;font-weight:700}._7D6uKa_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}._7D6uKa_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}._7D6uKa_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}._7D6uKa_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}._7D6uKa_detailBody{flex-direction:column;flex:1;gap:16px;padding:14px 18px;display:flex;overflow-y:auto}._7D6uKa_detailSection{flex-direction:column;gap:6px;display:flex}._7D6uKa_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}._7D6uKa_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}._7D6uKa_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}._7D6uKa_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}._7D6uKa_scheduleRow{align-items:center;gap:8px;display:flex}._7D6uKa_scheduleInput{min-width:0;font-family:var(--dsw-font-markdown-code-block-small);flex:1;font-size:12.5px}._7D6uKa_scheduleInputInvalid,._7D6uKa_scheduleInputInvalid:focus{border-color:var(--dsw-alias-state-error-primary)}._7D6uKa_schedulePreset{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;flex:none;padding:7px 8px;font-size:12.5px}._7D6uKa_scheduleMeta{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;margin:0;font-size:12px}._7D6uKa_promptBlock{font-size:12.5px;line-height:1.5;font-family:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);white-space:pre-wrap;overflow-wrap:anywhere;border-radius:8px;max-height:240px;margin:0;padding:10px 12px;overflow-y:auto}._7D6uKa_executionList{flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;display:flex}._7D6uKa_executionRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 10px;display:flex}._7D6uKa_executionBadge{color:var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-state-warn-secondary);border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:600}._7D6uKa_executionBadge[data-result=succeeded]{color:var(--dsw-alias-state-success-primary);background:0 0}._7D6uKa_executionBadge[data-result=failed]{color:var(--dsw-alias-state-error-primary);background:0 0}._7D6uKa_executionBadge[data-result=cancelled]{color:var(--dsw-alias-label-tertiary);background:0 0}._7D6uKa_executionTimes{color:var(--dsw-alias-label-secondary);font-size:12px}._7D6uKa_executionError{width:100%;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;font-size:12px}._7D6uKa_moveRow{flex-wrap:wrap;gap:8px;display:flex}._7D6uKa_detailFooter{border-top:1px solid var(--dsw-alias-separator-primary);flex:none;align-items:center;gap:10px;padding:12px 18px;display:flex}._7D6uKa_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}@container _7D6uKa_task-board-view (width<=768px){._7D6uKa_board{gap:10px;padding:10px}._7D6uKa_boardHeader{flex-wrap:wrap;align-items:center;gap:8px}._7D6uKa_backButton{flex:none;order:1}._7D6uKa_boardTitle{flex:auto;order:2}._7D6uKa_boardHeader>._7D6uKa_detailMeta{flex:1 0 100%;order:3;margin-left:0}._7D6uKa_search{flex:1 0 100%;order:4;min-width:0}._7D6uKa_boardHeader>button:not(._7D6uKa_backButton){flex:1 1 0;order:5;min-width:0}._7D6uKa_columns{scroll-snap-type:inline mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;grid-auto-columns:86cqw;gap:10px;padding-inline:2px 14cqw;scroll-padding-inline:2px}._7D6uKa_columns::-webkit-scrollbar{display:none}._7D6uKa_column{scroll-snap-align:start;scroll-snap-stop:always}}@container _7D6uKa_task-board-view (width<=720px){._7D6uKa_boardHeader>._7D6uKa_detailMeta{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}}@container _7D6uKa_task-board-view (width<=600px){._7D6uKa_board{padding-inline:8px}}@media (width<=768px){[data-dsh-taskboard-view]{height:100dvh}._7D6uKa_entry,._7D6uKa_card,._7D6uKa_primaryButton,._7D6uKa_ghostButton,._7D6uKa_dangerButton,._7D6uKa_iconButton,._7D6uKa_linkButton,._7D6uKa_search,._7D6uKa_input,._7D6uKa_select,._7D6uKa_schedulePreset,._7D6uKa_scheduleToggle{min-height:44px}._7D6uKa_search,._7D6uKa_input,._7D6uKa_select,._7D6uKa_schedulePreset{box-sizing:border-box;font-size:16px}._7D6uKa_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}._7D6uKa_modal,._7D6uKa_detail{box-sizing:border-box;border:0;border-radius:0;width:100vw;height:100dvh;max-height:none}._7D6uKa_modal{padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left))}._7D6uKa_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}._7D6uKa_modalFooter>button{flex:120px}._7D6uKa_detailHeader{padding-top:max(12px, env(safe-area-inset-top));padding-right:max(14px, env(safe-area-inset-right));padding-left:max(14px, env(safe-area-inset-left));flex-wrap:wrap}._7D6uKa_detailTitle{min-width:0}._7D6uKa_detailBody{overscroll-behavior-y:contain;padding-right:max(14px, env(safe-area-inset-right));padding-left:max(14px, env(safe-area-inset-left))}._7D6uKa_detailFooter{padding-right:max(14px, env(safe-area-inset-right));padding-bottom:max(12px, env(safe-area-inset-bottom));padding-left:max(14px, env(safe-area-inset-left));flex-wrap:wrap}._7D6uKa_detailFooter>button{flex:96px}._7D6uKa_detailFooter>._7D6uKa_detailMeta{text-align:end;flex:1 0 100%;margin-left:0}._7D6uKa_scheduleRow{flex-direction:column;align-items:stretch}._7D6uKa_schedulePreset{width:100%}}._7D6uKa_entry:focus-visible,._7D6uKa_card:focus-visible,._7D6uKa_primaryButton:focus-visible,._7D6uKa_ghostButton:focus-visible,._7D6uKa_dangerButton:focus-visible,._7D6uKa_iconButton:focus-visible,._7D6uKa_linkButton:focus-visible,._7D6uKa_search:focus-visible,._7D6uKa_input:focus-visible,._7D6uKa_select:focus-visible,._7D6uKa_schedulePreset:focus-visible,._7D6uKa_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._7D6uKa_entry,._7D6uKa_primaryButton,._7D6uKa_ghostButton,._7D6uKa_dangerButton,._7D6uKa_iconButton,._7D6uKa_linkButton,._7D6uKa_search,._7D6uKa_input,._7D6uKa_select,._7D6uKa_schedulePreset,._7D6uKa_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}._7D6uKa_card:active{box-shadow:var(--dsw-shadow-lv1);transform:translateY(0)}._7D6uKa_entry:active,._7D6uKa_primaryButton:active:not(:disabled),._7D6uKa_ghostButton:active:not(:disabled),._7D6uKa_dangerButton:active:not(:disabled),._7D6uKa_iconButton:active:not(:disabled),._7D6uKa_linkButton:active:not(:disabled){transform:translateY(1px)}._7D6uKa_entry[data-active]:hover{background:var(--dsw-specific-sidebar-nav-item-active)}._7D6uKa_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._7D6uKa_linkButton:hover:not(:disabled){text-decoration:underline}._7D6uKa_iconButton:disabled,._7D6uKa_linkButton:disabled{opacity:.45;cursor:default}._7D6uKa_search:focus,._7D6uKa_select:focus,._7D6uKa_schedulePreset:focus{border-color:var(--dsw-alias-state-business-primary)}._7D6uKa_scheduleToggle input{margin:0}@media (prefers-reduced-motion:reduce){._7D6uKa_entry,._7D6uKa_card,._7D6uKa_primaryButton,._7D6uKa_ghostButton,._7D6uKa_dangerButton,._7D6uKa_iconButton,._7D6uKa_linkButton,._7D6uKa_search,._7D6uKa_input,._7D6uKa_select,._7D6uKa_schedulePreset,._7D6uKa_scheduleToggle input{transition:none}._7D6uKa_cardSpinner{animation:none}}._7D6uKa_cardTags{flex-wrap:wrap;gap:4px;display:flex}._7D6uKa_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}._7D6uKa_tagFilter{flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;display:flex}._7D6uKa_tagFilterLabel{color:var(--dsw-alias-label-tertiary);font-size:11px}._7D6uKa_tagChip{border:1px solid var(--dsh-task-tag-border);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:999px;padding:1px 9px;font-family:inherit;font-size:11px;line-height:18px}._7D6uKa_tagChip[data-active=true]{background:var(--dsh-task-tag-fill);color:var(--dsw-alias-label-primary)}._7D6uKa_cardTag[data-tag-tone=\"0\"],._7D6uKa_tagChip[data-tag-tone=\"0\"]{--dsh-task-tag-fill:#4e93e82e;--dsh-task-tag-border:#4e93e866}._7D6uKa_cardTag[data-tag-tone=\"1\"],._7D6uKa_tagChip[data-tag-tone=\"1\"]{--dsh-task-tag-fill:#2ea36a2e;--dsh-task-tag-border:#2ea36a66}._7D6uKa_cardTag[data-tag-tone=\"2\"],._7D6uKa_tagChip[data-tag-tone=\"2\"]{--dsh-task-tag-fill:#d08a2a2e;--dsh-task-tag-border:#d08a2a66}._7D6uKa_cardTag[data-tag-tone=\"3\"],._7D6uKa_tagChip[data-tag-tone=\"3\"]{--dsh-task-tag-fill:#b456c82e;--dsh-task-tag-border:#b456c866}._7D6uKa_cardTag[data-tag-tone=\"4\"],._7D6uKa_tagChip[data-tag-tone=\"4\"]{--dsh-task-tag-fill:#cf5f7a2e;--dsh-task-tag-border:#cf5f7a66}._7D6uKa_cardTag[data-tag-tone=\"5\"],._7D6uKa_tagChip[data-tag-tone=\"5\"]{--dsh-task-tag-fill:#4a9fb52e;--dsh-task-tag-border:#4a9fb566}._7D6uKa_fieldHint{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.4}._7D6uKa_tagRow{align-items:center;gap:6px;display:flex}._7D6uKa_tagRow ._7D6uKa_input{flex:1 1 0;min-width:0}._7D6uKa_tagRow ._7D6uKa_ghostButton{flex:none}._7D6uKa_tagAddButton{align-self:flex-start}._7D6uKa_projectFilter{flex:none;align-items:center;gap:6px;display:flex}._7D6uKa_projectFilterLabel{color:var(--dsw-alias-label-secondary);white-space:nowrap;font-size:12px}._7D6uKa_projectDialog{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;flex-direction:column;flex:none;gap:8px;margin-bottom:8px;padding:10px 12px;display:flex}._7D6uKa_projectDialogActions{justify-content:flex-end;gap:8px;display:flex}._7D6uKa_aiParse{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;flex-direction:column;gap:6px;padding:10px 12px;display:flex}._7D6uKa_aiParseRow{align-items:center;gap:8px;display:flex}._7D6uKa_aiParseRow ._7D6uKa_select{flex:1 1 0;min-width:0}._7D6uKa_aiParseRow ._7D6uKa_ghostButton,._7D6uKa_aiParseRow ._7D6uKa_primaryButton{flex:none}";
+		const css$11 = "[data-pane=conversation],[class*=centerCol]{position:relative}[data-dsh-taskboard-view]{z-index:60;background:var(--dsw-alias-bg-base);display:none;position:absolute;inset:0;container:_7D6uKa_task-board-view/inline-size}html[data-dsh-taskboard-active]:not([data-dsh-ssh-active]) [data-dsh-taskboard-view]{display:block}html[data-dsh-taskboard-active]:not([data-dsh-ssh-active]) [data-pane=conversation]>:not([data-dsh-taskboard-view]),html[data-dsh-taskboard-active]:not([data-dsh-ssh-active]) [class*=centerCol]>:not([data-dsh-taskboard-view]){display:none!important}._7D6uKa_entry{box-sizing:border-box;min-height:36px;color:var(--dsw-alias-label-primary);cursor:pointer;font:inherit;text-align:left;white-space:nowrap;background:0 0;border:none;border-radius:12px;align-items:center;gap:8px;margin:0 2px;padding:7px 8px;font-size:14px;line-height:22px;display:flex}._7D6uKa_entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._7D6uKa_entry[data-active]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary);font-weight:600}._7D6uKa_entryIcon{flex:none;justify-content:center;align-items:center;width:16px;height:16px;display:inline-flex}._7D6uKa_entryIcon svg{width:16px;height:16px;display:block}._7D6uKa_entryLabel{text-overflow:ellipsis;overflow:hidden}[data-dsh-frame][data-sidebar-collapsed] ._7D6uKa_entry,[data-sidebar-collapsed] ._7D6uKa_entry{border-radius:12px;justify-content:center;width:36px;height:36px;margin:0 auto 12px;padding:0}[data-dsh-frame][data-sidebar-collapsed] ._7D6uKa_entryIcon,[data-sidebar-collapsed] ._7D6uKa_entryIcon,[data-dsh-frame][data-sidebar-collapsed] ._7D6uKa_entryIcon svg,[data-sidebar-collapsed] ._7D6uKa_entryIcon svg{width:18px;height:18px}[data-dsh-frame][data-sidebar-collapsed] ._7D6uKa_entryLabel,[data-sidebar-collapsed] ._7D6uKa_entryLabel{display:none}._7D6uKa_board{box-sizing:border-box;background:var(--dsw-alias-bg-base);min-width:0;height:100%;min-height:0;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);flex-direction:column;gap:12px;padding:14px 16px 16px;display:flex}._7D6uKa_boardHeader{flex:none;align-items:center;gap:10px;display:flex}._7D6uKa_boardTitle{color:var(--dsw-alias-label-primary);white-space:nowrap;margin:0;font-size:16px;font-weight:700}._7D6uKa_backButton{align-items:center;gap:4px;display:inline-flex}._7D6uKa_search{min-width:120px;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;flex:0 260px;padding:6px 10px;font-size:13px}._7D6uKa_search::placeholder{color:var(--dsw-alias-label-tertiary)}._7D6uKa_columns{overscroll-behavior-inline:contain;scrollbar-color:var(--dsw-alias-border-l3) var(--dsw-alias-interactive-bg-hover);scrollbar-width:thin;flex:1;grid-auto-columns:minmax(220px,1fr);grid-auto-flow:column;gap:12px;min-height:0;padding-bottom:6px;display:grid;overflow:auto hidden}._7D6uKa_columns::-webkit-scrollbar{height:10px}._7D6uKa_columns::-webkit-scrollbar-track{background:var(--dsw-alias-interactive-bg-hover);border-radius:999px}._7D6uKa_columns::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l3);background-clip:content-box;border:2px solid #0000;border-radius:999px}._7D6uKa_columns::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-border-l4);background-clip:content-box}._7D6uKa_column{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:12px;flex-direction:column;min-height:0;display:flex;overflow:hidden}._7D6uKa_columnHeader{flex:none;align-items:center;gap:6px;padding:10px 12px;display:flex}._7D6uKa_columnTitle{color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0;font-size:13px;font-weight:700;overflow:hidden}._7D6uKa_columnCount{min-width:0;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:1px 8px;font-size:12px}._7D6uKa_statusDot{border-radius:50%;flex:none;width:8px;height:8px}._7D6uKa_statusDot[data-status=backlog]{background:var(--dsw-alias-label-tertiary)}._7D6uKa_statusDot[data-status=todo]{background:var(--dsw-alias-state-business-primary)}._7D6uKa_statusDot[data-status=running]{background:var(--dsw-alias-state-warn-primary)}._7D6uKa_statusDot[data-status=done]{background:var(--dsw-alias-state-success-primary)}._7D6uKa_statusDot[data-status=failed]{background:var(--dsw-alias-state-error-primary)}._7D6uKa_cards{flex-direction:column;flex:1;gap:8px;min-height:0;padding:2px 8px 10px;display:flex;overflow-y:auto}._7D6uKa_columnEmpty{text-align:center;color:var(--dsw-alias-label-tertiary);padding:24px 8px;font-size:12px}._7D6uKa_card{text-align:left;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;color:var(--dsw-alias-label-primary);border-radius:10px;flex-direction:column;gap:6px;padding:10px 12px;font-family:inherit;transition:box-shadow .12s,border-color .12s,transform .12s;display:flex}._7D6uKa_card:hover{box-shadow:var(--dsw-shadow-lv2);border-color:var(--dsw-alias-border-l3);transform:translateY(-1px)}._7D6uKa_card[data-status=running]{border-color:var(--dsw-alias-state-warn-primary)}._7D6uKa_cardTitle{-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:13px;font-weight:600;line-height:1.35;display:-webkit-box;overflow:hidden}._7D6uKa_cardExcerpt{color:var(--dsw-alias-label-secondary);-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12px;line-height:1.4;display:-webkit-box;overflow:hidden}._7D6uKa_cardMeta{color:var(--dsw-alias-label-tertiary);align-items:center;gap:8px;font-size:11px;display:flex}._7D6uKa_cardTime{text-overflow:ellipsis;white-space:nowrap;flex:1;overflow:hidden}._7D6uKa_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:2px 6px;font-size:12px;line-height:1}._7D6uKa_cardRun{flex:none}._7D6uKa_cardRun[data-result=failed]{color:var(--dsw-alias-state-error-primary)}._7D6uKa_cardRun[data-result=succeeded]{color:var(--dsw-alias-state-success-primary)}._7D6uKa_cardSession{color:var(--dsw-alias-state-business-primary);flex:none}._7D6uKa_cardRunningLabel{color:var(--dsw-alias-state-warn-primary);font-size:11px}._7D6uKa_cardSpinner{border:2px solid var(--dsw-alias-state-warn-primary);border-top-color:#0000;border-radius:50%;flex:none;width:10px;height:10px;animation:.8s linear infinite _7D6uKa_dshTbSpin}@keyframes _7D6uKa_dshTbSpin{to{transform:rotate(360deg)}}._7D6uKa_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-info-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}._7D6uKa_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}._7D6uKa_primaryButton:disabled{opacity:.5;cursor:default}._7D6uKa_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}._7D6uKa_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}._7D6uKa_ghostButton:disabled{opacity:.45;cursor:default}._7D6uKa_dangerButton{color:#fff;background:var(--dsw-alias-state-error-primary);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}._7D6uKa_dangerButton:hover:not(:disabled){filter:brightness(1.08)}._7D6uKa_dangerButton:active:not(:disabled){filter:brightness(.94)}._7D6uKa_dangerButton:disabled{opacity:.5;cursor:default}._7D6uKa_iconButton{width:26px;height:26px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:6px;justify-content:center;align-items:center;padding:0;font-size:13px;display:inline-flex}._7D6uKa_iconButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._7D6uKa_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}._7D6uKa_linkButton:hover{text-decoration:underline}._7D6uKa_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}._7D6uKa_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:12px;padding:18px;display:flex;overflow-y:auto}._7D6uKa_modalTitle{margin:0;font-size:15px;font-weight:700}._7D6uKa_confirmMessage{color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.5}._7D6uKa_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}._7D6uKa_field{flex-direction:column;gap:5px;display:flex}._7D6uKa_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}._7D6uKa_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}._7D6uKa_input:focus{border-color:var(--dsw-alias-state-business-primary)}._7D6uKa_select{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;max-width:100%;padding:7px 10px;font-family:inherit;font-size:13px}._7D6uKa_input::placeholder{color:var(--dsw-alias-label-tertiary)}._7D6uKa_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}._7D6uKa_detail{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(640px,100vw - 48px);max-height:calc(100vh - 80px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;display:flex;overflow:hidden}._7D6uKa_detailHeader{border-bottom:1px solid var(--dsw-alias-separator-primary);flex:none;align-items:center;gap:10px;padding:14px 18px;display:flex}._7D6uKa_detailTitle{overflow-wrap:anywhere;flex:1;margin:0;font-size:15px;font-weight:700}._7D6uKa_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}._7D6uKa_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}._7D6uKa_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}._7D6uKa_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}._7D6uKa_detailBody{flex-direction:column;flex:1;gap:16px;padding:14px 18px;display:flex;overflow-y:auto}._7D6uKa_detailSection{flex-direction:column;gap:6px;display:flex}._7D6uKa_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}._7D6uKa_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}._7D6uKa_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}._7D6uKa_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}._7D6uKa_scheduleRow{align-items:center;gap:8px;display:flex}._7D6uKa_scheduleInput{min-width:0;font-family:var(--dsw-font-markdown-code-block-small);flex:1;font-size:12.5px}._7D6uKa_scheduleInputInvalid,._7D6uKa_scheduleInputInvalid:focus{border-color:var(--dsw-alias-state-error-primary)}._7D6uKa_schedulePreset{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;flex:none;padding:7px 8px;font-size:12.5px}._7D6uKa_scheduleMeta{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;margin:0;font-size:12px}._7D6uKa_promptBlock{font-size:12.5px;line-height:1.5;font-family:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);white-space:pre-wrap;overflow-wrap:anywhere;border-radius:8px;max-height:240px;margin:0;padding:10px 12px;overflow-y:auto}._7D6uKa_executionList{flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;display:flex}._7D6uKa_executionRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 10px;display:flex}._7D6uKa_executionBadge{color:var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-state-warn-secondary);border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:600}._7D6uKa_executionBadge[data-result=succeeded]{color:var(--dsw-alias-state-success-primary);background:0 0}._7D6uKa_executionBadge[data-result=failed]{color:var(--dsw-alias-state-error-primary);background:0 0}._7D6uKa_executionBadge[data-result=cancelled]{color:var(--dsw-alias-label-tertiary);background:0 0}._7D6uKa_executionTimes{color:var(--dsw-alias-label-secondary);font-size:12px}._7D6uKa_executionError{width:100%;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;font-size:12px}._7D6uKa_moveRow{flex-wrap:wrap;gap:8px;display:flex}._7D6uKa_detailFooter{border-top:1px solid var(--dsw-alias-separator-primary);flex:none;align-items:center;gap:10px;padding:12px 18px;display:flex}._7D6uKa_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}@container _7D6uKa_task-board-view (width<=768px){._7D6uKa_board{gap:10px;padding:10px}._7D6uKa_boardHeader{flex-wrap:wrap;align-items:center;gap:8px}._7D6uKa_backButton{flex:none;order:1}._7D6uKa_boardTitle{flex:auto;order:2}._7D6uKa_boardHeader>._7D6uKa_detailMeta{flex:1 0 100%;order:3;margin-left:0}._7D6uKa_search{flex:1 0 100%;order:4;min-width:0}._7D6uKa_boardHeader>button:not(._7D6uKa_backButton){flex:1 1 0;order:5;min-width:0}._7D6uKa_columns{scroll-snap-type:inline mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;grid-auto-columns:86cqw;gap:10px;padding-inline:2px 14cqw;scroll-padding-inline:2px}._7D6uKa_columns::-webkit-scrollbar{display:none}._7D6uKa_column{scroll-snap-align:start;scroll-snap-stop:always}}@container _7D6uKa_task-board-view (width<=720px){._7D6uKa_boardHeader>._7D6uKa_detailMeta{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}}@container _7D6uKa_task-board-view (width<=600px){._7D6uKa_board{padding-inline:8px}}@media (width<=768px){[data-dsh-taskboard-view]{height:100dvh}._7D6uKa_entry,._7D6uKa_card,._7D6uKa_primaryButton,._7D6uKa_ghostButton,._7D6uKa_dangerButton,._7D6uKa_iconButton,._7D6uKa_linkButton,._7D6uKa_search,._7D6uKa_input,._7D6uKa_select,._7D6uKa_schedulePreset,._7D6uKa_scheduleToggle{min-height:44px}._7D6uKa_search,._7D6uKa_input,._7D6uKa_select,._7D6uKa_schedulePreset{box-sizing:border-box;font-size:16px}._7D6uKa_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}._7D6uKa_modal,._7D6uKa_detail{box-sizing:border-box;border:0;border-radius:0;width:100vw;height:100dvh;max-height:none}._7D6uKa_modal{padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left))}._7D6uKa_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}._7D6uKa_modalFooter>button{flex:120px}._7D6uKa_detailHeader{padding-top:max(12px, env(safe-area-inset-top));padding-right:max(14px, env(safe-area-inset-right));padding-left:max(14px, env(safe-area-inset-left));flex-wrap:wrap}._7D6uKa_detailTitle{min-width:0}._7D6uKa_detailBody{overscroll-behavior-y:contain;padding-right:max(14px, env(safe-area-inset-right));padding-left:max(14px, env(safe-area-inset-left))}._7D6uKa_detailFooter{padding-right:max(14px, env(safe-area-inset-right));padding-bottom:max(12px, env(safe-area-inset-bottom));padding-left:max(14px, env(safe-area-inset-left));flex-wrap:wrap}._7D6uKa_detailFooter>button{flex:96px}._7D6uKa_detailFooter>._7D6uKa_detailMeta{text-align:end;flex:1 0 100%;margin-left:0}._7D6uKa_scheduleRow{flex-direction:column;align-items:stretch}._7D6uKa_schedulePreset{width:100%}}._7D6uKa_entry:focus-visible,._7D6uKa_card:focus-visible,._7D6uKa_primaryButton:focus-visible,._7D6uKa_ghostButton:focus-visible,._7D6uKa_dangerButton:focus-visible,._7D6uKa_iconButton:focus-visible,._7D6uKa_linkButton:focus-visible,._7D6uKa_search:focus-visible,._7D6uKa_input:focus-visible,._7D6uKa_select:focus-visible,._7D6uKa_schedulePreset:focus-visible,._7D6uKa_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._7D6uKa_entry,._7D6uKa_primaryButton,._7D6uKa_ghostButton,._7D6uKa_dangerButton,._7D6uKa_iconButton,._7D6uKa_linkButton,._7D6uKa_search,._7D6uKa_input,._7D6uKa_select,._7D6uKa_schedulePreset,._7D6uKa_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}._7D6uKa_card:active{box-shadow:var(--dsw-shadow-lv1);transform:translateY(0)}._7D6uKa_entry:active,._7D6uKa_primaryButton:active:not(:disabled),._7D6uKa_ghostButton:active:not(:disabled),._7D6uKa_dangerButton:active:not(:disabled),._7D6uKa_iconButton:active:not(:disabled),._7D6uKa_linkButton:active:not(:disabled){transform:translateY(1px)}._7D6uKa_entry[data-active]:hover{background:var(--dsw-specific-sidebar-nav-item-active)}._7D6uKa_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._7D6uKa_linkButton:hover:not(:disabled){text-decoration:underline}._7D6uKa_iconButton:disabled,._7D6uKa_linkButton:disabled{opacity:.45;cursor:default}._7D6uKa_search:focus,._7D6uKa_select:focus,._7D6uKa_schedulePreset:focus{border-color:var(--dsw-alias-state-business-primary)}._7D6uKa_scheduleToggle input{margin:0}@media (prefers-reduced-motion:reduce){._7D6uKa_entry,._7D6uKa_card,._7D6uKa_primaryButton,._7D6uKa_ghostButton,._7D6uKa_dangerButton,._7D6uKa_iconButton,._7D6uKa_linkButton,._7D6uKa_search,._7D6uKa_input,._7D6uKa_select,._7D6uKa_schedulePreset,._7D6uKa_scheduleToggle input{transition:none}._7D6uKa_cardSpinner{animation:none}}._7D6uKa_cardTags{flex-wrap:wrap;gap:4px;display:flex}._7D6uKa_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}._7D6uKa_tagFilter{flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;display:flex}._7D6uKa_tagFilterLabel{color:var(--dsw-alias-label-tertiary);font-size:11px}._7D6uKa_tagChip{border:1px solid var(--dsh-task-tag-border);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:999px;padding:1px 9px;font-family:inherit;font-size:11px;line-height:18px}._7D6uKa_tagChip[data-active=true]{background:var(--dsh-task-tag-fill);color:var(--dsw-alias-label-primary)}._7D6uKa_cardTag[data-tag-tone=\"0\"],._7D6uKa_tagChip[data-tag-tone=\"0\"]{--dsh-task-tag-fill:#4e93e82e;--dsh-task-tag-border:#4e93e866}._7D6uKa_cardTag[data-tag-tone=\"1\"],._7D6uKa_tagChip[data-tag-tone=\"1\"]{--dsh-task-tag-fill:#2ea36a2e;--dsh-task-tag-border:#2ea36a66}._7D6uKa_cardTag[data-tag-tone=\"2\"],._7D6uKa_tagChip[data-tag-tone=\"2\"]{--dsh-task-tag-fill:#d08a2a2e;--dsh-task-tag-border:#d08a2a66}._7D6uKa_cardTag[data-tag-tone=\"3\"],._7D6uKa_tagChip[data-tag-tone=\"3\"]{--dsh-task-tag-fill:#b456c82e;--dsh-task-tag-border:#b456c866}._7D6uKa_cardTag[data-tag-tone=\"4\"],._7D6uKa_tagChip[data-tag-tone=\"4\"]{--dsh-task-tag-fill:#cf5f7a2e;--dsh-task-tag-border:#cf5f7a66}._7D6uKa_cardTag[data-tag-tone=\"5\"],._7D6uKa_tagChip[data-tag-tone=\"5\"]{--dsh-task-tag-fill:#4a9fb52e;--dsh-task-tag-border:#4a9fb566}._7D6uKa_fieldHint{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.4}._7D6uKa_tagRow{align-items:center;gap:6px;display:flex}._7D6uKa_tagRow ._7D6uKa_input{flex:1 1 0;min-width:0}._7D6uKa_tagRow ._7D6uKa_ghostButton{flex:none}._7D6uKa_tagAddButton{align-self:flex-start}._7D6uKa_projectFilter{flex:none;align-items:center;gap:6px;display:flex}._7D6uKa_projectFilterLabel{color:var(--dsw-alias-label-secondary);white-space:nowrap;font-size:12px}._7D6uKa_projectDialog{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;flex-direction:column;flex:none;gap:8px;margin-bottom:8px;padding:10px 12px;display:flex}._7D6uKa_projectDialogActions{justify-content:flex-end;gap:8px;display:flex}._7D6uKa_aiParse{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;flex-direction:column;gap:6px;padding:10px 12px;display:flex}._7D6uKa_aiParseRow{align-items:center;gap:8px;display:flex}._7D6uKa_aiParseRow ._7D6uKa_select{flex:1 1 0;min-width:0}._7D6uKa_aiParseRow ._7D6uKa_ghostButton,._7D6uKa_aiParseRow ._7D6uKa_primaryButton{flex:none}._7D6uKa_cardSubtask{border:1px solid var(--dsw-alias-border-l2);max-width:100%;color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;background:0 0;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}._7D6uKa_cardSubtask[data-tone=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}._7D6uKa_cardSubtask[data-tone=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}._7D6uKa_cardSubtask[data-tone=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}._7D6uKa_subtaskList{flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;display:flex}._7D6uKa_subtaskRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 10px;display:flex}._7D6uKa_subtaskRow ._7D6uKa_linkButton:first-child{text-align:left;overflow-wrap:anywhere;flex:auto;min-width:0}._7D6uKa_subtaskAddRow{flex-wrap:wrap;gap:8px;display:flex}._7D6uKa_pickList{flex-direction:column;gap:6px;max-height:320px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}._7D6uKa_pickRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;align-items:center;gap:10px;padding:6px 10px;display:flex}._7D6uKa_pickTitle{min-width:0;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;flex:auto;font-size:13px}";
 		const tagId$11 = "@linxin666/dsh-web-all/packages/dsh-task-board/src/client/board.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
 			const tag = document.createElement("style");
@@ -6648,6 +7038,7 @@ window.__ModuleLoader__.load({
 			"cardSchedule": "_7D6uKa_cardSchedule",
 			"cardSession": "_7D6uKa_cardSession",
 			"cardSpinner": "_7D6uKa_cardSpinner",
+			"cardSubtask": "_7D6uKa_cardSubtask",
 			"cardTag": "_7D6uKa_cardTag",
 			"cardTags": "_7D6uKa_cardTags",
 			"cardTime": "_7D6uKa_cardTime",
@@ -6691,6 +7082,9 @@ window.__ModuleLoader__.load({
 			"modalFooter": "_7D6uKa_modalFooter",
 			"modalTitle": "_7D6uKa_modalTitle",
 			"moveRow": "_7D6uKa_moveRow",
+			"pickList": "_7D6uKa_pickList",
+			"pickRow": "_7D6uKa_pickRow",
+			"pickTitle": "_7D6uKa_pickTitle",
 			"primaryButton": "_7D6uKa_primaryButton",
 			"projectDialog": "_7D6uKa_projectDialog",
 			"projectDialogActions": "_7D6uKa_projectDialogActions",
@@ -6707,6 +7101,9 @@ window.__ModuleLoader__.load({
 			"select": "_7D6uKa_select",
 			"statusBadge": "_7D6uKa_statusBadge",
 			"statusDot": "_7D6uKa_statusDot",
+			"subtaskAddRow": "_7D6uKa_subtaskAddRow",
+			"subtaskList": "_7D6uKa_subtaskList",
+			"subtaskRow": "_7D6uKa_subtaskRow",
 			"tagAddButton": "_7D6uKa_tagAddButton",
 			"tagChip": "_7D6uKa_tagChip",
 			"tagFilter": "_7D6uKa_tagFilter",
@@ -6962,15 +7359,16 @@ window.__ModuleLoader__.load({
 		* Creates through the Host and closes only after the Host confirms it.
 		*/
 		/** New-task form overlay. */
-		function NewTaskModal({ controller, onClose, initialTask, defaultWorkspaceId, onDuplicateSuccess }) {
+		function NewTaskModal({ controller, onClose, initialTask, defaultWorkspaceId, onDuplicateSuccess, parentTask }) {
 			const isDuplicate = initialTask !== void 0;
 			const [title, setTitle] = (0, react.useState)(initialTask?.title ?? "");
 			const [description, setDescription] = (0, react.useState)(initialTask?.description ?? "");
 			const [prompt, setPrompt] = (0, react.useState)(initialTask?.prompt ?? "");
-			const [workspaceId, setWorkspaceId] = (0, react.useState)(initialTask?.workspaceId ?? defaultWorkspaceId ?? "");
-			const [mode, setMode] = (0, react.useState)(initialTask?.mode ?? "");
+			const [workspaceId, setWorkspaceId] = (0, react.useState)(initialTask?.workspaceId ?? parentTask?.workspaceId ?? defaultWorkspaceId ?? "");
+			const [mode, setMode] = (0, react.useState)(initialTask?.mode ?? parentTask?.mode ?? "");
 			const [permission, setPermission] = (0, react.useState)(initialTask?.permission ?? "");
-			const [model, setModel] = (0, react.useState)(initialTask?.model ?? "");
+			const [model, setModel] = (0, react.useState)(initialTask?.model ?? parentTask?.model ?? "");
+			const inheritedPermission = parentTask === void 0 ? void 0 : effectiveTaskPermission(parentTask);
 			const [reuseSession, setReuseSession] = (0, react.useState)(initialTask?.reuseSession ?? false);
 			const [scheduleEnabled, setScheduleEnabled] = (0, react.useState)(initialTask?.schedule?.enabled ?? false);
 			const [scheduleCron, setScheduleCron] = (0, react.useState)(initialTask?.schedule?.cron ?? "");
@@ -6990,6 +7388,9 @@ window.__ModuleLoader__.load({
 			const [parseError, setParseError] = (0, react.useState)(void 0);
 			const parseAbort = (0, react.useRef)(void 0);
 			const parseModels = options.models ?? [];
+			const workspaceKnown = workspaceId === "" || options.workspaces.some((item) => item.workspaceId === workspaceId);
+			const modeKnown = mode === "" || options.presets.some((item) => item.id === mode);
+			const modelKnown = model === "" || parseModels.some((item) => item.id === model);
 			(0, react.useEffect)(() => controller.subscribe(() => setOptions(controller.getSnapshot().executionOptions)), [controller]);
 			(0, react.useEffect)(() => {
 				if (parseModel === "" || parseModels.length === 0) return;
@@ -7061,6 +7462,7 @@ window.__ModuleLoader__.load({
 					title,
 					description,
 					prompt,
+					...parentTask === void 0 ? {} : { parentId: parentTask.id },
 					freeze,
 					handover,
 					workspaceId: workspaceId === "" ? void 0 : workspaceId,
@@ -7088,7 +7490,7 @@ window.__ModuleLoader__.load({
 			};
 			/** Next-run preview for a valid armed cron (creation-time only). */
 			const scheduleNextRun = scheduleEnabled && scheduleCron.trim() !== "" && isValidCron(scheduleCron) ? nextRunAtMs(scheduleCron, Date.now()) : void 0;
-			const modalTitle = isDuplicate ? t$4("new.duplicateTitle") : t$4("board.new");
+			const modalTitle = parentTask !== void 0 ? t$4("new.subtaskTitle") : isDuplicate ? t$4("new.duplicateTitle") : t$4("board.new");
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(ModalShell, {
 				ariaLabel: modalTitle,
 				title: modalTitle,
@@ -7169,6 +7571,17 @@ window.__ModuleLoader__.load({
 							})
 						]
 					}),
+					parentTask !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: board_module_css_default.detailText,
+						"data-dsh-part": "subtask-inherit",
+						children: [
+							t$4("detail.parent"),
+							": ",
+							parentTask.title,
+							" · ",
+							t$4("new.subtaskInherit")
+						]
+					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskContentFields, {
 						title,
 						description,
@@ -7233,13 +7646,20 @@ window.__ModuleLoader__.load({
 							onChange: (event) => {
 								setWorkspaceId(event.target.value);
 							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: "",
-								children: t$4("exec.workspace.recent")
-							}), options.workspaces.map((workspace) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: workspace.workspaceId,
-								children: workspace.title
-							}, workspace.workspaceId))]
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "",
+									children: t$4("exec.workspace.recent")
+								}),
+								!workspaceKnown && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+									value: workspaceId,
+									children: [workspaceId, t$4("exec.mode.removed")]
+								}),
+								options.workspaces.map((workspace) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: workspace.workspaceId,
+									children: workspace.title
+								}, workspace.workspaceId))
+							]
 						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
@@ -7253,18 +7673,25 @@ window.__ModuleLoader__.load({
 							onChange: (event) => {
 								setMode(event.target.value);
 							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: "",
-								children: t$4("exec.mode.default")
-							}), options.presets.map((preset) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-								value: preset.id,
-								disabled: preset.broken !== void 0,
-								children: [
-									preset.name ?? preset.id,
-									preset.isDefault ? t$4("exec.mode.defaultSuffix") : "",
-									preset.broken !== void 0 ? t$4("exec.mode.brokenSuffix") : ""
-								]
-							}, preset.id))]
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "",
+									children: t$4("exec.mode.default")
+								}),
+								!modeKnown && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+									value: mode,
+									children: [mode, t$4("exec.mode.removed")]
+								}),
+								options.presets.map((preset) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+									value: preset.id,
+									disabled: preset.broken !== void 0,
+									children: [
+										preset.name ?? preset.id,
+										preset.isDefault ? t$4("exec.mode.defaultSuffix") : "",
+										preset.broken !== void 0 ? t$4("exec.mode.brokenSuffix") : ""
+									]
+								}, preset.id))
+							]
 						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
@@ -7280,7 +7707,7 @@ window.__ModuleLoader__.load({
 							},
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 								value: "",
-								children: t$4("exec.permission.default")
+								children: inheritedPermission === void 0 ? t$4("exec.permission.default") : t$4("exec.permission.inheritParent", { permission: t$4(`exec.permission.${inheritedPermission}`) })
 							}), TASK_PERMISSIONS.map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 								value: id,
 								children: t$4(`exec.permission.${id}`)
@@ -7298,13 +7725,20 @@ window.__ModuleLoader__.load({
 							onChange: (event) => {
 								setModel(event.target.value);
 							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: "",
-								children: t$4("exec.model.default")
-							}), options.models?.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: item.id,
-								children: item.name ?? item.id
-							}, item.id))]
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "",
+									children: t$4("exec.model.default")
+								}),
+								!modelKnown && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+									value: model,
+									children: [model, t$4("exec.model.unknown")]
+								}),
+								options.models?.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: item.id,
+									children: item.name ?? item.id
+								}, item.id))
+							]
 						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
@@ -7438,7 +7872,7 @@ window.__ModuleLoader__.load({
 			if (timeZone !== void 0) return formatHostTimestamp(ms, timeZone);
 			return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 		}
-		function TaskCardInner({ task, pending, timeZone, onClick }) {
+		function TaskCardInner({ task, pending, timeZone, onClick, subtaskCount = 0, isSubtask = false, subtasksDone = 0, subtasksRunning = 0, subtasksFailed = 0 }) {
 			const latest = task.executions[task.executions.length - 1];
 			const runs = task.executions.length;
 			const archived = task.archivedAt !== void 0;
@@ -7479,6 +7913,27 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: board_module_css_default.cardMeta,
 						children: [
+							isSubtask && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: board_module_css_default.cardSubtask,
+								"data-dsh-part": "subtask-badge",
+								children: t$4("card.subtask")
+							}),
+							subtaskCount > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: board_module_css_default.cardSubtask,
+								"data-dsh-part": "subtask-count",
+								"data-tone": subtasksFailed > 0 ? "failed" : subtasksRunning > 0 ? "running" : subtasksDone === subtaskCount ? "done" : void 0,
+								title: t$4("card.subtasksBreakdown", {
+									total: String(subtaskCount),
+									done: String(subtasksDone),
+									running: String(subtasksRunning),
+									failed: String(subtasksFailed)
+								}),
+								children: [
+									t$4("card.subtasks", { count: String(subtaskCount) }),
+									subtasksFailed > 0 ? " · " + t$4("card.subtasksFailed", { count: String(subtasksFailed) }) : "",
+									subtasksFailed === 0 && subtasksRunning > 0 ? " · " + t$4("card.subtasksRunning", { count: String(subtasksRunning) }) : ""
+								]
+							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								className: board_module_css_default.cardTime,
 								children: [
@@ -7523,7 +7978,7 @@ window.__ModuleLoader__.load({
 					}),
 					!archived && latest !== void 0 && executionLabel(latest) === "running" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: board_module_css_default.cardRunningLabel,
-						children: [t$4("detail.result.running"), "…"]
+						children: [latest.ownResult === void 0 ? t$4("detail.result.running") : t$4("detail.subtasks.waiting"), "…"]
 					})
 				]
 			});
@@ -7671,6 +8126,95 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region ../dsh-task-board/src/client/board/LinkSubtaskModal.tsx
+		/**
+		* Link-subtask modal: attach an existing on-board root task under the open
+		* task. The candidate list mirrors the Host lineage gate (checkParentLink), so
+		* a link the Host would refuse is not offered in the first place; the Host
+		* still re-checks the action at submit time.
+		*/
+		/** Link-subtask overlay. */
+		function LinkSubtaskModal({ controller, parent, onClose }) {
+			const [pending, setPending] = (0, react.useState)(false);
+			const [error, setError] = (0, react.useState)(void 0);
+			const snapshot = controller.getSnapshot();
+			const limit = snapshot.host?.maxSubtaskDepth ?? 1;
+			const candidates = snapshot.tasks.filter((task) => task.archivedAt === void 0 && task.status !== "running" && task.parentId === void 0 && task.id !== parent.id && checkParentLink(snapshot.tasks, task.id, parent.id, limit).ok);
+			const link = async (taskId) => {
+				setPending(true);
+				setError(void 0);
+				if (await controller.setParent(taskId, parent.id)) {
+					onClose();
+					return;
+				}
+				setPending(false);
+				setError(controller.getSnapshot().transportError ?? t$4("new.required"));
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: board_module_css_default.modalBackdrop,
+				onMouseDown: (event) => {
+					if (event.target === event.currentTarget) onClose();
+				},
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: board_module_css_default.modal,
+					role: "dialog",
+					"aria-label": t$4("link.subtask.title"),
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+							className: board_module_css_default.modalTitle,
+							children: t$4("link.subtask.title")
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: board_module_css_default.fieldHint,
+							children: t$4("link.subtask.hint")
+						}),
+						candidates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: board_module_css_default.detailText,
+							children: t$4("link.subtask.empty")
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+							className: board_module_css_default.pickList,
+							children: candidates.map((task) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+								className: board_module_css_default.pickRow,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: board_module_css_default.pickTitle,
+										children: task.title
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: board_module_css_default.statusBadge,
+										"data-status": task.status,
+										children: t$4(STATUS_KEY[task.status])
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: board_module_css_default.primaryButton,
+										disabled: pending,
+										onClick: () => {
+											link(task.id);
+										},
+										children: t$4("link.subtask.confirm")
+									})
+								]
+							}, task.id))
+						}),
+						error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: board_module_css_default.formError,
+							children: error
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("footer", {
+							className: board_module_css_default.modalFooter,
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: board_module_css_default.ghostButton,
+								onClick: onClose,
+								children: t$4("new.cancel")
+							})
+						})
+					]
+				})
+			});
+		}
+		//#endregion
 		//#region ../dsh-task-board/src/client/board/TaskDetail.tsx
 		/**
 		* Task detail: the full view of one task — content, prompt, execution
@@ -7729,7 +8273,13 @@ window.__ModuleLoader__.load({
 		/** The execution-target editor: workspace / mode / permission pickers. */
 		function ExecutionSettingsSection({ controller, task, pending }) {
 			const [options, setOptions] = (0, react.useState)(controller.getSnapshot().executionOptions);
-			(0, react.useEffect)(() => controller.subscribe(() => setOptions(controller.getSnapshot().executionOptions)), [controller]);
+			const teamRunOffered = () => controller.getSnapshot().host?.teamRunAvailable === true;
+			const [teamRunAvailable, setTeamRunAvailable] = (0, react.useState)(teamRunOffered());
+			(0, react.useEffect)(() => controller.subscribe(() => {
+				const snapshot = controller.getSnapshot();
+				setOptions(snapshot.executionOptions);
+				setTeamRunAvailable(snapshot.host?.teamRunAvailable === true);
+			}), [controller]);
 			const workspaceId = task.workspaceId ?? "";
 			const mode = task.mode ?? "";
 			const permission = task.permission ?? "";
@@ -7869,6 +8419,21 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: board_module_css_default.detailText,
 						children: t$4("exec.reuseSessionHint")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: board_module_css_default.scheduleToggle,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							type: "checkbox",
+							checked: task.teamRun === true,
+							disabled: pending || !teamRunAvailable,
+							onChange: (event) => {
+								controller.updateTask(task.id, { teamRun: event.target.checked });
+							}
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$4("exec.teamRun") })]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.detailText,
+						children: teamRunAvailable ? t$4("exec.teamRunHint") : t$4("exec.teamRunUnavailable")
 					})
 				]
 			});
@@ -7997,6 +8562,125 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
+		/**
+		* The subtask block: the parent link, the direct subtasks with their status,
+		* and the actions that grow or prune the tree. Every gate here mirrors the
+		* Host lineage gate for affordance only; the Host re-checks the action.
+		*/
+		function SubtaskSection({ controller, task, pending, archived }) {
+			const [snapshot, setSnapshot] = (0, react.useState)(controller.getSnapshot());
+			(0, react.useEffect)(() => controller.subscribe(() => setSnapshot(controller.getSnapshot())), [controller]);
+			const [showAdd, setShowAdd] = (0, react.useState)(false);
+			const [showLink, setShowLink] = (0, react.useState)(false);
+			const tasks = snapshot.tasks;
+			const parent = task.parentId === void 0 ? void 0 : tasks.find((candidate) => candidate.id === task.parentId);
+			const children = directSubtasks(tasks, task.id);
+			const limit = snapshot.host?.maxSubtaskDepth ?? 1;
+			const canAddChild = taskDepth(tasks, task.id) + 1 <= limit;
+			const editable = !archived && !pending;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: board_module_css_default.detailSection,
+				"data-dsh-part": "subtasks",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t$4("detail.subtasks") }),
+					parent !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: board_module_css_default.detailText,
+						children: [
+							t$4("detail.parent"),
+							":",
+							" ",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: board_module_css_default.linkButton,
+								title: t$4("detail.parent.open"),
+								onClick: () => {
+									controller.openTask(parent.id);
+								},
+								children: parent.title
+							})
+						]
+					}),
+					children.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.detailText,
+						children: t$4("detail.subtasks.empty")
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+						className: board_module_css_default.subtaskList,
+						children: children.map((child) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+							className: board_module_css_default.subtaskRow,
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: board_module_css_default.linkButton,
+									onClick: () => {
+										controller.openTask(child.id);
+									},
+									children: child.title
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: board_module_css_default.statusBadge,
+									"data-status": child.status,
+									children: t$4(STATUS_KEY[child.status])
+								}),
+								!archived && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: board_module_css_default.linkButton,
+									disabled: pending || child.status === "running",
+									title: child.status === "running" ? t$4("detail.subtasks.runningLock") : void 0,
+									onClick: () => {
+										controller.setParent(child.id, null);
+									},
+									children: t$4("detail.subtasks.detach")
+								})
+							]
+						}, child.id))
+					}),
+					children.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.detailText,
+						children: t$4("detail.subtasks.runHint", { count: String(children.length) })
+					}),
+					!archived && (canAddChild ? controller.isHostBacked() ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: board_module_css_default.subtaskAddRow,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: board_module_css_default.ghostButton,
+							disabled: !editable,
+							onClick: () => {
+								setShowAdd(true);
+							},
+							children: ["+ ", t$4("detail.subtasks.add")]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: board_module_css_default.ghostButton,
+							disabled: !editable,
+							onClick: () => {
+								setShowLink(true);
+							},
+							children: t$4("detail.subtasks.link")
+						})]
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.detailMeta,
+						children: t$4("detail.subtasks.hostOnly")
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.detailMeta,
+						children: t$4("detail.subtasks.depthLimit", { depth: String(limit) })
+					})),
+					showAdd && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(NewTaskModal, {
+						controller,
+						parentTask: task,
+						onClose: () => {
+							setShowAdd(false);
+						}
+					}),
+					showLink && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LinkSubtaskModal, {
+						controller,
+						parent: task,
+						onClose: () => {
+							setShowLink(false);
+						}
+					})
+				]
+			});
+		}
 		/** Task detail overlay. */
 		function TaskDetail({ controller, task }) {
 			const [confirmDelete, setConfirmDelete] = (0, react.useState)(false);
@@ -8020,6 +8704,7 @@ window.__ModuleLoader__.load({
 			const transportError = snapshot.transportError;
 			const timeZone = snapshot.host?.scheduler.timeZone;
 			const permissionPending = requiresPermissionConfirmation(current, snapshot.host?.sessionDefaultPermission);
+			const subtaskChildren = directSubtasks(snapshot.tasks, current.id);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: board_module_css_default.modalBackdrop,
 				onMouseDown: (event) => {
@@ -8078,6 +8763,12 @@ window.__ModuleLoader__.load({
 											className: board_module_css_default.detailText,
 											children: current.description !== "" ? current.description : "—"
 										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SubtaskSection, {
+										controller,
+										task: current,
+										pending,
+										archived
 									}),
 									current.tags !== void 0 && current.tags.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 										className: board_module_css_default.detailSection,
@@ -8283,6 +8974,7 @@ window.__ModuleLoader__.load({
 										type: "button",
 										className: board_module_css_default.primaryButton,
 										disabled: running || pending,
+										title: subtaskChildren.length > 0 ? t$4("detail.subtasks.runHint", { count: String(subtaskChildren.length) }) : void 0,
 										onClick: () => {
 											controller.rerunTask(current.id).then(() => {
 												if (controller.getSnapshot().transportError === void 0) controller.closeTask();
@@ -8399,14 +9091,19 @@ window.__ModuleLoader__.load({
 		* re-renders only when its own task changes — not when a sibling card status,
 		* the filter, or the selection moves.
 		*/
-		const MemoTaskCard = (0, react.memo)(function MemoTaskCard({ task, pending, timeZone, onOpen }) {
+		const MemoTaskCard = (0, react.memo)(function MemoTaskCard({ task, pending, timeZone, onOpen, subtaskCount, isSubtask, subtasksDone, subtasksRunning, subtasksFailed }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskCard, {
 				task,
 				pending,
 				timeZone,
 				onClick: (0, react.useCallback)(() => {
 					onOpen(task.id);
-				}, [task.id, onOpen])
+				}, [task.id, onOpen]),
+				subtaskCount,
+				isSubtask,
+				subtasksDone,
+				subtasksRunning,
+				subtasksFailed
 			});
 		});
 		/** Board component; subscribes to the controller snapshot. */
@@ -8415,6 +9112,7 @@ window.__ModuleLoader__.load({
 			(0, react.useEffect)(() => controller.subscribe(() => setSnapshot(controller.getSnapshot())), [controller]);
 			const [filter, setFilter] = (0, react.useState)("");
 			const [tagFilter, setTagFilter] = (0, react.useState)([]);
+			const [hideSubtasks, setHideSubtasks] = (0, react.useState)(true);
 			const [showNew, setShowNew] = (0, react.useState)(false);
 			const [projectId, setProjectId] = (0, react.useState)("");
 			const [showNewProject, setShowNewProject] = (0, react.useState)(false);
@@ -8424,7 +9122,26 @@ window.__ModuleLoader__.load({
 			const selected = selectedTaskOf(snapshot);
 			const archiveView = snapshot.archiveView;
 			const knownTags = collectKnownTags(snapshot.tasks);
-			const visible = snapshot.tasks.filter((task) => (archiveView ? task.archivedAt !== void 0 : task.archivedAt === void 0) && (projectId === "" || task.workspaceId === projectId) && matchesFilter(task, filter) && matchesTagFilter(task, tagFilter));
+			const onBoard = snapshot.tasks.filter((task) => archiveView ? task.archivedAt !== void 0 : task.archivedAt === void 0);
+			const subtaskCounts = /* @__PURE__ */ new Map();
+			const subtaskRollup = /* @__PURE__ */ new Map();
+			for (const task of onBoard) {
+				if (task.parentId === void 0) continue;
+				subtaskCounts.set(task.parentId, (subtaskCounts.get(task.parentId) ?? 0) + 1);
+				const rollup = subtaskRollup.get(task.parentId) ?? {
+					done: 0,
+					running: 0,
+					failed: 0
+				};
+				if (task.status === "done") rollup.done += 1;
+				else if (task.status === "running") rollup.running += 1;
+				else if (task.status === "failed") rollup.failed += 1;
+				subtaskRollup.set(task.parentId, rollup);
+			}
+			const hasSubtasks = subtaskCounts.size > 0;
+			const searchActive = filter.trim() !== "" || tagFilter.length > 0;
+			const hidingSubtasks = hideSubtasks && !searchActive;
+			const visible = onBoard.filter((task) => (projectId === "" || task.workspaceId === projectId) && (!hidingSubtasks || task.parentId === void 0) && matchesFilter(task, filter) && matchesTagFilter(task, tagFilter));
 			const projects = snapshot.executionOptions.workspaces;
 			const canCreateProject = snapshot.canCreateWorkspace === true;
 			const submitNewProject = async () => {
@@ -8525,6 +9242,17 @@ window.__ModuleLoader__.load({
 									setFilter(event.target.value);
 								},
 								"aria-label": t$4("board.search")
+							}),
+							hasSubtasks && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: hidingSubtasks ? board_module_css_default.primaryButton : board_module_css_default.ghostButton,
+								"data-dsh-part": "subtask-filter",
+								"aria-pressed": hidingSubtasks,
+								title: t$4("board.subtaskFilterHint"),
+								onClick: () => {
+									setHideSubtasks((value) => !value);
+								},
+								children: hidingSubtasks ? t$4("board.showSubtasks") : t$4("board.hideSubtasks")
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
@@ -8660,7 +9388,12 @@ window.__ModuleLoader__.load({
 									task,
 									pending: snapshot.pendingTaskIds.includes(task.id),
 									timeZone: snapshot.host?.scheduler.timeZone,
-									onOpen: openTask
+									onOpen: openTask,
+									subtaskCount: subtaskCounts.get(task.id) ?? 0,
+									isSubtask: task.parentId !== void 0,
+									subtasksDone: subtaskRollup.get(task.id)?.done ?? 0,
+									subtasksRunning: subtaskRollup.get(task.id)?.running ?? 0,
+									subtasksFailed: subtaskRollup.get(task.id)?.failed ?? 0
 								}, task.id)), visible.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									className: board_module_css_default.columnEmpty,
 									children: tagFilter.length > 0 ? t$4("board.tagEmpty") : t$4("archive.empty")
@@ -8707,7 +9440,12 @@ window.__ModuleLoader__.load({
 										task,
 										pending: snapshot.pendingTaskIds.includes(task.id),
 										timeZone: snapshot.host?.scheduler.timeZone,
-										onOpen: openTask
+										onOpen: openTask,
+										subtaskCount: subtaskCounts.get(task.id) ?? 0,
+										isSubtask: task.parentId !== void 0,
+										subtasksDone: subtaskRollup.get(task.id)?.done ?? 0,
+										subtasksRunning: subtaskRollup.get(task.id)?.running ?? 0,
+										subtasksFailed: subtaskRollup.get(task.id)?.failed ?? 0
 									}, task.id)), tasks.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: board_module_css_default.columnEmpty,
 										children: tagFilter.length > 0 ? t$4("board.tagEmpty") : t$4("board.empty")
@@ -9523,6 +10261,49 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
+		/** A staged enumerated field rendered as a select. */
+		function ChoiceField$1(props) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: settings_card_module_css_default$2.field,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: settings_card_module_css_default$2.head,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+							className: settings_card_module_css_default$2.label,
+							htmlFor: props.id,
+							children: props.label
+						}), props.overridden ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: settings_card_module_css_default$2.badges,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: settings_card_module_css_default$2.badge,
+								children: props.overriddenLabel
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: settings_card_module_css_default$2.reset,
+								disabled: props.disabled,
+								onClick: props.onReset,
+								children: props.resetLabel
+							})]
+						}) : null]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SelectField$2, {
+						id: props.id,
+						options: [{
+							value: "",
+							label: props.inheritLabel
+						}, ...props.choices],
+						value: props.text,
+						disabled: props.disabled,
+						invalid: props.invalid,
+						onEdit: props.onEdit
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: props.invalid ? settings_card_module_css_default$2.invalid : settings_card_module_css_default$2.hint,
+						children: props.invalid ? props.invalidLabel : props.hint
+					})
+				]
+			});
+		}
 		//#endregion
 		//#region ../dsh-task-board/src/client/settings-form.ts
 		/** A boolean field, edited through true/false draft text. */
@@ -9795,6 +10576,28 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region ../dsh-task-board/src/client/TaskBoardSettingsCard.tsx
+		/** The depth choices the card offers, derived from the supported range. */
+		const SUBTASK_DEPTH_CHOICES = Array.from({ length: 3 }, (_, index) => String(1 + index));
+		/**
+		* The depth field: a choice among the supported levels whose draft text is a
+		* number, because the Host schema (`maxSubtaskDepth`) is numeric. A draft
+		* outside the range blocks the save instead of staging a value the Host
+		* refuses.
+		*/
+		function subtaskDepthField() {
+			return {
+				field: "maxSubtaskDepth",
+				format: (value) => typeof value === "number" && Number.isInteger(value) ? String(value) : "",
+				parse: (text) => {
+					const trimmed = text.trim();
+					if (trimmed === "") return { kind: "clear" };
+					return SUBTASK_DEPTH_CHOICES.includes(trimmed) ? {
+						kind: "set",
+						value: Number(trimmed)
+					} : void 0;
+				}
+			};
+		}
 		/** Bridges the `task-board` settings form onto the card's staged form. */
 		var TaskBoardSettingsCardController = class {
 			form;
@@ -9804,7 +10607,8 @@ window.__ModuleLoader__.load({
 				this.form = new CardForm$2(scope, [
 					booleanField$2("enabled"),
 					booleanField$2("announceToAgent"),
-					booleanField$2("preventIdleSleep")
+					booleanField$2("preventIdleSleep"),
+					subtaskDepthField()
 				]);
 				this.store = this.form.bind(() => this.projection());
 			}
@@ -9813,7 +10617,8 @@ window.__ModuleLoader__.load({
 					...this.form.shell(),
 					enabled: this.form.field("enabled"),
 					announceToAgent: this.form.field("announceToAgent"),
-					preventIdleSleep: this.form.field("preventIdleSleep")
+					preventIdleSleep: this.form.field("preventIdleSleep"),
+					maxSubtaskDepth: this.form.field("maxSubtaskDepth")
 				};
 			}
 			/**
@@ -9921,6 +10726,24 @@ window.__ModuleLoader__.load({
 						},
 						onReset: () => {
 							props.resetField("preventIdleSleep");
+						}
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField$1, {
+						id: "settings-task-board-subtask-depth",
+						label: t("settings.maxSubtaskDepth"),
+						hint: t("settings.maxSubtaskDepthHint"),
+						inheritLabel: t("settings.inherit"),
+						choices: SUBTASK_DEPTH_CHOICES.map((value) => ({
+							value,
+							label: t("settings.maxSubtaskDepthOption", { depth: value })
+						})),
+						...fieldProps,
+						...state.maxSubtaskDepth,
+						onEdit: (text) => {
+							props.edit("maxSubtaskDepth", text);
+						},
+						onReset: () => {
+							props.resetField("maxSubtaskDepth");
 						}
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: t("settings.powerStatus", {

@@ -23,7 +23,7 @@ import { Config, apply } from '../src/index.ts'
 const VOLATILE_WRITE = Symbol.for('cosmokit.volatile.write')
 
 /** The board's fields the browser settings card edits. */
-type CardField = 'enabled' | 'announceToAgent' | 'preventIdleSleep'
+type CardField = 'enabled' | 'announceToAgent' | 'preventIdleSleep' | 'maxSubtaskDepth'
 
 /** One action envelope the board's HTTP surface accepts. */
 interface ActionEnvelope {
@@ -36,9 +36,11 @@ interface MountedBoard {
   /** Names of the announcement sections the activation currently holds. */
   sections(): string[]
   /** Commit one volatile config field into the running activation, the way the Loader does. */
-  commit(field: CardField, value: boolean): void
+  commit(field: CardField, value: boolean | number): void
   /** POST one action envelope to the mounted HTTP surface. */
   action(envelope: ActionEnvelope): Promise<{ status: number; body: { error?: string; revision?: number } }>
+  /** GET the host snapshot the browser mirrors. */
+  state(): Promise<{ status: number; body: { maxSubtaskDepth?: number } }>
   /** Tear the activation and its HTTP surface down. */
   dispose(): Promise<void>
 }
@@ -126,6 +128,12 @@ async function mountBoard(config: ReturnType<typeof Config>): Promise<MountedBoa
         body: JSON.stringify(envelope),
       })
       return { status: response.status, body: await response.json() as { error?: string; revision?: number } }
+    },
+    state: async () => {
+      const response = await fetch(`${base}/api/task-board/state`, {
+        headers: { 'sec-fetch-site': 'same-origin' },
+      })
+      return { status: response.status, body: await response.json() as { maxSubtaskDepth?: number } }
     },
     dispose: async () => {
       for (const dispose of disposers.reverse()) dispose()
@@ -226,5 +234,20 @@ describe('host activation settings', () => {
 
     // Then the activation never armed the board, so nothing is accepted
     expect(refused).toMatchObject({ status: 400, body: { error: 'task board is disabled' } })
+  })
+
+  it('operator raising the subtask depth limit sees it apply without a remount', async () => {
+    // Given a running activation handed the default single-level limit
+    const board = await mountBoard(Config({ enabled: true }))
+    mounted.push(board)
+    expect((await board.state()).body.maxSubtaskDepth).toBe(1)
+
+    // When the Host commits the user's write of a deeper limit
+    board.commit('maxSubtaskDepth', 2)
+
+    // Then the same activation serves the new limit, and a write back follows too
+    expect((await board.state()).body.maxSubtaskDepth).toBe(2)
+    board.commit('maxSubtaskDepth', 1)
+    expect((await board.state()).body.maxSubtaskDepth).toBe(1)
   })
 })

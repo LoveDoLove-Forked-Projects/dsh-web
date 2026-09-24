@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { BoardController } from '../../core/controller.ts'
 import { isValidCron, nextRunAtMs } from '../../core/schedule.ts'
 import { parseFreezeRequest } from '../../core/freeze-snapshot.ts'
+import { effectiveTaskPermission } from '../../core/subtask.ts'
 import { collectKnownTags, TASK_PERMISSIONS, type TaskPermission, type TaskRecord, type TaskTag } from '../../core/tasks.ts'
 import { t, type TaskBoardKey } from '../locales.ts'
 import { SCHEDULE_PRESETS } from '../schedule-presets.ts'
@@ -25,18 +26,30 @@ export interface NewTaskModalProps {
   defaultWorkspaceId?: string
   /** Optional callback after successful duplication (e.g. to archive source). */
   onDuplicateSuccess?: (sourceTaskId: string) => Promise<void>
+  /**
+   * Task the new card becomes a subtask of ("add subtask" from its detail
+   * view). The execution targets start from the parent's and the create action
+   * carries the parent link; unset targets inherit again at run time.
+   */
+  parentTask?: TaskRecord
 }
 
 /** New-task form overlay. */
-export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspaceId, onDuplicateSuccess }: NewTaskModalProps) {
+export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspaceId, onDuplicateSuccess, parentTask }: NewTaskModalProps) {
   const isDuplicate = initialTask !== undefined
   const [title, setTitle] = useState(initialTask?.title ?? '')
   const [description, setDescription] = useState(initialTask?.description ?? '')
   const [prompt, setPrompt] = useState(initialTask?.prompt ?? '')
-  const [workspaceId, setWorkspaceId] = useState(initialTask?.workspaceId ?? defaultWorkspaceId ?? '')
-  const [mode, setMode] = useState(initialTask?.mode ?? '')
+  // A subtask starts from its parent's execution contract (issue: subtask
+  // inheritance); each picker below still overrides it for this card. The
+  // permission stays UNSET by default: leaving it empty is what makes the Host
+  // inherit the parent's binding together with its human confirmation, while
+  // picking a value pins this card's own binding and re-arms the gate.
+  const [workspaceId, setWorkspaceId] = useState(initialTask?.workspaceId ?? parentTask?.workspaceId ?? defaultWorkspaceId ?? '')
+  const [mode, setMode] = useState(initialTask?.mode ?? parentTask?.mode ?? '')
   const [permission, setPermission] = useState(initialTask?.permission ?? '')
-  const [model, setModel] = useState(initialTask?.model ?? '')
+  const [model, setModel] = useState(initialTask?.model ?? parentTask?.model ?? '')
+  const inheritedPermission = parentTask === undefined ? undefined : effectiveTaskPermission(parentTask)
   const [reuseSession, setReuseSession] = useState(initialTask?.reuseSession ?? false)
   const [scheduleEnabled, setScheduleEnabled] = useState(initialTask?.schedule?.enabled ?? false)
   const [scheduleCron, setScheduleCron] = useState(initialTask?.schedule?.cron ?? '')
@@ -62,6 +75,13 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   const [parseError, setParseError] = useState<string | undefined>(undefined)
   const parseAbort = useRef<AbortController | undefined>(undefined)
   const parseModels = options.models ?? []
+  // A pinned target may have disappeared from the runtime (workspace deleted,
+  // preset removed) — especially when the form starts from a subtask's parent.
+  // Keep it selectable as a stale row, so the field shows what the create
+  // action will actually send instead of silently displaying the default.
+  const workspaceKnown = workspaceId === '' || options.workspaces.some(item => item.workspaceId === workspaceId)
+  const modeKnown = mode === '' || options.presets.some(item => item.id === mode)
+  const modelKnown = model === '' || parseModels.some(item => item.id === model)
 
   // The workspace list and preset roster arrive from the runtime after mount;
   // follow them so the pickers never freeze on an empty snapshot.
@@ -147,6 +167,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
       title,
       description,
       prompt,
+      ...(parentTask === undefined ? {} : { parentId: parentTask.id }),
       freeze,
       handover,
       workspaceId: workspaceId === '' ? undefined : workspaceId,
@@ -185,7 +206,9 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
     ? nextRunAtMs(scheduleCron, Date.now())
     : undefined
 
-  const modalTitle = isDuplicate ? t('new.duplicateTitle') : t('board.new')
+  const modalTitle = parentTask !== undefined
+    ? t('new.subtaskTitle')
+    : isDuplicate ? t('new.duplicateTitle') : t('board.new')
 
   return (
     <ModalShell
@@ -246,6 +269,12 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
         </section>
       )}
 
+      {parentTask !== undefined && (
+        <p className={css.detailText} data-dsh-part="subtask-inherit">
+          {t('detail.parent')}: {parentTask.title} · {t('new.subtaskInherit')}
+        </p>
+      )}
+
       <TaskContentFields
         title={title}
         description={description}
@@ -290,6 +319,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
             onChange={event => { setWorkspaceId(event.target.value) }}
           >
             <option value="">{t('exec.workspace.recent')}</option>
+            {!workspaceKnown && <option value={workspaceId}>{workspaceId}{t('exec.mode.removed')}</option>}
             {options.workspaces.map(workspace => (
               <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.title}</option>
             ))}
@@ -304,6 +334,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
             onChange={event => { setMode(event.target.value) }}
           >
             <option value="">{t('exec.mode.default')}</option>
+            {!modeKnown && <option value={mode}>{mode}{t('exec.mode.removed')}</option>}
             {options.presets.map(preset => (
               <option key={preset.id} value={preset.id} disabled={preset.broken !== undefined}>
                 {preset.name ?? preset.id}
@@ -321,7 +352,9 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
             value={permission}
             onChange={event => { setPermission(event.target.value) }}
           >
-            <option value="">{t('exec.permission.default')}</option>
+            <option value="">{inheritedPermission === undefined
+              ? t('exec.permission.default')
+              : t('exec.permission.inheritParent', { permission: t(`exec.permission.${inheritedPermission}` as TaskBoardKey) })}</option>
             {TASK_PERMISSIONS.map(id => (
               <option key={id} value={id}>{t(`exec.permission.${id}` as TaskBoardKey)}</option>
             ))}
@@ -336,6 +369,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
             onChange={event => { setModel(event.target.value) }}
           >
             <option value="">{t('exec.model.default')}</option>
+            {!modelKnown && <option value={model}>{model}{t('exec.model.unknown')}</option>}
             {options.models?.map(item => (
               <option key={item.id} value={item.id}>{item.name ?? item.id}</option>
             ))}

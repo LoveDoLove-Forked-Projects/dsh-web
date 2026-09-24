@@ -17,7 +17,9 @@ import { applyArchiveTask, applyRestoreTask } from './use-cases/task-archive.ts'
 import { applyCreateTask } from './use-cases/task-create.ts'
 import { applyDeleteTask } from './use-cases/task-delete.ts'
 import { applyScheduleNextRun as applyScheduleRollForward, applySetSchedule } from './use-cases/task-schedule.ts'
+import { applySetParent } from './use-cases/task-parent.ts'
 import { applyUpdateTask, type TaskUpdatePatch } from './use-cases/task-update.ts'
+import { DEFAULT_SUBTASK_DEPTH } from './subtask.ts'
 import type {
   TaskBoardAction,
   TaskBoardEventPayload,
@@ -111,6 +113,13 @@ export interface ExecutionOptionsSnapshot {
   models?: readonly ExecutionModelOption[]
 }
 
+/**
+ * Host-owned state the browser mirrors. SSE frames carry the volatile subset
+ * (revision/scheduler/power); a full snapshot also carries the deployment
+ * constants the UI reads (session default permission, subtask depth).
+ */
+export type HostMirror = Pick<TaskBoardSnapshot, 'revision' | 'scheduler' | 'power' | 'sessionDefaultPermission' | 'maxSubtaskDepth' | 'teamRunAvailable'>
+
 /** Immutable controller snapshot for UI subscriptions. */
 export interface ControllerSnapshot {
   tasks: readonly TaskRecord[]
@@ -126,7 +135,7 @@ export interface ControllerSnapshot {
   /** Whether this deployment can parse pasted text into task fields (issue #1540). */
   canParseTask?: boolean
   transportError?: string
-  host?: Pick<TaskBoardSnapshot, 'revision' | 'scheduler' | 'power' | 'sessionDefaultPermission'>
+  host?: HostMirror
 }
 
 /** The selected task (resolved from the ledger), or undefined. */
@@ -173,7 +182,7 @@ export class BoardController {
   private readonly pendingTaskIds = new Set<string>()
   private readonly taskQueues = new Map<string, Promise<void>>()
   private transportError: string | undefined
-  private hostState: Pick<TaskBoardSnapshot, 'revision' | 'scheduler' | 'power' | 'sessionDefaultPermission'> | undefined
+  private hostState: HostMirror | undefined
   private remoteSubscribed = false
   private remoteInitialization: Promise<boolean> | undefined
 
@@ -291,7 +300,7 @@ export class BoardController {
 
   createTask(input: NewTaskInput): TaskRecord | undefined {
     const id = this.uuid()
-    const { task, tasks } = applyCreateTask(this.tasks, input, this.now(), id)
+    const { task, tasks } = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth())
     if (task === undefined) return undefined
     this.tasks = [...tasks]
     this.persistAndNotify()
@@ -302,7 +311,10 @@ export class BoardController {
   async createTaskConfirmed(input: NewTaskInput): Promise<TaskRecord | undefined> {
     if (this.deps.transport === undefined) return this.createTask(input)
     const id = this.uuid()
-    const preview = applyCreateTask(this.tasks, input, this.now(), id).task
+    // The preview must obey the SAME lineage gate the Host will: a browser-side
+    // default of one level would reject a legal subtask-of-subtask before the
+    // request is ever sent.
+    const preview = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth()).task
     if (preview === undefined) return undefined
     return await this.commitRemote({ kind: 'create', id, input }, id)
       ? this.tasks.find(task => task.id === id)
@@ -392,7 +404,7 @@ export class BoardController {
    * @returns true when applied.
    */
   archiveTask(id: string): boolean {
-    const { tasks, archived } = applyArchiveTask(this.tasks, id, this.now())
+    const { tasks, archived } = applyArchiveTask(this.tasks, id, this.now(), this.mirrorDepth())
     if (!archived) return false
     if (this.deps.transport !== undefined) {
       void this.commitRemote({ kind: 'archive', taskId: id }, id)
@@ -403,9 +415,27 @@ export class BoardController {
     return true
   }
 
+  /**
+   * Attach an existing task under a parent (or detach it with a null parent)
+   * through the Host. The lineage gate — parent exists and is on-board, no
+   * cycle, depth within the deployment limit — belongs to the Host; a refusal
+   * surfaces through the transport error like every other rejected action.
+   * @returns true when the link was accepted by the authority.
+   */
+  async setParent(id: string, parentId: string | null): Promise<boolean> {
+    if (this.deps.transport === undefined) {
+      const result = applySetParent(this.tasks, id, parentId, this.now(), this.mirrorDepth())
+      if (!result.applied) return false
+      this.tasks = [...result.tasks]
+      this.persistAndNotify()
+      return true
+    }
+    return await this.commitRemote({ kind: 'set-parent', taskId: id, parentId }, id)
+  }
+
   /** Restore an archived task back onto the board (same status column). */
   restoreTask(id: string): boolean {
-    const { tasks, archived } = applyRestoreTask(this.tasks, id, this.now())
+    const { tasks, archived } = applyRestoreTask(this.tasks, id, this.now(), this.mirrorDepth())
     if (!archived) return false
     if (this.deps.transport !== undefined) {
       void this.commitRemote({ kind: 'restore', taskId: id }, id).then(restored => {
@@ -604,11 +634,42 @@ export class BoardController {
     if (event !== undefined && this.hostState !== undefined && event.revision === this.hostState.revision
       && typeof event.scheduler === 'object' && event.scheduler !== null
       && typeof event.power === 'object' && event.power !== null) {
-      this.hostState = { revision: event.revision, scheduler: event.scheduler, power: event.power }
+      this.hostState = { ...this.hostState, revision: event.revision, scheduler: event.scheduler, power: event.power }
       this.notify()
       return
     }
     void this.refreshRemote()
+  }
+
+  /**
+   * Deployment subtask depth limit the browser mirrors from the last Host
+   * snapshot; the fallback is the deployment default for the legacy path (no
+   * transport) and for the window before the first snapshot arrives.
+   */
+  private mirrorDepth(): number {
+    return this.hostState?.maxSubtaskDepth ?? DEFAULT_SUBTASK_DEPTH
+  }
+
+  /**
+   * Project a Host snapshot onto the browser's mirror. SSE frames and partial
+   * snapshots carry only the volatile subset (revision/scheduler/power), so the
+   * deployment constants the UI reads — the session-default permission the
+   * confirmation banner compares against and the subtask depth limit — are
+   * carried over from the last full snapshot instead of being dropped by a
+   * heartbeat frame.
+   */
+  private mirrorOf(snapshot: TaskBoardSnapshot): HostMirror {
+    const sessionDefaultPermission = snapshot.sessionDefaultPermission ?? this.hostState?.sessionDefaultPermission
+    const maxSubtaskDepth = snapshot.maxSubtaskDepth ?? this.hostState?.maxSubtaskDepth
+    const teamRunAvailable = snapshot.teamRunAvailable ?? this.hostState?.teamRunAvailable
+    return {
+      revision: snapshot.revision,
+      scheduler: snapshot.scheduler,
+      power: snapshot.power,
+      ...(sessionDefaultPermission === undefined ? {} : { sessionDefaultPermission }),
+      ...(maxSubtaskDepth === undefined ? {} : { maxSubtaskDepth }),
+      ...(teamRunAvailable === undefined ? {} : { teamRunAvailable }),
+    }
   }
 
   private async refreshRemote(preserveError?: string): Promise<boolean> {
@@ -634,7 +695,7 @@ export class BoardController {
     const sameGeneration = currentLedgerId === nextLedgerId
     if (sameGeneration && this.hostState !== undefined && snapshot.revision < this.hostState.revision) return false
     this.tasks = [...snapshot.tasks]
-    this.hostState = { revision: snapshot.revision, scheduler: snapshot.scheduler, power: snapshot.power }
+    this.hostState = this.mirrorOf(snapshot)
     this.transportError = undefined
     if (this.selectedTaskId !== undefined && !this.tasks.some(task => task.id === this.selectedTaskId)) {
       this.selectedTaskId = undefined

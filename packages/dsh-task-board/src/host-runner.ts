@@ -2,6 +2,7 @@ import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import type { SessionAddress, SessionHistoryRecord, SessionListValue, SessionPage, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
+import { teammateName } from './core/subtask.ts'
 import type { TaskPermission, TaskRecord } from './core/tasks.ts'
 
 /** Host services needed to validate a task's workspace before creating a session. */
@@ -119,7 +120,47 @@ function escapeProvenanceDelimiter(value: string): string {
  * first, the provenance wrap then encloses the instruction. Plain tasks (no
  * freeze) keep the bare handover preamble + prompt.
  */
-export function promptText(task: TaskRecord): string {
+/** One other execution member of a run, as named in the launched task's prompt. */
+export interface PromptPeer {
+  /** Task id of the member. */
+  id: string
+  /** Member title. */
+  title: string
+  /** Teammate name when this member runs as a teammate. */
+  name?: string
+}
+
+/** Execution-shape context appended to the launched task's prompt. */
+export interface PromptContext {
+  /** The other members this run opens, excluding the launched task itself. */
+  peers?: readonly PromptPeer[]
+  /** True when those members run as teammates inside this session (Team Lead). */
+  team?: boolean
+}
+
+/**
+ * The execution-shape section: what else this run opens. A plain cascade opens
+ * one independent session per member; a team run starts every other member as a
+ * teammate inside THIS session, so the prompt names the Team tools instead.
+ */
+function peerPromptPreamble(context: PromptContext): string | undefined {
+  const peers = context.peers ?? []
+  if (peers.length === 0) return undefined
+  if (context.team === true) {
+    const lines = peers.map(peer => `- ${escapeProvenanceDelimiter(peer.title)}（teammate: ${peer.name ?? teammateName(peer.title, peer.id)}）`)
+    return `本任务是 Agent Team 的 Lead：本次运行不额外开启独立会话，以下 ${peers.length} 个子任务成员已在本会话中作为 teammate 启动。用 list_agents / send_message / wait_agent 协调它们，用任务看板工具读写它们在看板上的卡片：\n${lines.join('\n')}`
+  }
+  const lines = peers.map(peer => `- ${escapeProvenanceDelimiter(peer.title)}（任务 ${peer.id}）`)
+  return `本次运行同时并发开启 ${peers.length} 个独立 DSH 会话执行下列子任务成员（可用 task_board_* 工具查看它们的进度）：\n${lines.join('\n')}`
+}
+
+/**
+ * Build the execution prompt for one task.
+ * @param task - the task being launched.
+ * @param context - the run's other members, for the execution-shape section.
+ * @returns the prompt text.
+ */
+export function promptText(task: TaskRecord, context: PromptContext = {}): string {
   const body = task.prompt !== '' ? task.prompt : task.title
   const handover = task.handover
   const handoverPreamble = handover === undefined || handover.references.length === 0
@@ -129,7 +170,8 @@ export function promptText(task: TaskRecord): string {
   // output location), the handover preamble is a per-card note, and the task
   // body is the instruction itself.
   const tagPreamble = tagPromptPreamble(task)
-  const preambles = [tagPreamble, handoverPreamble].filter((part): part is string => part !== undefined)
+  const runPreamble = peerPromptPreamble(context)
+  const preambles = [tagPreamble, handoverPreamble, runPreamble].filter((part): part is string => part !== undefined)
   const preamble = preambles.length === 0 ? undefined : preambles.join('\n\n')
   const freeze = task.freeze
   if (freeze === undefined) {
@@ -216,7 +258,7 @@ export class HostExecutionRunner {
    * @param options - optional session to continue in.
    * @returns the session id the execution runs in.
    */
-  async launch(task: TaskRecord, options: { reuseSessionId?: string } = {}): Promise<string> {
+  async launch(task: TaskRecord, options: { reuseSessionId?: string; promptContext?: PromptContext } = {}): Promise<string> {
     // A handover bundle overrides the legacy pin fields: the bundle is the
     // authoritative execution triplet for a continuation card (issue #5).
     const workspaceId = task.handover?.workspaceId ?? task.workspaceId
@@ -239,7 +281,7 @@ export class HostExecutionRunner {
     const reused = options.reuseSessionId as ExecutionSessionId | undefined
     if (reused !== undefined) {
       try {
-        await this.pinAndPrompt(reused, task, permission)
+        await this.pinAndPrompt(reused, task, permission, options.promptContext)
       } catch (error) {
         throw new SessionLaunchError(reused, error)
       }
@@ -252,7 +294,7 @@ export class HostExecutionRunner {
     const sessionId = created.sessionId
     try {
       await this.invoke('session', 'rename', { sessionId, title: task.title })
-      await this.pinAndPrompt(sessionId, task, permission)
+      await this.pinAndPrompt(sessionId, task, permission, options.promptContext)
     } catch (error) {
       throw new SessionLaunchError(sessionId, error)
     }
@@ -264,7 +306,12 @@ export class HostExecutionRunner {
    * prompt. Shared by the fresh-session and reuse paths so both apply exactly
    * the same permission/model pins before the prompt.
    */
-  private async pinAndPrompt(sessionId: ExecutionSessionId, task: TaskRecord, permission: TaskPermission | undefined): Promise<void> {
+  private async pinAndPrompt(
+    sessionId: ExecutionSessionId,
+    task: TaskRecord,
+    permission: TaskPermission | undefined,
+    context: PromptContext = {},
+  ): Promise<void> {
     if (permission !== undefined) {
       if (this.commands === undefined) throw new Error('permission command dispatcher is unavailable')
       const command = await this.commands.execute(sessionId, '/permission ' + permission, AbortSignal.timeout(30_000))
@@ -290,7 +337,7 @@ export class HostExecutionRunner {
       sessionId,
       requestId: 'task-board-' + crypto.randomUUID(),
       mode: 'queue' as const,
-      content: [{ type: 'text' as const, text: promptText(task) }],
+      content: [{ type: 'text' as const, text: promptText(task, context) }],
     })
   }
 

@@ -47,6 +47,7 @@ function controller(snapshotOverrides: Partial<ControllerSnapshot> = {}, confirm
   }
   return {
     getSnapshot: () => state,
+    isHostBacked: () => false,
     subscribe: () => () => {},
     closeTask: () => {},
     confirmPermission: confirm ?? (async () => true),

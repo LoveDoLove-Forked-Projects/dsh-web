@@ -54,6 +54,7 @@ function fakeController(tasks: TaskRecord[], snapshot?: Partial<ControllerSnapsh
   }
   return {
     getSnapshot: () => state,
+    isHostBacked: () => false,
     subscribe: () => () => {},
     closeBoard: () => {},
     toggleArchiveView: () => {},
