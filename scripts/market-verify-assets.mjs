@@ -15,8 +15,8 @@
  * inside the burst, and the paths still failing after it are re-checked
  * serially once the burst has stopped, so what the gate reports is a verdict
  * the origin repeats rather than one the burst provoked. No sweep from a runner
- * range completes, which is why the deploy lane measures through the
- * attestation route instead.
+ * range completes, so the deploy lane does not verify the deployed site: a
+ * maintainer runs this sweep from a network the policy allows.
  *
  * Usage:
  *   node scripts/market-verify-assets.mjs [--dist]
@@ -259,7 +259,7 @@ async function attestWindow(base, chunk, secret, fetchImpl) {
  * reported as an error rather than excused, because nothing about the assets was
  * verified in that case. A refusal the route did not write is re-asked, since it
  * came from in front of the route rather than from it; a challenge on the vantage
- * repeats on every ask, and the lane reports it as such.
+ * repeats on every ask, and the sweep reports it as such.
  */
 export async function attestTargets(origin, targets, { secret, distDir, windowSize = ATTEST_WINDOW, fetchImpl = fetch, delay = sleep, attempts = ATTEST_ATTEMPTS } = {}) {
   const results = []

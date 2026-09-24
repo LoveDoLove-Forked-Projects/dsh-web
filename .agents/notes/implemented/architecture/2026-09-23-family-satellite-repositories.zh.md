@@ -32,9 +32,9 @@ Status: implemented
 
 市场构建不从工作树读皮肤或宠物资产，也不从工作树读社区索引。三个内容仓是挂在 `satellites/` 下的 git submodule，submodule 的 gitlink 就是钉扎的提交：`market-inputs.lock.json` 记录哪份输入由哪个 submodule 承载、内容目录在它里面的哪一层，`scripts/market-fetch-inputs.mjs` 把该内容目录物化到 `.market-inputs/`（检出停在该提交就本地复制，否则按该提交下载 tarball；幂等，`--check` 只校验不下载，缺失或过期直接让运行失败），`scripts/market-build` 从那里读取。`--local` 读取 submodule 工作树当前所在的提交，开发者就是用它把卫星检出里的改动送进市场构建：缓存于是记录它读到的那个提交而不是钉扎的提交，离开钉扎提交的检出在不加它时会被提示并忽略，这样构建出的 `market/dist` 不得提交。社区索引同样按提交固定，而不是"npm 解析到什么算什么"：在固定它之前，删掉仓内包会让构建静默读到一份陈旧的已发布索引，产出与已提交 `market/dist` 不再一致的 `manifest/plugins.json`。
 
-`scripts/market-verify-assets.mjs` 走遍生成清单承诺的每个路径，对 `market/dist` 或已部署站点校验，并把服务端字节数与本地文件比对。它必须用 Range GET 而不是 HEAD——Workers 静态资产层对 HEAD 返回 `content-length: 0`。部署流程在 `market:check` 之前拉取，部署之后改走 Worker 的 `POST /api/asset-attest` 路由校验：每次最多提交 500 个路径，读回部署版本用自身 `ASSETS` binding 为每个路径提供的字节数。
+`scripts/market-verify-assets.mjs` 走遍生成清单承诺的每个路径，对 `market/dist` 或已部署站点校验，并把服务端字节数与本地文件比对。它必须用 Range GET 而不是 HEAD——Workers 静态资产层对 HEAD 返回 `content-length: 0`。部署流程在 `market:check` 之前拉取；对已部署站点的走查是维护者步骤而不是车道步骤，它每次最多向 Worker 的 `POST /api/asset-attest` 路由提交 500 个路径，读回部署版本用自身 `ASSETS` binding 为每个路径提供的字节数。
 
-从 GitHub runner 发出这项校验会撞上该 zone 对这一出口自身的策略：连续六次运行在 3075 个资产路径中拿到同样的约 150 个 403，串行重核在三分钟探测后一个也没能恢复，而这些路径从住宅网络、两个公共云端抓取器、以及一次完整的本机 3075/3075 走查都返回 200 且字节数与提交一致。拒绝方是托管质询——`cf-mitigated: challenge` 与 `Just a moment...` 插页，ray 记在车道输出里——所以该拒绝是该出口上的策略，不是对资产的判决；attestation 调用同样会撞上它：不离开该出口的是测量，而调用仍然要离开。该路由是运维面而非客户端面：以共享密钥把关并 fail closed（未配置 503、密钥不符 403，两种情况都不会触碰资产），且不出现在 API catalog、OpenAPI 描述与文档页里。公开的 `--origin` 走查留给策略允许的网络上手动执行——瞬时重试、串行重核与「整批 403」提示仍然在那条路径上生效。
+从 GitHub runner 发出这项校验会撞上该 zone 对这一出口自身的策略：连续六次运行在 3075 个资产路径中拿到同样的约 150 个 403，串行重核在三分钟探测后一个也没能恢复，而这些路径从住宅网络、两个公共云端抓取器、以及一次完整的本机 3075/3075 走查都返回 200 且字节数与提交一致。拒绝方是托管质询——`cf-mitigated: challenge` 与 `Just a moment...` 插页，走查会把 ray 与 body 开头一并报出——所以该拒绝是该出口上的策略，不是对资产的判决；attestation 调用同样会撞上它：不离开该出口的是测量，而调用仍然要离开。车道因此在不校验已部署站点的前提下部署，这就是它留下的覆盖缺口：部分上传、或清单承诺了源站无法提供的路径，由 `market:check` 对照固定输入、以及维护者按需跑的走查兜住，而不是 CI。该路由是运维面而非客户端面：以共享密钥把关并 fail closed（未配置 503、密钥不符 403，两种情况都不会触碰资产），且不出现在 API catalog、OpenAPI 描述与文档页里。公开的 `--origin` 走查留给策略允许的网络上的运行——瞬时重试、串行重核与「整批 403」提示仍然在那条路径上生效。
 
 ### 发布顺序
 

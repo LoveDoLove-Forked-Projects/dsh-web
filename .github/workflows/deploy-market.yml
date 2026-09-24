@@ -11,6 +11,11 @@ name: Deploy Market
 # 只部署「已提交」的产物，不在 CI 里重建（market-build --check 校验一致性）：
 # 与本仓库产物部署纪律一致，避免构建机绝对路径/不确定性进入产物。
 #
+# 部署后不在这里做整站资产校验：从 GitHub runner 出口发出的请求会被该 zone 的
+# 托管质询（cf-mitigated: challenge）挡在 Worker 之前，车道从该出口证明不了任何
+# 资产。整站走查由维护者在策略允许的网络上按需执行：
+# node scripts/market-verify-assets.mjs --attest https://dsh-market.com
+#
 # 需要的仓库 secrets：
 #   CLOUDFLARE_API_TOKEN   — Workers Scripts / D1 / Zone · Edit
 #   CLOUDFLARE_ACCOUNT_ID  — Cloudflare 账号 ID
@@ -93,19 +98,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Refreshes the worker's ASSET_ATTEST_SECRET binding, and the deploy
-          # fails loudly when the binding is missing, because the verification
-          # step below fails closed without it.
-          MARKET_ATTEST_SECRET: ${{ secrets.MARKET_ATTEST_SECRET }}
-
-      # A partial upload or a manifest the origin cannot serve is a broken
-      # install for a user, so verify every advertised path instead of trusting
-      # the deploy exit code. The measurement runs through the worker's
-      # attestation route, which reads the deployed version's own asset binding:
-      # the public origin refuses part of every sweep from this runner range
-      # with 403 (a policy on the vantage, not a missing asset), while the
-      # binding sees exactly what the deployed version carries.
-      - name: Verify deployed assets
-        run: node scripts/market-verify-assets.mjs --attest https://dsh-market.com
-        env:
+          # Refreshes the worker's ASSET_ATTEST_SECRET binding; the deploy fails
+          # loudly when the binding is missing, because the deployed-asset sweep
+          # measures the deployed version through that binding.
           MARKET_ATTEST_SECRET: ${{ secrets.MARKET_ATTEST_SECRET }}
