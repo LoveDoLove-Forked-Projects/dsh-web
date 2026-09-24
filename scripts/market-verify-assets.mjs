@@ -9,11 +9,14 @@
  * the first mismatch, which makes a partial upload or a stale manifest loud
  * instead of silent.
  *
- * A cloud IP range gets a burst answered with 403 until Cloudflare's rate
- * window resets, which reports paths the origin serves as missing. Transient
- * statuses are retried inside the burst, and the paths still failing after it
- * are re-checked serially once the burst has stopped, so what the gate reports
- * is a verdict the origin repeats rather than one the burst provoked.
+ * Part of every burst sent from a GitHub runner range comes back 403: the
+ * zone's own policy on that vantage answers with a managed challenge, which
+ * reports paths the origin serves as missing. Transient statuses are retried
+ * inside the burst, and the paths still failing after it are re-checked
+ * serially once the burst has stopped, so what the gate reports is a verdict
+ * the origin repeats rather than one the burst provoked. No sweep from a runner
+ * range completes, which is why the deploy lane measures through the
+ * attestation route instead.
  *
  * Usage:
  *   node scripts/market-verify-assets.mjs [--dist]
@@ -24,9 +27,9 @@
  *   --dist            check the local market/dist tree (default)
  *   --origin <url>    check a deployed origin over HTTP
  *   --attest <url>    measure the deployed version through its own asset
- *                     binding (needs MARKET_ATTEST_SECRET); the vantage is
- *                     inside Cloudflare, so an edge policy on this runner
- *                     cannot refuse the requests
+ *                     binding (needs MARKET_ATTEST_SECRET); the measurement
+ *                     runs inside Cloudflare, while the call itself still
+ *                     leaves this vantage
  *   --kind a,b        restrict to skins and/or pets (default: both)
  *   --concurrency N   parallel requests (default 4)
  *   --limit N         stop after N paths (smoke runs)
@@ -245,15 +248,18 @@ async function attestWindow(base, chunk, secret, fetchImpl) {
  * Verify the committed byte counts against what the deployed version measures
  * through its own asset binding.
  *
- * The measurement runs inside Cloudflare against the deployed assets, so an edge
- * policy on the caller's network cannot turn into a missing-asset verdict. The
- * caller posts the paths of one window and the route answers with the byte
- * length each one serves; a refusal — a status the route itself could not
- * measure, a window the route rejects, or a path the answer skipped — is
+ * The measurement runs inside Cloudflare against the deployed assets, which
+ * keeps the caller's network out of the answer. The call itself still leaves
+ * that network, so the zone's policy on it can refuse the request before the
+ * route sees it: that refusal is reported as what refused the call — the status,
+ * the edge identifiers, the start of the body — and never as a verdict about the
+ * assets. The caller posts the paths of one window and the route answers with
+ * the byte length each one serves; a refusal — a status the route itself could
+ * not measure, a window the route rejects, or a path the answer skipped — is
  * reported as an error rather than excused, because nothing about the assets was
- * verified in that case. A refusal the route did not write is re-asked, because
- * it came from whatever the edge put in front of the route, and a second ask may
- * reach the route itself.
+ * verified in that case. A refusal the route did not write is re-asked, since it
+ * came from in front of the route rather than from it; a challenge on the vantage
+ * repeats on every ask, and the lane reports it as such.
  */
 export async function attestTargets(origin, targets, { secret, distDir, windowSize = ATTEST_WINDOW, fetchImpl = fetch, delay = sleep, attempts = ATTEST_ATTEMPTS } = {}) {
   const results = []

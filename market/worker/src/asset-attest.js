@@ -4,18 +4,23 @@
  * The lane that deploys `market/dist` has to prove that the version it just
  * published serves every path its manifests advertise, with the committed byte
  * count. Measuring that over the public origin fails for part of every run: the
- * edge answers a cloud IP range with 403 for those requests, which says nothing
- * about the asset — the same paths answer 200 with the committed byte lengths
- * from other networks, and the refusal survives every retry inside the run
- * (2026-09-23: the same 150 of 3075 paths, six runs).
+ * zone's own policy on a cloud IP range answers those requests with 403, which
+ * says nothing about the asset — the same paths answer 200 with the committed
+ * byte lengths from other networks, and the refusal survives every retry inside
+ * the run (2026-09-23: the same 150 of 3075 paths, six runs).
  *
  * This route moves the measurement inside Cloudflare: the caller posts the paths
  * it wants measured and gets back what the deployed version's asset layer serves
- * for each one. It is a read-only measurement of already-public assets, gated on
- * a shared secret because one call makes up to ATTEST_MAX_PATHS internal asset
- * fetches and an open route would be an amplification vector. Nothing here is
- * part of the client-facing API surface, so the route stays out of the API
- * catalog and the OpenAPI description.
+ * for each one. The measurement is the part that stays inside, not the call: a
+ * caller met by the zone's policy on its own vantage never reaches this route,
+ * which is why the lane reports such a refusal as the edge's answer rather than
+ * as a verdict about the assets (2026-09-24: the first attested run from a
+ * runner was challenged, `cf-mitigated: challenge`). It is a read-only
+ * measurement of already-public assets, gated on a shared secret because one
+ * call makes up to ATTEST_MAX_PATHS internal asset fetches and an open route
+ * would be an amplification vector. Nothing here is part of the client-facing
+ * API surface, so the route stays out of the API catalog and the OpenAPI
+ * description.
  *
  * Fail closed: without the configured secret the route answers 503 rather than
  * serving measurements to anyone.
