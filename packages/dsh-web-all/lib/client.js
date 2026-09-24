@@ -16228,7 +16228,7 @@ window.__ModuleLoader__.load({
 			"status.disconnected": "已配对设备离线",
 			"status.stopped": "已停止远程访问",
 			"status.lanRequired": "此功能需要局域网绑定或公网地址才能使用",
-			"status.lanRequiredHint": "当前服务仅绑定在 127.0.0.1 且未配置公网地址，手机无法访问。请在「设置 → Web 插件 → 远程访问设置」卡片中打开“局域网访问”，或用 dsh web --host 0.0.0.0 重新启动，或填写内网穿透的公网地址。",
+			"status.lanRequiredHint": "当前服务仅绑定在 127.0.0.1 且未配置公网地址，手机无法访问。请在本插件的设置卡片中打开“局域网访问”（装在全家桶里时在「设置 → Web 插件 → 远程访问设置」，单独安装时在设置 → 插件 → 本插件行），或用 dsh web --host 0.0.0.0 重新启动，或填写内网穿透的公网地址。",
 			"status.loopbackRequired": "配对面板仅限本机使用",
 			"status.loopbackRequiredHint": "请通过 http://127.0.0.1 打开此页面后重试；手机请使用配对链接访问。",
 			"status.unreachable": "无法连接配对服务",
@@ -16392,7 +16392,7 @@ window.__ModuleLoader__.load({
 			"status.disconnected": "Paired devices offline",
 			"status.stopped": "Remote access stopped",
 			"status.lanRequired": "This feature needs a LAN bind or a public address",
-			"status.lanRequiredHint": "The server is bound to 127.0.0.1 and no public address is configured, so a phone cannot reach it. Turn on LAN access in the settings card under Settings → Web Plugins → Remote access, or restart with dsh web --host 0.0.0.0, or set the tunneled public address.",
+			"status.lanRequiredHint": "The server is bound to 127.0.0.1 and no public address is configured, so a phone cannot reach it. Turn on LAN access in this plugin settings card (under Settings → Web Plugins → Remote access when the full family is installed, or on this plugin row under Settings → Plugins for a standalone install), or restart with dsh web --host 0.0.0.0, or set the tunneled public address.",
 			"status.loopbackRequired": "The pairing panel works on this machine only",
 			"status.loopbackRequiredHint": "Open this page at http://127.0.0.1 to mint a QR code; phones use the paired link.",
 			"status.unreachable": "Cannot reach the pairing service",
@@ -38809,16 +38809,11 @@ window.__ModuleLoader__.load({
 		function bearer(apiKey) {
 			return { authorization: `Bearer ${apiKey}` };
 		}
-		/**
-		* The official pay-as-you-go balance. `deepseek` is the configurable-catalog
-		* route key; `deepseek-official` is the live provider route the llm-deepseek
-		* adapter registers (sessions and agent-default-model carry it), so both ids
-		* must resolve here or the current provider would never be probed.
-		*/
 		const DEEPSEEK = {
 			ids: ["deepseek", "deepseek-official"],
 			displayName: "DeepSeek",
 			balance: {
+				origin: "https://api.deepseek.com",
 				build: ({ apiKey }) => ({
 					url: "https://api.deepseek.com/user/balance",
 					headers: bearer(apiKey)
@@ -39525,6 +39520,10 @@ window.__ModuleLoader__.load({
 				className: usage_module_css_default.muted,
 				children: t$2("usage.balance.noCredential")
 			});
+			if (provider.balanceSupported === false) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+				className: usage_module_css_default.muted,
+				children: t$2("usage.balance.unsupported")
+			});
 			if (!provider.supported) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 				className: usage_module_css_default.muted,
 				children: t$2("usage.balance.unsupported")
@@ -39730,7 +39729,7 @@ window.__ModuleLoader__.load({
 								}),
 								(() => {
 									const configured = snapshot.providers.filter(isConfigured);
-									const rows = configured.filter((provider) => provider.balanceSupported === true || provider.balanceSupported === void 0 && provider.supported);
+									const rows = configured.filter((provider) => provider.balanceSupported === true || provider.balanceSupported === false || provider.balanceSupported === void 0 && provider.supported);
 									if (rows.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: usage_module_css_default.muted,
 										children: configured.length === 0 ? t$2("usage.balance.noneConfigured") : t$2("usage.balance.unsupported")
