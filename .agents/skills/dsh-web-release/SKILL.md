@@ -20,7 +20,7 @@ GitHub Actions 发布管线（构建/测试/npm 发布/GitHub Release）→ 发�
 ## 仓库事实（先读，决定每一步怎么做）
 
 - 仓库：zhu1090093659/dsh-web（**PUBLIC**），本机路径 /Users/zcl/code/dsh-web。
-- 全家桶由 `scripts/lib/family-packages.mjs` 非递归遍历 `packages/` 与 `packages/skins/` 得到；当前工作树为 19 个家族包（`packages/*` 18 个 + `packages/skins/skin-center` 1 个），`@linxin666/dsh-client-ui-skin-center` 也是独立发布包。版本与包数量以 `node scripts/verify-version.mjs X.Y.Z` 的输出为准，不在技能中手抄固定数量。
+- 全家桶由 `scripts/lib/family-packages.mjs` 得到；皮肤中心、宠物与社区插件索引已迁至独立仓（dsh-skins / dsh-pet / dsh-community-plugins）并各自发版，不随本仓的统一版本发布。版本与包数量以 `node scripts/verify-version.mjs X.Y.Z` 的输出为准，不在技能中手抄固定数量。
   全部发布到 npm scope `@linxin666`，registry 固定 registry.npmjs.org。
 - **版本策略：全仓统一版本**（tag vX.Y.Z = 每个 package.json 的 version，由管线强制校验）。
 - **未指定具体版本号时**：不追问版本号；以远端最新且已发布的正式 `vX.Y.Z` tag 为上一版本，
@@ -115,18 +115,13 @@ pnpm test:scripts                  # 脚本测试（link-profile 等）
 pnpm runtime-deps:check             # 发布包运行时依赖安全门禁
 node scripts/aggregate.mjs --check # 聚合清单与磁盘一致（改过 aggregate.yml 时必须先重跑生成）
 pnpm market:check                   # market/dist 与已提交产物一致
-pnpm skin-center:check              # 皮肤目录契约（涉及皮肤时必跑）
 git log --oneline -5               # 确认包含本次全部改动、无未推送提交
 ```
 
 发版前提：待发布的全部改动先合入 `dev` 并在 `dev` 上全绿；发版时把
 `dev` 合入 `main`（见第 2 节），tag 从 `main` 打。
 
-皮肤相关变更（skin.json / skin.css / 皮肤资产）额外跑：
-
-```sh
-pnpm skin-center:check     # 皮肤目录契约门禁
-```
+皮肤、宠物与社区插件索引的改动不经过本仓发布：它们在 dsh-skins / dsh-pet / dsh-community-plugins 各自发版，市场内容按 submodule gitlink 固定的提交拉取（见 [docs/publish-prep.md](../../../docs/publish-prep.md)）。
 
 **版本 bump 后必须重建产物并同步市场资产**（版本信息影响 bundle 内容）：
 
@@ -217,8 +212,8 @@ git checkout dev && git merge main && git push origin dev
 推送 v* tag 后 GitHub Actions 自动执行，顺序：
 
 1. actionlint + pnpm install（frozen lockfile，checkout 用 fetch-depth: 0 取全量历史）；
-2. 全量 gate：typecheck / build / test / test:scripts / aggregate --check，并按变更范围执行 `market:check`、`skin-center:check`；`runtime-deps:check` 是发布前的运行时依赖安全门禁；
-3. **版本一致性校验**：运行 `node scripts/verify-version.mjs X.Y.Z`，由 `scripts/lib/family-packages.mjs` 遍历 `packages/` 与 `packages/skins/` 的全部家族包并逐一比对 tag 版本；数量以脚本输出为准，不手抄固定数字；
+2. 全量 gate：typecheck / build / test / test:scripts / aggregate --check，并按变更范围执行 `market:check`；`runtime-deps:check` 是发布前的运行时依赖安全门禁；
+3. **版本一致性校验**：运行 `node scripts/verify-version.mjs X.Y.Z`，由 `scripts/lib/family-packages.mjs` 遍历 `packages/` 的全部家族包并逐一比对 tag 版本；数量以脚本输出为准，不手抄固定数字；
 4. **生成 release notes**：优先使用已提交的 `docs/release-notes/$TAG.md`（v0.2.6 起维护者在发版提交中附带中文默认 + English 折叠的双语版，管线直接采用）；文件缺失时兜底跑 `node scripts/release-notes.mjs $TAG` 生成双视图草稿（把上一 tag 以来的**全部**常规提交——含合并进来的分支提交，不能只走 --first-parent，v0.1.15 曾因此漏掉整条 perf/refactor 分支——分组为新功能 / 修复 / 其他改动并链接 issue，中文默认视图与 English 折叠视图条目相同、均为原始提交主题）。发布前执行，失败即中止，不触碰 npm；
 5. `pnpm -r publish --no-git-checks --access public`（NPM_TOKEN 写入 ~/.npmrc，拓扑序发布，workspace:* 自动转真实版本；private 包由 pnpm 自动跳过——若某 private 包被聚合依赖引用，先解除引用或改为公开，否则全家桶安装 404），随后 `node scripts/verify-registry.mjs <tag版本>` 断言每个家族包的该版本都能从 registry 解析：pnpm 的逐包成功行不是信任边界，registry 传播会滞后数分钟（v0.3.18 实测约 10 分钟）甚至静默丢版本，而挂载冒烟的 auto 改写会用 workspace tarball 掩盖缺失的家族依赖；断言失败即中止，不进入 legacy 双发与 GitHub Release；
 6. 仅当仍处于迁移双发窗口、目标包已从 registry 验证可读且旧包该版本尚未占用时，运行 `node scripts/publish-legacy-aggregate.mjs <tag版本>` 发布旧聚合包 `@linxin666/dsh-web-ui-all`；脚本必须有窗口计数 / 跳过已发布版本的保护。窗口结束后不得继续发布旧包，改为执行一次 `npm deprecate @linxin666/dsh-web-ui-all "迁移到 @linxin666/dsh-web-all；详见该版本 Release notes"` 并核对 deprecation 元数据；
@@ -241,9 +236,8 @@ gh run list --workflow=release.yml    # 查历史
 ## 4. 发布后验证（必须逐项执行）
 
 ```sh
-# NPM_PUBLISH_ENABLED='true'：期望 = X.Y.Z
+# NPM_PUBLISH_ENABLED='true'：期望 = X.Y.Z（satellite 包各自持有版本线，不在此断言）
 npm view @linxin666/dsh-web-all version
-npm view @linxin666/dsh-client-ui-skin-center version
 # 仅在双发窗口内执行：
 npm view @linxin666/dsh-web-ui-all version       # 期望 = X.Y.Z
 # 窗口结束后：旧包版本应保持窗口末版本，且 deprecated 字段必须非空
@@ -257,9 +251,9 @@ git ls-remote --tags origin | grep "vX.Y.Z"         # tag 已在远端
 
 - tag 一旦推送且 npm 发布成功，同一版本号永不复用；补救只走「下一补丁版本」或 deprecate。
 - 发版前必须本地全量测试通过；管线里的版本一致性校验是最后防线，不是唯一防线。
-- 变更皮肤后先跑 build.mjs、变更聚合清单后先重跑 aggregate.mjs，再走本流程。
+- 变更聚合清单后先重跑 aggregate.mjs，再走本流程。
 - **构建产物内嵌绝对路径**（CSS-module 类名哈希与 \0dsh-css region 标记），同一源码在不同
-  checkout 路径下构建字节不同。因此 CI 的 market/skin-center 一致性检查是「提交完整性」语义
+  checkout 路径下构建字节不同。因此 CI 的 market 一致性检查是「提交完整性」语义
   （--ignore-scripts 安装 + 检查放在 Build 之前）：提交者必须把「产物 + 市场资产」同一次
   构建一起提交；不要试图在 CI 里重新构建后做一致性比对。
 - 提交信息、tag、Release 标题均禁 emoji（仓库硬性规则，CI 强制）。

@@ -54,7 +54,7 @@ node scripts/aggregate.mjs --check  # 校验模式：漂移即失败（CI 用）
 ### 5. 构建验证
 
 ```sh
-pnpm install   # workspace 链接（packages/* 与 packages/skins/*）
+pnpm install   # workspace 链接
 pnpm -r build  # 全仓构建
 ```
 

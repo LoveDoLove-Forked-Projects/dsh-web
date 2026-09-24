@@ -75,7 +75,7 @@ Market build order: build `market/shell` first (`npm run build` in `market/shell
   测试内容，agent 不向 main 同步，也不以 main 重写本地 dev 的历史。
 - Use Conventional Commits: `type(scope): subject`, with types such as `feat`, `fix`, `docs`, `test`, `refactor`, and `chore`. Do not include emoji.
 - 改动默认直接提交到 `dev`（本地提交即可；需要时推送 `origin/dev`），**PR 不是强制流程**——只有需要评审或走合入流程时才开 PR。若开 PR：target 必须是 `dev`，并按 [.github/pull_request_template.md](.github/pull_request_template.md) 填写 scope、变更类型、上游同步、AI 披露、本地测试证据与用户可见证据。
-- README changes update all paired files and run `pnpm docs:write-pair <package-or-skin-directory>`. Package or skin registry changes also update `docs/publish-prep.md` and regenerate `packages/dsh-web-all/aggregate.yml` with `node scripts/aggregate.mjs`.
+- README changes update all paired files and run `pnpm docs:write-pair <package-directory>`. Package registry changes also update `docs/publish-prep.md` and regenerate `packages/dsh-web-all/aggregate.yml` with `node scripts/aggregate.mjs`.
 
 ## Release
 

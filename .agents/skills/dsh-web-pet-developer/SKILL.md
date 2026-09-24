@@ -1,122 +1,46 @@
 ---
 name: dsh-web-pet-developer
-description: Create a pet for the dsh-pet plugin and integrate it into the dsh web GUI — author a v2 pet.json manifest plus an 8-column x 9-row atlas per the Codex/hatch-pet contract (live2d pets, voice packs and status decorations included), drop it into the pet-center user directory or contribute it as a built-in asset under packages/dsh-pet/assets, rebuild and test dsh-pet, verify the pet in the first-level Pet settings section, and submit the PR. Use when the user asks to create/add/develop/接入 a pet (宠物), build or calibrate a pet spritesheet, register a custom pet, author a status decoration, or asks how pets are discovered and rendered.
-whenToUse: 用户要新建/开发/接入一只宠物（桌面宠物、dsh-pet）、制作或校准宠物图集与 pet.json、把宠物放进自定义目录或贡献为内置宠物、做状态装饰（decoration），或询问宠物如何被发现与渲染。美术与图集生成参考 hatch-pet skill；皮肤走 dsh-web-skin-developer skill。
+description: Create a pet for the dsh-pet plugin in the dsh-pet repository, and submit it there — pet assets live under assets/<id>/ and the manifest contract is owned by dsh-pet (contracts/pet-manifest-v2.schema.json plus the src/manifest-v2.ts implementation); verify with that repository's pnpm typecheck and pnpm test (it has no pet-specific check script), then open the pull request against dsh-pet. dsh-web itself consumes the published @linxin666/dsh-pet package and reads the pet content pinned by the submodule gitlink when building the market. Use when the user asks to create/add/develop/接入 a pet (宠物), build or calibrate a pet spritesheet, register a custom pet, author a status decoration, or asks how pets are discovered and rendered.
+whenToUse: 用户要新建/开发/接入一只宠物（桌面宠物、dsh-pet）、制作或校准宠物图集与 pet.json、把宠物贡献进 dsh-pet 的资产目录，或询问宠物如何被发现与渲染。美术与图集生成参考 hatch-pet skill；皮肤走 dsh-web-skin-developer skill。
 disable-model-invocation: true
 ---
 
 # 宠物开发者（dsh-pet 多宠物注册表）
 
-本技能指导制作并接入一只宠物到 **dsh-pet**（GUI 右下角桌面宠物 + 设置页一级菜单「宠物」）。
-宠物是**注册表条目而不是代码**：一只宠物 = 一个目录 + 一份 `pet.json` manifest + 一张图集
-（可选 voice.json 语音包与状态装饰 decoration），新增宠物不需要改任何宿主或客户端代码。
-契约按 pet-center 里程碑演进（issue #623）：M1 场景/动画语义、M2 manifest v2 结构校验、
-M3 live2d、M4 voice pack（#677）、M5 状态装饰（#567）。
+宠物的制作与接入都在 [dsh-pet](https://github.com/zhu1090093659/dsh-pet) 仓库进行，在 dsh-web 里它是子模块 `satellites/dsh-pet`；一只宠物是 `assets/<id>/` 下的一个目录加一份 manifest，新增宠物不需要改宿主或客户端代码。契约归 dsh-pet 所有：schema 见 [contracts/pet-manifest-v2.schema.json](https://github.com/zhu1090093659/dsh-pet/blob/main/contracts/pet-manifest-v2.schema.json)，权威实现见 [src/manifest-v2.ts](https://github.com/zhu1090093659/dsh-pet/blob/main/src/manifest-v2.ts)，第三方素材声明见 [THIRD_PARTY_NOTICES.md](https://github.com/zhu1090093659/dsh-pet/blob/main/THIRD_PARTY_NOTICES.md)。字段清单、图集几何与校验规则以该仓库的 [CONTRIBUTING.md](https://github.com/zhu1090093659/dsh-pet/blob/main/CONTRIBUTING.md) 和 [README.md](https://github.com/zhu1090093659/dsh-pet/blob/main/README.md) / [README.zh.md](https://github.com/zhu1090093659/dsh-pet/blob/main/README.zh.md) 为准，本技能不重复。
 
-## 0. 宠物契约（硬性约束，违反会被跳过或拒绝）
+## 1. 工作命令（全部在 dsh-pet 仓库里执行）
 
-契约的权威实现是 `packages/dsh-pet/src/manifest-v2.ts`（结构门，fail-closed）与
-`registry.ts`（归一化，never-throw）；JSON Schema 孪生文件在
-`packages/dsh-pet/contracts/pet-manifest-v2.schema.json`（文档与 CLI 用，仓库内以手写校验器为准）。
-完整示例：`packages/dsh-pet/assets/whale/pet.json`（id `whale-girl`，v2 全量：frames/tracks
-覆盖 + sequences + license）与 `assets/whale-refined/pet.json`（id `whale-girl-refined`，
-最小 v2）。v1 manifest 兼容读取（附迁移提示）；v2 manifest **fail-closed**：未知顶层键、未知
-renderer、缺失条件块与不安全路径都会拒绝该条目并给出结构化诊断。
+```sh
+git submodule update --init satellites/dsh-pet   # 在 dsh-web 克隆里取得工作树；也可以直接 clone dsh-pet
+cd satellites/dsh-pet
+pnpm install
+pnpm typecheck   # dsh-pet 没有宠物专用的 check 脚本，typecheck 与 test 就是它的验证命令
+pnpm test
+pnpm build
+```
 
-- 顶层字段：`petManifestVersion`=2、`id`（`^[a-z0-9][a-z0-9-]*$` 小写 kebab）、
-  `displayName`（≤ 80 字符）、`description`/`version`/`author`/`homepage` 可选、
-  **`license`（v2 必填）**、`renderer`（`sprite2d` | `live2d`）、`sprite2d{}` /
-  `live2d{}`、`sequences`、`remarks`。
-- `sprite2d` 块：`spritesheetPath`（**安全相对路径**：无 `..`、无绝对路径、无反斜杠、
-  无协议 scheme，段字符 `^[A-Za-z0-9._-]+$`，缺省 `spritesheet.webp`）；`cell` 缺省
-  192×208（上限 2048）；`columns` 缺省 8（上限 32）；`atlasRows` 缺省 9（v2 图集可声明
-  11 = 9 动画行 + 2 行 look 行）；`frames` 每行用到的列数（9 个 1..columns 整数），缺省
-  hatch-pet 契约表 `[6, 8, 8, 4, 5, 8, 6, 6, 6]`；`tracks` 按动画覆盖 `durations`
-  （正数毫秒，按该行帧数**循环补足**）、`loop`、`fallback`；缺省全部循环，`jumping` 与
-  `failed` 停在末帧后回 `idle`。
-- **图集几何**：8 列 × 9 行（v2 图集 11 行），**行序固定**：0 idle / 1 running-right /
-  2 running-left / 3 waving / 4 jumping / 5 failed / 6 waiting / 7 running / 8 review；
-  未用格子保持全透明。
-- `sequences`：按 ActivityPhase（idle / waiting / thinking / tool / review / done / failed）
-  覆盖场景轨道序列，每个序列至少 5 个动画，否则该序列丢弃（warning，宠物保留默认单轨）。
-- `remarks`：交互俏皮话槽位覆盖（每行 ≤ 120 字符，每槽 ≤ 64 行），社区宠物可用它配音。
-- `voice.json`（M4，#677）：宠物目录内可选语音包（状态文案池 + 悬浮面板 chrome），纯内容
-  warn-and-drop；全局覆盖放 `$DSH_HOME/pets/.voice.json`（垫底于每个宠物包之下）。
-- live2d（M3）：`renderer: "live2d"` + `live2d{}` 块（`model` 相对路径 .model3.json、
-  `scale` (0,10]、`translate`、`motions`（idle 必填，未映射相位回退 idle）、`expressions`、
-  `hitAreas`、`lipSync`）。model3.json 的引用闭包 = 资产路由的可服务集合；模型不可读或声明
-  不安全引用 → **fail-closed 拒绝**。Cubism Core 由用户自供
-  （`$DSH_HOME/pets/.runtime/live2dcubismcore.min.js`），插件永不打包或下载。
-- 可选 `previews/<name>.gif`（文件名 `^[A-Za-z0-9._-]+$`），经
-  `/pet/<id>/previews/<name>` 提供（README 动画预览表用它）。
-- 资产大小上限（路由强制）：manifest 64 KiB / 图片 20 MiB / live2d 模型文件 32 MiB。
+该仓库的 `package.json` 只提供 `build` / `test` / `typecheck` / `prepare`；`scripts/dsh-pet-migrate-v2.mjs`（附测试）是它唯一的宠物相关维护脚本。
 
-## 1. 美术与打包
+## 2. dsh-web 这一侧
 
-图集制作与视觉 QA（8×9 拼图、逐行校验、QA contact sheet、pet.json 打包）走 **hatch-pet** skill
-（Codex/hatch-pet 契约的生成流水线）；本技能只覆盖 dsh-web 侧的接入与验证。
-手工制作时按第 0 节几何逐行对齐；做 11 行 v2 图集时后两行留给 look 行。
+- dsh-web 以已发布 npm 包 `@linxin666/dsh-pet` 消费宠物插件；宠物内容的改动是向 dsh-pet 提 PR，不是向 dsh-web 提，`.github/workflows/reject-non-content-pr.yml` 会关闭投错仓库的 PR 并指向正确仓库。
+- 市场构建读取的宠物内容，是子模块 gitlink 记录的那个提交；`market-inputs.lock.json` 把 pet 输入映射到 `satellites/dsh-pet` 的 `assets/` 目录。
+- `pnpm market:fetch` 把 pinned 内容物化进 `.market-inputs/`：子模块工作树正好在 pinned 提交上就复制它，否则下载该提交的 tarball，所以从未初始化子模块的克隆行为一致。
+- `pnpm market:fetch --local` 从已初始化的子模块工作树物化它当前所在的提交，用来把你自己的改动送进市场构建；不在 pinned 提交上的检出在不加 `--local` 时会被忽略（运行时输出会说明）。这样构建出的 `market/dist` 来自未 pin 的内容，不得提交。
+- 开发循环：编辑 `satellites/dsh-pet/assets/<id>/`，然后 `pnpm market:fetch --local` 与 `pnpm market:build`，从 `market/dist` 看市场产物。
+- `pnpm market:check` 校验已提交的 `market/dist` 与 pinned 输入一致。
 
-## 2. 接入方式（四来源；后注册的来源在同 id 冲突时覆盖前者）
+## 3. 验收清单
 
-- **A. 个人自定义宠物（零代码，最常见）**：放进 **`$DSH_HOME/pets/<id>/`**（默认
-  `~/.dsh/pets`，pet-center 用户目录，**优先于** legacy hatch-pet 源），或一键安装
-  `node scripts/dsh-pet install <dir>`（复制进 `$DSH_HOME/pets/<id>/`，--force 覆盖），
-  重启 `dsh web` 即出现在「宠物」设置选择器，无需任何接线。
-- **B. legacy hatch-pet 源**：`${CODEX_HOME:-~/.codex}/pets/<pet>/`（兼容保留）。
-- **C. 贡献为内置宠物（PR）**：
-  1. 新增 `packages/dsh-pet/assets/<dir>/`（dir 建议与 id 一致；dir basename 是历史 URL 别名）：
-     `pet.json` + 图集 + 可选 `previews/*.gif`、`voice.json`。
-  2. 在 `packages/dsh-pet/src/registry.test.ts` 增加该 manifest 的归一化断言
-     （几何/行数/轨道对齐，参照 whale-girl 的用例）。
-  3. 同步更新 `packages/dsh-pet/README.md` 与 `README.zh.md`（宠物契约示例/动画预览表），
-     并 `pnpm docs:write-pair` 重录配对。
-  4. 重建与测试：`pnpm --filter @linxin666/dsh-pet build`、
-     `pnpm --filter @linxin666/dsh-pet test`、`pnpm typecheck`；
-     提交 `assets/`、重建的 `lib/` 与 README 三件套，开 PR。
-- **D. 组合注入**：嵌入 dsh-pet 的应用通过 `PetConfig.pets` 传入 manifest 条目（最高优先级）——
-  仅嵌入场景使用，社区接入一般走 A 或 C。
+- [ ] 宠物目录在 dsh-pet 的 `assets/<id>/`，manifest 满足该仓库的 `contracts/pet-manifest-v2.schema.json` 与 `src/manifest-v2.ts`
+- [ ] 在 dsh-pet 里 `pnpm typecheck` 与 `pnpm test` 通过
+- [ ] PR 开在 dsh-pet（不是 dsh-web），按该仓库 CONTRIBUTING.md 的要求附证据
+- [ ] 改动需要进市场时，`market/dist` 已用 pinned 内容重建并提交，`pnpm market:check` 通过；用 `--local` 构建的产物没有提交
 
-**状态装饰（status decorations，M5，#567）**：宠物周边装饰是独立于宠物条目的另一份注册表
-（`assets/decorations/<id>/` 内置；用户同 id 覆盖放 `$DSH_HOME/pets/decorations/`）：
-`decoration.json`（`decorationManifestVersion`=1、`id`、`displayName`、**`license` 必填**、
-`entry` 条带图、`cell`、`columns`、`frameMs`、`loop`、`phases`（ActivityPhase →
-{from,to} 帧区间或 "hide"））+ 单行条带图（**cell.width×columns 宽 × cell.height 高**，
-不匹配会 warning 并渲染错帧）。内置默认装饰 id `whale`；资产经
-`/api/pet/decoration/<id>/<entry>`。装饰贡献走与内置宠物相同的流程（测试 + README + PR）。
+## 4. 常见坑
 
-## 3. 验证
-
-- 重启 `dsh web`（注册表在宿主启动时构建一次，改宠物后必须重启）。
-- 设置页一级菜单「宠物」（`settings.section` id `pet`，order 130，直接展开）选择器出现新宠物；
-  切换后右下角精灵立即更换。
-- 同源 `/api/pet/pets` 返回该条目（几何、行数、tracks、sequences 齐全）；图集经
-  `/pet/<id>/<spritesheetPath>` 可访问；`/api/pet/diagnostics` 给出结构化诊断。
-- 坏 manifest 不会让宿主崩溃：结构错误 fail-closed 拒绝（error 诊断），内容错误 warn-and-drop。
-- 名字/显示布局按宠物 id 独立持久化（`petId` 存于 `pet` 设置命名空间）。
-- CLI 预检：`node scripts/dsh-pet validate <dir>`（manifest + 声明资产 + live2d 闭包 + voice.json）。
-
-## 4. 验收清单（全部满足才算完成）
-
-- [ ] manifest 契约全部满足（id 字符集、license、路径安全、几何与行序、frames/tracks、sequences）
-- [ ] 图集 8 列 × 9 行（或 v2 11 行）、未用格子全透明（或经 hatch-pet QA）
-- [ ] 内置贡献：registry 测试新增断言，`build`/`test`/`typecheck` 通过，README 双语同步并重录配对
-- [ ] 装饰贡献：decoration.json 契约满足、条带几何正确、有测试与 README
-- [ ] 重启后 GUI 实测：设置页「宠物」选择器出现、切换与动画正常、`/api/pet/pets` 含该条目
-- [ ] 提交信息与文案无 emoji
-
-## 5. 常见坑
-
-- **id 不合字符集**：manifest 被跳过（warning），选择器里不出现。
-- **v2 缺 license 或带未知顶层键**：fail-closed 拒绝（error 诊断）。
-- **spritesheetPath 含 `..` / 绝对路径 / 协议 scheme**：直接拒绝（路径穿越防护）。
-- **忘了重启**：注册表启动时构建一次，改完宠物不重启看不到变化。
-- **自定义宠物与内置同 id**：后注册源覆盖前者（warning）；`$DSH_HOME/pets` 优先于
-  `~/.codex/pets`，改名或换 id。
-- **行序写错**：动画错位（如 idle 行放了 running 帧）；按第 0 节固定行序逐行对齐。
-- **时长数组太短**：会按该行帧数循环补足——想要每帧固定节奏就给满帧数的数组。
-- **frames 超过 columns**：被截断到 columns；行内帧数与时长以截断后为准。
-- **未用格子不透明**：渲染时露出残影；保持全透明。
-- **sequences 少于 5 项**：该序列被丢弃（warning），宠物保留默认单轨播放。
-- **装饰条带几何不符**：渲染错帧（warning）；条带必须正好 cell.width×columns × cell.height。
-- **README 只改了一侧**：docs:check 双语配对变红。
+- **在 dsh-web 里找宠物检查脚本**：dsh-web 的根 `package.json` 里没有任何名字含 pet 的脚本；验证命令 `pnpm typecheck` / `pnpm test` 在 dsh-pet 里。
+- **把宠物改动留在 dsh-web 的 `satellites/dsh-pet` 工作树里**：那只是本地预览，投稿仍然要开在 dsh-pet 仓库。
+- **提交 `--local` 构建出的 `market/dist`**：它来自未 pin 的内容，`pnpm market:check` 会失败。
+- **子模块不在 pinned 提交上**：不加 `--local` 的 `pnpm market:fetch` 会忽略你的工作树，输出里会说明这一点。

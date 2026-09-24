@@ -59,8 +59,7 @@ pnpm coverage:check    # 覆盖率棘轮（Tier 2，整仓约一分钟）
 如 `--open` 审核全部 open PR）：先做静态硬性检查（规模上限新增/删除各
 1 万行直接拒绝、禁止提交依赖缓存与密钥、emoji 扫描、PR 模板必填项、
 密钥扫描、CI 文件保护），再在工作区 worktree 上按 CI 门禁序列构建验证
-（install/typecheck/market/skin-center/community/build/test/
-test:scripts/aggregate/docs）。worktree 与 e2e 验证统一放在
+（序列与 `.github/workflows/ci.yml` 一致）。worktree 与 e2e 验证统一放在
 `~/remote-e2e`（同 head 复用，跑完保留便于排查），定期用
 `pnpm pr:review --cleanup` 或手动 `rm -rf ~/remote-e2e` 清理。
 
@@ -71,11 +70,9 @@ test:scripts/aggregate/docs）。worktree 与 e2e 验证统一放在
 deepseek-chat / deepseek-reasoner / gpt-3.5 直接拒绝）。缺失即 REJECT；
 `.github/workflows/pr-contribution-rules.yml` 在 CI 侧同步拦截（评论 + 挂红）。
 
-皮肤 PR 额外自动做视觉验证：生成亮/暗预览截图（
-`~/remote-e2e/e2e-<pr>/previews/`），像素指标分析自动判定过曝
-（太闪）与对比度不足（看不清），截图供视觉模型复核；同时提醒
-作者声明贡献者版权（模板「贡献者版权声明」节），并检查新皮肤
-是否提供 `preview/{light,dark}.png`（市场清单自动派生，缺图即警告）。
+皮肤、宠物与社区插件索引的 PR 投到各自的独立仓（
+`.github/workflows/reject-non-content-pr.yml` 会关闭投错仓库的 PR），
+相应检查由那些仓库自己的 CI 跑；本仓的硬检查与视觉修复要求只针对本仓接收的改动。
 用法与 verdict 语义见脚本头部注释；`pnpm pr:review --help` 查看全部选项。
 
 ### 修改 shared 运行时模块
