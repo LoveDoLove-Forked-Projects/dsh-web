@@ -2,9 +2,10 @@
 /**
  * market-fetch-inputs - materialize the market's content sources.
  *
- * The market build does not read the skin and pet assets out of this
- * monorepo: they live in their own repositories (dsh-skins, dsh-pet), which
- * this repository carries as git submodules under satellites/. The submodule
+ * The market build does not read the skin, pet, community-index or preset
+ * content out of this monorepo: it lives in its own repositories (dsh-skins,
+ * dsh-pet, dsh-community-plugins, dsh-presets), which this repository carries
+ * as git submodules under satellites/. The submodule
  * gitlink is the pin - the commit recorded on this branch is the commit whose
  * content the market serves - and .gitmodules names the repository behind each
  * one. market-inputs.lock.json holds what git cannot express: which submodule
