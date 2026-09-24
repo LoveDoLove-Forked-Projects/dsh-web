@@ -29,7 +29,6 @@
 
 | name | 分类 | 类别勾选 | 负责人 / 审批者 |
 | --- | --- | --- | --- |
-| `renderer` | 渲染器 / Wallpaper Engine / WebGL（皮肤中心包的 we-*、pkg-extract、wallpaper、backdrop-scene、WallpaperPanel 等，代码在 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) 仓） | 壁纸 / 渲染器 | Aa728848 |
 | `plugins` | 插件功能（任务看板 / Git 图谱 / 右侧面板 / 远程 Web UI / SSH / 预设中心 / 设置 / 聚合包） | 插件功能 | zhu1090093659 |
 | `maintenance` | 维护 / 其他 | 维护 / 其他 | zhu1090093659 |
 

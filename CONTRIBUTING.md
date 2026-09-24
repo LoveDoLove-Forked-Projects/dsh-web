@@ -9,9 +9,10 @@
 - `dev` 是开发分支（集成分支）：本地开发与远程 PR 统一以 `dev` 为
   目标分支；`dev` 上测试通过后，由维护者合入 `main`。
 - PR 打开后由 `.github/workflows/auto-assign-pr-reviewers.yml` 按 PR 描述中
-  勾选的「PR 类别」自动分派：把对应协作者设为负责人并请求其审查（渲染器 /
-  Wallpaper Engine / WebGL 相关 PR 由 Aa728848 负责并审查），路由规则见
-  [PR_TRIAGE.md](PR_TRIAGE.md)。
+  勾选的「PR 类别」自动分派：把对应协作者设为负责人并请求其审查，未命中任何
+  类别时交给 `defaultRoute` 兜底；Wallpaper Engine / WebGL / 渲染器代码在
+  [dsh-skins](https://github.com/zhu1090093659/dsh-skins) 仓，本仓只保留其
+  Issue 类别。路由规则见 [PR_TRIAGE.md](PR_TRIAGE.md)。
 - 合并门禁：`dev` / `main` 要求 3 个必需检查全绿，**不要求人工审批**；
   具有 write 权限的协作者检查通过后即可自行合并（含自己的 PR），无需等待
   维护者审批。
