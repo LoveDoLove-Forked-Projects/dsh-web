@@ -16,12 +16,12 @@
  *   --repo owner/repo      目标仓库（默认从 git remote 推断）
  *   --include-draft        包含 draft PR（默认跳过）
  *   --skip-build           跳过 worktree 构建验证（只做静态检查）
- *   --workdir <path>       worktree 工作区根目录（默认 ~/remote-e2e，e2e 验证同区）
+ *   --workdir <path>       worktree 工作区根目录（默认 ~/remote-e2e）
  *   --cleanup              清理工作区全部 worktree 与遗留 refs 后退出
  *
- * worktree 建在 ~/remote-e2e/pr-<N>（同 head 复用，跑完保留便于排查），
- * e2e 验证产物同区存放；定期用 --cleanup 或手动 rm -rf ~/remote-e2e 清理
- * （工具启动时会自动 prune 已失效的 worktree 记录）。
+ * worktree 建在 ~/remote-e2e/pr-<N>（同 head 复用，跑完保留便于排查）；
+ * 定期用 --cleanup 或手动 rm -rf ~/remote-e2e 清理（工具启动时会自动
+ * prune 已失效的 worktree 记录）。
  *
  *   --concurrency N        并行审核数（默认 2）
  *   --max-added N          新增行上限，超过即拒绝（默认 10000）
@@ -62,7 +62,7 @@ export const DEFAULT_MAX_DELETED = 10000
 export const DEFAULT_MAX_FILE_BYTES = 1024 * 1024
 export const DEFAULT_CONCURRENCY = 2
 
-/** worktree 与 e2e 验证工作区根目录（定期用 --cleanup 清理）。 */
+/** worktree 工作区根目录（定期用 --cleanup 清理）。 */
 export const DEFAULT_WORKTREE_ROOT = join(homedir(), `remote-e2e`)
 
 /** 与 ci.yml 的 emoji 检查完全一致的码点范围（U+1F000-1FAFF / 2600-27BF / 2B00-2BFF / 区域指示符 / FE0F / ZWJ）。 */
@@ -746,7 +746,7 @@ const HELP = `用法: node scripts/pr-review.mjs [选项] [PR编号...]
   --repo owner/repo         目标仓库（默认从 git remote 推断）
   --include-draft           包含 draft PR（默认跳过）
   --skip-build              跳过 worktree 构建验证（只做静态检查）
-  --workdir <path>          worktree 工作区根目录（默认 ~/remote-e2e，e2e 验证同区）
+  --workdir <path>          worktree 工作区根目录（默认 ~/remote-e2e）
   --cleanup                 清理工作区全部 worktree 后退出（定期清理用）
   --concurrency N           并行审核数（默认 2）
   --max-added N             新增行上限，超过即拒绝（默认 10000）

@@ -59,9 +59,9 @@ pnpm coverage:check    # 覆盖率棘轮（Tier 2，整仓约一分钟）
 如 `--open` 审核全部 open PR）：先做静态硬性检查（规模上限新增/删除各
 1 万行直接拒绝、禁止提交依赖缓存与密钥、emoji 扫描、PR 模板必填项、
 密钥扫描、CI 文件保护），再在工作区 worktree 上按 CI 门禁序列构建验证
-（序列与 `.github/workflows/ci.yml` 一致）。worktree 与 e2e 验证统一放在
-`~/remote-e2e`（同 head 复用，跑完保留便于排查），定期用
-`pnpm pr:review --cleanup` 或手动 `rm -rf ~/remote-e2e` 清理。
+（序列与 `.github/workflows/ci.yml` 一致）。worktree 建在 `~/remote-e2e/pr-<N>`
+（同 head 复用，跑完保留便于排查），定期用 `pnpm pr:review --cleanup` 或手动
+`rm -rf ~/remote-e2e` 清理。
 
 外部 PR 的模板硬检查含「测试证据与上游同步」与「视觉修复要求」：贡献者
 必须提供自己本地测试的证据，并附上同步上游最新 `dev` 分支后重新测试
