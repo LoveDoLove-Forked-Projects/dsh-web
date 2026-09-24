@@ -191,6 +191,56 @@ describe('probes and per-fact errors', () => {
     service.stop()
   })
 
+  // #1688: a `deepseek` route pointed at another host by its pi-ai profile is
+  // a DIFFERENT account. Probing the official endpoint for it would print the
+  // official account's money under the reseller's name, so the row reports the
+  // balance as unsupported and no request is made.
+  it('operator with a reseller deepseek route sees unsupported instead of the official balance', async () => {
+    // Given a profile whose `deepseek` route points at Alibaba Bailian and
+    // credentials that would resolve for either account.
+    const fetchMock = stubFetch(() => jsonResponse(BALANCE_BODY))
+    const settings = {
+      get: (ns: string) => ns === 'llm-pi-ai'
+        ? { providers: { deepseek: { apiKeyEnv: 'DASHSCOPE_API_KEY', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1' } } }
+        : undefined,
+    }
+    const { ctx } = makeCtx({ llm: LLM_DEEPSEEK, credentials: CREDENTIALS_ENV, settings })
+    const service = new UsageService(ctx, OPTIONS)
+
+    // When the cycle runs
+    await service.refresh()
+
+    // Then no balance request was issued and the row carries no balance.
+    expect(fetchMock).not.toHaveBeenCalled()
+    const provider = service.overview().providers[0]
+    expect(provider?.balanceSupported).toBe(false)
+    expect(provider?.balance).toBeUndefined()
+    expect(provider?.error).toBeUndefined()
+    service.stop()
+  })
+
+  it('operator with the official deepseek origin still sees its balance', async () => {
+    // Given the same route id explicitly pointed at the official origin.
+    const fetchMock = stubFetch((url) => url.includes('api.deepseek.com') ? jsonResponse(BALANCE_BODY) : jsonResponse({}, 404))
+    const settings = {
+      get: (ns: string) => ns === 'llm-pi-ai'
+        ? { providers: { deepseek: { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com' } } }
+        : undefined,
+    }
+    const { ctx } = makeCtx({ llm: LLM_DEEPSEEK, credentials: CREDENTIALS_ENV, settings })
+    const service = new UsageService(ctx, OPTIONS)
+
+    // When the cycle runs
+    await service.refresh()
+
+    // Then the official account's balance is probed and rendered.
+    expect(fetchMock).toHaveBeenCalled()
+    const provider = service.overview().providers[0]
+    expect(provider?.balanceSupported).toBe(true)
+    expect(provider?.balance).toMatchObject({ currency: 'CNY', totalBalance: '110.00' })
+    service.stop()
+  })
+
   it('surfaces a balance failure as the view error even though the cycle completes', async () => {
     stubFetch(() => jsonResponse({ message: 'Invalid key' }, 401))
     const { ctx } = makeCtx({ llm: LLM_DEEPSEEK, credentials: CREDENTIALS_ENV })

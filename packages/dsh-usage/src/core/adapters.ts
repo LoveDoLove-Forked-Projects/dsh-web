@@ -22,6 +22,14 @@ export interface AdapterProbeContext {
   apiKey: string
   /** Provider account id riding a dedicated header, when the credential carries one (Codex). */
   accountId?: string
+  /**
+   * The route's configured base URL (the pi-ai profile's baseURL), when it
+   * declares one. An adapter whose endpoint belongs to one provider origin
+   * uses it to refuse an account that merely shares the route key, so a
+   * differently-hosted model of the same family is never reported with the
+   * other account's number.
+   */
+  baseURL?: string
 }
 
 /** A parsed balance fact. */
@@ -43,6 +51,14 @@ export interface ProviderAdapter {
   /** Fallback display name when the LLM runtime has none. */
   displayName: string
   balance?: {
+    /**
+     * Origin (scheme + host) whose account this balance endpoint reports.
+     * Omitted when the endpoint is per-route by construction (a profile
+     * supplies the host) or when the provider has only one origin. When set,
+     * a route whose configured baseURL resolves elsewhere is not this
+     * origin's account and must not be probed with this adapter.
+     */
+    origin?: string
     build(context: AdapterProbeContext): ProbeSpec
     parse(status: number, body: unknown): BalanceParse | undefined
   }
@@ -113,10 +129,14 @@ function bearer(apiKey: string): Record<string, string> {
  * adapter registers (sessions and agent-default-model carry it), so both ids
  * must resolve here or the current provider would never be probed.
  */
+/** The official DeepSeek API origin: the only account its balance endpoint reports. */
+export const DEEPSEEK_API_ORIGIN = 'https://api.deepseek.com'
+
 const DEEPSEEK: ProviderAdapter = {
   ids: ['deepseek', 'deepseek-official'],
   displayName: 'DeepSeek',
   balance: {
+    origin: DEEPSEEK_API_ORIGIN,
     build: ({ apiKey }) => ({ url: 'https://api.deepseek.com/user/balance', headers: bearer(apiKey) }),
     parse: (status, body) => {
       if (status !== 200 || typeof body !== 'object' || body === null) return undefined
@@ -457,6 +477,42 @@ export const PROVIDER_ADAPTERS: readonly ProviderAdapter[] = [
 /** Find the adapter serving a provider route key, if any. */
 export function adapterFor(provider: string): ProviderAdapter | undefined {
   return PROVIDER_ADAPTERS.find((adapter) => adapter.ids.includes(provider))
+}
+
+/** Origin of a configured base URL, or undefined when it cannot be parsed. */
+export function originOf(baseURL: string | undefined): string | undefined {
+  if (baseURL === undefined || baseURL.trim() === '') return undefined
+  try {
+    return new URL(baseURL).origin
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Whether an adapter's balance endpoint reports THIS route's account.
+ *
+ * Some adapter families share one route key across providers that merely
+ * speak the same API: `deepseek` is both the official DeepSeek catalog entry
+ * and a common id for an OpenAI-compatible reseller (Alibaba Bailian, ...)
+ * pointed at another host by the profile's `baseURL`. The balance endpoint is
+ * per ORIGIN, not per route key, so probing the official endpoint for a
+ * reseller profile reports the official account's money under the reseller's
+ * name (issue #1688). An adapter published with a fixed `origin` therefore
+ * only applies to a route whose configured base URL is that origin, or to a
+ * route that pins no base URL at all (the catalog alias of the official
+ * route, which resolves the family's own credential).
+ *
+ * @param adapter - the matched adapter.
+ * @param baseURL - the route's configured base URL (pi-ai profile), if any.
+ * @returns true when the adapter may probe its balance endpoint for the route.
+ */
+export function balanceAppliesToRoute(adapter: ProviderAdapter, baseURL: string | undefined): boolean {
+  const expected = adapter.balance?.origin
+  if (expected === undefined) return true
+  const configured = originOf(baseURL)
+  if (configured === undefined) return true
+  return configured === expected
 }
 
 /**

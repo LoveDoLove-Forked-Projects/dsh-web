@@ -15,7 +15,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import { dshHome } from '../dsh-home.ts'
 import { withIdentityEncoding } from './http.ts'
-import { adapterFor, isDeepSeekProviderRoute, providerErrorMessage } from '../core/adapters.ts'
+import { adapterFor, balanceAppliesToRoute, isDeepSeekProviderRoute, providerErrorMessage } from '../core/adapters.ts'
 import type { BalanceParse, PlanParse } from '../core/adapters.ts'
 import { foldAliasRoutes } from '../core/provider-routes.ts'
 import { deepseekModelSpend } from '../core/pricing.ts'
@@ -202,7 +202,16 @@ export class UsageService {
         displayName: route.displayName || adapter?.displayName || route.id,
         credential: snapshot?.credential ?? 'none',
         supported: adapter !== undefined && (adapter.balance !== undefined || adapter.plan !== undefined),
-        ...(adapter?.balance !== undefined ? { balanceSupported: true } : {}),
+        // A balance endpoint that belongs to another origin does not report
+        // THIS route's account: it is supported by the adapter but not
+        // applicable here, and the UI renders it as unsupported rather than
+        // showing the other account's number (issue #1688).
+        ...(adapter?.balance !== undefined && balanceAppliesToRoute(adapter, this.piAiProfile(route.id)?.baseURL)
+          ? { balanceSupported: true }
+          : {}),
+        ...(adapter?.balance !== undefined && !balanceAppliesToRoute(adapter, this.piAiProfile(route.id)?.baseURL)
+          ? { balanceSupported: false }
+          : {}),
         ...(adapter?.plan !== undefined ? { planSupported: true } : {}),
         ...(snapshot?.balance !== undefined ? { balance: snapshot.balance } : {}),
         ...(snapshot?.plan !== undefined ? { plan: snapshot.plan } : {}),
@@ -573,6 +582,12 @@ export class UsageService {
   private async probeRoute(route: ProviderRoute, adapter: NonNullable<ReturnType<typeof adapterFor>>): Promise<void> {
     const credential = await this.resolveCredential(route.id)
     const previous = this.snapshots.get(route.id)
+    // The balance endpoint is per ORIGIN, not per route key: a profile that
+    // points a shared route id (`deepseek`) at another host is a different
+    // account, and probing the official endpoint would print this account's
+    // money under that route's name (issue #1688). Such a route reports the
+    // balance as unsupported instead.
+    const balanceApplies = balanceAppliesToRoute(adapter, this.piAiProfile(route.id)?.baseURL)
     if (credential.key === undefined) {
       // Nothing to probe with (oauth grant, no credential): retained facts
       // would never refresh again, so the row resets to its credential
@@ -591,11 +606,13 @@ export class UsageService {
       displayName: route.displayName || adapter.displayName,
       credential: credential.kind,
       supported: true,
+      ...(adapter.balance !== undefined && !balanceApplies ? { balanceSupported: false } : {}),
       updatedAt: Date.now(),
     }
     const runProbe = async (kind: 'balance' | 'plan'): Promise<BalanceView | PlanView | undefined> => {
       const half = adapter[kind]
       if (half === undefined) return undefined
+      if (kind === 'balance' && !balanceApplies) return undefined
       try {
         const spec = half.build({ apiKey: credential.key as string, ...(credential.accountId !== undefined ? { accountId: credential.accountId } : {}) })
         const response = await fetch(spec.url, withIdentityEncoding({
