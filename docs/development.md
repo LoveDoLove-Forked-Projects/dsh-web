@@ -49,6 +49,8 @@ pnpm coverage:check    # 覆盖率棘轮（Tier 2，整仓约一分钟）
 
 门禁分两层：`ci.yml` 是 PR 门禁，一次跑完全部检查；`nightly.yml` 是 Tier 2，每晚补充 PR 单趟看不到的证据——覆盖率棘轮与全量测试三连跑（flake 检测）。
 
+测试环境里的 storage 由 `shared/vitest.setup.ts` 统一修好（Node 25 在全局定义了 `localStorage`，那个残桩会存活到 DOM 测试里，机理见该文件头部）；包自带的 vitest setup 必须接上它——用 `shared/vitest.config.ts`、import `shared/vitest.setup.ts`，或加进 `scripts/sync-shared.mjs` 的副本清单——否则该包在 Node 25 上跑的是降级路径，覆盖率随之偏低。
+
 失败路径审计是业务特性的交付要求，以下分支必须各有测试，或在交付说明中写明其不可达：并发与幂等（重复提交、竞态、锁过期）、资源耗尽（余额不足、缺货、限流）、基础设施故障（死锁重试、事务回滚、连接中断）、第三方故障（假实现返回 500、网关超时、熔断降级）、校验与安全（越权租户、签名篡改、非法状态流转）。
 
 ## 常见任务
