@@ -63,6 +63,32 @@ describe('aggregate responsive compat contract', () => {
     expect(RESPONSIVE_CSS).not.toMatch(/#root\b/)
   })
 
+  it('user on the macOS desktop keeps window dragging and double-click zoom', () => {
+    // The official base stylesheet marks every direct body child as
+    // `-webkit-app-region: no-drag` ("html[data-platform=darwin]
+    // body>:not(#root)"). A body-level element spanning the viewport therefore
+    // subtracts the whole window from the macOS draggable region and cancels the
+    // official [data-window-drag] chrome rows along with it - the window stops
+    // dragging by its title bar and macOS stops running the system double-click
+    // action (zoom to fit the screen). `pointer-events: none` does not exempt an
+    // element from that computation, so the family's non-interactive body-level
+    // decorations (the skin center's fixed decoration layers and backdrop-blur
+    // veil, the aggregate's boot splash) must opt out declaratively.
+    // Given the aggregate compat stylesheet, when it is served on the desktop,
+    // then every non-interactive family overlay directly under body leaves the
+    // app-region computation alone.
+    const rule = RESPONSIVE_CSS.match(/html\[data-platform="darwin"\] body > :is\(([\s\S]*?)\)\s*\{([^}]*)\}/)
+    const selectors = rule?.[1] ?? ''
+    const declarations = rule?.[2] ?? ''
+    expect(selectors).toContain('[data-dsh-skin-layer]')
+    expect(selectors).toContain('[data-dsh-boot-splash]')
+    expect(selectors).toContain('[aria-hidden="true"]')
+    expect(declarations).toContain('-webkit-app-region: initial !important')
+    // Desktop-only: every other platform keeps the official computation.
+    expect(RESPONSIVE_CSS.match(/body > :is\(/g)).toHaveLength(1)
+    expect(RESPONSIVE_CSS).toContain('html[data-platform="darwin"] body > :is(')
+  })
+
   it('user on a phone with a home indicator keeps the frame inside the viewport', () => {
     // Given env(safe-area-inset-bottom) is content-box padding by default, when
     // it is non-zero, then 100dvh of CONTENT plus the inset would overflow the
