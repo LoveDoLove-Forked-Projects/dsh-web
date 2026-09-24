@@ -48,20 +48,19 @@ const EPSILON = 0.5
 /** Plugin packages that run vitest, sorted by directory name. */
 export function discoverPackages(readManifest, listDirs) {
   const packages = []
-  for (const base of [join(ROOT, 'packages'), join(ROOT, 'packages', 'skins')]) {
-    for (const name of listDirs(base)) {
-      const dir = join(base, name)
-      const manifestPath = join(dir, 'package.json')
-      if (!existsSync(manifestPath)) continue
-      let manifest
-      try {
-        manifest = readManifest(manifestPath)
-      } catch {
-        continue
-      }
-      if (!/vitest/.test(manifest.scripts?.test ?? '')) continue
-      packages.push({ name, dir, rel: relative(ROOT, dir).split('\\').join('/') })
+  const base = join(ROOT, 'packages')
+  for (const name of listDirs(base)) {
+    const dir = join(base, name)
+    const manifestPath = join(dir, 'package.json')
+    if (!existsSync(manifestPath)) continue
+    let manifest
+    try {
+      manifest = readManifest(manifestPath)
+    } catch {
+      continue
     }
+    if (!/vitest/.test(manifest.scripts?.test ?? '')) continue
+    packages.push({ name, dir, rel: relative(ROOT, dir).split('\\').join('/') })
   }
   return packages.sort((a, b) => a.name.localeCompare(b.name))
 }

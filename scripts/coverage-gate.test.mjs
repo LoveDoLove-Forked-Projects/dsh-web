@@ -109,12 +109,6 @@ describe('serializeBaseline', () => {
 })
 
 describe('discoverPackages', () => {
-  const dirs = (base) => {
-    if (base.endsWith('/skins')) return ['has-vitest']
-    if (base.endsWith('/packages')) return ['has-vitest', 'no-tests', 'broken', 'missing']
-    return []
-  }
-
   it('keeps only package directories whose test script runs vitest', () => {
     const vitest = () => ({ scripts: { test: 'vitest run' } })
     // Only paths that exist on disk survive the manifest existence check.

@@ -39,9 +39,7 @@ test('aggregate rows are web-ui-* namespaced and unique', () => {
 test('aggregate ids never collide with standalone package ids', () => {
   const aggregateIds = new Set(AGGREGATES.flatMap(idsOf))
   const standalonePatches = []
-  for (const base of ['packages', 'packages/skins']) {
-    // packages/skins/ carries no package after the skin collection moved to
-    // its own repository, and an empty directory is not in a fresh clone.
+  for (const base of ['packages']) {
     if (!existsSync(join(ROOT, base))) continue
     for (const entry of readdirSync(join(ROOT, base), { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
@@ -67,7 +65,7 @@ test('aggregate ids never collide with standalone package ids', () => {
 
 test('no aggregate deps entry resolves to a private workspace package', () => {
   const aggregates = []
-  for (const base of ['packages', 'packages/skins']) {
+  for (const base of ['packages']) {
     if (!existsSync(join(ROOT, base))) continue
     for (const entry of readdirSync(join(ROOT, base), { withFileTypes: true })) {
       if (!entry.isDirectory()) continue

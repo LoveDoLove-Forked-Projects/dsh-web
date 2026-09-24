@@ -173,14 +173,11 @@ function listSubdirs(dir) {
     .sort()
 }
 
-/** Find every aggregate package: packages/* and packages/skins/* with an aggregate.yml. */
+/** Find every aggregate package: packages/* with an aggregate.yml. */
 function findAggregates() {
   const candidates = []
   for (const name of listSubdirs(join(REPO_ROOT, 'packages'))) {
     candidates.push(join(REPO_ROOT, 'packages', name))
-  }
-  for (const name of listSubdirs(join(REPO_ROOT, 'packages', 'skins'))) {
-    candidates.push(join(REPO_ROOT, 'packages', 'skins', name))
   }
   return candidates
     .filter((dir) => existsSync(join(dir, 'aggregate.yml')))
@@ -645,27 +642,24 @@ function renderPatch(blocks, externalRows, ownPatches, inactiveRows, retireRows,
 }
 
 /**
- * Index every workspace package name to its directory: packages/* plus
- * packages/skins/* (two levels — the same roots findAggregates scans).
- * The shell's folded rows carry the real plugin package name in
- * `config.plugin`, and the client-children emission must resolve those
- * names back to directories to read each package's client face.
+ * Index every workspace package name to its directory: packages/*, the same
+ * root findAggregates scans. The shell's folded rows carry the real plugin
+ * package name in `config.plugin`, and the client-children emission must
+ * resolve those names back to directories to read each package's client face.
  */
 function packageIndex() {
   const index = new Map()
-  for (const group of [join(REPO_ROOT, 'packages'), join(REPO_ROOT, 'packages', 'skins')]) {
-    for (const name of listSubdirs(group)) {
-      const dir = join(group, name)
-      const pkgPath = join(dir, 'package.json')
-      if (!existsSync(pkgPath)) continue
-      try {
-        const manifest = JSON.parse(readFileSync(pkgPath, 'utf8'))
-        if (typeof manifest.name === 'string' && manifest.name !== '' && !index.has(manifest.name)) {
-          index.set(manifest.name, dir)
-        }
-      } catch {
-        // Unreadable package.json: not a client-children candidate.
+  for (const name of listSubdirs(join(REPO_ROOT, 'packages'))) {
+    const dir = join(REPO_ROOT, 'packages', name)
+    const pkgPath = join(dir, 'package.json')
+    if (!existsSync(pkgPath)) continue
+    try {
+      const manifest = JSON.parse(readFileSync(pkgPath, 'utf8'))
+      if (typeof manifest.name === 'string' && manifest.name !== '' && !index.has(manifest.name)) {
+        index.set(manifest.name, dir)
       }
+    } catch {
+      // Unreadable package.json: not a client-children candidate.
     }
   }
   return index

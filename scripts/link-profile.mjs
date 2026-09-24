@@ -59,7 +59,7 @@ function report(msg) {
 /** Family packages publish under this scope; everything else under packages/ is not ours to link. */
 const FAMILY_SCOPE = '@linxin666/'
 
-/** Every family package: packages/* and packages/skins/* that has a package.json with a name. */
+/** Every family package: packages/* that has a package.json with a name. */
 function familyPackages() {
   const found = []
   for (const { dir, pkgPath } of walkFamilyPackages(REPO_ROOT)) {

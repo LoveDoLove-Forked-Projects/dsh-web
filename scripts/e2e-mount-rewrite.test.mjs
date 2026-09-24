@@ -34,7 +34,7 @@ function writePkg(dir, body) {
 function makeWorkspace(root) {
   writePkg(path.join(root, 'packages', 'dsh-a'), { name: '@linxin666/dsh-a', version: '0.1.0' })
   writePkg(path.join(root, 'packages', 'dsh-b'), { name: '@linxin666/dsh-b', version: '0.2.0' })
-  writePkg(path.join(root, 'packages', 'skins', 'skin-x'), { name: '@linxin666/dsh-skin-x', version: '0.1.0' })
+  writePkg(path.join(root, 'packages', 'dsh-skin-x'), { name: '@linxin666/dsh-skin-x', version: '0.1.0' })
 }
 
 function makeTarballPkg(dir) {
@@ -317,11 +317,11 @@ test('family-dir mode: nested family deps rewrite inside the patched copies', as
   assert.equal(readTgzPkg(fileB).dependencies['@linxin666/dsh-a'], 'file:' + fileA)
 })
 
-test('findWorkspacePackage scans packages/ and packages/skins/', () => {
+test('findWorkspacePackage scans packages/', () => {
   const tmp = makeTmp()
   makeWorkspace(tmp)
   assert.match(findWorkspacePackage(tmp, '@linxin666/dsh-a'), /packages[/\\]dsh-a$/)
-  assert.match(findWorkspacePackage(tmp, '@linxin666/dsh-skin-x'), /packages[/\\]skins[/\\]skin-x$/)
+  assert.match(findWorkspacePackage(tmp, '@linxin666/dsh-skin-x'), /packages[/\\]dsh-skin-x$/)
   assert.equal(findWorkspacePackage(tmp, '@linxin666/nope'), null)
 })
 

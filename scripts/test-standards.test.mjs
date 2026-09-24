@@ -157,7 +157,7 @@ describe('waivers', () => {
 
 describe('lane scoping', () => {
   it('splits business lanes from repository tooling', () => {
-    assert.equal(isBusinessLane('packages/dsh-pet/tests/routes.spec.ts'), true)
+    assert.equal(isBusinessLane('packages/dsh-market/tests/routes.spec.ts'), true)
     assert.equal(isBusinessLane('tests/e2e/mount.e2e.ts'), true)
     assert.equal(isBusinessLane('desktop/tests/runtime.test.mjs'), true)
     assert.equal(isBusinessLane('scripts/market-worker.test.mjs'), false)

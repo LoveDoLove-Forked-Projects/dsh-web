@@ -47,7 +47,7 @@ describe('parseAggregateInputs', () => {
       'self:',
       '  - ../dsh-web-all',
       'deps:',
-      '  - ../skins/skin-center',
+      '  - ../dsh-preset-center',
       'inactive:',
       '  - web-ui-pet',
     ].join('\n')
@@ -55,7 +55,7 @@ describe('parseAggregateInputs', () => {
       'packages/dsh-market',
       'packages/dsh-usage',
       'packages/dsh-web-all',
-      'packages/skins/skin-center',
+      'packages/dsh-preset-center',
     ].sort())
   })
 

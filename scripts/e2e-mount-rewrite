@@ -92,7 +92,7 @@ function packWorkspace(pkgDir, outDir) {
 
 /** Locate a workspace package directory by its package name. */
 function findWorkspacePackage(root, name) {
-  const dirs = [path.join(root, 'packages'), path.join(root, 'packages', 'skins')]
+  const dirs = [path.join(root, 'packages')]
   for (const base of dirs) {
     if (!fs.existsSync(base)) continue
     for (const entry of fs.readdirSync(base)) {
