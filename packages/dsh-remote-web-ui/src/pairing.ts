@@ -248,6 +248,14 @@ export class PairingService {
    * Restore device sessions persisted by a previous process run. A corrupt
    * or missing file is tolerated (an empty device table, never a throw) —
    * persistence is an availability convenience, not a security boundary.
+   *
+   * Every still-valid session is restored, deliberately without applying
+   * `maxDevices`: the constructor runs with whatever cap the configuration
+   * layer has delivered so far (the schema default until the saved settings
+   * row is applied), and trimming here would permanently drop authorizations
+   * the user never revoked — the trimmed table reaches disk on the next
+   * heartbeat/sweep write. The cap is enforced where a device is admitted
+   * (see `accept`), against the configuration in force at that moment.
    */
   private loadPersisted(): void {
     const file = this.config.devicesFile
@@ -271,19 +279,10 @@ export class PairingService {
           ...(label !== undefined ? { userAgent: label } : {}),
         })
       }
-      this.clampToMaxDevices()
       if (this.evictIdle()) this.persistRevocation()
     } catch {
       // Unreadable/corrupt: start empty rather than refusing to boot.
     }
-  }
-
-  /** FIFO-cap the device table (a persisted file may outlive a lowered cap). */
-  private clampToMaxDevices(): void {
-    if (this.devices.size <= this.config.maxDevices) return
-    const overflow = this.devices.size - this.config.maxDevices
-    const ordered = [...this.devices.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt)
-    for (const [id] of ordered.slice(0, overflow)) this.devices.delete(id)
   }
 
   /** Drop sessions whose lastSeenAt is older than idleExpireMs. */
@@ -457,13 +456,18 @@ export class PairingService {
     }
     const deviceId = this.clock.randomToken()
     const now = this.clock.now()
-    if (this.devices.size >= this.config.maxDevices) {
-      // Evict the oldest session (FIFO) before binding a new device.
+    // FIFO-evict until a slot is free. The loop (not a single delete) covers a
+    // table that is already over the cap: restore keeps every persisted session
+    // (see loadPersisted), so the excess is collected here, once the store is
+    // actually asked to admit a new device, rather than at startup on a cap the
+    // configuration may not have delivered yet.
+    while (this.devices.size >= this.config.maxDevices) {
       let oldest: { id: string; createdAt: number } | undefined
       for (const [id, session] of this.devices) {
         if (oldest === undefined || session.createdAt < oldest.createdAt) oldest = { id, createdAt: session.createdAt }
       }
-      if (oldest !== undefined) this.devices.delete(oldest.id)
+      if (oldest === undefined) break
+      this.devices.delete(oldest.id)
     }
     const label = sanitizeUserAgent(userAgent)
     this.devices.set(deviceId, {
@@ -568,6 +572,16 @@ export class PairingService {
   /** Whether a cookie value names a currently live (non-idle) device session. */
   hasDevice(deviceId: string): boolean {
     return this.liveSession(deviceId) !== undefined
+  }
+
+  /**
+   * Number of device sessions in the table, including idle ones whose idle
+   * window has not been swept yet. Restore keeps every persisted session
+   * (see `loadPersisted`), so this can exceed the configured cap until the
+   * next `accept` trims the excess.
+   */
+  deviceCount(): number {
+    return this.devices.size
   }
 
   /** Subscribe to snapshot changes (each emit passes a fresh snapshot). */

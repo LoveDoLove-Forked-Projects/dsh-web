@@ -23,6 +23,8 @@
  */
 
 import {
+  isLoopbackHostname as isLoopbackName,
+  isLocalPage,
   REMOTE_API_PREFIX,
   REMOTE_CHANNEL_RULES,
   REMOTE_PREFIX,
@@ -40,13 +42,41 @@ export interface RemoteChannelSettingsSnapshot {
   value?: { enabled?: boolean; requirePairingForLan?: boolean }
 }
 
+/**
+ * Facts about the live page that decide whether it is local. Defaults come
+ * from `window` so ordinary call sites stay argument-free; tests pass them
+ * explicitly.
+ */
+export interface PageOriginFacts {
+  hostname: string
+  protocol?: string
+  transportOwnsHost?: boolean
+}
+
+/**
+ * Read the page-origin facts from a window-like object: the hostname and
+ * protocol of the page itself plus the official transport's host-owner flag
+ * (`__DSH_TRANSPORT__.ownsHost`, set by the desktop shell before any boot
+ * entry, and by this plugin's own paired landing).
+ * @param win - the window to read (defaults to the real one).
+ * @returns the facts `isLocalPage`/`remoteChannelRequired` decide from.
+ */
+export function pageOriginFacts(win: Pick<Window, 'location'> & Partial<Pick<Window, 'navigator'>> = window): PageOriginFacts {
+  const transport = (win as unknown as { __DSH_TRANSPORT__?: { ownsHost?: unknown } }).__DSH_TRANSPORT__
+  return {
+    hostname: win.location.hostname,
+    protocol: win.location.protocol,
+    ...(transport?.ownsHost === true ? { transportOwnsHost: true } : {}),
+  }
+}
+
 /** Decide whether a remote desktop channel is required from local or host policy. */
 export function remoteChannelRequired(
-  hostname: string,
+  origin: PageOriginFacts,
   snapshot: RemoteChannelSettingsSnapshot,
   hostPairingPolicy: boolean | undefined,
 ): boolean {
-  if (isLoopbackHostname(hostname)) return false
+  if (isLocalPage(origin.hostname, origin.protocol, origin.transportOwnsHost)) return false
   if (snapshot.status === 'ready') {
     return (snapshot.value?.enabled ?? true) && (snapshot.value?.requirePairingForLan ?? true)
   }
@@ -56,20 +86,13 @@ export function remoteChannelRequired(
 }
 
 /**
- * Browser-safe loopback classification for the page origin (the SDK client
- * exports its own; this copy keeps the module dependency-free).
- * @param hostname - a location hostname (IPv6 without brackets).
- * @returns true for localhost, IPv6 loopback, or any 127/8 literal.
+ * Browser-safe loopback classification for the page origin. The definition
+ * lives once in the rules module, which the inlined boot script mirrors
+ * verbatim, so the browser half and the parse-time patch can never disagree
+ * (an IPv6-loopback origin judged remote would rewrite every call onto a
+ * channel it can never pair on).
  */
-export function isLoopbackHostname(hostname: string): boolean {
-  // WHATWG location.hostname keeps IPv6 literals bracketed ("[::1]"); the
-  // host-side shared predicate accepts that spelling, so this browser copy must
-  // too, or an IPv6-loopback origin is judged remote and rewrites every call
-  // onto the gated channel where it can never pair.
-  if (hostname === 'localhost' || hostname === '::1' || hostname === '[::1]') return true
-  const parts = hostname.split('.')
-  return parts.length === 4 && parts[0] === '127' && parts.every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255)
-}
+export const isLoopbackHostname = isLoopbackName
 
 /**
  * Whether one same-origin path must ride the gated channel (fetch, EventSource,

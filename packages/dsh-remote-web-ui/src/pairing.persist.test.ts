@@ -96,17 +96,61 @@ describe('PairingService device persistence', () => {
     expect(restarted.hasDevice(deviceId)).toBe(true)
   })
 
-  it('clamps a persisted table to maxDevices when the file holds more sessions', () => {
+  // #1696: the constructor runs before the saved settings row is applied, so
+  // its cap can still be the schema default. Restoring must not enforce it —
+  // trimming there silently revokes authorizations the user never revoked,
+  // and the trimmed table reaches disk on the next heartbeat/sweep write.
+  it('operator: every valid persisted session survives a restart under the startup cap', () => {
     const file = join(dir, 'devices.json')
+    // Given a store holding three devices while the startup cap reads 4
+    // (the schema default) and the saved settings value is 12.
+    writeFileSync(file, JSON.stringify({
+      dev1: { createdAt: 1_000, lastSeenAt: 1_000 },
+      dev2: { createdAt: 2_000, lastSeenAt: 2_000 },
+      dev3: { createdAt: 3_000, lastSeenAt: 3_000 },
+    }))
+    // When a new process restores the store.
+    const service = new PairingService({ ...BASE_CONFIG, maxDevices: 4, devicesFile: file }, makeClock())
+    // Then no paired device lost its authorization to the transient cap.
+    expect(service.hasDevice('dev1')).toBe(true)
+    expect(service.hasDevice('dev2')).toBe(true)
+    expect(service.hasDevice('dev3')).toBe(true)
+  })
+
+  it('operator: a restored over-cap table is not trimmed by a heartbeat and sweep', () => {
+    const file = join(dir, 'devices.json')
+    // Given twelve persisted devices restored under the default cap of 4.
+    const rows = Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => [`dev${i}`, { createdAt: 1_000 + i, lastSeenAt: 1_000 + i }]),
+    )
+    writeFileSync(file, JSON.stringify(rows))
+    const service = new PairingService({ ...BASE_CONFIG, maxDevices: 4, devicesFile: file }, makeClock())
+    // When the saved cap of 12 arrives and normal traffic writes the store.
+    service.config = { ...service.config, maxDevices: 12 }
+    service.heartbeat('dev0')
+    service.sweep()
+    // Then the file still names all twelve devices.
+    const persisted = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    expect(Object.keys(persisted)).toHaveLength(12)
+    expect(service.deviceCount()).toBe(12)
+  })
+
+  it('operator: the cap is enforced when a device is admitted, not before', () => {
+    const file = join(dir, 'devices.json')
+    // Given three persisted devices restored under a cap of 2.
     writeFileSync(file, JSON.stringify({
       dev1: { createdAt: 1_000, lastSeenAt: 1_000 },
       dev2: { createdAt: 2_000, lastSeenAt: 2_000 },
       dev3: { createdAt: 3_000, lastSeenAt: 3_000 },
     }))
     const service = new PairingService({ ...BASE_CONFIG, maxDevices: 2, devicesFile: file }, makeClock())
-    expect(service.hasDevice('dev3')).toBe(true)
-    expect(service.hasDevice('dev2')).toBe(true)
+    expect(service.deviceCount()).toBe(3)
+    // When one more device pairs.
+    const paired = pairDevice(service)
+    // Then the table is trimmed to the cap, oldest first, keeping the newcomer.
+    expect(service.deviceCount()).toBe(2)
     expect(service.hasDevice('dev1')).toBe(false)
+    expect(service.hasDevice(paired)).toBe(true)
   })
 
   it('keeps sessions memory-only when devicesFile is unset', () => {

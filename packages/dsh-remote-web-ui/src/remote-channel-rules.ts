@@ -11,6 +11,76 @@ export const REMOTE_PREFIX = '/remote'
 
 import { REMOTE_DEVICE_HEADER, REMOTE_DEVICE_QUERY } from './remote-methods.ts'
 
+/**
+ * Custom schemes that deliver the GUI from the same machine, so their pages
+ * are local without a loopback hostname. The official DSH Desktop shell
+ * serves its Web GUI from `dsh-app://app/` (`location.hostname === 'app'`,
+ * `location.protocol === 'dsh-app:'`), which no hostname predicate can
+ * recognise; the plugin's own fences then treated the desktop as a LAN/tunnel
+ * origin and asked the user to pair a device the shell can never pair (#1682).
+ * Only the page's own delivery scheme is listed here — the entries never
+ * influence how a *remote* caller is judged.
+ */
+export const DESKTOP_PAGE_PROTOCOLS: readonly string[] = ['dsh-app:']
+
+/**
+ * Hostname-only loopback classification: localhost, the IPv6 loopback literal
+ * (WHATWG keeps its brackets) and any 127/8 IPv4 literal. Kept string-in,
+ * boolean-out and dependency-free so the browser half and the inlined boot
+ * script can both run it verbatim.
+ * @param hostname - a page/cookie hostname, IPv6 literals bracketed.
+ * @returns true for a loopback name or literal.
+ */
+export function isLoopbackHostname(hostname: string): boolean {
+  if (hostname === 'localhost' || hostname === '::1' || hostname === '[::1]') return true
+  const parts = hostname.split('.')
+  return parts.length === 4 && parts[0] === '127' && parts.every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255)
+}
+
+/**
+ * Whether the current page is served from the machine running the host, so
+ * its same-origin traffic must NOT be fenced behind the pairing channel.
+ * Three independent facts all describe the page itself and any one is enough:
+ *
+ * - the page's own hostname is loopback;
+ * - the page's protocol is a {@link DESKTOP_PAGE_PROTOCOLS} desktop scheme;
+ * - the official connection transport already declared this shell the host
+ *   owner (`__DSH_TRANSPORT__.ownsHost === true`) AND the page is not a
+ *   network origin. The official client reads the same hook to derive
+ *   `connection.isLoopback`, and the desktop shell sets it before any boot
+ *   entry — without this term the plugin's predicate contradicts the host's
+ *   own conclusion (#1682). The network-origin guard is deliberate: this
+ *   plugin's own device-gated landing (a LAN or tunnel page) publishes the
+ *   same hook to grant a paired remote the full UI, and that page must keep
+ *   riding the gated channel — `ownsHost` buys the presentation, never an
+ *   exemption from the pairing fence.
+ *
+ * @param hostname - `location.hostname` of the page.
+ * @param protocol - `location.protocol` of the page (for example `https:`).
+ * @param transportOwnsHost - `__DSH_TRANSPORT__?.ownsHost` as read by the caller.
+ * @returns true when the page is local and needs no remote channel.
+ */
+export function isLocalPage(hostname: string, protocol?: string, transportOwnsHost?: boolean): boolean {
+  if (protocol !== undefined && DESKTOP_PAGE_PROTOCOLS.includes(protocol)) return true
+  if (isLoopbackHostname(hostname)) return true
+  // A granted remote also sets ownsHost; only a page whose own origin is
+  // otherwise local may treat the hook as proof of a local page.
+  return transportOwnsHost === true && !isNetworkOrigin(hostname)
+}
+
+/**
+ * Whether a hostname can only be reached across a network, so a page on it is
+ * remote whatever transport hook it carries: any IPv4/IPv6 literal (a dot or a
+ * colon) or any dotted DNS name. A hostname with no dot and no colon is a
+ * scheme-local authority (the desktop shell's `app`), which is why this test,
+ * not a loopback test, is what the `ownsHost` term is gated on.
+ * @param hostname - the page hostname.
+ * @returns true when the page cannot be the machine's own local page.
+ */
+function isNetworkOrigin(hostname: string): boolean {
+  return hostname.includes('.') || hostname.includes(':')
+}
+
 export { REMOTE_DEVICE_HEADER, REMOTE_DEVICE_QUERY }
 
 /** Connection-plugin method prefix under the gated channel. */
@@ -44,6 +114,11 @@ export interface RemoteChannelRules {
   readonly uploadPath: string
   /** Page global the pre-Cordis upload hook is published under. */
   readonly uploadHookGlobal: string
+  /**
+   * Delivery schemes whose pages are local (see DESKTOP_PAGE_PROTOCOLS).
+   * Carried in the rules so the inlined boot script applies the same list.
+   */
+  readonly desktopProtocols: readonly string[]
   /**
    * Page global carrying the server-issued host-mode grant. Only the plugin's
    * own device-gated app landing (/pair-app) publishes it; the boot patch
@@ -79,6 +154,7 @@ export const REMOTE_CHANNEL_RULES: RemoteChannelRules = {
   deviceQuery: REMOTE_DEVICE_QUERY,
   uploadPath: '/api/session/uploadFileBinary',
   uploadHookGlobal: '__DSH_FILE_UPLOAD__',
+  desktopProtocols: DESKTOP_PAGE_PROTOCOLS,
   hostGrantGlobal: REMOTE_HOST_GRANT_GLOBAL,
 }
 

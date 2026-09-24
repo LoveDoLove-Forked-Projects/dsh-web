@@ -307,6 +307,34 @@ function familyUpdatePackages(
   return [...names]
 }
 
+/** Concurrent registry probes in flight for one update-status call. */
+export const UPDATE_PROBE_CONCURRENCY = 4
+
+/**
+ * Probe every package's latest version with a bounded number of requests in
+ * flight, preserving the caller's order in the result.
+ * @param names - package names to probe.
+ * @param fetchLatest - the probe for one package (returns undefined on failure).
+ * @returns one result per name, in the input order.
+ */
+export async function probeLatestVersions(
+  names: readonly string[],
+  fetchLatest: (name: string) => Promise<string | undefined>,
+): Promise<(string | undefined)[]> {
+  const results: (string | undefined)[] = new Array(names.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next++
+      if (index >= names.length) return
+      results[index] = await fetchLatest(names[index]!)
+    }
+  }
+  const workers = Math.min(UPDATE_PROBE_CONCURRENCY, names.length)
+  await Promise.all(Array.from({ length: workers }, () => worker()))
+  return results
+}
+
 /**
  * Probe the npm registry for one package's latest release.
  * @param name - the package name (scope slash URL-encoded).
@@ -483,9 +511,14 @@ export async function checkUpdates(deps: UpdateCheckDeps): Promise<UpdateStatus>
   // aggregate) still check every installed @linxin666/* plugin (#377);
   // familyUpdatePackages skips link:/file: development dependencies.
   const names = familyUpdatePackages(anchor, manifest, profileManifest)
-  // The registry probes are independent: run them together instead of
-  // serializing up to N x 10s of registry latency behind one status call.
-  const latestList = await Promise.all(names.map(name => deps.fetchLatest(name)))
+  // The registry probes are independent, so they run concurrently — but with a
+  // small ceiling rather than all at once. A full install fans out ~20 probes,
+  // and on hosts behind an application-aware security middlebox that burst is
+  // what gets the node process's outbound connections throttled (the update
+  // check itself only ever loses latency: one probe is 10s-bounded and a
+  // failure is shown as a probe failure). Four keeps the status call quick
+  // while staying inside the concurrency such a middlebox tolerates (#1677).
+  const latestList = await probeLatestVersions(names, deps.fetchLatest)
   const packages: UpdatePackageStatus[] = []
   let probeFailures = 0
   names.forEach((name, index) => {

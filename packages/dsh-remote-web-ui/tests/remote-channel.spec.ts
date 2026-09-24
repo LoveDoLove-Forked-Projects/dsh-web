@@ -69,14 +69,46 @@ describe('rewrite rules', () => {
 
   it('uses the host policy while remote settings are unavailable (issue #905)', () => {
     const unavailable = { status: 'unavailable' as const }
-    expect(remoteChannelRequired('192.168.1.5', unavailable, undefined)).toBe(true)
-    expect(remoteChannelRequired('192.168.1.5', unavailable, false)).toBe(false)
-    expect(remoteChannelRequired('192.168.1.5', unavailable, true)).toBe(true)
-    expect(remoteChannelRequired('127.0.0.1', unavailable, true)).toBe(false)
-    expect(remoteChannelRequired('192.168.1.5', {
+    const lan = { hostname: '192.168.1.5', protocol: 'http:' }
+    const loopback = { hostname: '127.0.0.1', protocol: 'http:' }
+    expect(remoteChannelRequired(lan, unavailable, undefined)).toBe(true)
+    expect(remoteChannelRequired(lan, unavailable, false)).toBe(false)
+    expect(remoteChannelRequired(lan, unavailable, true)).toBe(true)
+    expect(remoteChannelRequired(loopback, unavailable, true)).toBe(false)
+    expect(remoteChannelRequired(lan, {
       status: 'ready',
       value: { enabled: true, requirePairingForLan: false },
     }, true)).toBe(false)
+  })
+
+  // #1682: the official DSH Desktop shell delivers its GUI from
+  // dsh-app://app/, so the hostname is `app` and no hostname predicate can
+  // recognise the page as the machine's own. Treating it as remote fenced the
+  // whole desktop behind a pairing fence it can never satisfy (the shell drops
+  // every set-cookie), so those pages must never install the channel.
+  it('operator: a page the machine itself serves is never fenced', () => {
+    const unavailable = { status: 'unavailable' as const }
+    // Given the desktop shell's own delivery origin and the connection
+    // transport already declaring this shell the host owner.
+    const desktop = { hostname: 'app', protocol: 'dsh-app:' }
+    const grantedShell = { hostname: 'app', protocol: 'app:', transportOwnsHost: true }
+    // When the channel decision runs with pairing demanded for LAN.
+    // Then the desktop page is local and no channel is installed.
+    expect(remoteChannelRequired(desktop, unavailable, true)).toBe(false)
+    expect(remoteChannelRequired(grantedShell, unavailable, true)).toBe(false)
+    // A webpage that merely happens to be named `app` over http stays remote.
+    expect(remoteChannelRequired({ hostname: 'app', protocol: 'http:' }, unavailable, true)).toBe(true)
+    // A LAN origin and a tunnel origin stay remote, however the page is served.
+    expect(remoteChannelRequired({ hostname: '192.168.1.5', protocol: 'http:' }, unavailable, true)).toBe(true)
+    expect(remoteChannelRequired({ hostname: 'box.trycloudflare.com', protocol: 'https:' }, unavailable, true)).toBe(true)
+    // A scheme-local authority carrying the transport hook is the desktop
+    // shell: local, no channel.
+    expect(remoteChannelRequired({ hostname: 'app', protocol: 'app:', transportOwnsHost: true }, unavailable, true)).toBe(false)
+    // But the hook alone never unfences a network page: this plugin's own
+    // device-gated landing grants it to a paired LAN/tunnel remote, and that
+    // page must keep riding the gated channel.
+    expect(remoteChannelRequired({ hostname: '192.168.1.5', protocol: 'http:', transportOwnsHost: true }, unavailable, true)).toBe(true)
+    expect(remoteChannelRequired({ hostname: 'box.trycloudflare.com', protocol: 'https:', transportOwnsHost: true }, unavailable, true)).toBe(true)
   })
 
   it('decides the channel lifecycle transitions (issue #808)', () => {

@@ -13,6 +13,7 @@ Status: implemented
 1. `remote.module.css` 把宽栏底栏排成一个可换行的行，并以未折叠框架为作用域（`[data-dsh-frame]:not([data-sidebar-collapsed])`）：设置座位开启该行（`order: 1`、`flex: 1 1 auto`），底部动作座位占据行尾（`order: 2`、`flex: none`），于是「设置」触发器与动作对共用一行，「设置」触发器收窄到留给它的宽度。
 2. 其余任何脚部子节点——用量速览卡、其它插件的块——在该行之上各占一整行（`flex: 1 1 100%`），因此共享行无需知道有哪些插件会追加子节点也保持稳定。
 3. 折叠框架的栏轨保持官方原有的堆叠脚部：这些规则在 `[data-sidebar-collapsed]` 下一律不生效——栏轨按设计把圆形图标堆叠，56px 的列也放不下共享行。
+4. **栏轨座位本身也改为纵排（issue #1678）。** 把栏轨完全交给官方外壳是错的：官方在栏轨下同样把 `sidebar.footer.action` 渲染成**居中的横向条**，于是两个 36px 圆形让该座位宽达 78px（图标列只有 35px），外侧圆形被推到 `x=-11` 与 `x=31`，而栏轨其它行都在 `x=10`。以折叠框架为作用域、并用本插件自己的 `data-rail='rail'` 占据者为锚点（`[class*='footerActions']:has([data-rail='rail'])`）的规则把该座位变成居中纵排、间距 4px，每个占据者因此保持 36px 的栏轨列。宽栏永不匹配该规则；若官方外壳自己就纵排脚部，该规则是等值 no-op。
 
 ## Alternatives considered
 
@@ -26,8 +27,9 @@ Status: implemented
 - 桌面宽栏下「设置」触发器不再独占一行，更新与远程触发器与之并列；栏轨不受影响。
 - 布局依赖官方后缀类 `footArea` / `settingsArea` / `footerActions` 与框架上的 `data-sidebar-collapsed` 标记——与竖屏层相同的存活契约，每轮官方 GUI 升级都要重新视觉 QA。
 - 任何向脚部追加块的插件都自动获得一整行；想让自己的块加入共享行的插件需要接受同样的 order/basis 契约。
+- 栏轨下该座位把占据者纵向堆叠在图标列内，不再横向溢出。
 
 ## Testing
 
-- `packages/dsh-remote-web-ui/tests/foot-row-css.spec.ts`：宽栏行的方向与换行、设置座位的伸展与 order、动作座位的行尾位置、其他脚部子节点的整行规则，以及每条规则的折叠框架作用域。
+- `packages/dsh-remote-web-ui/tests/foot-row-css.spec.ts`：宽栏行的方向与换行、设置座位的伸展与 order、动作座位的行尾位置、其他脚部子节点的整行规则、每条宽栏规则的折叠框架作用域，以及存在栏轨占据者时该座位的纵排方向。
 - 真机：宽栏下「设置」触发器与动作对同处一行，设置触发器实测宽 182px（原 260px），用量卡在其上一行；栏轨保持 `flex-direction: column` 且动作图标仍堆叠。

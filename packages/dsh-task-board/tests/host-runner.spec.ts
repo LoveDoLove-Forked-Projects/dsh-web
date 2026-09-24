@@ -433,6 +433,27 @@ describe('HostExecutionRunner', () => {
     }
   })
 
+  // #1672: the running gateway may withdraw the strict definition of
+  // session/list (a cohort change under the plugin). The plugin sends the
+  // documented wire shape and nothing in this repository can restore that
+  // definition, so the roster degrades at once instead of burning the
+  // service-unavailable retry window (five calls with backoff) on a condition
+  // retrying cannot change.
+  it('operator: a withdrawn session/list definition degrades the roster without retrying', async () => {
+    // Given a gateway whose session/list definition was withdrawn.
+    const gateway = {
+      invoke: fakeInvoke(async () => {
+        throw Object.assign(new Error('typert gateway: session/list: its strict definition was withdrawn and SRC fallback is forbidden'), { code: 'gateway/definition-unavailable' })
+      }),
+    }
+    const runner = new HostExecutionRunner(gateway, undefined, undefined, { attempts: 5, backoffMs: 0 })
+    // When the roster is polled and an execution outcome inspected.
+    await expect(runner.listRunning()).resolves.toEqual({ known: false })
+    await expect(runner.inspect('session-a')).resolves.toEqual({ outcome: 'pending' })
+    // Then each path probed exactly once: no retry window was spent.
+    expect(gateway.invoke).toHaveBeenCalledTimes(2)
+  })
+
   it('retries a boot-race service-unavailable roster error until the controller activates', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {

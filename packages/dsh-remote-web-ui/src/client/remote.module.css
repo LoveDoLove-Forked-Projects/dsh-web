@@ -822,6 +822,24 @@
   align-items: center;
 }
 
+/* ── Collapsed rail foot seat ────────────────────────────────────────────
+
+   The shell renders `sidebar.footer.action` as a centered horizontal row
+   in both column states. In the 56px rail that row is only as wide as its
+   occupants, so a second registrar overflows the icon column on both sides:
+   with two 36px circles the seat measures 78px against a 35px column, and
+   the outer buttons land at x=-11 and x=31 while every other rail row sits
+   at x=10 (issue #1678). Stack the seat vertically whenever a rail-marked
+   occupant is inside it, so each circle keeps the 36px rail column the
+   shell uses elsewhere; the wide column never matches this rule. The anchor
+   is this plugin's own `data-rail` marker, so the rule is an equal-value
+   no-op for a shell that already stacks its foot. */
+:global([data-dsh-frame][data-sidebar-collapsed]) [class*='footerActions']:has([data-rail='rail']) {
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
 /* ── update panel extras ─────────────────────────────────────────────── */
 
 .updateStatus {

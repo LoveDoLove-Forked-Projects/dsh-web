@@ -17,11 +17,13 @@ import {
   isLinkedSpec,
   parseReleaseNotesBody,
   parseSemver,
+  probeLatestVersions,
   resolveAnchorManifest,
   resolveUpdateTarget,
   runUpdate,
   runUpdateVerified,
   SELF_PACKAGE,
+  UPDATE_PROBE_CONCURRENCY,
 } from "../src/update.ts"
 
 /** One temp fixture root per suite; removed after each test. */
@@ -1029,5 +1031,41 @@ describe('fetchLatestVersion', () => {
       throw new Error('network down')
     })
     await expect(fetchLatestVersion('@linxin666/dsh-remote-web-ui', fetchImpl)).resolves.toBeUndefined()
+  })
+})
+
+// #1677: a full install fans out around twenty registry probes. On hosts
+// behind an application-aware security middlebox that burst throttles the
+// node process's whole outbound path, so the fan-out is bounded and the
+// status call keeps its order.
+describe('probeLatestVersions', () => {
+  it('operator: registry probes stay within the concurrency ceiling', async () => {
+    // Given twenty package names and a probe that records its own overlap.
+    const names = Array.from({ length: 20 }, (_, i) => `@linxin666/pkg-${i}`)
+    let inFlight = 0
+    let peak = 0
+    const fetchLatest = async (name: string): Promise<string | undefined> => {
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+      await Promise.resolve()
+      inFlight -= 1
+      return `1.0.${name.split('-').pop()}`
+    }
+    // When every package is probed.
+    const versions = await probeLatestVersions(names, fetchLatest)
+    // Then no more than the ceiling is ever in flight, and the result keeps
+    // the caller's order.
+    expect(peak).toBeLessThanOrEqual(UPDATE_PROBE_CONCURRENCY)
+    expect(peak).toBeGreaterThan(1)
+    expect(versions).toEqual(names.map(name => `1.0.${name.split('-').pop()}`))
+  })
+
+  it('operator: a failing probe yields undefined in place without stopping the rest', async () => {
+    // Given a probe that fails for one package only.
+    const names = ['@linxin666/a', '@linxin666/b', '@linxin666/c']
+    const versions = await probeLatestVersions(names, async name => (name.endsWith('/b') ? undefined : '1.0.0'))
+    // When the bounded fan-out runs.
+    // Then the failure is localized and every other package still resolved.
+    expect(versions).toEqual(['1.0.0', undefined, '1.0.0'])
   })
 })

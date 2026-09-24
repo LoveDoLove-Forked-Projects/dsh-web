@@ -31,11 +31,12 @@ import { readPairGatePolicy, sendHeartbeat, shouldStopHeartbeat } from './pair-a
 import {
   channelTransition,
   installRemoteChannel,
-  isLoopbackHostname,
+  pageOriginFacts,
   remoteChannelRequired,
   REMOTE_CHANNEL_BOOT_GLOBAL,
   type RemoteChannelBootSeat,
 } from './remote-channel.ts'
+import { isLocalPage } from '../remote-channel-rules.ts'
 import { FenceNotice } from './FenceNotice.tsx'
 import { reportDailyHeartbeat } from './telemetry.ts'
 import { startMobileAdapt, type RemoteAdaptGlobal } from './mobile-adapt.ts'
@@ -333,7 +334,7 @@ export function apply(ctx: ClientContext): void {
     showFenceNotice()
   }
   const channelActive = (): boolean => remoteChannelRequired(
-    window.location.hostname,
+    pageOriginFacts(window),
     settingsForm.getSnapshot(),
     hostPairingPolicy,
   )
@@ -387,7 +388,8 @@ export function apply(ctx: ClientContext): void {
   }
   settingsForm.subscribe(syncChannel)
   syncChannel()
-  if (!isLoopbackHostname(window.location.hostname) && settingsForm.getSnapshot().status !== 'ready') {
+  const pageOrigin = pageOriginFacts(window)
+  if (!isLocalPage(pageOrigin.hostname, pageOrigin.protocol, pageOrigin.transportOwnsHost) && settingsForm.getSnapshot().status !== 'ready') {
     void readPairGatePolicy().then((policy) => {
       hostPairingPolicy = policy.requirePairingForLan
       syncChannel()

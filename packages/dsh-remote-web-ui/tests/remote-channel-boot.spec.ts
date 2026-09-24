@@ -41,7 +41,7 @@ interface FakeWindow {
   fetch: (input: unknown, init?: unknown) => Promise<Response>
   WebSocket: unknown
   EventSource?: unknown
-  location: { origin: string; href: string; hostname: string }
+  location: { origin: string; href: string; hostname: string; protocol: string }
   sessionStorage: { getItem(key: string): string | null }
   [REMOTE_CHANNEL_BOOT_GLOBAL]?: RemoteChannelBootSeat
   calls: string[]
@@ -50,10 +50,10 @@ interface FakeWindow {
   response: () => Response
 }
 
-function makeWindow(hostname = '192.168.1.20', port = '3080'): FakeWindow {
-  const origin = `http://${hostname}:${port}`
+function makeWindow(hostname = '192.168.1.20', port = '3080', protocol = 'http:'): FakeWindow {
+  const origin = `${protocol}//${hostname}:${port}`
   const win: FakeWindow = {
-    location: { origin, href: `${origin}/`, hostname },
+    location: { origin, href: `${origin}/`, hostname, protocol },
     calls: [],
     initSeen: [],
     wsUrls: [],
@@ -123,6 +123,47 @@ describe('remote channel boot patch (issue #987)', () => {
       expect(win.fetch).toBe(originalFetch)
       expect(win[REMOTE_CHANNEL_BOOT_GLOBAL]).toBeUndefined()
     }
+  })
+
+  // #1682: the desktop shell serves the GUI from dsh-app://app/, so the
+  // parse-time patch must self-skip there exactly like it does on loopback;
+  // otherwise every early official call is rewritten onto a gated prefix the
+  // desktop can never satisfy.
+  it('operator: the desktop shell delivery origin keeps its plain paths', () => {
+    // Given the page the DSH Desktop shell loads (hostname app, scheme dsh-app).
+    const win = makeWindow('app', '0', 'dsh-app:')
+    const originalFetch = win.fetch
+    // When the parse-time boot patch runs.
+    boot(win)
+    // Then it leaves the page untouched and installs no seat.
+    expect(win.fetch).toBe(originalFetch)
+    expect(win[REMOTE_CHANNEL_BOOT_GLOBAL]).toBeUndefined()
+  })
+
+  it('operator: a scheme-local page the transport declared host-owned keeps its plain paths', () => {
+    // Given a scheme-local authority (the desktop shell's `app`) whose
+    // transport hook already declares the machine the owner.
+    const win = makeWindow('app', '0', 'app:') as FakeWindow & { __DSH_TRANSPORT__?: { ownsHost?: boolean } }
+    win.__DSH_TRANSPORT__ = { ownsHost: true }
+    const originalFetch = win.fetch
+    // When the parse-time boot patch runs.
+    boot(win)
+    // Then the page keeps its plain paths.
+    expect(win.fetch).toBe(originalFetch)
+    expect(win[REMOTE_CHANNEL_BOOT_GLOBAL]).toBeUndefined()
+  })
+
+  // The plugin's own device-gated landing grants the same hook to a paired
+  // LAN/tunnel page; that page must keep riding the gated channel.
+  it('operator: a network page never leaves the gate, host-owned hook or not', async () => {
+    // Given a LAN origin carrying the transport hook.
+    const win = makeWindow('192.168.1.20') as FakeWindow & { __DSH_TRANSPORT__?: { ownsHost?: boolean } }
+    win.__DSH_TRANSPORT__ = { ownsHost: true }
+    // When the parse-time boot patch runs and a fenced call is issued.
+    boot(win)
+    await win.fetch('/api/session.list')
+    // Then the call still rides the gated channel.
+    expect(win.calls[0]).toBe('http://192.168.1.20:3080/remote/api/session.list')
   })
 
   it('rewrites fetch paths exactly like the browser patch', async () => {

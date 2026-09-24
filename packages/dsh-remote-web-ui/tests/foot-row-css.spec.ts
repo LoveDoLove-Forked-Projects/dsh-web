@@ -23,6 +23,8 @@ function ruleBody(selector: string): string {
 
 /** Every wide-foot rule is scoped to the uncollapsed frame. */
 const WIDE = ":global([data-dsh-frame]:not([data-sidebar-collapsed])) "
+/** The rail rule is scoped to the collapsed frame and anchored on a rail occupant. */
+const RAIL = ":global([data-dsh-frame][data-sidebar-collapsed]) "
 
 describe('wide sidebar foot row', () => {
   it('user gets the settings trigger and the footer actions on one line', () => {
@@ -57,5 +59,19 @@ describe('wide sidebar foot row', () => {
     for (const selector of ["[class*='footArea']", "[class*='settingsArea']", "[class*='footerActions']"]) {
       expect(() => ruleBody(WIDE + selector)).not.toThrow()
     }
+  })
+
+  // #1678: the shell renders sidebar.footer.action as a centered horizontal
+  // row in the rail too, so a second registrar makes the seat 78px wide and
+  // the outer circles spill past the 56px column. The plugin pins its own
+  // seat to a column whenever a rail occupant sits inside it.
+  it('user in the collapsed rail gets the action seat stacked in the icon column', () => {
+    // Given the collapsed frame's action seat holding a rail-marked occupant
+    const seat = ruleBody(RAIL + "[class*='footerActions']:has([data-rail='rail'])")
+    // When the rail layout applies
+    // Then the occupants stack and stay centered on the 36px icon column
+    expect(seat).toContain('flex-direction: column')
+    expect(seat).toContain('align-items: center')
+    expect(seat).toContain('gap: 4px')
   })
 })

@@ -64,6 +64,7 @@
     "clsx": "^2.1.1",
     "qrcode.react": "^4.2.0",
     "schemastery": "^3.18.0",
+    "yaml": "^2.8.2",
     "zod": "^4.4.3"
   },
   "peerDependencies": {

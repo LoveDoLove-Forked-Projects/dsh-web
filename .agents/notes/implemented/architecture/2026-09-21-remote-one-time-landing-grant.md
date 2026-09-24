@@ -42,6 +42,18 @@ reports) the shell is reachable without pairing at all.
   tag — ahead of the harness-injected boot patch — instead of before `</head>`.
   A shell served to an unpaired browser never carries the marker, so it keeps
   the official UI's memory-scope presentation.
+- **The local-page test reads the same hook, gated on the page origin (issue
+  #1682).** The client's "is this page the machine's own?" predicate
+  (`isLocalPage` in `src/remote-channel-rules.ts`, mirrored by the inlined boot
+  script) now also accepts a page whose protocol is the desktop shell's own
+  delivery scheme (`dsh-app:`), or whose transport already carries `ownsHost`
+  *and* whose hostname is scheme-local (no dot, no colon). The network-origin
+  guard is the point: the landing publishes the very same hook for a paired LAN
+  or tunnel page, and that page must keep riding the gated channel — host mode
+  buys the presentation surface, never an exemption from the pairing fence. A
+  hostname-only predicate had contradicted the official client, which already
+  treats an `ownsHost` shell as local, and fenced the entire desktop behind a
+  pairing page the shell can never complete (it strips every `set-cookie`).
 - **The pairing cookie is `Secure` over TLS.** `deviceCookie` adds `Secure`
   when the request arrived over TLS (`x-forwarded-proto: https`, the same signal
   `appOrigin` already trusts) and leaves it off on plain-HTTP LAN, where a

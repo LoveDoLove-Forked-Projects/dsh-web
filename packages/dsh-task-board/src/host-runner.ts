@@ -45,6 +45,18 @@ function isInvocationUnavailable(error: unknown): boolean {
   return code === 'invocation-unavailable' || code === 'gateway/invocation-unavailable'
 }
 
+/**
+ * Whether the endpoint exists but its strict definition was withdrawn by the
+ * running gateway (the cohort changed under this plugin). The plugin can send
+ * the call correctly and still be refused, and nothing in this repository can
+ * restore the definition, so the roster is treated as unknown quietly instead
+ * of printing an error the user has no action for (#1672).
+ */
+function isDefinitionWithdrawn(error: unknown): boolean {
+  const code = (error as { code?: unknown }).code
+  return code === 'definition-unavailable' || code === 'gateway/definition-unavailable'
+}
+
 const SERVICE_UNAVAILABLE_ATTEMPTS = 5
 const SERVICE_UNAVAILABLE_BACKOFF_MS = 2_000
 
@@ -295,6 +307,13 @@ export class HostExecutionRunner {
           }
           return { known: false }
         }
+        if (isDefinitionWithdrawn(error)) {
+          if (!this.unsupportedSessionListWarned) {
+            this.unsupportedSessionListWarned = true
+            console.warn('[dsh-task-board] the host gateway withdrew the session/list definition for this DSH cohort; task board roster auto-discovery is disabled', error)
+          }
+          return { known: false }
+        }
         if (!isServiceUnavailable(error) || attempt >= this.unavailableAttempts) {
           console.error('[dsh-task-board] session/list failed; treating the host session roster as unknown', error)
           return { known: false }
@@ -319,6 +338,10 @@ export class HostExecutionRunner {
             this.unsupportedSessionListWarned = true
             console.warn('[dsh-task-board] DSH runtime session endpoint unavailable (requires DSH >= 0.1.2-alpha.2); task board roster auto-discovery is disabled', error)
           }
+          return { outcome: 'pending' }
+        }
+        if (isDefinitionWithdrawn(error)) {
+          console.warn('[dsh-task-board] the host gateway withdrew the session/list definition for this DSH cohort; keeping the outcome pending', error)
           return { outcome: 'pending' }
         }
         console.warn('[dsh-task-board] session/list failed during execution inspection; keeping the outcome pending', error)

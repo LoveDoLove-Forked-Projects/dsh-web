@@ -45,10 +45,17 @@ export function buildRemoteChannelBootScript(rules: RemoteChannelRules = REMOTE_
   return '(function(){' +
     'try{' +
     'var w=window,loc=w.location,h=loc.hostname;' +
-    // Loopback origins (including the bracketed IPv6 literal WHATWG returns)
-    // keep the original paths (mirrors isLoopbackHostname).
-    "if(h==='localhost'||h==='::1'||h==='[::1]'||/^127(\\.\\d{1,3}){3}$/.test(h))return;" +
     'var R=' + json + ';' +
+    // A page the machine itself serves keeps the original paths and no
+    // channel: loopback names (including the bracketed IPv6 literal WHATWG
+    // returns), the desktop shell's own delivery scheme, or a shell the
+    // official transport already declared the host owner. This mirrors
+    // isLocalPage in remote-channel-rules.ts, which owns the decision.
+    "if(h==='localhost'||h==='::1'||h==='[::1]'||/^127(\\.\\d{1,3}){3}$/.test(h))return;" +
+    'if(R.desktopProtocols.indexOf(loc.protocol)!==-1)return;' +
+    // ownsHost alone does not lift the fence: the plugin's own device-gated
+    // landing grants it to a paired LAN/tunnel page, which must stay gated.
+    'try{if(w.__DSH_TRANSPORT__&&w.__DSH_TRANSPORT__.ownsHost===true&&h.indexOf(".")===-1&&h.indexOf(":")===-1)return}catch(e){}' +
     // Host mode is server-granted: only the device-gated app landing
     // publishes the grant marker (in a capture script that runs ahead of
     // this one), so a shell that merely sits on a non-loopback origin - an

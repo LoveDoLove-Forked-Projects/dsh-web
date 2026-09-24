@@ -587,6 +587,9 @@ importers:
       schemastery:
         specifier: ^3.18.0
         version: 3.18.0
+      yaml:
+        specifier: ^2.8.2
+        version: 2.9.1
       zod:
         specifier: ^4.4.3
         version: 4.6.5
