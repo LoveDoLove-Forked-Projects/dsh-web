@@ -23,8 +23,9 @@ test('copies cover the settings trio for all consumers plus host and http helper
   const entries = copyEntries().map(entry => ({ ...entry, target: entry.target.replaceAll('\\', '/') }))
   // The total is every generated copy in the manifest; the single-instance
   // guard alone contributes one mount-once.ts per host half (16 today). The
-  // buckets below partition the same set by target location.
-  assert.equal(entries.length, 99)
+  // buckets below split the same set by target location, and what neither
+  // bucket holds is the package-root test setup (4 today).
+  assert.equal(entries.length, 101)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
   assert.equal(clientTrio.length, 40)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')

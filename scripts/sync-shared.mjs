@@ -190,11 +190,16 @@ const MANIFEST = [
     ],
   },
   {
+    // The shared setup carries the browser-module loader and the storage
+    // repair Node 25 needs (see its header); a consumer of the shared vitest
+    // config runs this copy through setupFiles.
     file: 'vitest.setup.ts',
     source: 'shared/vitest.setup.ts',
     targets: [
       'packages/dsh-web-settings/vitest.setup.ts',
       'packages/dsh-remote-web-ui/vitest.setup.ts',
+      'packages/dsh-git-graph/vitest.setup.ts',
+      'packages/dsh-task-board/vitest.setup.ts',
     ],
   },
   {
