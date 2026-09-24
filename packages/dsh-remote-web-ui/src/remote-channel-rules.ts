@@ -12,16 +12,40 @@ export const REMOTE_PREFIX = '/remote'
 import { REMOTE_DEVICE_HEADER, REMOTE_DEVICE_QUERY } from './remote-methods.ts'
 
 /**
- * Custom schemes that deliver the GUI from the same machine, so their pages
- * are local without a loopback hostname. The official DSH Desktop shell
- * serves its Web GUI from `dsh-app://app/` (`location.hostname === 'app'`,
- * `location.protocol === 'dsh-app:'`), which no hostname predicate can
- * recognise; the plugin's own fences then treated the desktop as a LAN/tunnel
- * origin and asked the user to pair a device the shell can never pair (#1682).
- * Only the page's own delivery scheme is listed here — the entries never
- * influence how a *remote* caller is judged.
+ * The schemes that can deliver a page a remote party controls: the network
+ * transports, plus the documents a network page can mint. Every other scheme
+ * is registered and served by an application on this machine, so its page is
+ * the machine's own page whatever the application calls the scheme.
+ *
+ * The list is deliberately the *web* side rather than an allowlist of known
+ * desktop shells. The official DSH Desktop shell serves its Web GUI from
+ * `dsh-app://app/` (`location.hostname === 'app'`), which no hostname
+ * predicate can recognise; a scheme allowlist fixed that instance (#1682) but
+ * left the next shell — or a `file:` page — fenced behind a pairing page it
+ * can never complete, because a pairing link is reachable only over the
+ * network. Naming the web side instead makes an unknown application scheme
+ * local by construction.
+ *
+ * `blob:`, `data:`, `about:` and `filesystem:` stay on the web side: a
+ * network page mints those documents, so they must keep the fence.
  */
-export const DESKTOP_PAGE_PROTOCOLS: readonly string[] = ['dsh-app:']
+export const WEB_PAGE_PROTOCOLS: readonly string[] = [
+  'http:',
+  'https:',
+  'blob:',
+  'data:',
+  'about:',
+  'filesystem:',
+]
+
+/**
+ * Whether one page scheme can carry a document a remote party controls.
+ * @param protocol - `location.protocol` of the page (for example `https:`).
+ * @returns true for the network transports and the documents they mint.
+ */
+export function isWebPageProtocol(protocol: string): boolean {
+  return WEB_PAGE_PROTOCOLS.includes(protocol)
+}
 
 /**
  * Hostname-only loopback classification: localhost, the IPv6 loopback literal
@@ -43,7 +67,10 @@ export function isLoopbackHostname(hostname: string): boolean {
  * Three independent facts all describe the page itself and any one is enough:
  *
  * - the page's own hostname is loopback;
- * - the page's protocol is a {@link DESKTOP_PAGE_PROTOCOLS} desktop scheme;
+ * - the page's protocol is not a {@link WEB_PAGE_PROTOCOLS} web scheme, so an
+ *   application on this machine delivered it — the desktop shell's
+ *   `dsh-app://app/` is one such page, and a scheme this build has never
+ *   heard of is another;
  * - the official connection transport already declared this shell the host
  *   owner (`__DSH_TRANSPORT__.ownsHost === true`) AND the page is not a
  *   network origin. The official client reads the same hook to derive
@@ -55,14 +82,22 @@ export function isLoopbackHostname(hostname: string): boolean {
  *   riding the gated channel — `ownsHost` buys the presentation, never an
  *   exemption from the pairing fence.
  *
+ * The order matters: loopback is checked first so a loopback page keeps its
+ * exemption even on a scheme no list carries, and the scheme test runs before
+ * the hook test so a web page always reaches the network-origin guard. A
+ * missing or empty scheme is not evidence of a local page - the fence stays
+ * up - because a real document always reports its own scheme.
+ *
  * @param hostname - `location.hostname` of the page.
  * @param protocol - `location.protocol` of the page (for example `https:`).
  * @param transportOwnsHost - `__DSH_TRANSPORT__?.ownsHost` as read by the caller.
  * @returns true when the page is local and needs no remote channel.
  */
 export function isLocalPage(hostname: string, protocol?: string, transportOwnsHost?: boolean): boolean {
-  if (protocol !== undefined && DESKTOP_PAGE_PROTOCOLS.includes(protocol)) return true
   if (isLoopbackHostname(hostname)) return true
+  // A missing or empty scheme is not evidence of a local page: a real
+  // document always reports one, so the fence stays up when it is unreadable.
+  if (protocol !== undefined && protocol !== '' && !isWebPageProtocol(protocol)) return true
   // A granted remote also sets ownsHost; only a page whose own origin is
   // otherwise local may treat the hook as proof of a local page.
   return transportOwnsHost === true && !isNetworkOrigin(hostname)
@@ -115,10 +150,12 @@ export interface RemoteChannelRules {
   /** Page global the pre-Cordis upload hook is published under. */
   readonly uploadHookGlobal: string
   /**
-   * Delivery schemes whose pages are local (see DESKTOP_PAGE_PROTOCOLS).
-   * Carried in the rules so the inlined boot script applies the same list.
+   * Schemes that can carry a remotely controlled document (see
+   * WEB_PAGE_PROTOCOLS): a page on any other scheme is delivered by an
+   * application on this machine. Carried in the rules so the inlined boot
+   * script applies the same list.
    */
-  readonly desktopProtocols: readonly string[]
+  readonly webProtocols: readonly string[]
   /**
    * Page global carrying the server-issued host-mode grant. Only the plugin's
    * own device-gated app landing (/pair-app) publishes it; the boot patch
@@ -154,7 +191,7 @@ export const REMOTE_CHANNEL_RULES: RemoteChannelRules = {
   deviceQuery: REMOTE_DEVICE_QUERY,
   uploadPath: '/api/session/uploadFileBinary',
   uploadHookGlobal: '__DSH_FILE_UPLOAD__',
-  desktopProtocols: DESKTOP_PAGE_PROTOCOLS,
+  webProtocols: WEB_PAGE_PROTOCOLS,
   hostGrantGlobal: REMOTE_HOST_GRANT_GLOBAL,
 }
 

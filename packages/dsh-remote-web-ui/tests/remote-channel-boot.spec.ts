@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { renderIndexInjections } from '@deepseek-ai/dsh-host-webserver'
 
 import { BOOT_WATCHDOG_KEY, buildBootWatchdogScript, buildRemoteChannelBootScript, REMOTE_CHANNEL_BOOT_SCRIPT } from '../src/remote-channel-boot.ts'
-import { REMOTE_CHANNEL_BOOT_GLOBAL, REMOTE_HOST_GRANT_GLOBAL, type RemoteChannelBootSeat } from '../src/remote-channel-rules.ts'
+import { REMOTE_CHANNEL_BOOT_GLOBAL, REMOTE_HOST_GRANT_GLOBAL, isLocalPage, type RemoteChannelBootSeat } from '../src/remote-channel-rules.ts'
 import { shouldRewriteFetchPath, shouldRewriteWsPath } from '../src/client/remote-channel.ts'
 
 const PATH_MATRIX = [
@@ -164,6 +164,37 @@ describe('remote channel boot patch (issue #987)', () => {
     await win.fetch('/api/session.list')
     // Then the call still rides the gated channel.
     expect(win.calls[0]).toBe('http://192.168.1.20:3080/remote/api/session.list')
+  })
+
+  // The inline script and the client predicate must decide from one table
+  // (WEB_PAGE_PROTOCOLS): a scheme one side moves without the other following
+  // would strand a shell behind a pairing page again (#1682).
+  describe('page locality agrees with the client predicate', () => {
+    const MATRIX: Array<{ label: string; hostname: string; protocol: string; ownsHost?: boolean }> = [
+      { label: 'a loopback page', hostname: '127.0.0.1', protocol: 'http:' },
+      { label: 'localhost', hostname: 'localhost', protocol: 'http:' },
+      { label: 'the desktop shell delivery scheme', hostname: 'app', protocol: 'dsh-app:' },
+      { label: 'an unknown application scheme', hostname: 'app', protocol: 'future-shell:' },
+      { label: 'a file page', hostname: '', protocol: 'file:' },
+      { label: 'a page with no readable scheme', hostname: 'box.trycloudflare.com', protocol: '' },
+      { label: 'a scheme-local authority carrying the host hook', hostname: 'app', protocol: 'http:', ownsHost: true },
+      { label: 'a LAN origin', hostname: '192.168.1.20', protocol: 'http:' },
+      { label: 'a tunnel origin', hostname: 'box.trycloudflare.com', protocol: 'https:' },
+      { label: 'a blob document a network page minted', hostname: 'box.trycloudflare.com', protocol: 'blob:' },
+      { label: 'a granted LAN page', hostname: '192.168.1.20', protocol: 'http:', ownsHost: true },
+    ]
+    for (const row of MATRIX) {
+      it(`operator: ${row.label} is gated exactly when the predicate says so`, () => {
+        // Given a page with these origin facts.
+        const win = makeWindow(row.hostname, '3080', row.protocol) as FakeWindow & { __DSH_TRANSPORT__?: { ownsHost?: boolean } }
+        if (row.ownsHost === true) win.__DSH_TRANSPORT__ = { ownsHost: true }
+        const expectedLocal = isLocalPage(row.hostname, row.protocol, row.ownsHost === true)
+        // When the parse-time boot patch runs.
+        boot(win)
+        // Then a local page installs no seat and a remote page installs one.
+        expect(win[REMOTE_CHANNEL_BOOT_GLOBAL] === undefined).toBe(expectedLocal)
+      })
+    }
   })
 
   it('rewrites fetch paths exactly like the browser patch', async () => {

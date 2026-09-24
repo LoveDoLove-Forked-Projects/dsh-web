@@ -45,15 +45,21 @@ reports) the shell is reachable without pairing at all.
 - **The local-page test reads the same hook, gated on the page origin (issue
   #1682).** The client's "is this page the machine's own?" predicate
   (`isLocalPage` in `src/remote-channel-rules.ts`, mirrored by the inlined boot
-  script) now also accepts a page whose protocol is the desktop shell's own
-  delivery scheme (`dsh-app:`), or whose transport already carries `ownsHost`
-  *and* whose hostname is scheme-local (no dot, no colon). The network-origin
-  guard is the point: the landing publishes the very same hook for a paired LAN
-  or tunnel page, and that page must keep riding the gated channel — host mode
-  buys the presentation surface, never an exemption from the pairing fence. A
-  hostname-only predicate had contradicted the official client, which already
-  treats an `ownsHost` shell as local, and fenced the entire desktop behind a
-  pairing page the shell can never complete (it strips every `set-cookie`).
+  script) accepts a page whose protocol is not one of the web schemes
+  (`WEB_PAGE_PROTOCOLS`: `http:`, `https:`, plus the documents a web page mints —
+  `blob:`, `data:`, `about:`, `filesystem:`), or whose transport already carries
+  `ownsHost` *and* whose hostname is scheme-local (no dot, no colon). Naming the
+  web side rather than the shells keeps every application-delivered page out of
+  the fence: the desktop shell's `dsh-app://app/` (a scheme allowlist was the
+  first fix), a `file:` page, and any scheme a later shell introduces. A missing
+  or empty scheme is not evidence of a local page — the fence stays up when it is
+  unreadable. The network-origin guard is the point: the landing publishes the
+  very same hook for a paired LAN or tunnel page, and that page must keep riding
+  the gated channel — host mode buys the presentation surface, never an exemption
+  from the pairing fence. A hostname-only predicate had contradicted the official
+  client, which already treats an `ownsHost` shell as local, and fenced the
+  entire desktop behind a pairing page the shell can never complete (it strips
+  every `set-cookie`).
 - **The pairing cookie is `Secure` over TLS.** `deviceCookie` adds `Secure`
   when the request arrived over TLS (`x-forwarded-proto: https`, the same signal
   `appOrigin` already trusts) and leaves it off on plain-HTTP LAN, where a
@@ -72,6 +78,12 @@ reports) the shell is reachable without pairing at all.
 - `tests/docker-pairing.spec.ts` and `tests/remote-channel-boot.spec.ts` follow
   the new contract; the boot patch gains an explicit negative case (no marker,
   no `ownsHost`).
+- `tests/remote-channel.spec.ts` and `tests/remote-channel-boot.spec.ts` carry a
+  scheme matrix over one table: loopback, `dsh-app:`, an unknown application
+  scheme, `file:`, an unreadable scheme, a scheme-local authority carrying the
+  hook, a LAN origin, a tunnel origin and a `blob:` document a network page
+  minted. The boot spec asserts the inlined script and `isLocalPage` agree on
+  every row, so the two halves cannot drift apart on the delivery scheme again.
 
 ## Alternatives considered
 
@@ -86,6 +98,12 @@ reports) the shell is reachable without pairing at all.
   URL is reused on every reconnect and the client cannot mint a fresh grant
   synchronously inside the `WebSocket` constructor; the device cookie/query
   stays the transport credential there.
+- Listing the known desktop shells' schemes as local (the first #1682 fix): rejected
+  — it repairs the shell that reported the bug and leaves the next one (a renamed
+  `dsh-app:`, another shell's scheme, a `file:` page) fenced behind a pairing page
+  it can never complete. Naming the web side makes an unknown application scheme
+  local by construction, and a scheme a remote party cannot deliver is not a
+  boundary the fence needs.
 - Deciding host mode from a fresh server round trip at boot: rejected — the boot
   patch must decide synchronously before the connection plugin reads
   `__DSH_TRANSPORT__`, and the landing's own response is already the server's

@@ -48,11 +48,14 @@ export function buildRemoteChannelBootScript(rules: RemoteChannelRules = REMOTE_
     'var R=' + json + ';' +
     // A page the machine itself serves keeps the original paths and no
     // channel: loopback names (including the bracketed IPv6 literal WHATWG
-    // returns), the desktop shell's own delivery scheme, or a shell the
-    // official transport already declared the host owner. This mirrors
-    // isLocalPage in remote-channel-rules.ts, which owns the decision.
+    // returns), any scheme no web transport carries (an application on this
+    // machine delivered it - the desktop shell's own scheme, a file page, a
+    // scheme a newer shell introduces), or a shell the official transport
+    // already declared the host owner. This mirrors isLocalPage in
+    // remote-channel-rules.ts, which owns the decision.
     "if(h==='localhost'||h==='::1'||h==='[::1]'||/^127(\\.\\d{1,3}){3}$/.test(h))return;" +
-    'if(R.desktopProtocols.indexOf(loc.protocol)!==-1)return;' +
+    'var pr=loc.protocol;' +
+    'if(typeof pr==="string"&&pr!==""&&R.webProtocols.indexOf(pr)===-1)return;' +
     // ownsHost alone does not lift the fence: the plugin's own device-gated
     // landing grants it to a paired LAN/tunnel page, which must stay gated.
     'try{if(w.__DSH_TRANSPORT__&&w.__DSH_TRANSPORT__.ownsHost===true&&h.indexOf(".")===-1&&h.indexOf(":")===-1)return}catch(e){}' +
