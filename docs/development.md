@@ -101,12 +101,12 @@ node scripts/dsh-plugin-new <name>   # 生成 packages/<name>/ 骨架
 
 ```sh
 node scripts/capture-previews <id>   # 重拍 satellites/dsh-skins/skins/<id>/preview/{light,dark}.jpg
-pnpm market:fetch --force            # 子模块工作树的改动重新物化到 .market-inputs/
+pnpm market:fetch                    # 子模块 gitlink 指向新提交后，缓存输入过期并重新物化
 pnpm market:build                    # 刷新市场产物（market/dist）
 node scripts/skins-montage.mjs       # 重排根 README 皮肤一览图（docs/images/skins-montage.png）
 ```
 
-预览图随皮肤源码提交在 dsh-skins 仓，本仓随后提交新的子模块钉版与 `market/dist`。
+预览图随皮肤源码提交在 dsh-skins 仓，本仓随后提交该子模块的新钉版与 `market/dist`，`pnpm market:check` 校验两者一致。要在提交进 dsh-skins 之前先看市场效果，用 `pnpm market:fetch --local --force` 读子模块工作树；由未 pin 内容生成的 `market/dist` 不得提交。
 皮肤启用互斥由 dsh-skins 仓的 `dsh-skin use` 管理（客户端原子切换，不改
 cordis.patch.yml）；skin-center npm 包只随附 `blue-fantasy`，其余皮肤由用户经
 Workshop 按需安装到 `$DSH_HOME/skins/<id>/`。

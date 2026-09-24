@@ -24,13 +24,16 @@
  * Outputs 1440×900 JPEGs (quality 85) at device scale 1; the market cards
  * downscale them, so they stay crisp while the published package stays
  * small (the old 2880×1800 PNGs made dsh-client-ui-skin-center ~78MB).
- * Re-run after any skin change; commit the JPEGs in dsh-skins together with
- * the skin source, then refresh the market copy in this repository with
+ * Re-run after any skin change and commit the JPEGs in dsh-skins together with
+ * the skin source. To see them in the market before that commit is pinned here,
+ * read the submodule working tree:
  *
- *   pnpm market:fetch --force   # the gitlink is unchanged, so local edits need --force
- *   pnpm market:build           # regenerate market/dist from the fetched input
+ *   pnpm market:fetch --local --force   # the working tree, not the pinned commit
+ *   pnpm market:build                   # unpinned content: do not commit market/dist
  *
- * and commit the submodule gitlink together with market/dist.
+ * Once the submodule gitlink on this branch names the new dsh-skins commit, refresh
+ * the committed copy with `pnpm market:fetch && pnpm market:build` and commit
+ * market/dist together with the gitlink.
  */
 
 const { execSync } = require('node:child_process')
