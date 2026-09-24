@@ -13,6 +13,7 @@ disable-model-invocation: true
 
 ```sh
 git submodule update --init satellites/dsh-pet   # 在 dsh-web 克隆里取得工作树；也可以直接 clone dsh-pet
+git -C satellites/dsh-pet checkout main          # 上一步停在 gitlink 固定的提交（detached），改动提交到 main
 cd satellites/dsh-pet
 pnpm install
 pnpm typecheck   # dsh-pet 没有宠物专用的 check 脚本，typecheck 与 test 就是它的验证命令

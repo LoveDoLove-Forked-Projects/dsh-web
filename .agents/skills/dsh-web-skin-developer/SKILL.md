@@ -13,6 +13,7 @@ disable-model-invocation: true
 
 ```sh
 git submodule update --init satellites/dsh-skins   # 在 dsh-web 克隆里取得工作树；也可以直接 clone dsh-skins
+git -C satellites/dsh-skins checkout main          # 上一步停在 gitlink 固定的提交（detached），改动提交到 main
 cd satellites/dsh-skins
 pnpm install
 node scripts/dsh-skin-new.cjs <name>       # 脚手架，kebab-case 皮肤名，生成 skins/<id>/

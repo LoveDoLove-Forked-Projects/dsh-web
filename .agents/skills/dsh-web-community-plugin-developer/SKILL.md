@@ -17,6 +17,7 @@ disable-model-invocation: true
 
 ```sh
 git submodule update --init satellites/dsh-community-plugins   # 在 dsh-web 克隆里取得工作树；也可以直接 clone 该仓库
+git -C satellites/dsh-community-plugins checkout main          # 上一步停在 gitlink 固定的提交（detached），改动提交到 main
 cd satellites/dsh-community-plugins
 pnpm install
 pnpm community:check   # = node scripts/community-index.cjs --check，索引漂移门禁
