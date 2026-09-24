@@ -5,11 +5,15 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   assetPaths,
+  attestSecret,
+  attestTargets,
   collectTargets,
   loadManifest,
   refusalNotice,
@@ -337,4 +341,131 @@ test('runPool keeps result order and never exceeds the concurrency bound', async
   assert.deepEqual(results, items.map(item => item * 2))
   assert.ok(peak <= 4, `peak concurrency was ${peak}`)
   assert.ok(peak > 1, `expected real parallelism, peak was ${peak}`)
+})
+test('attestTargets asks the deployed version to measure one window at a time', async () => {
+  // Given three committed paths whose deployed byte counts differ on one of them,
+  const dist = fixtureDist({ skins: [
+    { id: 'harbor', files: ['skin.json'] },
+    { id: 'xp', files: ['skin.json'] },
+    { id: 'miku', files: ['skin.json'] },
+  ] })
+  try {
+    writeAsset(dist, 'assets/skins/harbor/skin.json', 12)
+    writeAsset(dist, 'assets/skins/xp/skin.json', 12)
+    writeAsset(dist, 'assets/skins/miku/skin.json', 12)
+    const targets = collectTargets(dist, ['skins'])
+    const calls = []
+    const fetchImpl = async (url, init) => {
+      const body = JSON.parse(init.body)
+      calls.push({ url, method: init.method, secret: init.headers['x-dsh-market-attest'], paths: body.paths })
+      return new Response(JSON.stringify({
+        ok: true,
+        count: body.paths.length,
+        totalBytes: 0,
+        // The deployed side truncates the second path.
+        sizes: body.paths.map((path, index) => ({ path, bytes: index === 1 ? 4 : 12 })),
+      }), { status: 200 })
+    }
+
+    // When the attestation verifies them with a window of two,
+    const { results } = await attestTargets('https://dsh-market.com', targets, {
+      secret: 'shared-secret',
+      distDir: dist,
+      windowSize: 2,
+      fetchImpl,
+    })
+
+    // Then it asked the route one question per window, named the paths absolutely,
+    //   and judged every answer against the committed byte count.
+    assert.equal(calls.length, 2)
+    assert.deepEqual(calls[0].paths, ['/assets/skins/harbor/skin.json', '/assets/skins/xp/skin.json'])
+    assert.deepEqual(calls[1].paths, ['/assets/skins/miku/skin.json'])
+    assert.equal(calls[0].url, 'https://dsh-market.com/api/asset-attest')
+    assert.equal(calls[0].method, 'POST')
+    assert.equal(calls[0].secret, 'shared-secret')
+    assert.deepEqual(results.map(entry => entry.result.ok), [true, false, true])
+    assert.match(results[1].result.reason, /served 4 bytes, dist has 12/)
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('attestTargets reports a refused attestation instead of excusing the paths', async () => {
+  // Given a route that refuses the call and a deployment that cannot be measured,
+  const dist = fixtureDist({ skins: [{ id: 'harbor', files: ['skin.json'] }] })
+  try {
+    writeAsset(dist, 'assets/skins/harbor/skin.json', 12)
+    const targets = collectTargets(dist, ['skins'])
+
+    // When the attestation runs,
+    for (const [status, payload, expected] of [
+      [403, { ok: false, error: 'forbidden' }, /attestation refused: HTTP 403 \(forbidden\)/],
+      [503, { ok: false, error: 'attest-not-configured' }, /attestation refused: HTTP 503/],
+      [500, 'not json', /attestation refused: HTTP 500/],
+    ]) {
+      const { results, error } = await attestTargets('https://dsh-market.com', targets, {
+        secret: 'shared-secret',
+        distDir: dist,
+        fetchImpl: async () => new Response(typeof payload === 'string' ? payload : JSON.stringify(payload), { status }),
+      })
+      // Then no path is reported as verified and the refusal is the error.
+      assert.equal(results, undefined)
+      assert.match(error, expected)
+    }
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('attestTargets fails a path the attestation did not measure', async () => {
+  // Given an answer that skips one of the asked paths,
+  const dist = fixtureDist({ skins: [{ id: 'harbor', files: ['skin.json'] }, { id: 'xp', files: ['skin.json'] }] })
+  try {
+    writeAsset(dist, 'assets/skins/harbor/skin.json', 12)
+    writeAsset(dist, 'assets/skins/xp/skin.json', 12)
+    const targets = collectTargets(dist, ['skins'])
+
+    // When the attestation verifies them,
+    const { results } = await attestTargets('https://dsh-market.com', targets, {
+      secret: 'shared-secret',
+      distDir: dist,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, count: 1, totalBytes: 12, sizes: [{ path: '/assets/skins/harbor/skin.json', bytes: 12 }] }), { status: 200 }),
+    })
+
+    // Then the unmeasured path fails loudly rather than passing by omission.
+    assert.deepEqual(results.map(entry => entry.result.ok), [true, false])
+    assert.equal(results[1].result.reason, 'not measured by the attestation')
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('the attestation mode refuses to run without its secret', () => {
+  // Given a caller with no secret in the environment and no local secret store,
+  const env = { ...process.env, MARKET_ATTEST_ENV_FILE: join(tmpdir(), 'market-verify-absent-dev-vars') }
+  delete env.MARKET_ATTEST_SECRET
+  // When the lane runs in attestation mode,
+  const result = spawnSync(process.execPath, ['scripts/market-verify-assets.mjs', '--attest', 'https://dsh-market.com'], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    env,
+    encoding: 'utf8',
+  })
+  // Then it stops with the documented code instead of verifying nothing.
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /no attestation secret/)
+})
+
+test('the attestation secret comes from the environment or the local secret store', () => {
+  // Given a caller with a secret in the environment or in the worker's dev store,
+  const file = join(mkdtempSync(join(tmpdir(), 'market-dev-vars-')), '.dev.vars')
+  try {
+    writeFileSync(file, 'TURNSTILE_SECRET=other\nASSET_ATTEST_SECRET=from-file\n')
+    // When the secret is resolved,
+    // Then the environment wins and the file is the documented fallback.
+    assert.equal(attestSecret({ MARKET_ATTEST_SECRET: 'from-env' }, file), 'from-env')
+    assert.equal(attestSecret({}, file), 'from-file')
+    assert.equal(attestSecret({}, join(tmpdir(), 'absent-dev-vars')), '')
+  } finally {
+    rmSync(dirname(file), { recursive: true, force: true })
+  }
 })

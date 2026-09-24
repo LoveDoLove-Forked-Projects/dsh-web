@@ -2,6 +2,7 @@ import test, { beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
 import worker from '../market/worker/src/index.js'
+import { ATTEST_MAX_PATHS } from '../market/worker/src/asset-attest.js'
 import { ROLLUP_HISTORY_DAYS, refreshDailyRollups, rollupDayStatements } from '../market/worker/src/telemetry.js'
 import { clearBadgeCaches, formatTotal, rangeWindows } from '../market/worker/src/npm-badge.js'
 
@@ -1096,3 +1097,97 @@ test('worker allows writes when the asset manifests are unreadable', async () =>
   }
 })
 
+test('worker measures posted asset paths through the deployed binding', async () => {
+  // Given an attestation caller that names the paths it wants measured,
+  const requested = []
+  const assets = {
+    async fetch(request) {
+      const path = request instanceof URL ? request.pathname : new URL(typeof request === 'string' ? request : request.url).pathname
+      requested.push(path)
+      return new Response('', { status: 206, headers: { 'content-range': 'bytes 0-0/1723' } })
+    },
+  }
+  // When it posts them with the configured secret,
+  const response = await worker.fetch(new Request('https://dsh-market.com/api/asset-attest', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-dsh-market-attest': 'shared-secret' },
+    body: JSON.stringify({ paths: ['/assets/skins/whale-song/skin.json', '/assets/skins/xp/hooks.mjs'] }),
+  }), { ASSET_ATTEST_SECRET: 'shared-secret', ASSETS: assets }, context())
+
+  // Then it gets the byte length the deployed version serves, in the order asked.
+  assert.equal(response.status, 200)
+  const payload = await response.json()
+  assert.deepEqual(payload.sizes, [
+    { path: '/assets/skins/whale-song/skin.json', bytes: 1723, probe: 'binding-range' },
+    { path: '/assets/skins/xp/hooks.mjs', bytes: 1723, probe: 'binding-range' },
+  ])
+  assert.equal(payload.count, 2)
+  assert.equal(payload.totalBytes, 3446)
+  assert.deepEqual(requested, ['/assets/skins/whale-song/skin.json', '/assets/skins/xp/hooks.mjs'])
+})
+
+test('worker refuses attestation without the shared secret and fetches nothing', async () => {
+  // Given a caller with a wrong secret and a binding that must not be reached,
+  const assets = { async fetch() { throw new Error('ASSETS must not be fetched without the secret') } }
+  for (const headers of [{}, { 'x-dsh-market-attest': 'wrong-secret' }]) {
+    // When it asks for measurements,
+    const response = await worker.fetch(new Request('https://dsh-market.com/api/asset-attest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ paths: ['/assets/skins/xp/skin.json'] }),
+    }), { ASSET_ATTEST_SECRET: 'shared-secret', ASSETS: assets }, context())
+    // Then the route refuses it.
+    assert.equal(response.status, 403)
+    assert.equal((await response.json()).error, 'forbidden')
+  }
+})
+
+test('worker fails closed when the attestation secret is not configured', async () => {
+  // Given a deployment without the secret binding,
+  const assets = { async fetch() { throw new Error('ASSETS must not be fetched without the secret') } }
+  // When anyone asks for measurements,
+  const response = await worker.fetch(new Request('https://dsh-market.com/api/asset-attest', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-dsh-market-attest': 'shared-secret' },
+    body: JSON.stringify({ paths: ['/assets/skins/xp/skin.json'] }),
+  }), { ASSETS: assets }, context())
+  // Then it answers 503 rather than measuring for anyone.
+  assert.equal(response.status, 503)
+  assert.equal((await response.json()).error, 'attest-not-configured')
+})
+
+test('worker attests only the asset space and only a bounded path list', async () => {
+  // Given a binding that records what it was asked for,
+  const requested = []
+  const assets = {
+    async fetch(request) {
+      requested.push(request instanceof URL ? request.pathname : new URL(request.url).pathname)
+      return new Response('', { status: 206, headers: { 'content-range': 'bytes 0-0/12' } })
+    },
+  }
+  const post = (paths) => worker.fetch(new Request('https://dsh-market.com/api/asset-attest', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-dsh-market-attest': 'shared-secret' },
+    body: JSON.stringify({ paths }),
+  }), { ASSET_ATTEST_SECRET: 'shared-secret', ASSETS: assets }, context())
+
+  // When a caller asks outside the asset space, for a traversal path, or for too many paths,
+  for (const paths of [
+    ['/manifest/skins.json'],
+    ['/assets/skins/../../../settings.json'],
+    [],
+    Array.from({ length: ATTEST_MAX_PATHS + 1 }, (_, index) => `/assets/skins/skin-${String(index)}/skin.json`),
+  ]) {
+    const response = await post(paths)
+    // Then the request is refused without touching the assets.
+    assert.equal(response.status, 400)
+    assert.equal((await response.json()).error, 'invalid-paths')
+  }
+  assert.deepEqual(requested, [])
+
+  // And a GET is not an attestation call either.
+  const get = await worker.fetch(new Request('https://dsh-market.com/api/asset-attest', {
+    headers: { 'x-dsh-market-attest': 'shared-secret' },
+  }), { ASSET_ATTEST_SECRET: 'shared-secret', ASSETS: assets }, context())
+  assert.equal(get.status, 405)
+})

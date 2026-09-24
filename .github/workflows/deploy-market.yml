@@ -93,9 +93,19 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Refreshes the worker's ASSET_ATTEST_SECRET binding, and the deploy
+          # fails loudly when the binding is missing, because the verification
+          # step below fails closed without it.
+          MARKET_ATTEST_SECRET: ${{ secrets.MARKET_ATTEST_SECRET }}
 
       # A partial upload or a manifest the origin cannot serve is a broken
-      # install for a user, so verify every advertised path against the live
-      # site instead of trusting the deploy exit code.
+      # install for a user, so verify every advertised path instead of trusting
+      # the deploy exit code. The measurement runs through the worker's
+      # attestation route, which reads the deployed version's own asset binding:
+      # the public origin refuses part of every sweep from this runner range
+      # with 403 (a policy on the vantage, not a missing asset), while the
+      # binding sees exactly what the deployed version carries.
       - name: Verify deployed assets
-        run: node scripts/market-verify-assets.mjs --origin https://dsh-market.com
+        run: node scripts/market-verify-assets.mjs --attest https://dsh-market.com
+        env:
+          MARKET_ATTEST_SECRET: ${{ secrets.MARKET_ATTEST_SECRET }}
