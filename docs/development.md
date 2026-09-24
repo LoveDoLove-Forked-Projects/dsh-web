@@ -97,14 +97,22 @@ node scripts/dsh-plugin-new <name>   # 生成 packages/<name>/ 骨架
 
 ### 新增皮肤
 
+皮肤与宠物的骨架、契约校验在各自的独立仓（dsh-skins / dsh-pet）内运行；本仓库消费
+它们发布的 npm 包，市场内容取自 dsh-skins 子模块（钉版见
+[market-inputs.lock.json](../market-inputs.lock.json)）。预览图由 `scripts/capture-previews`
+直接写进该子模块的工作树：
+
 ```sh
-# 皮肤与宠物已迁至独立仓：骨架与校验在 dsh-skins / dsh-pet 仓内运行
-node scripts/capture-previews <id>  # 重拍 preview/{light,dark}.png
-pnpm market:build                # 刷新市场产物（market/dist）
-node scripts/skins-montage.mjs    # 重排根 README 皮肤一览图（docs/images/skins-montage.png）
+node scripts/capture-previews <id>   # 重拍 satellites/dsh-skins/skins/<id>/preview/{light,dark}.jpg
+pnpm market:fetch --force            # 子模块工作树的改动重新物化到 .market-inputs/
+pnpm market:build                    # 刷新市场产物（market/dist）
+node scripts/skins-montage.mjs       # 重排根 README 皮肤一览图（docs/images/skins-montage.png）
 ```
 
-皮肤启用互斥由 `dsh-skin use` 管理（客户端原子切换，不改 cordis.patch.yml）；皮肤资产全部内置在皮肤中心包，不单独发 npm 包。
+预览图随皮肤源码提交在 dsh-skins 仓，本仓随后提交新的子模块钉版与 `market/dist`。
+皮肤启用互斥由 dsh-skins 仓的 `dsh-skin use` 管理（客户端原子切换，不改
+cordis.patch.yml）；skin-center npm 包只随附 `blue-fantasy`，其余皮肤由用户经
+Workshop 按需安装到 `$DSH_HOME/skins/<id>/`。
 
 ### 本地验证（挂载进 dsh web）
 
