@@ -35,7 +35,7 @@ dsh-web has zero open PRs left over from before the split, and new misdirected c
 
 Skin, pet and community-index reviews now happen in the satellite repositories on their `main` integration branches, with the same content gates and the same three-way plugin assessment applied there. A merged satellite PR does not by itself change the Workshop: listing still requires moving the submodule gitlink in dsh-web and rebuilding `market/dist`, which remains maintainer work in this repository.
 
-The skill now routes content contributions by repository instead of by in-repo path, and both skills that share `pr-review-common.md` resolve it at its real location under `~/.agents/skills/`.
+The skill now routes content contributions by repository instead of by in-repo path, and `pr-issue-maintenance` resolves `pr-review-common.md` at its real location under `~/.agents/skills/`. (2026-09-24: `existing-feature-improvement`, the sibling skill that previously shared the common-rules file, has been retired and removed; the file now belongs to `pr-issue-maintenance` alone.)
 
 A supersession check found the satellite layout itself is owned by [Family satellite repositories](../architecture/2026-09-23-family-satellite-repositories.md), which stays the Owning Note for the split; this note owns only the twentieth-pass disposition and the skill routing update, and the two are cross-linked rather than consolidated. No earlier note is superseded.
 

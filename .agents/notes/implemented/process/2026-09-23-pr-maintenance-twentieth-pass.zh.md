@@ -35,7 +35,7 @@ dsh-web 已没有拆分前遗留的开放 PR，新投错的内容 PR 由工作�
 
 皮肤、宠物与社区索引的评审改在卫星仓各自的 `main` 集成分支上进行，同样的内容闸门与插件三性评估在那里生效。卫星仓 PR 合并本身不改变线上商店：上架仍需在 dsh-web 移动 submodule 的 gitlink 并重建 `market/dist`，这仍是本仓的维护者工作。
 
-Skill 现在按仓库而不是按仓内路径路由内容贡献，共享 `pr-review-common.md` 的两个 Skill 都解析到它在 `~/.agents/skills/` 下的真实位置。
+Skill 现在按仓库而不是按仓内路径路由内容贡献，`pr-issue-maintenance` 解析到 `pr-review-common.md` 在 `~/.agents/skills/` 下的真实位置。（2026-09-24：此前共享该公共规则文件的兄弟 Skill `existing-feature-improvement` 已退役删除，该文件现归 `pr-issue-maintenance` 独有。）
 
 取代检查：卫星仓布局本身由[家族卫星仓库](../architecture/2026-09-23-family-satellite-repositories.zh.md)所有，它仍是拆分的 Owning Note；本 Note 只拥有第二十次巡检的处置与 Skill 路由更新，两者交叉链接而非合并。没有更早的 Note 被取代。
 
