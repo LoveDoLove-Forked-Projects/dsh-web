@@ -430,19 +430,19 @@ function expandExternalRow(row, aggregateDir, errors, rel) {
 }
 
 /**
- * Render one insert row's shell config block: the real plugin name plus its
- * original config nested one level deeper. The child's own config lines carry
- * 6-space indentation (id/name level) in the source patch; nesting them under
- * `config:` keeps that relative shape with a 2-space shift (8 spaces under the
- * shell row's own `config:`).
+ * Render one insert row's shell config block: the real plugin name plus, at
+ * the same level, the config the child's own patch row declared. A family
+ * plugin's fields are its OWN Config fields, and the Host settings surface
+ * edits an entry's Config schema — so the fields sit where a standalone
+ * install of that package keeps them (the row config root), which is what
+ * makes a shelled aggregate row configurable at all. The child's config lines
+ * carry 6-space indentation (id/name level) in the source patch; they need no
+ * shift to line up under the shell row's own `config:` key.
  */
 function pushShellConfig(lines, row) {
   lines.push('      config:')
   lines.push(`        plugin: '${row.name}'`)
-  if (row.configLines?.length) {
-    lines.push('        config:')
-    for (const configLine of row.configLines) lines.push('  ' + configLine)
-  }
+  for (const configLine of row.configLines ?? []) lines.push('  ' + configLine)
 }
 
 /** Render the aggregate cordis.patch.yml: header + per-source insert blocks, plus verbatim harness-row patches and own-row config overrides. */

@@ -152,6 +152,29 @@ test('web-ui-all ships the opt-in family rows disabled by default', () => {
   }
 })
 
+test('family shell rows keep the real plugin config at the row config root', () => {
+  // The Host settings surface edits an entry's OWN Config schema, so a
+  // shell-wrapped family row must present the family plugin's fields where a
+  // standalone install of that package keeps them: beside the shell's own
+  // `plugin` key, never nested under a second `config:` key (which the
+  // settings surface cannot address, and which left a shelled row silently
+  // unconfigurable while its card showed an editable form).
+  const patch = readFileSync(join(ROOT, 'packages/dsh-web-all/cordis.patch.yml'), 'utf8')
+  const lines = patch.split(/\r?\n/)
+  let checked = 0
+  for (let i = 0; i < lines.length; i++) {
+    const name = lines[i].match(/^      name: '@linxin666\/dsh-web-all\/(\S+)'$/)
+    if (!name) continue
+    assert.equal(lines[i + 1], '      config:', 'shell row ' + name[1] + ' must carry a config block')
+    assert.match(lines[i + 2] ?? '', /^        plugin: '@linxin666\/[^']+'$/, 'shell row ' + name[1] + ' must name the real plugin first')
+    for (let j = i + 3; j < lines.length && /^ {8}\S/.test(lines[j]); j++) {
+      assert.doesNotMatch(lines[j], /^ {8}config:/, 'shell row ' + name[1] + ' nests the family config one level too deep')
+    }
+    checked += 1
+  }
+  assert.ok(checked > 10, 'expected the generated patch to carry the family rows, found ' + checked)
+})
+
 test('web-ui-all declares no retire target the current cohort no longer mounts', () => {
   // The official bundles alpha.2 ships mount no row this aggregate supersedes:
   // the official archived-sessions page (`ui-settings-unarchive-sessions`) is

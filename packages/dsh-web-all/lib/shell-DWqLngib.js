@@ -1,3 +1,4 @@
+import { i as shellState, n as listDegraded, r as recordDegraded } from "./degraded-CA6yzGPr.js";
 //#region ../../node_modules/.pnpm/@deepseek-ai+cosmokit@1.8.5/node_modules/@deepseek-ai/cosmokit/lib/index.js
 /** Return true when a value is `null` or `undefined`. */
 function isNullable(value) {
@@ -885,35 +886,6 @@ defineMethod("transform", [
 	"preserve"
 ], ({ inner }, isInner) => inner.toString(isInner));
 //#endregion
-//#region src/state.ts
-const KEY = Symbol.for("dsh-web-all.shell-state");
-/** The process-wide shared shell state (one instance across module copies). */
-function shellState() {
-	const registry = globalThis;
-	return registry[KEY] ??= {
-		activeRows: /* @__PURE__ */ new Set(),
-		degraded: /* @__PURE__ */ new Map(),
-		healthRoutes: { count: 0 }
-	};
-}
-//#endregion
-//#region src/degraded.ts
-/** Record (or refresh) one plugin's degraded state. Errors are logged here once. */
-function recordDegraded(plugin, stage, error) {
-	const message = error instanceof Error ? error.stack ?? error.message : String(error);
-	console.error(`[dsh-web-all] plugin degraded (${stage}): ${plugin}\n${message}`);
-	shellState().degraded.set(plugin, {
-		plugin,
-		stage,
-		message,
-		at: (/* @__PURE__ */ new Date()).toISOString()
-	});
-}
-/** Snapshot of all currently degraded plugins. */
-function listDegraded() {
-	return [...shellState().degraded.values()];
-}
-//#endregion
 //#region src/rows.ts
 /**
 * Active-row ledger for the dsh-web-all fault-isolation shell. Each family
@@ -947,7 +919,37 @@ function removeActiveRow(plugin) {
 function listActiveRows() {
 	return [...shellState().activeRows];
 }
-Schema.any().volatile();
+//#endregion
+//#region src/shell.ts
+/** Required services: none — the shell must activate before anything else. */
+const inject = [];
+/**
+* The shell row's Config schema — deliberately shapeless.
+*
+* The shell mounts the real plugin, so the row config IS that plugin's config,
+* and the Host serves a settings form and accepts writes only for an entry
+* whose own Config schema declares the edited fields as volatile. The shell
+* cannot declare those fields: it would have to import the family module to
+* learn its schema, and importing it eagerly is the failure mode this shell
+* exists to contain. Two properties of this stand-in make the real fields
+* editable anyway:
+*
+* - `any` (not an object) keeps them at the form root: an object schema
+*   projects only its own declared keys, and every family card would read
+*   empty values.
+* - `.volatile()` is what puts the entry on the settings surface at all
+*   (`SettingsForms.describe` skips an entry with no volatile field) and what
+*   admits a write to any path. It also moves the edit to the live path: the
+*   Loader commits the new config into this entry's reference instead of
+*   remounting the row, and {@link apply} mounts the family plugin again with
+*   the committed config.
+*
+* The accepted cost: the Host cannot validate family fields at write time. The
+* family plugin's own Config validates them when the shell mounts it, and a
+* value it refuses leaves that one row degraded (the ledger and log say so)
+* instead of taking the boot down.
+*/
+const Config = Schema.any().volatile();
 /** Loopback-fenced degraded-state route (installed once per shell context). */
 function makeDegradedRoute() {
 	return {
@@ -997,6 +999,25 @@ function makeRowsRoute() {
 			}));
 		}
 	};
+}
+/**
+* Route registration state lives in the process-wide shared state
+* (src/state.ts): multiple shell entries (the self row plus one per family
+* plugin) mount sequentially under the aggregate, AND the bundler splits the
+* two entry artifacts (lib/index.js vs lib/shells/shell.js) into separate
+* module copies — module-local state would double-register the routes. Both
+* health routes are singletons on the host webServer; ref-counting registers
+* them exactly once on the first shell entry and tears them down with the
+* last.
+*/
+/** For test teardown and test isolation only. */
+function _resetDegradedRouteForTest() {
+	const routes = shellState().healthRoutes;
+	routes.count = 0;
+	try {
+		routes.unregister?.();
+	} catch {}
+	routes.unregister = void 0;
 }
 /**
 * Hold both health routes (degraded + rows) for this shell entry's lifetime.
@@ -1104,7 +1125,7 @@ const RETIRED_PLUGINS = /* @__PURE__ */ new Set(["@linxin666/dsh-perf", "@linxin
 * @param ctx - the shell entry's context.
 * @param config - the row config: the plugin specifier plus the real plugin's own fields.
 */
-async function apply$1(ctx, config) {
+async function apply(ctx, config) {
 	holdHealthRoutes(ctx);
 	let mounted;
 	let activeRow;
@@ -1196,12 +1217,6 @@ async function apply$1(ctx, config) {
 	await schedule();
 }
 //#endregion
-//#region src/index.ts
-/** Required services: none — the shell must activate before anything else. */
-const inject = [];
-/** Host plugin body: mount the configured real plugin behind the shell boundary. */
-function apply(ctx, config) {
-	return apply$1(ctx, config);
-}
-//#endregion
-export { apply, inject };
+export { inject as i, _resetDegradedRouteForTest as n, apply as r, Config as t };
+
+//# sourceMappingURL=shell-DWqLngib.js.map
