@@ -32,13 +32,13 @@ pnpm build
 - 市场构建读取的皮肤内容，是子模块 gitlink 记录的那个提交；`market-inputs.lock.json` 把 skins 输入映射到 `satellites/dsh-skins` 的 `skins/` 目录。
 - `pnpm market:fetch` 把 pinned 内容物化进 `.market-inputs/`：子模块工作树正好在 pinned 提交上就复制它，否则下载该提交的 tarball，所以从未初始化子模块的克隆行为一致。
 - `pnpm market:fetch --local` 从已初始化的子模块工作树物化它当前所在的提交，用来把你自己的改动送进市场构建；不在 pinned 提交上的检出在不加 `--local` 时会被忽略（运行时输出会说明）。这样构建出的 `market/dist` 来自未 pin 的内容，不得提交。
-- 开发循环：编辑 `satellites/dsh-skins/skins/<id>/`，然后 `pnpm market:fetch --local`、`pnpm market:build`，在 `market/dist/preview.html?skin=<id>&theme=light|dark` 预览。`node scripts/capture-previews <id>` 重拍 `preview/{light,dark}.png`，`node scripts/skins-montage.mjs` 生成拼图，这两个脚本属于 dsh-web 仓库。
+- 开发循环：编辑 `satellites/dsh-skins/skins/<id>/`，然后 `pnpm market:fetch --local`、`pnpm market:build`，在 `market/dist/preview.html?skin=<id>&theme=light|dark` 预览。`node scripts/capture-previews <id>` 重拍 `preview/{light,dark}.jpg`，`node scripts/skins-montage.mjs` 生成拼图，这两个脚本属于 dsh-web 仓库。
 - `pnpm market:check` 校验已提交的 `market/dist` 与 pinned 输入一致。
 
 ## 3. 验收清单
 
 - [ ] 皮肤目录在 dsh-skins 的 `skins/<id>/`，`node scripts/dsh-skin.cjs validate` 与 `pnpm skin-center:check` 通过
-- [ ] `preview/{light,dark}.png` 已用 `node scripts/capture-previews <id>` 重拍
+- [ ] `preview/{light,dark}.jpg` 已用 `node scripts/capture-previews <id>` 重拍
 - [ ] 市场模拟器亮/暗两态渲染正常（`market/dist/preview.html?skin=<id>&theme=light|dark`）
 - [ ] 改动需要进市场时，`market/dist` 已用 pinned 内容重建并提交，`pnpm market:check` 通过；用 `--local` 构建的产物没有提交
 - [ ] PR 开在 dsh-skins（不是 dsh-web），按该仓库 CONTRIBUTING.md 的要求附证据

@@ -166,7 +166,7 @@ async function main() {
 
   await browser.close()
   if (server) server.close()
-  console.log(`done. commit the previews in ${path.relative(ROOT, SKINS_REPO)}, then run: pnpm market:fetch --force && pnpm market:build`)
+  console.log(`done. commit the previews in ${path.relative(ROOT, SKINS_REPO)}, then run: pnpm market:fetch --local --force && pnpm market:build`)
 }
 
 main().catch((err) => {
