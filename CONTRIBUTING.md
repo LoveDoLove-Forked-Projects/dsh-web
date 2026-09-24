@@ -74,7 +74,7 @@ pnpm -r build
 pnpm typecheck && pnpm test && pnpm docs:check   # 提交前必过
 ```
 
-三个卫星仓（`dsh-skins` / `dsh-pet` / `dsh-community-plugins`）以 git submodule 挂在 `satellites/`，市场构建按各自的 gitlink 拉取内容。默认不需要检出：`git submodule update --init satellites/<仓名>` 只在要改卫星仓内容本身时才需要，检出后市场构建就直接用该工作树。
+三个卫星仓（`dsh-skins` / `dsh-pet` / `dsh-community-plugins`）以 git submodule 挂在 `satellites/`，市场构建按各自的 gitlink 固定提交拉取内容。默认不需要检出：要就地改卫星仓内容时才 `git submodule update --init satellites/<仓名>`。检出停在该固定提交时 `pnpm market:fetch` 直接复制该工作树；检出离开固定提交（切了分支，或提交了自己的改动）时，默认运行会明确提示并仍按固定提交构建，`pnpm market:fetch --local` 才读取该工作树——这样构建出的 `market/dist` 来自未固定内容，不得提交。
 
 ## 提交规范
 

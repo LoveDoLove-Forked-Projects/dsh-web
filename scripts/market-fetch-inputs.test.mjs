@@ -80,7 +80,7 @@ function fixtureLockObject(inputs) {
 
 const GOOD = { skins: { submodule: SUBMODULE, path: 'skins', target: 'skins' } }
 /** A resolved pin, the shape resolveSources produces for one input. */
-const SOURCE = { sha: SHA, repo: 'zhu1090093659/dsh-skins', worktree: null }
+const SOURCE = { sha: SHA, expected: SHA, repo: 'zhu1090093659/dsh-skins', worktree: null }
 
 test('loadLockfile accepts a well-formed lockfile', () => {
   const root = fixtureLock(GOOD)
@@ -163,23 +163,44 @@ test('resolveSources pins the gitlink and adopts a working tree sitting on it', 
   try {
     const sources = resolveSources(fixtureLockObject(GOOD), fixture.root)
     assert.deepEqual(sources.skins, {
+      submodule: SUBMODULE,
       sha: fixture.sha,
       repo: 'zhu1090093659/dsh-skins',
       worktree: join(fixture.root, SUBMODULE, 'skins'),
+      head: fixture.sha,
+      expected: fixture.sha,
     })
   } finally {
     rmSync(fixture.root, { recursive: true, force: true })
   }
 })
 
-test('resolveSources falls back to the tarball when the working tree left the pin', () => {
+test('resolveSources falls back to the pinned commit when the working tree left the pin', () => {
   const fixture = fixtureCheckout()
   try {
     writeFileSync(join(fixture.inner, 'skins', 'later.json'), '{}\n')
     commit(fixture.inner, 'moved on')
+    const moved = git(['rev-parse', 'HEAD'], fixture.inner)
     const sources = resolveSources(fixtureLockObject(GOOD), fixture.root)
     assert.equal(sources.skins.sha, fixture.sha)
+    assert.equal(sources.skins.head, moved)
+    assert.equal(sources.skins.expected, fixture.sha)
     assert.equal(sources.skins.worktree, null)
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test('resolveSources --local reads a working tree that left the pin', () => {
+  const fixture = fixtureCheckout()
+  try {
+    writeFileSync(join(fixture.inner, 'skins', 'later.json'), '{}\n')
+    commit(fixture.inner, 'moved on')
+    const moved = git(['rev-parse', 'HEAD'], fixture.inner)
+    const sources = resolveSources(fixtureLockObject(GOOD), fixture.root, undefined, { local: true })
+    assert.equal(sources.skins.sha, fixture.sha)
+    assert.equal(sources.skins.expected, moved)
+    assert.equal(sources.skins.worktree, join(fixture.root, SUBMODULE, 'skins'))
   } finally {
     rmSync(fixture.root, { recursive: true, force: true })
   }
@@ -227,21 +248,44 @@ test('planInputs reports missing, stale and ok against the cache stamp', () => {
   }
 })
 
+test('planInputs reads the stamp against the commit the source yields, not the pin', () => {
+  const cache = mkdtempSync(join(tmpdir(), 'market-inputs-local-'))
+  const branchSha = 'c'.repeat(40)
+  try {
+    const sources = {
+      skins: { sha: SHA, expected: branchSha, repo: 'zhu1090093659/dsh-skins', worktree: '/local/skins' },
+    }
+    mkdirSync(join(cache, 'skins'), { recursive: true })
+
+    // The cache holds the pinned commit, so a run that reads a working tree is stale.
+    writeFileSync(stampPath(cache, 'skins'), `${SHA}\n`)
+    assert.equal(planInputs(fixtureLockObject(GOOD), cache, { sources })[0].state, 'stale')
+
+    writeFileSync(stampPath(cache, 'skins'), `${branchSha}\n`)
+    const planned = planInputs(fixtureLockObject(GOOD), cache, { sources })[0]
+    assert.equal(planned.state, 'ok')
+    assert.equal(planned.sha, SHA)
+    assert.equal(planned.expected, branchSha)
+  } finally {
+    rmSync(cache, { recursive: true, force: true })
+  }
+})
+
 test('planInputs honours the only filter', () => {
   const lock = fixtureLockObject({
     skins: GOOD.skins,
     pet: { submodule: 'satellites/dsh-pet', path: 'assets', target: 'pet' },
   })
-  const sources = { pet: { sha: SHA, repo: 'zhu1090093659/dsh-pet', worktree: null } }
+  const sources = { pet: { sha: SHA, expected: SHA, repo: 'zhu1090093659/dsh-pet', worktree: null } }
   const names = planInputs(lock, '/nonexistent-cache', { sources, only: ['pet'] }).map(input => input.name)
   assert.deepEqual(names, ['pet'])
 })
 
 test('planInputs refuses an input whose commit was never resolved', () => {
-  assert.throws(() => planInputs(fixtureLockObject(GOOD), '/nonexistent-cache', { sources: {} }), /no pinned commit/)
+  assert.throws(() => planInputs(fixtureLockObject(GOOD), '/nonexistent-cache', { sources: {} }), /no commit to read/)
 })
 
-test('fetchInput materializes the pinned content out of the submodule working tree', async () => {
+test('fetchInput materializes content out of the submodule working tree', async () => {
   const cache = mkdtempSync(join(tmpdir(), 'market-inputs-copy-'))
   const worktree = mkdtempSync(join(tmpdir(), 'market-inputs-worktree-'))
   try {
@@ -253,6 +297,7 @@ test('fetchInput materializes the pinned content out of the submodule working tr
       path: 'skins',
       target: 'skins',
       sha: SHA,
+      expected: SHA,
       repo: 'zhu1090093659/dsh-skins',
       worktree,
       dir: join(cache, 'skins'),
@@ -260,6 +305,31 @@ test('fetchInput materializes the pinned content out of the submodule working tr
     assert.equal(readFileSync(join(cache, 'skins', 'skin.json'), 'utf8'), '{"id":"blue-fantasy"}\n')
     assert.equal(existsSync(join(cache, 'skins', '.git')), false)
     assert.equal(readStamp(cache, 'skins'), SHA)
+  } finally {
+    rmSync(cache, { recursive: true, force: true })
+    rmSync(worktree, { recursive: true, force: true })
+  }
+})
+
+test('fetchInput stamps the commit it read, so local content is not recorded as the pin', async () => {
+  const cache = mkdtempSync(join(tmpdir(), 'market-inputs-local-copy-'))
+  const worktree = mkdtempSync(join(tmpdir(), 'market-inputs-local-worktree-'))
+  const branchSha = 'd'.repeat(40)
+  try {
+    writeFileSync(join(worktree, 'skin.json'), '{"id":"work-in-progress"}\n')
+    await fetchInput({
+      name: 'skins',
+      submodule: SUBMODULE,
+      path: 'skins',
+      target: 'skins',
+      sha: SHA,
+      expected: branchSha,
+      repo: 'zhu1090093659/dsh-skins',
+      worktree,
+      dir: join(cache, 'skins'),
+    }, cache)
+    assert.equal(readStamp(cache, 'skins'), branchSha)
+    assert.equal(readFileSync(join(cache, 'skins', 'skin.json'), 'utf8'), '{"id":"work-in-progress"}\n')
   } finally {
     rmSync(cache, { recursive: true, force: true })
     rmSync(worktree, { recursive: true, force: true })

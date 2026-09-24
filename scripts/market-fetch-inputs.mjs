@@ -15,13 +15,16 @@
  * from, so local edits in that working tree are part of the build input;
  * otherwise the pinned commit is downloaded as a tarball and only its content
  * directory is unpacked, so a clone that never initializes the submodules
- * still builds the same content without fetching history.
+ * still builds the same content without fetching history. --local reads the
+ * submodule working trees whatever commit they sit on; a market/dist built
+ * from what it writes comes from unpinned content and must not be committed.
  *
  * Usage:
  *   node scripts/market-fetch-inputs.mjs              # fetch missing/stale inputs
  *   node scripts/market-fetch-inputs.mjs --check      # verify only, never download
  *   node scripts/market-fetch-inputs.mjs --force      # refetch every input
  *   node scripts/market-fetch-inputs.mjs --only skins # fetch a subset
+ *   node scripts/market-fetch-inputs.mjs --local      # read the submodule working trees
  *
  * Environment:
  *   MARKET_INPUTS_DIR   cache directory (default: <repo>/.market-inputs)
@@ -182,9 +185,11 @@ function submoduleHead(root, submodule) {
 /**
  * Resolve what comes from the checkout rather than the lockfile: each
  * submodule's repository URL (.gitmodules), its pinned commit (the gitlink),
- * and its working tree when that tree sits on the pinned commit.
+ * and the content source to materialize from. The pinned commit is the source
+ * unless `local` asks for whatever the submodule working trees hold, which is
+ * how a developer builds the market from an edit in place.
  */
-export function resolveSources(lock, root = REPO_ROOT, only) {
+export function resolveSources(lock, root = REPO_ROOT, only, { local = false } = {}) {
   const modules = parseGitmodules(readFileSync(join(root, GITMODULES), 'utf8'))
   const sources = {}
   for (const [name, input] of Object.entries(lock.inputs)) {
@@ -195,30 +200,50 @@ export function resolveSources(lock, root = REPO_ROOT, only) {
     }
     const sha = submodulePin(root, input.submodule)
     const content = join(root, input.submodule, input.path)
-    const checkedOut = submoduleHead(root, input.submodule) === sha && existsSync(content)
-    sources[name] = { sha, repo: githubSlug(url), worktree: checkedOut ? content : null }
+    const head = submoduleHead(root, input.submodule)
+    const checkedOut = head !== null && existsSync(content)
+    const fromWorktree = checkedOut && (local || head === sha)
+    sources[name] = {
+      submodule: input.submodule,
+      sha,
+      repo: githubSlug(url),
+      worktree: fromWorktree ? content : null,
+      head,
+      /** The commit the cache holds once this source is materialized. */
+      expected: fromWorktree ? head : sha,
+    }
   }
   return sources
 }
 
 /**
- * Resolve every input against the cache: "ok" means the pinned commit is
- * already materialized and the content directory is present.
+ * Resolve every input against the cache: "ok" means the source this run is
+ * configured for is already materialized and the content directory is present.
  */
 export function planInputs(lock, cache, { sources, only } = {}) {
   const plan = []
   for (const [name, input] of Object.entries(lock.inputs)) {
     if (only !== undefined && !only.includes(name)) continue
     const source = sources?.[name]
-    if (source === undefined || !SHA_RE.test(source.sha ?? '')) {
-      throw new Error(`input "${name}" has no pinned commit; resolve it from the submodule gitlink`)
+    if (source === undefined || !SHA_RE.test(source.sha ?? '') || !SHA_RE.test(source.expected ?? '')) {
+      throw new Error(`input "${name}" has no commit to read; resolve it from the submodule gitlink`)
     }
     const dir = join(cache, input.target)
     const stamp = readStamp(cache, input.target)
     let state = 'missing'
-    if (stamp === source.sha && existsSync(dir)) state = 'ok'
-    else if (stamp !== null && stamp !== source.sha) state = 'stale'
-    plan.push({ name, ...input, sha: source.sha, repo: source.repo, worktree: source.worktree ?? null, dir, stamp, state })
+    if (stamp === source.expected && existsSync(dir)) state = 'ok'
+    else if (stamp !== null && stamp !== source.expected) state = 'stale'
+    plan.push({
+      name,
+      ...input,
+      sha: source.sha,
+      expected: source.expected,
+      repo: source.repo,
+      worktree: source.worktree ?? null,
+      dir,
+      stamp,
+      state,
+    })
   }
   return plan
 }
@@ -263,23 +288,23 @@ export async function fetchInput(input, cache) {
       mkdirSync(dirname(input.dir), { recursive: true })
       renameSync(source, input.dir)
     }
-    writeFileSync(stampPath(cache, input.target), `${input.sha}\n`)
+    writeFileSync(stampPath(cache, input.target), `${input.expected}\n`)
   } finally {
     rmSync(work, { recursive: true, force: true })
   }
 }
 
-/** Fetch every planned input that is not already at the pinned commit. */
+/** Fetch every planned input that is not already materialized. */
 export async function fetchAll(plan, cache, { force = false, log = console } = {}) {
   const fetched = []
   for (const input of plan) {
     if (input.state === 'ok' && !force) {
-      log.log(`[market-inputs] ${input.name}: ${input.sha.slice(0, 9)} already unpacked`)
+      log.log(`[market-inputs] ${input.name}: ${input.expected.slice(0, 9)} already unpacked`)
       continue
     }
     const from = input.worktree === null
       ? `${input.repo}@${input.sha.slice(0, 9)}`
-      : `${input.submodule}@${input.sha.slice(0, 9)}`
+      : `${input.submodule}@${input.expected.slice(0, 9)}`
     log.log(`[market-inputs] ${input.name}: fetching ${from}`)
     await fetchInput(input, cache)
     log.log(`[market-inputs] ${input.name}: unpacked into ${input.dir}`)
@@ -292,6 +317,7 @@ async function main() {
   const args = process.argv.slice(2)
   const check = args.includes('--check')
   const force = args.includes('--force')
+  const local = args.includes('--local')
   const onlyIndex = args.indexOf('--only')
   const only = onlyIndex === -1 ? undefined : args.slice(onlyIndex + 1).filter(a => !a.startsWith('--'))
   const cache = cacheDir()
@@ -313,7 +339,15 @@ async function main() {
 
   let plan
   try {
-    plan = planInputs(lock, cache, { sources: resolveSources(lock, REPO_ROOT, only), only })
+    const sources = resolveSources(lock, REPO_ROOT, only, { local })
+    for (const source of Object.values(sources)) {
+      if (source.head === null || source.head === source.expected) continue
+      console.error(`[market-inputs] ${source.submodule} is checked out at ${source.head.slice(0, 9)}, not the pinned ${source.sha.slice(0, 9)}: this run reads the pinned commit, so the build ignores that working tree (add --local to read it instead)`)
+    }
+    if (local) {
+      console.error(`[market-inputs] local mode: ${cache} will hold the submodule working trees, not the pinned commits, so a market/dist built from it must not be committed`)
+    }
+    plan = planInputs(lock, cache, { sources, only })
   } catch (error) {
     console.error(`market-fetch-inputs: ${error.message}`)
     process.exit(1)
@@ -321,11 +355,12 @@ async function main() {
   if (check) {
     const broken = plan.filter(input => input.state !== 'ok')
     for (const input of plan) {
-      const detail = input.state === 'ok' ? input.sha.slice(0, 9) : `${input.state} (have ${input.stamp === null ? 'nothing' : input.stamp.slice(0, 9)})`
+      const commit = input.expected === input.sha ? input.expected.slice(0, 9) : `${input.expected.slice(0, 9)} (pin ${input.sha.slice(0, 9)})`
+      const detail = input.state === 'ok' ? commit : `${input.state} (have ${input.stamp === null ? 'nothing' : input.stamp.slice(0, 9)})`
       console.log(`[market-inputs] ${input.name}: ${detail}`)
     }
     if (broken.length > 0) {
-      console.error(`market-fetch-inputs: run "node scripts/market-fetch-inputs.mjs" first`)
+      console.error(`market-fetch-inputs: run "node scripts/market-fetch-inputs.mjs${local ? ' --local' : ''}" first`)
       process.exit(1)
     }
     console.log('[market-inputs] check OK')

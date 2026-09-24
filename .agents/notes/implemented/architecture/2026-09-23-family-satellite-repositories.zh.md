@@ -30,7 +30,7 @@ Status: implemented
 
 ### 市场内容按提交固定
 
-市场构建不从工作树读皮肤或宠物资产，也不从工作树读社区索引。三个内容仓是挂在 `satellites/` 下的 git submodule，submodule 的 gitlink 就是钉扎的提交：`market-inputs.lock.json` 记录哪份输入由哪个 submodule 承载、内容目录在它里面的哪一层，`scripts/market-fetch-inputs.mjs` 把该内容目录物化到 `.market-inputs/`（检出停在该提交就本地复制，否则按该提交下载 tarball；幂等，`--check` 只校验不下载，缺失或过期直接让运行失败），`scripts/market-build` 从那里读取。社区索引同样按提交固定，而不是"npm 解析到什么算什么"：在固定它之前，删掉仓内包会让构建静默读到一份陈旧的已发布索引，产出与已提交 `market/dist` 不再一致的 `manifest/plugins.json`。
+市场构建不从工作树读皮肤或宠物资产，也不从工作树读社区索引。三个内容仓是挂在 `satellites/` 下的 git submodule，submodule 的 gitlink 就是钉扎的提交：`market-inputs.lock.json` 记录哪份输入由哪个 submodule 承载、内容目录在它里面的哪一层，`scripts/market-fetch-inputs.mjs` 把该内容目录物化到 `.market-inputs/`（检出停在该提交就本地复制，否则按该提交下载 tarball；幂等，`--check` 只校验不下载，缺失或过期直接让运行失败），`scripts/market-build` 从那里读取。`--local` 读取 submodule 工作树当前所在的提交，开发者就是用它把卫星检出里的改动送进市场构建：缓存于是记录它读到的那个提交而不是钉扎的提交，离开钉扎提交的检出在不加它时会被提示并忽略，这样构建出的 `market/dist` 不得提交。社区索引同样按提交固定，而不是"npm 解析到什么算什么"：在固定它之前，删掉仓内包会让构建静默读到一份陈旧的已发布索引，产出与已提交 `market/dist` 不再一致的 `manifest/plugins.json`。
 
 `scripts/market-verify-assets.mjs` 走遍生成清单承诺的每个路径，对 `market/dist` 或已部署站点校验，并把服务端字节数与本地文件比对。它必须用 Range GET 而不是 HEAD——Workers 静态资产层对 HEAD 返回 `content-length: 0`。部署流程在 `market:check` 之前拉取，部署之后改走 Worker 的 `POST /api/asset-attest` 路由校验：每次最多提交 500 个路径，读回部署版本用自身 `ASSETS` binding 为每个路径提供的字节数。
 
@@ -59,5 +59,6 @@ Status: implemented
 - SDK cohort 现在要在四个仓推进而不是一个；本次拆分后卫星已同步到 `0.1.7-rc.1`，将来一次 cohort 迁移要碰四个仓。
 - 市场站的内容跟随 submodule 的 gitlink：一次合并的皮肤或宠物改动，在维护者把 `satellites/` 下的 submodule 移到该提交、部署流程重建并重新校验之后才到达 `dsh-market.com`，而不是卫星一合并就到。
 - `satellites/` 只记录三个 submodule 而不记录其内容，因此从未检出它们的 clone 仍能构建市场；`git submodule update --init` 是要就地改卫星仓内容时的选择，跳过它的人不必为 199 MB 的宠物仓付出 clone 代价。
+- 卫星内容的开发可以在本检出里走完：检出 submodule、改动、用 `--local` 读它、构建。`scripts/capture-previews` 出于同样的理由把预览图写进 `satellites/dsh-skins`。PR 仍然落在卫星仓。
 - `.market-inputs/` 是拉取来的构建输入（git-ignored），test-standards 与 emoji 审计会跳过它和 `satellites/`，避免把卫星内容当作一方代码审计。
 - 卫星各自携带一份 `shared/tsdown.client.ts` 与 vendored `shared/` 模块；`scripts/sync-shared.mjs` 现在覆盖 99 份副本而不是 114 份，且不再触达三者。
