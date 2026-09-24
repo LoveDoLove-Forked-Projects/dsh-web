@@ -384,7 +384,17 @@ export function apply(ctx: ClientContext): void {
     if (enabled) mountUi()
     else uiDisposer?.()
   }
-  settingsForm.subscribe(syncEnabled)
+  const unsubscribeSettings = settingsForm.subscribe(syncEnabled)
+  // The mounted surfaces and the settings subscription belong to this fiber.
+  // The loader replaces a rebuilt bundle IN PLACE (fiber teardown and re-apply
+  // without a page reload), and that same teardown removes the dictionaries
+  // this row and board render through — a row left behind would stay visible
+  // showing raw dictionary keys, and a surviving subscription could mount a
+  // second one from a dead instance.
+  ctx.effect(() => () => {
+    unsubscribeSettings()
+    uiDisposer?.()
+  }, 'task-board: DOM surfaces')
   syncEnabled()
 }
 

@@ -11332,7 +11332,11 @@ window.__ModuleLoader__.load({
 				if (snapshot.status === "ready" ? snapshot.value?.enabled ?? true : snapshot.status === "unavailable") mountUi();
 				else uiDisposer?.();
 			};
-			settingsForm.subscribe(syncEnabled);
+			const unsubscribeSettings = settingsForm.subscribe(syncEnabled);
+			ctx.effect(() => () => {
+				unsubscribeSettings();
+				uiDisposer?.();
+			}, "task-board: DOM surfaces");
 			syncEnabled();
 		}
 		/**
@@ -45179,14 +45183,20 @@ window.__ModuleLoader__.load({
 		* open, and per-child failures degrade alone.
 		*/
 		async function mountClientChildren(ctx) {
+			const registry = mountedRegistry();
+			const claimed = /* @__PURE__ */ new Set();
+			ctx.effect(() => () => {
+				for (const name of claimed) registry.delete(name);
+				claimed.clear();
+			}, "dsh-web-all: client child mount claims");
 			const active = await fetchActiveRows();
 			const own = ownClientEntryIds();
-			const registry = mountedRegistry();
 			for (const child of clientChildren) {
 				if (active !== void 0 && !active.has(child.name)) continue;
 				if (own.has(child.name)) continue;
 				if (registry.has(child.name)) continue;
 				registry.add(child.name);
+				claimed.add(child.name);
 				const mod = child.module;
 				const face = mod.default ?? mod;
 				const apply = typeof face === "function" ? face : face.apply;
