@@ -40,6 +40,8 @@ export const EMOJI_SINGLES = new Set([0xfe0f, 0x200d])
 const SKIP_DIRS = new Set([
   // Fetched market content sources (market-inputs.lock.json): not ours to audit.
   '.market-inputs',
+  // Submodule checkouts of the satellite repositories: not ours to audit.
+  'satellites',
   '.git', 'node_modules', 'lib', 'dist', 'coverage', 'playwright-report',
   'test-results', '.codegraph', '.zcode', '.pnpm-store', '.wrangler',
   'gui-test-screenshots',

@@ -40,7 +40,7 @@ packages/<name>/
 - `patchFrom`：该包的 `cordis.patch.yml` insert 行会被汇总进聚合包 patch；
 - `deps`：解析为包名写入聚合包 `package.json` 的 `dependencies`（`workspace:*`）。
 
-皮肤（新增或改动）不需要进任何 aggregate.yml：皮肤是纯资产目录，位于独立仓 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) 的 `skins/<id>/`（市场构建与预览的共同来源，本仓按 market-inputs.lock.json 固定的提交拉取）；npm 包 `files` 白名单只随发默认皮肤 `blue-fantasy`，其余皮肤由市场按需安装到 `$DSH_HOME/skins/<id>/` 后由皮肤中心管理。皮肤仓的 CI 跑 `skin-center:check`，本仓在 `pnpm market:fetch` 之后运行 `pnpm market:build` 刷新 market/dist。皮肤启用互斥由 `dsh-skin use` 管理（客户端原子切换，不改 cordis.patch.yml）。
+皮肤（新增或改动）不需要进任何 aggregate.yml：皮肤是纯资产目录，位于独立仓 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) 的 `skins/<id>/`（市场构建与预览的共同来源，本仓以 submodule `satellites/dsh-skins` 的 gitlink 固定要读的提交）；npm 包 `files` 白名单只随发默认皮肤 `blue-fantasy`，其余皮肤由市场按需安装到 `$DSH_HOME/skins/<id>/` 后由皮肤中心管理。皮肤仓的 CI 跑 `skin-center:check`，本仓在 `pnpm market:fetch` 之后运行 `pnpm market:build` 刷新 market/dist。皮肤启用互斥由 `dsh-skin use` 管理（客户端原子切换，不改 cordis.patch.yml）。
 
 ### 4. 重新生成聚合包
 

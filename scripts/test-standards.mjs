@@ -72,6 +72,8 @@ const SKIP_DIRS = new Set([
   'gui-test-screenshots', 'marketing',
   // Fetched market content sources (market-inputs.lock.json): not our tests.
   '.market-inputs',
+  // Submodule checkouts of the satellite repositories: not our tests.
+  'satellites',
 ])
 
 /** Vendored subtrees whose tests are not ours to standardize. */

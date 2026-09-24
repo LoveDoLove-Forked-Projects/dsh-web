@@ -4,7 +4,7 @@
 
 本版本统一发布 `packages/` 下由 `scripts/lib/family-packages.mjs` 发现的 16 个公开家族包；根 package.json 与 shared 私有包不发布。所有家族包采用统一版本号（当前为 0.4.1），皮肤中心只随包分发 `blue-fantasy`，其余皮肤由 Workshop 按需安装。
 
-皮肤中心、宠物与社区插件索引已拆分为独立仓库并各自发版：`@linxin666/dsh-client-ui-skin-center`（[dsh-skins](https://github.com/zhu1090093659/dsh-skins)）、`@linxin666/dsh-pet`（[dsh-pet](https://github.com/zhu1090093659/dsh-pet)）、`@linxin666/dsh-client-ui-community-plugins`（[dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins)）。本仓的聚合包按 semver 依赖它们，市场站按 [market-inputs.lock.json](../market-inputs.lock.json) 固定的提交拉取皮肤与宠物内容，三者不再随本仓统一版本发布。
+皮肤中心、宠物与社区插件索引已拆分为独立仓库并各自发版：`@linxin666/dsh-client-ui-skin-center`（[dsh-skins](https://github.com/zhu1090093659/dsh-skins)）、`@linxin666/dsh-pet`（[dsh-pet](https://github.com/zhu1090093659/dsh-pet)）、`@linxin666/dsh-client-ui-community-plugins`（[dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins)）。本仓的聚合包按 semver 依赖它们，`satellites/` 下三个 submodule 的 gitlink 固定市场站要拉取的皮肤、宠物与社区索引内容，三者不再随本仓统一版本发布。
 
 | 目录 | npm 包 | 版本 | 发布状态 |
 | --- | --- | --- | --- |

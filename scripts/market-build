@@ -9,9 +9,9 @@
  *   pets    — .market-inputs/pet/<dir>/pet.json                      (v2)
  *   plugins — .market-inputs/community/community.json
  *
- * The skin, pet and community-index content lives in its own repositories;
- * scripts/market-fetch-inputs.mjs unpacks the commits pinned in
- * market-inputs.lock.json into .market-inputs/.
+ * The skin, pet and community-index content lives in its own repositories,
+ * carried here as git submodules under satellites/; scripts/market-fetch-inputs.mjs
+ * materializes the content directory of each pinned gitlink into .market-inputs/.
  *   presets — packages/dsh-preset-center/presets/<id>/preset.yml
  *             + presets/catalog.json (market metadata: author, version,
  *               tags, English copy); the preset directory is the asset
@@ -49,9 +49,9 @@ const ROOT = path.resolve(__dirname, '..')
 /**
  * Content sources. The skin and pet assets live in their own repositories
  * (dsh-skins, dsh-pet) since the family split; scripts/market-fetch-inputs.mjs
- * unpacks the pinned commits into MARKET_INPUTS_DIR. The in-repo paths remain
- * as a fallback so the build keeps working from a checkout that still carries
- * the packages (migration window and the fixture-based script tests).
+ * materializes the pinned gitlinks into MARKET_INPUTS_DIR. The in-repo paths
+ * remain as a fallback so the build keeps working from a checkout that still
+ * carries the packages (migration window and the fixture-based script tests).
  */
 const MARKET_INPUTS_DIR = process.env.MARKET_INPUTS_DIR
   ? path.resolve(process.env.MARKET_INPUTS_DIR)

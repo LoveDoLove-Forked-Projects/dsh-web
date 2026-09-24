@@ -30,7 +30,7 @@ Status: implemented
 
 ### 市场内容按提交固定
 
-市场构建不再从工作树读皮肤或宠物资产，也不从工作树读社区索引。`market-inputs.lock.json` 记录每个内容仓与要读的提交，`scripts/market-fetch-inputs.mjs` 只解包该提交的内容目录到 `.market-inputs/`（幂等；`--check` 只校验不下载；缺失或过期直接让运行失败），`scripts/market-build` 从那里读取。社区索引同样按提交固定，而不是"npm 解析到什么算什么"：在固定它之前，删掉仓内包会让构建静默读到一份陈旧的已发布索引，产出与已提交 `market/dist` 不再一致的 `manifest/plugins.json`。
+市场构建不从工作树读皮肤或宠物资产，也不从工作树读社区索引。三个内容仓是挂在 `satellites/` 下的 git submodule，submodule 的 gitlink 就是钉扎的提交：`market-inputs.lock.json` 记录哪份输入由哪个 submodule 承载、内容目录在它里面的哪一层，`scripts/market-fetch-inputs.mjs` 把该内容目录物化到 `.market-inputs/`（检出停在该提交就本地复制，否则按该提交下载 tarball；幂等，`--check` 只校验不下载，缺失或过期直接让运行失败），`scripts/market-build` 从那里读取。社区索引同样按提交固定，而不是"npm 解析到什么算什么"：在固定它之前，删掉仓内包会让构建静默读到一份陈旧的已发布索引，产出与已提交 `market/dist` 不再一致的 `manifest/plugins.json`。
 
 `scripts/market-verify-assets.mjs` 走遍生成清单承诺的每个路径，对 `market/dist` 或已部署站点校验，并把服务端字节数与本地文件比对。它必须用 Range GET 而不是 HEAD——Workers 静态资产层对 HEAD 返回 `content-length: 0`。部署流程在 `market:check` 之前拉取，部署之后再对 `dsh-market.com` 校验。
 
@@ -44,7 +44,7 @@ Status: implemented
 
 **由本仓生成镜像仓库。** 把三个目录只读镜像到各自的 GitHub 仓，本仓仍是唯一事实源。运营成本最低，也满足"可发现"的目标，但输在贡献目标：镜像上的 PR 无处落地，皮肤投稿仍会回到本仓，镜像只是装饰。
 
-**在当前路径挂 git submodule。** 把三个包以子模块留在 workspace 里，聚合包与市场构建原样可用。否决原因是聚合包的目标是消费已发布包而非工作树：子模块会保留 workspace 链接、客户端内联与重建耦合，还给每个贡献者 clone 增加 detached HEAD 的摩擦。
+**在当前路径挂 git submodule。** 把三个包以子模块留在 workspace 里，聚合包与市场构建原样可用。否决原因是聚合包的目标是消费已发布包而非工作树：子模块会保留 workspace 链接、客户端内联与重建耦合，还给每个贡献者 clone 增加 detached HEAD 的摩擦。这条否决针对的是把三者当作 workspace 包挂载：同一机制放在 workspace 之外，正是市场内容的钉扎方式——workspace glob 触不到 `satellites/`，而且未检出 submodule 的 clone 仍按固定提交的 tarball 构建市场。
 
 **只抽出资产、插件留在本仓。** 把皮肤与宠物资产搬到内容仓，插件留下。否决原因是插件与其内容共享契约（`skin.json`、`pet.json` v2）和测试套件；拆到两个仓会把校验放在它所校验之物之外。
 
@@ -57,6 +57,7 @@ Status: implemented
 - 三个仓各自拥有 CI、版本线与贡献流程；本仓发布不再发布它们，`release.yml` 与 `scripts/lib/family-packages.mjs` 看到的是十六个包而不是十九个。
 - 三行失去聚合包的 fault-isolation shell，它们在插件清单里的标题从 `web-all/<family>` 变成各自的包名。
 - SDK cohort 现在要在四个仓推进而不是一个；本次拆分后卫星已同步到 `0.1.7-rc.1`，将来一次 cohort 迁移要碰四个仓。
-- 市场站的内容跟随 `market-inputs.lock.json`：一次合并的皮肤或宠物改动，在维护者 bump pin、部署流程重建并重新校验之后才到达 `dsh-market.com`，而不是卫星一合并就到。
-- `.market-inputs/` 是拉取来的构建输入（git-ignored），test-standards 与 emoji 审计会跳过它，避免把拉来的第三方内容当作一方代码审计。
+- 市场站的内容跟随 submodule 的 gitlink：一次合并的皮肤或宠物改动，在维护者把 `satellites/` 下的 submodule 移到该提交、部署流程重建并重新校验之后才到达 `dsh-market.com`，而不是卫星一合并就到。
+- `satellites/` 只记录三个 submodule 而不记录其内容，因此从未检出它们的 clone 仍能构建市场；`git submodule update --init` 是要就地改卫星仓内容时的选择，跳过它的人不必为 199 MB 的宠物仓付出 clone 代价。
+- `.market-inputs/` 是拉取来的构建输入（git-ignored），test-standards 与 emoji 审计会跳过它和 `satellites/`，避免把卫星内容当作一方代码审计。
 - 卫星各自携带一份 `shared/tsdown.client.ts` 与 vendored `shared/` 模块；`scripts/sync-shared.mjs` 现在覆盖 99 份副本而不是 114 份，且不再触达三者。

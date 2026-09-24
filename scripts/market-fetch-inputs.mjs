@@ -2,11 +2,20 @@
 /**
  * market-fetch-inputs - materialize the market's content sources.
  *
- * The market build no longer reads the skin and pet assets out of this
- * monorepo: they live in their own repositories (dsh-skins, dsh-pet) and are
- * consumed here at the exact commit recorded in market-inputs.lock.json. This
- * script downloads that commit as a tarball and unpacks only the content
- * directory, so no history and no unrelated files are fetched.
+ * The market build does not read the skin and pet assets out of this
+ * monorepo: they live in their own repositories (dsh-skins, dsh-pet), which
+ * this repository carries as git submodules under satellites/. The submodule
+ * gitlink is the pin - the commit recorded on this branch is the commit whose
+ * content the market serves - and .gitmodules names the repository behind each
+ * one. market-inputs.lock.json holds what git cannot express: which submodule
+ * carries an input and where its content sits inside it.
+ *
+ * This script materializes every pinned content directory into
+ * MARKET_INPUTS_DIR. A submodule checked out at the pinned commit is copied
+ * from, so local edits in that working tree are part of the build input;
+ * otherwise the pinned commit is downloaded as a tarball and only its content
+ * directory is unpacked, so a clone that never initializes the submodules
+ * still builds the same content without fetching history.
  *
  * Usage:
  *   node scripts/market-fetch-inputs.mjs              # fetch missing/stale inputs
@@ -20,8 +29,8 @@
  * Exit code is non-zero on any failure: a missing or stale input must never
  * let the market build silently ship a partial catalogue.
  */
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { Readable } from 'node:stream'
@@ -30,8 +39,16 @@ import { pipeline } from 'node:stream/promises'
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = resolve(SCRIPT_DIR, '..')
 export const LOCKFILE = 'market-inputs.lock.json'
+export const GITMODULES = '.gitmodules'
 const SHA_RE = /^[0-9a-f]{40}$/
-const REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+/** A submodule path is checkout-relative: plain segments and no empty ones. */
+const SUBMODULE_PATH_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/
+
+/** Reject the two segments that would let a lockfile entry point outside the checkout. */
+function isSubmodulePath(value) {
+  return SUBMODULE_PATH_RE.test(value) && !value.split('/').some(segment => segment === '.' || segment === '..')
+}
+
 /** Records the commit currently unpacked beside the content directory. */
 export const STAMP_SUFFIX = '.sha'
 
@@ -42,26 +59,27 @@ export function cacheDir(env = process.env) {
 
 /**
  * Read and validate market-inputs.lock.json.
- * @returns {{version: number, inputs: Record<string, {repo: string, sha: string, path: string, target: string}>}}
+ * @returns {{version: number, inputs: Record<string, {submodule: string, path: string, target: string}>}}
  */
 export function loadLockfile(root = REPO_ROOT) {
   const file = join(root, LOCKFILE)
   if (!existsSync(file)) throw new Error(`${LOCKFILE} not found at ${file}`)
   const parsed = JSON.parse(readFileSync(file, 'utf8'))
-  if (parsed.version !== 1) throw new Error(`${LOCKFILE}: unsupported version ${parsed.version}`)
+  if (parsed.version !== 2) throw new Error(`${LOCKFILE}: unsupported version ${parsed.version}`)
   const inputs = parsed.inputs
   if (inputs === null || typeof inputs !== 'object' || Object.keys(inputs).length === 0) {
     throw new Error(`${LOCKFILE}: "inputs" must be a non-empty object`)
   }
   for (const [name, input] of Object.entries(inputs)) {
     if (input === null || typeof input !== 'object') throw new Error(`${LOCKFILE}: input "${name}" must be an object`)
-    for (const key of ['repo', 'sha', 'path', 'target']) {
+    for (const key of ['submodule', 'path', 'target']) {
       if (typeof input[key] !== 'string' || input[key] === '') {
         throw new Error(`${LOCKFILE}: input "${name}" is missing a string "${key}"`)
       }
     }
-    if (!REPO_RE.test(input.repo)) throw new Error(`${LOCKFILE}: input "${name}" has an invalid repo "${input.repo}"`)
-    if (!SHA_RE.test(input.sha)) throw new Error(`${LOCKFILE}: input "${name}" must pin a full 40-character commit sha`)
+    if (!isSubmodulePath(input.submodule)) {
+      throw new Error(`${LOCKFILE}: input "${name}" has an invalid submodule path "${input.submodule}"`)
+    }
     if (input.path.startsWith('/') || input.path.includes('..')) {
       throw new Error(`${LOCKFILE}: input "${name}" has an unsafe path "${input.path}"`)
     }
@@ -84,19 +102,123 @@ export function readStamp(cache, target) {
 }
 
 /**
- * Resolve every input against the cache: "ok" means the pinned commit is
- * already unpacked and the content directory is present.
+ * Parse .gitmodules into submodule path -> repository URL. Git writes a config
+ * file with one [submodule "<name>"] section per submodule; only the `path` and
+ * `url` keys matter here.
  */
-export function planInputs(lock, cache, only) {
+export function parseGitmodules(text) {
+  const byPath = new Map()
+  let section = null
+  const flush = () => {
+    if (section !== null && section.path !== null && section.url !== null) {
+      byPath.set(section.path, section.url)
+    }
+    section = null
+  }
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#') || line.startsWith(';')) continue
+    if (/^\[submodule\s+".+"\]$/.test(line)) {
+      flush()
+      section = { path: null, url: null }
+      continue
+    }
+    const entry = /^([A-Za-z][A-Za-z0-9-]*)\s*=\s*(.*)$/.exec(line)
+    if (entry === null || section === null) continue
+    if (entry[1] === 'path') section.path = entry[2].trim()
+    else if (entry[1] === 'url') section.url = entry[2].trim()
+  }
+  flush()
+  return byPath
+}
+
+/** The `owner/name` the codeload tarball endpoint addresses. */
+export function githubSlug(url) {
+  const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([^/]+)\/([^/]+?)(?:\.git)?$/.exec(url)
+  if (match === null) {
+    throw new Error(`"${url}" is not a GitHub repository URL, so the tarball fallback cannot download it`)
+  }
+  return `${match[1]}/${match[2]}`
+}
+
+/** Run git in a directory and return its trimmed stdout. */
+function git(args, cwd) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
+  if (result.error !== undefined && result.error !== null) {
+    throw new Error(`git is unavailable: ${result.error.message}`)
+  }
+  if (result.status !== 0) {
+    const detail = (result.stderr ?? '').trim().split('\n')[0]
+    throw new Error(`git ${args.join(' ')} failed${detail === '' ? '' : `: ${detail}`}`)
+  }
+  return result.stdout.trim()
+}
+
+/**
+ * The pinned commit of one input: the gitlink this branch records for its
+ * submodule. The index is read rather than HEAD so a bump can be verified
+ * before it is committed.
+ */
+export function submodulePin(root, submodule) {
+  const entry = git(['ls-files', '-s', '--', submodule], root)
+  const match = /^160000 ([0-9a-f]{40}) [0-9]+\t/.exec(entry)
+  if (match === null) {
+    throw new Error(`${submodule} carries no gitlink in this checkout; restore the submodule pointer before building the market`)
+  }
+  return match[1]
+}
+
+/** The commit a submodule working tree sits on, or null when it is not checked out. */
+function submoduleHead(root, submodule) {
+  const dir = join(root, submodule)
+  if (!existsSync(join(dir, '.git'))) return null
+  try {
+    return git(['rev-parse', 'HEAD'], dir)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve what comes from the checkout rather than the lockfile: each
+ * submodule's repository URL (.gitmodules), its pinned commit (the gitlink),
+ * and its working tree when that tree sits on the pinned commit.
+ */
+export function resolveSources(lock, root = REPO_ROOT, only) {
+  const modules = parseGitmodules(readFileSync(join(root, GITMODULES), 'utf8'))
+  const sources = {}
+  for (const [name, input] of Object.entries(lock.inputs)) {
+    if (only !== undefined && !only.includes(name)) continue
+    const url = modules.get(input.submodule)
+    if (url === undefined) {
+      throw new Error(`input "${name}" names the submodule "${input.submodule}", which ${GITMODULES} does not declare`)
+    }
+    const sha = submodulePin(root, input.submodule)
+    const content = join(root, input.submodule, input.path)
+    const checkedOut = submoduleHead(root, input.submodule) === sha && existsSync(content)
+    sources[name] = { sha, repo: githubSlug(url), worktree: checkedOut ? content : null }
+  }
+  return sources
+}
+
+/**
+ * Resolve every input against the cache: "ok" means the pinned commit is
+ * already materialized and the content directory is present.
+ */
+export function planInputs(lock, cache, { sources, only } = {}) {
   const plan = []
   for (const [name, input] of Object.entries(lock.inputs)) {
     if (only !== undefined && !only.includes(name)) continue
+    const source = sources?.[name]
+    if (source === undefined || !SHA_RE.test(source.sha ?? '')) {
+      throw new Error(`input "${name}" has no pinned commit; resolve it from the submodule gitlink`)
+    }
     const dir = join(cache, input.target)
     const stamp = readStamp(cache, input.target)
     let state = 'missing'
-    if (stamp === input.sha && existsSync(dir)) state = 'ok'
-    else if (stamp !== null && stamp !== input.sha) state = 'stale'
-    plan.push({ name, ...input, dir, stamp, state })
+    if (stamp === source.sha && existsSync(dir)) state = 'ok'
+    else if (stamp !== null && stamp !== source.sha) state = 'stale'
+    plan.push({ name, ...input, sha: source.sha, repo: source.repo, worktree: source.worktree ?? null, dir, stamp, state })
   }
   return plan
 }
@@ -112,26 +234,35 @@ async function download(url, dest) {
   await pipeline(Readable.fromWeb(res.body), createWriteStream(dest))
 }
 
-/** Fetch one input: download the pinned commit, unpack its content directory. */
+/**
+ * Materialize one input: copy the content directory out of a submodule working
+ * tree that sits on the pinned commit, or download that commit as a tarball and
+ * unpack the same directory from it.
+ */
 export async function fetchInput(input, cache) {
   const work = join(cache, `.work-${input.target}`)
   const tarball = join(work, 'source.tgz')
   rmSync(work, { recursive: true, force: true })
   mkdirSync(work, { recursive: true })
   try {
-    await download(tarballUrl(input.repo, input.sha), tarball)
-    const untar = spawnSync('tar', ['-xzf', tarball, '-C', work], { stdio: 'inherit' })
-    if (untar.status !== 0) throw new Error(`tar failed for ${input.repo}@${input.sha.slice(0, 9)}`)
-    const repoName = input.repo.split('/').pop()
-    const unpacked = readdirSync(work).find(entry => entry.startsWith(`${repoName}-`))
-    if (unpacked === undefined) throw new Error(`unexpected tarball layout for ${input.repo}`)
-    const source = join(work, unpacked, input.path)
-    if (!existsSync(source)) {
-      throw new Error(`${input.repo}@${input.sha.slice(0, 9)} has no "${input.path}" directory`)
+    if (input.worktree !== null) {
+      rmSync(input.dir, { recursive: true, force: true })
+      cpSync(input.worktree, input.dir, { recursive: true, filter: source => basename(source) !== '.git' })
+    } else {
+      await download(tarballUrl(input.repo, input.sha), tarball)
+      const untar = spawnSync('tar', ['-xzf', tarball, '-C', work], { stdio: 'inherit' })
+      if (untar.status !== 0) throw new Error(`tar failed for ${input.repo}@${input.sha.slice(0, 9)}`)
+      const repoName = input.repo.split('/').pop()
+      const unpacked = readdirSync(work).find(entry => entry.startsWith(`${repoName}-`))
+      if (unpacked === undefined) throw new Error(`unexpected tarball layout for ${input.repo}`)
+      const source = join(work, unpacked, input.path)
+      if (!existsSync(source)) {
+        throw new Error(`${input.repo}@${input.sha.slice(0, 9)} has no "${input.path}" directory`)
+      }
+      rmSync(input.dir, { recursive: true, force: true })
+      mkdirSync(dirname(input.dir), { recursive: true })
+      renameSync(source, input.dir)
     }
-    rmSync(input.dir, { recursive: true, force: true })
-    mkdirSync(dirname(input.dir), { recursive: true })
-    renameSync(source, input.dir)
     writeFileSync(stampPath(cache, input.target), `${input.sha}\n`)
   } finally {
     rmSync(work, { recursive: true, force: true })
@@ -146,7 +277,10 @@ export async function fetchAll(plan, cache, { force = false, log = console } = {
       log.log(`[market-inputs] ${input.name}: ${input.sha.slice(0, 9)} already unpacked`)
       continue
     }
-    log.log(`[market-inputs] ${input.name}: fetching ${input.repo}@${input.sha.slice(0, 9)}`)
+    const from = input.worktree === null
+      ? `${input.repo}@${input.sha.slice(0, 9)}`
+      : `${input.submodule}@${input.sha.slice(0, 9)}`
+    log.log(`[market-inputs] ${input.name}: fetching ${from}`)
     await fetchInput(input, cache)
     log.log(`[market-inputs] ${input.name}: unpacked into ${input.dir}`)
     fetched.push(input.name)
@@ -177,7 +311,13 @@ async function main() {
     }
   }
 
-  const plan = planInputs(lock, cache, only)
+  let plan
+  try {
+    plan = planInputs(lock, cache, { sources: resolveSources(lock, REPO_ROOT, only), only })
+  } catch (error) {
+    console.error(`market-fetch-inputs: ${error.message}`)
+    process.exit(1)
+  }
   if (check) {
     const broken = plan.filter(input => input.state !== 'ok')
     for (const input of plan) {

@@ -21,8 +21,9 @@ on:
       - dev
     paths:
       - 'market/**'
-      # The skin and pet content sources are pinned here; a bump is what makes
-      # an upstream content change reach the site.
+      # A submodule gitlink is the skin / pet / community pin; moving one is
+      # what makes an upstream content change reach the site.
+      - 'satellites/**'
       - 'market-inputs.lock.json'
       - 'scripts/market-build'
       - 'scripts/market-fetch-inputs.mjs'

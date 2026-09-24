@@ -102,7 +102,7 @@ flowchart TB
 
 ## 皮肤系统
 
-皮肤是纯资产目录：事实源在独立仓 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) 的 `skins/`（42 个内置皮肤，本仓按 [market-inputs.lock.json](../market-inputs.lock.json) 固定的提交拉取），npm 包 `files` 白名单只随发默认皮肤 blue-fantasy，其余由创意工坊按需安装到 `$DSH_HOME/skins/<id>/`（同 id 遮蔽内置）。skin-repo 双源发现并做 v2 manifest fail-closed 校验；样式经 `transformSkinCss` 安全管线强制作用域到 `html[data-dsh-skin]` 并按白名单过滤；启用互斥由 `dsh-skin use` 客户端原子切换管理，不改 `cordis.patch.yml`。插件输出语义属性（`data-dsh-plugin` / `data-dsh-part`）才承诺完整换肤覆盖，契约见 [semantic-attrs-v1.md](https://github.com/zhu1090093659/dsh-skins/blob/main/contracts/semantic-attrs-v1.md)。
+皮肤是纯资产目录：事实源在独立仓 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) 的 `skins/`（42 个内置皮肤，本仓以 submodule `satellites/dsh-skins` 的 gitlink 固定要读的提交），npm 包 `files` 白名单只随发默认皮肤 blue-fantasy，其余由创意工坊按需安装到 `$DSH_HOME/skins/<id>/`（同 id 遮蔽内置）。skin-repo 双源发现并做 v2 manifest fail-closed 校验；样式经 `transformSkinCss` 安全管线强制作用域到 `html[data-dsh-skin]` 并按白名单过滤；启用互斥由 `dsh-skin use` 客户端原子切换管理，不改 `cordis.patch.yml`。插件输出语义属性（`data-dsh-plugin` / `data-dsh-part`）才承诺完整换肤覆盖，契约见 [semantic-attrs-v1.md](https://github.com/zhu1090093659/dsh-skins/blob/main/contracts/semantic-attrs-v1.md)。
 
 ```mermaid
 flowchart LR
@@ -115,19 +115,19 @@ flowchart LR
 
 ## 创意工坊与市场站
 
-市场内容的事实源随家族拆分分开：[market-inputs.lock.json](../market-inputs.lock.json) 固定皮肤仓 `dsh-skins` 与宠物仓 `dsh-pet` 的提交，[scripts/market-fetch-inputs.mjs](../scripts/market-fetch-inputs.mjs) 按该提交把内容解包到 `.market-inputs/`（不需要历史，只取内容目录）；插件索引 `community.json` 与皮肤样式安全管线 `transformSkinCss` 从聚合包依赖树解析已发布包；预设取 dsh-preset-center 的 presets/、编辑推荐取 market/editor-picks.json（手工维护的皮肤 / 宠物 / 插件引用清单，构建时逐条校验可解析）。[scripts/market-build](../scripts/market-build) 派生 `market/dist`（`manifest/{skins,pets,plugins,presets,editor-picks}.json`、预览与试穿资产；产物提交进仓，`market:check` 校验一致）。tryon 试穿壳来自 market/shell 的构建产物，拷入 `dist/tryon/`。部署经 [scripts/deploy-market](../scripts/deploy-market)：先拉取内容输入并 `market-build --check`，再 wrangler 应用 D1 migrations 并部署 [Worker](../market/worker/wrangler.jsonc)（ASSETS 绑定 dist、Turnstile secret 守卫）；push 到 dev 且触及市场相关路径时由 [deploy-market.yml](../.github/workflows/deploy-market.yml) 自动上架，部署后按 manifest 用 [scripts/market-verify-assets.mjs](../scripts/market-verify-assets.mjs) 逐条校验正式站点能取到每个资产（状态码与字节数都要对得上）。匿名点赞必须保持 Turnstile 门控并经单个 D1 batch 写入（信任边界见根 [AGENTS.md](../AGENTS.md)）。
+市场内容的事实源随家族拆分分开：三个独立仓作为 git submodule 挂在 `satellites/`，各自的 gitlink 就是市场读到的提交，[market-inputs.lock.json](../market-inputs.lock.json) 记录哪个 submodule 承载哪份输入及其内容目录，[scripts/market-fetch-inputs.mjs](../scripts/market-fetch-inputs.mjs) 把该提交的内容目录物化到 `.market-inputs/`（submodule 检出停在该提交就地复制，否则按该提交下载 tarball，不需要历史，只取内容目录）；插件索引 `community.json` 与皮肤样式安全管线 `transformSkinCss` 从聚合包依赖树解析已发布包；预设取 dsh-preset-center 的 presets/、编辑推荐取 market/editor-picks.json（手工维护的皮肤 / 宠物 / 插件引用清单，构建时逐条校验可解析）。[scripts/market-build](../scripts/market-build) 派生 `market/dist`（`manifest/{skins,pets,plugins,presets,editor-picks}.json`、预览与试穿资产；产物提交进仓，`market:check` 校验一致）。tryon 试穿壳来自 market/shell 的构建产物，拷入 `dist/tryon/`。部署经 [scripts/deploy-market](../scripts/deploy-market)：先拉取内容输入并 `market-build --check`，再 wrangler 应用 D1 migrations 并部署 [Worker](../market/worker/wrangler.jsonc)（ASSETS 绑定 dist、Turnstile secret 守卫）；push 到 dev 且触及市场相关路径时由 [deploy-market.yml](../.github/workflows/deploy-market.yml) 自动上架，部署后按 manifest 用 [scripts/market-verify-assets.mjs](../scripts/market-verify-assets.mjs) 逐条校验正式站点能取到每个资产（状态码与字节数都要对得上）。匿名点赞必须保持 Turnstile 门控并经单个 D1 batch 写入（信任边界见根 [AGENTS.md](../AGENTS.md)）。
 
 ```mermaid
 flowchart LR
     subgraph srcs["内容事实源"]
-        L["market-inputs.lock.json：皮肤 / 宠物仓提交"]
+        L["submodule gitlink：dsh-skins / dsh-pet / dsh-community-plugins 的固定提交"]
         S1["dsh-skins 仓：skins 目录各皮肤 skin.json"]
         S2["dsh-pet 仓：assets 目录各宠物 pet.json"]
         S3["@linxin666/dsh-client-ui-community-plugins：community.json（已发布包）"]
         S4["dsh-preset-center：presets 目录"]
         S5["market/editor-picks.json：编辑推荐固定清单"]
     end
-    L -- "node scripts/market-fetch-inputs.mjs 按提交解包" --> FETCH[".market-inputs/"]
+    L -- "node scripts/market-fetch-inputs.mjs 从该提交物化内容目录" --> FETCH[".market-inputs/"]
     S1 -.-> FETCH
     S2 -.-> FETCH
     FETCH --> MB["node scripts/market-build"]

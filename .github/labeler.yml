@@ -1,6 +1,7 @@
 area/skins:
   - changed-files:
       - any-glob-to-any-file:
+          - 'satellites/**'
           - 'market-inputs.lock.json'
           - 'scripts/market-fetch-inputs.mjs'
           - 'scripts/market-verify-assets.mjs'

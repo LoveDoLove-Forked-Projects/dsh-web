@@ -1,22 +1,19 @@
 {
-  "version": 1,
-  "comment": "Content sources for the market build. Each input is an independent repository; the market build reads its content at this exact commit. Update the sha when the repository publishes content the site should serve.",
+  "version": 2,
+  "comment": "Content sources for the market build. Each input names the git submodule carrying it (declared in .gitmodules) and the content directory inside that submodule; the commit the market build reads is the submodule gitlink recorded on this branch, so bumping a pin is a submodule checkout plus a commit of that path. scripts/market-fetch-inputs.mjs materializes each content directory into MARKET_INPUTS_DIR.",
   "inputs": {
     "skins": {
-      "repo": "zhu1090093659/dsh-skins",
-      "sha": "3f813b43f83c476faa4620aed120813f2ce42048",
+      "submodule": "satellites/dsh-skins",
       "path": "skins",
       "target": "skins"
     },
     "pet": {
-      "repo": "zhu1090093659/dsh-pet",
-      "sha": "4ee0c7657d9f04d41801ba25c74258cc93d348ef",
+      "submodule": "satellites/dsh-pet",
       "path": "assets",
       "target": "pet"
     },
     "community": {
-      "repo": "zhu1090093659/dsh-community-plugins",
-      "sha": "fe4843ab851e317c432b245a40f835a27382570f",
+      "submodule": "satellites/dsh-community-plugins",
       "path": ".",
       "target": "community"
     }

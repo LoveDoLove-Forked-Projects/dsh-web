@@ -48,10 +48,11 @@
 除上述四类外的所有改动（bug 修复、功能增强、全新功能、文档、测试、
 维护等）**不接受直接 PR**，请先在
 [Issues](https://github.com/zhu1090093659/dsh-web/issues) 提 issue
-讨论，确认后由维护者处理。非四类范围的 PR 会被
-`.github/workflows/reject-non-content-pr.yml` 自动关闭（仅文档类 PR 由
-`reject-docs-pr.yml` 处理）；仓库所有者、机器人与拥有写权限的协作者
-（维护者）的 PR 不受此限制。
+讨论，确认后由维护者处理。本仓直接接收 PR 的只有预设增加：插件申请、
+皮肤增加、宠物增加按原类别向本仓提交时，会被
+`.github/workflows/reject-non-content-pr.yml` 关闭并重定向到对应独立仓，
+其余范围外的 PR 同样被自动关闭（仅文档类 PR 由 `reject-docs-pr.yml`
+处理）；仓库所有者、机器人与拥有写权限的协作者（维护者）的 PR 不受此限制。
 
 ## 开发前置
 
@@ -72,6 +73,8 @@ pnpm install
 pnpm -r build
 pnpm typecheck && pnpm test && pnpm docs:check   # 提交前必过
 ```
+
+三个卫星仓（`dsh-skins` / `dsh-pet` / `dsh-community-plugins`）以 git submodule 挂在 `satellites/`，市场构建按各自的 gitlink 拉取内容。默认不需要检出：`git submodule update --init satellites/<仓名>` 只在要改卫星仓内容本身时才需要，检出后市场构建就直接用该工作树。
 
 ## 提交规范
 
