@@ -23,7 +23,7 @@ whenToUse: Explicit dsh-web release/publish requests; release-pipeline, automati
 - 本仓家族包由 `scripts/lib/family-packages.mjs` 得到，版本与包数量以 `node scripts/verify-version.mjs X.Y.Z` 的输出为准，不在技能中手抄固定数量；全部发布到 npm scope `@linxin666`，registry 固定 registry.npmjs.org。
 - **卫星仓（4 个）**：皮肤中心、宠物、社区插件索引与预设中心拥有独立仓库 dsh-skins / dsh-pet / dsh-community-plugins / dsh-presets，各自持有 CI、门禁与 tag 发布管线，本仓以已发布的 npm 包消费它们；清单与市场 pin 的归属见 [family-satellite Note](../../../.agents/notes/implemented/architecture/2026-09-23-family-satellite-repositories.md)。
 - **卫星仓版本策略（从下一版本起，见第 2 节）**：卫星仓不再各自持有版本线；每次发版四个卫星仓与本仓发同一个 `X.Y.Z`，且卫星先发、本仓后发。已有版本不追溯，对齐只从下一个版本开始。
-- **版本策略：全仓统一版本**（tag vX.Y.Z = 每个 package.json 的 version，由管线强制校验）。
+- **版本策略：全仓统一版本**（tag vX.Y.Z = 每个家族包与根别名包的 version，由管线强制校验）。
 - **未指定具体版本号时**：不追问版本号；以远端最新且已发布的正式 `vX.Y.Z` tag 为上一版本，
   默认目标为下一个补丁版本 `X.Y.(Z+1)`。用户明确给出版本号，或明确要求 major/minor/prerelease
   变更时，按该要求执行；远端 tag 与 npm 已发布版本不一致时，按下方失败恢复规则处理，不自行猜测。
@@ -44,7 +44,7 @@ whenToUse: Explicit dsh-web release/publish requests; release-pipeline, automati
   若将来 cohort 再次无法从 registry 解析，把开关改回 `'false'`，tag 推送即退回
   GitHub-Release-only（此时 mount smoke 的 auto 模式以 workspace 打包的 file:
   tarball 验证本 tag 构建）。
-- 根 package.json 是 private（不发布）；`pnpm -r publish` 自动跳过。
+- 根 package.json 是 private（不发布）；`pnpm -r publish` 自动跳过。它的 `version` 与家族包同步 bump：git / link 安装仓库根别名 bundle 时，插件管理器显示的就是它。
 - **分支模型**：`dev` 是开发分支（集成分支），本地开发与远程 PR 统一以
   `dev` 为目标（远端默认分支）；`main` 是稳定分支（发布分支），只接收
   `dev` 上测试通过后合入的代码，发版 tag 一律从 `main` 打。`dev` /
@@ -163,7 +163,8 @@ printf 'Previous release: %s; default target: %s\n' "$PREVIOUS_VERSION" "$TARGET
 ```sh
 find packages -name package.json -not -path '*/node_modules/*' \
   -exec sed -i '' 's/"version": "[0-9][^"]*"/"version": "X.Y.Z"/' {} +
-find packages -name package.json -not -path '*/node_modules/*' \
+sed -i '' 's/"version": "[0-9][^"]*"/"version": "X.Y.Z"/' package.json
+find packages package.json -name package.json -not -path '*/node_modules/*' \
   -exec grep -H '"version"' {} \; | grep -v '"version": "X.Y.Z"'   # 必须无输出
 ```
 
