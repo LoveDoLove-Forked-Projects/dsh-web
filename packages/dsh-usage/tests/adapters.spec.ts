@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adapterFor, isDeepSeekProviderRoute, providerErrorMessage, PROVIDER_ADAPTERS } from '../src/core/adapters.ts'
+import { adapterFor, balanceAppliesToRoute, isDeepSeekProviderRoute, originOf, providerErrorMessage, PROVIDER_ADAPTERS } from '../src/core/adapters.ts'
 
 describe('adapterFor', () => {
   it('serves every documented route id', () => {
@@ -29,6 +29,51 @@ describe('adapterFor', () => {
         seen.add(id)
       }
     }
+  })
+})
+
+// #1688: `deepseek` is both the official catalog entry and a common id for an
+// OpenAI-compatible reseller (Alibaba Bailian, ...) pointed at another host by
+// the profile's baseURL. The balance endpoint belongs to one ORIGIN, so probing
+// it for the reseller reported the official account's money under the reseller's
+// name. These pin the origin gate.
+describe('balanceAppliesToRoute', () => {
+  const deepseek = adapterFor('deepseek')!
+
+  it('operator sees the official balance endpoint apply to the official origin', () => {
+    // Given the official route, with and without an explicit official base URL
+    // When applicability is decided
+    // Then the official endpoint is this route's account
+    expect(balanceAppliesToRoute(deepseek, undefined)).toBe(true)
+    expect(balanceAppliesToRoute(deepseek, 'https://api.deepseek.com')).toBe(true)
+    expect(balanceAppliesToRoute(deepseek, 'https://api.deepseek.com/v1')).toBe(true)
+  })
+
+  it('operator sees a reseller profile keep its own account instead of the official one', () => {
+    // Given a `deepseek` route pointed at Alibaba Bailian's compatible host
+    const bailian = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    // When applicability is decided
+    // Then the official endpoint is refused: it reports a different account
+    expect(balanceAppliesToRoute(deepseek, bailian)).toBe(false)
+    // And a trailing path or explicit port does not change the verdict
+    expect(balanceAppliesToRoute(deepseek, 'https://api.deepseek.com.evil.example')).toBe(false)
+  })
+
+  it('operator sees adapters without a fixed origin apply to every route', () => {
+    // Given a provider whose endpoint follows the profile host (siliconflow)
+    const perRoute = adapterFor('siliconflow')!
+    // When applicability is decided
+    // Then no origin gate applies
+    expect(balanceAppliesToRoute(perRoute, 'https://api.siliconflow.cn')).toBe(true)
+    expect(balanceAppliesToRoute(perRoute, 'https://elsewhere.example')).toBe(true)
+  })
+
+  it('operator sees an unparsable base URL fall back to the family default', () => {
+    // Given a malformed base URL in the profile
+    // When applicability is decided
+    // Then the route is treated as declaring no origin and keeps its adapter
+    expect(originOf('not a url')).toBeUndefined()
+    expect(balanceAppliesToRoute(deepseek, 'not a url')).toBe(true)
   })
 })
 

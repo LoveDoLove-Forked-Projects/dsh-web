@@ -18,6 +18,8 @@ The rule is family-scoped and deliberately conservative:
 - A family with no live route keeps its catalog entry, so a deployment whose catalog alias is the only route of its family renders exactly as before.
 - Routes outside the adapter directory pass through untouched.
 
+**Folding is not the only way two accounts can collide (issue #1688).** A route id can also be reused by a provider that merely speaks the same API: `deepseek` is the official catalog entry AND a common id for an OpenAI-compatible reseller (Alibaba Bailian, ...) whose profile points `baseURL` at another host. Family folding does not merge those (both are real accounts), but the DeepSeek adapter's balance endpoint is a fixed official origin, so probing it for the reseller reported the official account's money under the reseller's row. The balance half of an adapter may now declare `origin` (`DEEPSEEK_API_ORIGIN` for DeepSeek), and `balanceAppliesToRoute()` refuses that endpoint for a route whose configured `baseURL` resolves to a different origin; such a route renders `balanceSupported: false` (the UI's existing unsupported state) and issues no request. A route that pins no `baseURL` - the catalog alias resolving the family's own credential - still applies, and adapters whose endpoint follows the profile host declare no origin and are unaffected.
+
 A session running on a folded id keeps its strip-ready view: `currentView()` already falls back to any snapshot of the same adapter family, and `routeDisplayName()` falls back to the adapter's display name. The surviving row is the live one, whose display name is the runtime's human name (`DeepSeek`) rather than the catalog entry's raw lowercase id.
 
 ## Alternatives considered
@@ -34,9 +36,11 @@ A session running on a folded id keeps its strip-ready view: `currentView()` alr
 - The dropped id's persisted snapshot is removed by the existing unseen-route cleanup on the next cycle. Token totals, the trend chart, and the observed-spend watch were already family-merged, so no figure moves.
 - The wire document no longer carries the folded catalog entry; the client's `credential !== 'none'` filter still hides the remaining dormant entries, and an older client keeps rendering whatever a newer host sends.
 - A host without the `llm-deepseek` adapter, where `deepseek` is the only route of its family, is unaffected.
+- A reseller profile sharing the `deepseek` route id no longer shows the official account's balance: it shows the unsupported state instead of a wrong number. The trade-off is deliberate - the adapter cannot know a reseller's balance endpoint, and a wrong figure is worse than an absent one.
 
 ## Testing
 
 - `packages/dsh-usage/tests/provider-routes.spec.ts`: the pure rule — a catalog alias shadowed by a live route folds away, two live routes of one family both survive, catalog-only families survive, folding stays family-scoped, and adapter-less routes pass through.
 - `packages/dsh-usage/tests/usage-service.spec.ts`: the end-to-end shape from the reported environment (live `deepseek-official` plus catalog `deepseek`) yields exactly one provider row with the live route's name, and exactly one balance probe.
-- `pnpm --filter @linxin666/dsh-usage test` and `typecheck`: 12 files, 116 tests, both commands exit 0.
+- `pnpm --filter @linxin666/dsh-usage test` and `typecheck`: 11 files, 136 tests, both commands exit 0.
+- `packages/dsh-usage/tests/adapters.spec.ts` and `tests/usage-service.spec.ts` (#1688): a reseller `deepseek` profile keeps its own account (no probe issued, row reports unsupported) while an explicit official origin still probes, plus the pure origin rule including the unparsable-base-URL fallback.

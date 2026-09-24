@@ -130,8 +130,12 @@ describe('RemoteEntry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remote access' }))
     await waitFor(() => expect(screen.getByText('This feature needs a LAN bind or a public address')).toBeTruthy())
     // The hint must name the surface the toggle actually lives on: the panel
-    // itself carries no settings card (#1517).
+    // itself carries no settings card (#1517). Both deployment shapes are
+    // named, because the family section only exists when dsh-web-settings is
+    // installed; a standalone install finds the same card on the plugin row
+    // of the official Plugins page (#1700).
     expect(screen.getByText(/Settings → Web Plugins → Remote access/)).toBeTruthy()
+    expect(screen.getByText(/Settings → Plugins/).textContent).toContain('Settings → Plugins')
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
     expect(document.querySelector('[data-testid="remote-qr"]')).toBeNull()
     // The status stream stays open on the lan-required banner: the

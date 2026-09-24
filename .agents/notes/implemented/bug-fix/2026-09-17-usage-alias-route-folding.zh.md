@@ -18,6 +18,8 @@ dsh-usage 的余额卡把 DeepSeek 官方账户渲染了两遍：小写 `deepsee
 - 没有实时路由的家族保留其目录项，因此目录别名是该家族唯一路由的部署渲染结果与改动前完全一致。
 - 适配器目录之外的路由原样通过。
 
+**折叠并非两个账户相撞的唯一方式（issue #1688）。** 路由 id 还可能被「只是会说同一种 API」的另一家供应商复用：`deepseek` 既是官方目录项，也是 OpenAI 兼容转售商（如阿里百炼）常用 id，其 profile 把 `baseURL` 指向别的主机。家族折叠不会合并它们（两者都是真实账户），但 DeepSeek 适配器的余额端点是固定的官方 origin，于是给转售商探测它就把官方账户的钱显示在了转售商那一行。适配器的 balance 半区现在可声明 `origin`（DeepSeek 为 `DEEPSEEK_API_ORIGIN`），`balanceAppliesToRoute()` 会对「配置的 `baseURL` 解析到别的 origin」的路由拒绝该端点；这类路由渲染 `balanceSupported: false`（即 UI 既有的「暂不支持余额查询」态）且不发任何请求。未固定 `baseURL` 的路由——即解析家族自身凭据的目录别名——仍然适用；端点跟随 profile 主机的适配器不声明 origin，不受影响。
+
 会话运行在被折叠的 id 上时，摘要条视图照常可用：`currentView()` 本就会回落到同一适配器家族的任意快照，`routeDisplayName()` 会回落到适配器展示名。保留下来的行是实时路由那一行，其展示名是运行时给出的人类名称（`DeepSeek`），而不是目录项那个小写原始 id。
 
 ## Alternatives considered
@@ -34,9 +36,11 @@ dsh-usage 的余额卡把 DeepSeek 官方账户渲染了两遍：小写 `deepsee
 - 被丢弃 id 的持久化快照由既有「本周期未见即删除」清理逻辑在下一轮移除。token 合计、趋势图与余额实测花费本就按家族合并，因此没有任何数字变化。
 - 线协议文档不再携带被折叠的目录项；客户端的 `credential !== 'none'` 过滤仍会隐藏其余休眠项，旧客户端也照旧渲染新宿主发来的任何内容。
 - 没有 `llm-deepseek` 适配器、`deepseek` 是其家族唯一路由的宿主不受影响。
+- 复用 `deepseek` 路由 id 的转售商 profile 不再显示官方账户的余额：它显示不支持态，而不是一个错误数字。这个取舍是有意的——适配器无从得知转售商的余额端点，而错数字比没有数字更糟。
 
 ## Testing
 
 - `packages/dsh-usage/tests/provider-routes.spec.ts`：纯规则——被实时路由遮蔽的目录别名折叠掉、同家族两个实时路由都保留、仅有目录项的家族保留、折叠限于家族内、无适配器路由原样通过。
 - `packages/dsh-usage/tests/usage-service.spec.ts`：上报环境的端到端形态（实时 `deepseek-official` 加目录 `deepseek`）恰好产出一行提供方记录、名称取自实时路由，且恰好一次余额探测。
-- `pnpm --filter @linxin666/dsh-usage test` 与 `typecheck`：12 个文件、116 个测试，两条命令均以 0 退出。
+- `pnpm --filter @linxin666/dsh-usage test` 与 `typecheck`：11 个文件、136 个测试，两条命令均以 0 退出。
+- `packages/dsh-usage/tests/adapters.spec.ts` 与 `tests/usage-service.spec.ts`（#1688）：转售商 `deepseek` profile 保住自己的账户（不发探测、该行报告不支持），而显式官方 origin 仍会探测；另含纯 origin 规则，覆盖无法解析的 `baseURL` 回退。

@@ -289,13 +289,33 @@ function profileAction(profileDir, stamp) {
 }
 
 /**
+ * Whether a seed entry is one of the profile ROOT's patch-layer files, which a
+ * reseed must leave alone. The user's own `cordis.patch.yml` (and any
+ * `.bak` sibling) is the file this app must not overwrite.
+ *
+ * The directory test is the point: `fs.cpSync` runs its filter for EVERY path
+ * it walks, so a name-only test also matches the `cordis.patch.yml` every
+ * plugin package ships under `node_modules/` (each declares
+ * `dsh.bundle.patch`, and the loader skips a bundle whose patch file is
+ * missing). Excluding those deleted 20 of 20 family bundles on every reseed,
+ * i.e. on every application upgrade, while a fresh install was unaffected.
+ * @param source - absolute path cpSync is about to visit.
+ * @param seedDir - the bundled seed root.
+ * @returns true when this entry is the root patch layer.
+ */
+function isRootPatchLayer(source, seedDir) {
+  if (!path.basename(source).startsWith('cordis.patch.yml')) return false;
+  return path.dirname(path.resolve(source)) === path.resolve(seedDir);
+}
+
+/**
  * Copy the bundled seed profile into place. Only ever touches profiles this
  * app seeded itself; user-managed profiles are left untouched. On reseed the
  * user's patch layer and its backups survive: node_modules and the manifests
- * are replaced, cordis.patch.yml* files are kept.
+ * are replaced, the profile ROOT's cordis.patch.yml* files are kept, and every
+ * nested one (each plugin bundle's own patch) is copied as usual.
  */
 function applyProfileSeed(seedDir, profileDir, action, stamp, extra) {
-  const keep = (name) => name.startsWith('cordis.patch.yml');
   if (action === 'reseed') {
     for (const name of ['node_modules', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml']) {
       fs.rmSync(path.join(profileDir, name), { recursive: true, force: true });
@@ -305,7 +325,7 @@ function applyProfileSeed(seedDir, profileDir, action, stamp, extra) {
   fs.cpSync(seedDir, profileDir, {
     recursive: true,
     dereference: true,
-    filter: (source) => action !== 'reseed' || !keep(path.basename(source)),
+    filter: (source) => action !== 'reseed' || !isRootPatchLayer(source, seedDir),
   });
   const marker = { stamp, seededAt: new Date().toISOString(), ...extra };
   fs.writeFileSync(path.join(profileDir, SEED_MARKER), JSON.stringify(marker, null, 2) + '\n');

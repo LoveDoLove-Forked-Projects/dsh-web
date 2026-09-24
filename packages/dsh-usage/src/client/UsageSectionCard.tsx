@@ -128,6 +128,10 @@ function balanceLine(provider: ProviderSnapshotView): ReactNode {
   }
   if (provider.credential === 'oauth') return <span className={styles.muted}>{t('usage.oauth')}</span>
   if (provider.credential === 'none') return <span className={styles.muted}>{t('usage.balance.noCredential')}</span>
+  // balanceSupported === false is the origin gate: the adapter has a balance
+  // endpoint but it belongs to another provider's account (issue #1688), so
+  // the row says so instead of silently vanishing from the card.
+  if (provider.balanceSupported === false) return <span className={styles.muted}>{t('usage.balance.unsupported')}</span>
   if (!provider.supported) return <span className={styles.muted}>{t('usage.balance.unsupported')}</span>
   return null
 }
@@ -298,7 +302,10 @@ export function UsageSectionCard(props: UsageSectionProps): ReactNode {
             <span className={styles.cardTitle}>{t('usage.balance')}</span>
             {(() => {
               const configured = snapshot.providers.filter(isConfigured)
-              const rows = configured.filter((provider) => provider.balanceSupported === true || (provider.balanceSupported === undefined && provider.supported))
+              // Include rows whose balance is deliberately not applicable
+              // (another origin's endpoint): the row itself explains why, which
+              // a single generic line cannot (#1688).
+              const rows = configured.filter((provider) => provider.balanceSupported === true || provider.balanceSupported === false || (provider.balanceSupported === undefined && provider.supported))
               if (rows.length === 0) {
                 return <span className={styles.muted}>{configured.length === 0 ? t('usage.balance.noneConfigured') : t('usage.balance.unsupported')}</span>
               }

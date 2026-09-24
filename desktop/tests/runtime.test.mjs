@@ -119,6 +119,58 @@ test('applyProfileSeed keeps the user patch layer on reseed', () => {
   assert.equal(JSON.parse(fs.readFileSync(path.join(profile, SEED_MARKER), 'utf8')).stamp, 's2');
 });
 
+// #1706: every plugin package ships its own cordis.patch.yml and declares
+// dsh.bundle.patch, so a reseed that drops the nested ones makes the loader
+// skip all of those bundles - the whole family stops loading on every
+// application upgrade. The root-only scope is what keeps both true: the user's
+// patch layer survives AND every bundle keeps its own patch file.
+test('operator: every plugin package keeps its patch file across an application upgrade', () => {
+  // Given a seed whose family plugin ships its own bundle patch.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-seed-nested-'));
+  const seed = path.join(dir, 'seed');
+  const profile = path.join(dir, 'web');
+  const pkgDir = path.join(seed, 'node_modules', '@linxin666', 'dsh-pet');
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(seed, 'package.json'), '{"name":"dsh-profile-web"}');
+  fs.writeFileSync(path.join(seed, 'cordis.patch.yml'), '[]\n');
+  fs.writeFileSync(path.join(pkgDir, 'package.json'), '{"name":"@linxin666/dsh-pet"}');
+  fs.writeFileSync(path.join(pkgDir, 'cordis.patch.yml'), '- insert: []\n');
+
+  // When it is seeded once (fresh install) and then reseeded (upgrade).
+  applyProfileSeed(seed, profile, 'seed', 's1', { appVersion: '0.1.0' });
+  const afterSeed = fs.readFileSync(path.join(profile, 'node_modules', '@linxin666', 'dsh-pet', 'cordis.patch.yml'), 'utf8');
+  fs.writeFileSync(path.join(profile, 'cordis.patch.yml'), '# user layer\n');
+  applyProfileSeed(seed, profile, 'reseed', 's2', { appVersion: '0.1.1' });
+  const afterReseed = fs.readFileSync(path.join(profile, 'node_modules', '@linxin666', 'dsh-pet', 'cordis.patch.yml'), 'utf8');
+
+  // Then the bundle patch is present after both, while the user patch survives.
+  assert.equal(afterSeed, '- insert: []\n', 'the bundle patch lands on a fresh install');
+  assert.equal(afterReseed, '- insert: []\n', 'every nested bundle patch survives a reseed');
+  assert.equal(fs.readFileSync(path.join(profile, 'cordis.patch.yml'), 'utf8'), '# user layer\n');
+});
+
+// The root scope must not weaken into a whole-tree name test again: a
+// same-named file deeper in the tree is a bundle's, not the user's.
+test('operator: only the root patch layer is preserved, a nested one is copied', () => {
+  // Given a seed with one same-named patch at the root and one inside a package.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-seed-scope-'));
+  const seed = path.join(dir, 'seed');
+  const profile = path.join(dir, 'web');
+  const pkgDir = path.join(seed, 'node_modules', 'pkg');
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(seed, 'package.json'), '{}');
+  fs.writeFileSync(path.join(seed, 'cordis.patch.yml'), 'seed-root\n');
+  fs.writeFileSync(path.join(pkgDir, 'cordis.patch.yml'), 'seed-pkg\n');
+
+  // When a seed run is followed by a reseed.
+  applyProfileSeed(seed, profile, 'seed', 's1', { appVersion: '0.1.0' });
+  applyProfileSeed(seed, profile, 'reseed', 's2', { appVersion: '0.1.1' });
+
+  // Then each file kept its own layer's content.
+  assert.equal(fs.readFileSync(path.join(profile, 'cordis.patch.yml'), 'utf8'), 'seed-root\n');
+  assert.equal(fs.readFileSync(path.join(profile, 'node_modules', 'pkg', 'cordis.patch.yml'), 'utf8'), 'seed-pkg\n');
+});
+
 test('parseShasums parses SHASUMS256.txt lines', () => {
   const text = 'a'.repeat(64) + '  node-v24.20.0-darwin-arm64.tar.gz\n' + 'b'.repeat(64) + '  node-v24.20.0-win-x64.zip\n';
   const map = parseShasums(text);
