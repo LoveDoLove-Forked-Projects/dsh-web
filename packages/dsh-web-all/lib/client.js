@@ -1997,7 +1997,7 @@ window.__ModuleLoader__.load({
 		const STATUS_ENDPOINT = "status";
 		const FAILURES_ENDPOINT = "failures";
 		const SET_SAFE_MODE_ENDPOINT = "set-safe-mode";
-		const GATEWAY_PREFIX = "/api/plugin-manager";
+		const GATEWAY_PREFIX = "api/plugin-manager";
 		/** Gateway job polling cadence. */
 		const JOB_POLL_MS = 500;
 		/** Gateway job wait ceiling (the host add deadline is six minutes). */
@@ -3536,7 +3536,7 @@ window.__ModuleLoader__.load({
 				let alive = true;
 				const gatewayClient = {
 					async install(kind, id, force) {
-						const res = await fetch("/api/market/install-" + kind, {
+						const res = await fetch("api/market/install-" + kind, {
 							method: "POST",
 							headers: { "content-type": "application/json" },
 							body: JSON.stringify({
@@ -3555,7 +3555,7 @@ window.__ModuleLoader__.load({
 						return { dest: data.dest ?? id };
 					},
 					async list() {
-						const r = await fetchJson("/api/market/installed");
+						const r = await fetchJson("api/market/installed");
 						return {
 							skins: r.skins ?? [],
 							pets: r.pets ?? [],
@@ -3719,7 +3719,7 @@ window.__ModuleLoader__.load({
 						} : prev);
 					}).catch(() => {});
 					if (kind === "skin") try {
-						await fetch("/api/skin-center/v2/active", {
+						await fetch("api/skin-center/v2/active", {
 							method: "POST",
 							headers: { "content-type": "application/json" },
 							body: JSON.stringify({ active: id })
@@ -10651,7 +10651,7 @@ window.__ModuleLoader__.load({
 			const [power, setPower] = (0, react.useState)();
 			(0, react.useEffect)(() => {
 				let live = true;
-				const events = new EventSource("/api/task-board/events");
+				const events = new EventSource("api/task-board/events");
 				events.onmessage = (message) => {
 					try {
 						const frame = JSON.parse(message.data);
@@ -10768,6 +10768,15 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region ../dsh-task-board/src/client/host-api.ts
+		/**
+		* Client-side base for the board's routes: DOCUMENT-RELATIVE (issue #1707).
+		*
+		* The host registers `TASK_BOARD_API_PREFIX` root-absolute; the page is served
+		* with `<base href="./">`, so the browser half must drop the leading slash or
+		* a sub-path deployment escapes its entry directory. Derived from the shared
+		* constant so host and client cannot drift.
+		*/
+		const CLIENT_API_PREFIX = TASK_BOARD_API_PREFIX.slice(1);
 		const IMPORT_MARKER = "dsh.taskBoard.v2.hostImported";
 		const SOURCE_KEY = "dsh.taskBoard.v2.sourceId";
 		const IMPORT_REQUEST_KEY = "dsh.taskBoard.v2.importRequestId";
@@ -10849,7 +10858,7 @@ window.__ModuleLoader__.load({
 				return initial;
 			}
 			async state() {
-				return await this.request(`${TASK_BOARD_API_PREFIX}/state`, { cache: "no-store" });
+				return await this.request(`${CLIENT_API_PREFIX}/state`, { cache: "no-store" });
 			}
 			async action(action, initiator) {
 				return await this.post(uuid(), action, initiator);
@@ -10860,7 +10869,7 @@ window.__ModuleLoader__.load({
 					action,
 					...initiator === void 0 || initiator === "" ? {} : { initiator }
 				};
-				return await this.request(`${TASK_BOARD_API_PREFIX}/action`, {
+				return await this.request(`${CLIENT_API_PREFIX}/action`, {
 					method: "POST",
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify(envelope)
@@ -10892,7 +10901,7 @@ window.__ModuleLoader__.load({
 			async parseDraft(request, signal) {
 				let response;
 				try {
-					response = await fetch(`${TASK_BOARD_API_PREFIX}/parse`, {
+					response = await fetch(`${CLIENT_API_PREFIX}/parse`, {
 						method: "POST",
 						headers: { "content-type": "application/json" },
 						body: JSON.stringify(request),
@@ -10923,7 +10932,7 @@ window.__ModuleLoader__.load({
 				throw new HostApiError("rejected", t$4("new.aiParseFailed", { error: typeof record?.error === "string" && record.error !== "" ? record.error : String(response.status) }), response.status);
 			}
 			subscribe(listener) {
-				const events = new EventSource(`${TASK_BOARD_API_PREFIX}/events`);
+				const events = new EventSource(`${CLIENT_API_PREFIX}/events`);
 				let lastStreamErrorNotify = 0;
 				events.onmessage = (message) => {
 					try {
@@ -11469,7 +11478,15 @@ window.__ModuleLoader__.load({
 			code: "internal",
 			message: "git route unavailable"
 		};
-		/** POST one JSON payload and decode the envelope; never throws. */
+		/**
+		* POST one JSON payload and decode the envelope; never throws.
+		*
+		* `path` is DOCUMENT-RELATIVE (no leading slash): the harness serves the GUI
+		* with `<base href="./">`, so a sub-path deployment resolves the route
+		* against its entry directory. A root-absolute path escapes that prefix and
+		* never reaches the host route (issue #1707); the official client posts its
+		* own routes the same way.
+		*/
 		async function post$1(path, payload) {
 			let response;
 			try {
@@ -11510,40 +11527,40 @@ window.__ModuleLoader__.load({
 		var GitApi = class {
 			/** The repository snapshot (null: not a git repository / not a workspace). */
 			status(path) {
-				return post$1("/git/status", { path });
+				return post$1("git/status", { path });
 			}
 			/** Local branch list with the current branch marked. */
 			branches(path) {
-				return post$1("/git/branches", { path });
+				return post$1("git/branches", { path });
 			}
 			/** Workspace-level `git switch --no-guess <branch>` (host guards first). */
 			switchBranch(path, branch) {
-				return post$1("/git/switch", {
+				return post$1("git/switch", {
 					path,
 					branch
 				});
 			}
 			/** `git switch --no-guess -c <name>` from the current HEAD. */
 			createBranch(path, name) {
-				return post$1("/git/create-branch", {
+				return post$1("git/create-branch", {
 					path,
 					name
 				});
 			}
 			/** Topo-ordered commit graph across branches/tags/remotes. */
 			graph(path, limit) {
-				return post$1("/git/graph", limit === void 0 ? { path } : {
+				return post$1("git/graph", limit === void 0 ? { path } : {
 					path,
 					limit
 				});
 			}
 			/** All linked worktrees of the workspace's repository. */
 			worktrees(path) {
-				return post$1("/git/worktrees", { path });
+				return post$1("git/worktrees", { path });
 			}
 			/** Create a managed worktree on a new wt/<name> branch (host picks the path). */
 			addWorktree(path, name, baseRef) {
-				return post$1("/git/worktree-add", baseRef === void 0 ? {
+				return post$1("git/worktree-add", baseRef === void 0 ? {
 					path,
 					name
 				} : {
@@ -11554,7 +11571,7 @@ window.__ModuleLoader__.load({
 			}
 			/** Remove a managed worktree (dirty rejects unless force; deleteBranch drops the wt/ branch). */
 			removeWorktree(path, worktreePath, opts) {
-				return post$1("/git/worktree-remove", {
+				return post$1("git/worktree-remove", {
 					path,
 					worktreePath,
 					force: opts?.force === true,
@@ -11563,7 +11580,7 @@ window.__ModuleLoader__.load({
 			}
 			/** The live feature config (auto-isolation flags + managed worktree home). */
 			config() {
-				return post$1("/git/config", {});
+				return post$1("git/config", {});
 			}
 		};
 		/**
@@ -11575,7 +11592,7 @@ window.__ModuleLoader__.load({
 		* @returns the disposer closing the stream.
 		*/
 		function subscribeChanges(path, onChange) {
-			return subscribeSharedEvents(`/git/events?path=${encodeURIComponent(path)}`, "change", () => {
+			return subscribeSharedEvents(`git/events?path=${encodeURIComponent(path)}`, "change", () => {
 				onChange();
 			});
 		}
@@ -14577,7 +14594,7 @@ window.__ModuleLoader__.load({
 		//#region ../dsh-remote-web-ui/src/client/pair-api.ts
 		/** Read the host-authoritative desktop pairing policy. */
 		async function readPairGatePolicy() {
-			const response = await fetch("/api/pair/status");
+			const response = await fetch("api/pair/status");
 			if (!response.ok) throw new Error(`remote-web-ui: status failed with ${String(response.status)}`);
 			const value = await response.json();
 			if (typeof value.requirePairingForLan !== "boolean") throw new Error("remote-web-ui: status omitted requirePairingForLan");
@@ -14594,7 +14611,7 @@ window.__ModuleLoader__.load({
 		* origin — the panel is a desktop control endpoint).
 		*/
 		async function issuePair(address) {
-			const response = await fetch("/api/pair/issue", {
+			const response = await fetch("api/pair/issue", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ ...address !== void 0 ? { address } : {} })
@@ -14623,7 +14640,7 @@ window.__ModuleLoader__.load({
 		* @returns the wire result.
 		*/
 		async function acceptPair(token) {
-			const response = await fetch("/api/pair/accept", {
+			const response = await fetch("api/pair/accept", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ token })
@@ -14640,7 +14657,7 @@ window.__ModuleLoader__.load({
 		}
 		/** Revoke mobile access (paired devices + the current token). */
 		async function stopPair() {
-			const response = await fetch("/api/pair/stop", { method: "POST" });
+			const response = await fetch("api/pair/stop", { method: "POST" });
 			if (!response.ok) throw new Error(`remote-web-ui: stop failed with ${String(response.status)}`);
 		}
 		/**
@@ -14648,7 +14665,7 @@ window.__ModuleLoader__.load({
 		* @param deviceId - the session id of the row to drop.
 		*/
 		async function revokePair(deviceId) {
-			const response = await fetch("/api/pair/revoke", {
+			const response = await fetch("api/pair/revoke", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ deviceId })
@@ -14662,7 +14679,7 @@ window.__ModuleLoader__.load({
 		*   proves this page is not paired (see {@link shouldStopHeartbeat}).
 		*/
 		async function sendHeartbeat() {
-			return (await fetch("/api/pair/heartbeat", { method: "POST" })).status;
+			return (await fetch("api/pair/heartbeat", { method: "POST" })).status;
 		}
 		/**
 		* Whether a heartbeat answer means "this page can never be accepted again" and
@@ -14695,7 +14712,7 @@ window.__ModuleLoader__.load({
 		};
 		/** Read the LAN-bind facts (loopback-only endpoint). */
 		async function readLanBindStatus() {
-			const response = await fetch("/api/pair/lan-bind");
+			const response = await fetch("api/pair/lan-bind");
 			if (!response.ok) throw new LanBindStatusError(response.status, `remote-web-ui: lan-bind status failed with ${String(response.status)}`);
 			return await response.json();
 		}
@@ -15229,7 +15246,7 @@ window.__ModuleLoader__.load({
 		async function fetchUpdateStatus() {
 			let response;
 			try {
-				response = await fetch("/api/update/status");
+				response = await fetch("api/update/status");
 			} catch {
 				throw new UpdateStatusError(0);
 			}
@@ -15242,7 +15259,7 @@ window.__ModuleLoader__.load({
 		* @returns the run outcome.
 		*/
 		async function runUpdate() {
-			const response = await fetch("/api/update/run", { method: "POST" });
+			const response = await fetch("api/update/run", { method: "POST" });
 			if (!response.ok) throw new Error("update run unavailable");
 			return await response.json();
 		}
@@ -15761,7 +15778,7 @@ window.__ModuleLoader__.load({
 				if (seq !== openSeq.current) return;
 				setState(next);
 				if (next.kind !== "ready" && next.kind !== "lan-required") return;
-				const source = new EventSource("/api/pair/events");
+				const source = new EventSource("api/pair/events");
 				eventSource.current = source;
 				source.onmessage = (event) => {
 					try {
@@ -37882,14 +37899,22 @@ window.__ModuleLoader__.load({
 		* Skill center API client (browser half). Talks to the host route family over
 		* same-origin fetch; the host enforces the trust fence on its side.
 		*/
-		/** Route paths mirrored from the host (src/routes.ts ROUTES). */
+		/**
+		* Route paths mirrored from the host (src/routes.ts ROUTES).
+		*
+		* DOCUMENT-RELATIVE on purpose (no leading slash): the harness serves the GUI
+		* with `<base href="./">`, so a sub-path deployment (`/dsh/dsh/`) is the
+		* entry directory. A root-absolute `/api/...` escapes that prefix and the
+		* request never reaches the plugin's route (issue #1707); the official client
+		* posts its own routes the same way (`api/session.list`).
+		*/
 		const API = {
-			list: "/api/dsh-skill-explorer/list",
-			read: "/api/dsh-skill-explorer/read",
-			setEnabled: "/api/dsh-skill-explorer/set-enabled",
-			create: "/api/dsh-skill-explorer/create",
-			update: "/api/dsh-skill-explorer/update",
-			delete: "/api/dsh-skill-explorer/delete"
+			list: "api/dsh-skill-explorer/list",
+			read: "api/dsh-skill-explorer/read",
+			setEnabled: "api/dsh-skill-explorer/set-enabled",
+			create: "api/dsh-skill-explorer/create",
+			update: "api/dsh-skill-explorer/update",
+			delete: "api/dsh-skill-explorer/delete"
 		};
 		/** One thrown API error with the host-provided message. */
 		var ApiError = class extends Error {};
@@ -41467,8 +41492,8 @@ window.__ModuleLoader__.load({
 			return await response.json();
 		}
 		const usageApi = {
-			overview: () => usageFetch("/api/dsh-usage/overview", "GET"),
-			refresh: () => usageFetch("/api/dsh-usage/refresh", "POST")
+			overview: () => usageFetch("api/dsh-usage/overview", "GET"),
+			refresh: () => usageFetch("api/dsh-usage/refresh", "POST")
 		};
 		/** Settings namespace the section edits (dsh-web-settings maps it onto this row's profile entry id). */
 		const USAGE_SETTINGS_NS = "dsh-usage";
@@ -41704,7 +41729,7 @@ window.__ModuleLoader__.load({
 			};
 		}
 		function createArchiveApi() {
-			const prefix = "/api/dsh-session-archive";
+			const prefix = "api/dsh-session-archive";
 			return {
 				inventory: () => request(`${prefix}/inventory`, void 0, DEFAULT_TIMEOUT_MS),
 				preview: (id) => request(`${prefix}/preview?id=${encodeURIComponent(id)}`, void 0, DEFAULT_TIMEOUT_MS),
@@ -45136,7 +45161,7 @@ window.__ModuleLoader__.load({
 			return registry[MOUNTED_PLUGINS];
 		}
 		/** Same-origin row-state route served by the host shell (src/shell.ts). */
-		const ROWS_ROUTE = "/api/dsh-web-all/rows";
+		const ROWS_ROUTE = "api/dsh-web-all/rows";
 		/** Row-state fetch ceiling: a hung route must not delay the family UI. */
 		const ROWS_TIMEOUT_MS = 1500;
 		/**

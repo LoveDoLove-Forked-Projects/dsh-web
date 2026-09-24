@@ -1280,7 +1280,7 @@ window.__ModuleLoader__.load({
 				let alive = true;
 				const gatewayClient = {
 					async install(kind, id, force) {
-						const res = await fetch("/api/market/install-" + kind, {
+						const res = await fetch("api/market/install-" + kind, {
 							method: "POST",
 							headers: { "content-type": "application/json" },
 							body: JSON.stringify({
@@ -1299,7 +1299,7 @@ window.__ModuleLoader__.load({
 						return { dest: data.dest ?? id };
 					},
 					async list() {
-						const r = await fetchJson("/api/market/installed");
+						const r = await fetchJson("api/market/installed");
 						return {
 							skins: r.skins ?? [],
 							pets: r.pets ?? [],
@@ -1463,7 +1463,7 @@ window.__ModuleLoader__.load({
 						} : prev);
 					}).catch(() => {});
 					if (kind === "skin") try {
-						await fetch("/api/skin-center/v2/active", {
+						await fetch("api/skin-center/v2/active", {
 							method: "POST",
 							headers: { "content-type": "application/json" },
 							body: JSON.stringify({ active: id })
