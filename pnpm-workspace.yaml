@@ -152,12 +152,13 @@ minimumReleaseAgeExclude:
   - '@mlgbnb/dsh-archive-manager@1.0.7'
   - '@deepseek-ai/dsh-app-boot@0.1.7-rc.2'
   - '@deepseek-ai/dsh-package-manifest@0.1.7-rc.2'
-  # The satellite repositories release on their own line and this repository
-  # consumes the version as soon as the pin moves, so every pinned satellite
-  # version has to bypass the minimum-release-age guard. Scoped to the exact
-  # version, so a later upstream publish gets no cooldown bypass.
-  - '@linxin666/dsh-client-ui-community-plugins@0.3.25'
-  - '@linxin666/dsh-client-ui-skin-center@0.3.25'
-  - '@linxin666/dsh-pet@0.3.25'
-  - '@linxin666/dsh-client-ui-preset-center@0.4.1'
+  # The satellite repositories publish the family's X.Y.Z just before this
+  # repository does, and this repository consumes each version as soon as the
+  # pin moves, so every pinned satellite version has to bypass the
+  # minimum-release-age guard. Scoped to the exact version, so a later
+  # satellite publish gets no cooldown bypass.
+  - '@linxin666/dsh-client-ui-community-plugins@0.4.2'
+  - '@linxin666/dsh-client-ui-skin-center@0.4.2'
+  - '@linxin666/dsh-pet@0.4.2'
+  - '@linxin666/dsh-client-ui-preset-center@0.4.2'
   - '@deepseek-ai/dsh-util-code-language@0.1.7-rc.2'
