@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /**
  * Snapshot the official shell's custom-property surface (--dsw-* tokens) into
- * packages/skins/skin-center/contracts/official-tokens-v1.json
+ * satellites/dsh-skins/contracts/official-tokens-v1.json
  * (and the generated TypeScript registry that the derivation reads).
  *
  * The skin center derives automatic fallback tints for tokens a skin does not
  * remap (issue #506 follow-up); the registry pins WHICH tokens exist so the
  * derivation table never invents names the official shell does not use.
- * The static palette (--dsw-static-*) is excluded.
+ * The static palette (--dsw-static-*) is excluded. The skin center lives in
+ * the dsh-skins submodule and owns both files, so this tool writes into that
+ * working tree: commit the rewritten files in dsh-skins, then move the gitlink
+ * in this repository.
  *
  * Source rule: the official surface is published by two packages, and since
  * 0.1.7-alpha.2 the shell bundle no longer inlines most declarations:
@@ -17,8 +20,9 @@
  * regex matches a token wherever it appears (declaration or reference), which
  * is the same rule the previous single-bundle-CSS scan used.
  *
- * Both packages must be installed at the cohort the contract describes; run
- * `pnpm install` first. The `source` field records exactly what was scanned.
+ * Both packages must be installed at the cohort the contract describes: the
+ * shell bundle resolves from this repository's install, the theme from the
+ * submodule's. The `source` field records exactly what was scanned.
  *
  * Usage:
  *   node scripts/official-tokens-snapshot.mjs [path ...]   # write the contract
@@ -35,18 +39,17 @@ import { createRequire } from 'node:module'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 
 const REPO_ROOT = resolve(import.meta.dirname, '..')
-const CONTRACT_PATH = resolve(REPO_ROOT, 'packages/skins/skin-center/contracts/official-tokens-v1.json')
-const GENERATED_PATH = resolve(
-  REPO_ROOT,
-  'packages/skins/skin-center/src/core/css-safety/official-tokens.generated.ts',
-)
+/** The contract and the generated registry are owned by the dsh-skins submodule. */
+const SKIN_CENTER = resolve(REPO_ROOT, 'satellites/dsh-skins')
+const CONTRACT_PATH = resolve(SKIN_CENTER, 'contracts/official-tokens-v1.json')
+const GENERATED_PATH = resolve(SKIN_CENTER, 'src/core/css-safety/official-tokens.generated.ts')
 
 const SOURCE_PACKAGES = [
   {
     name: '@deepseek-ai/dsh-client-ui-theme',
     // Resolved from the contract owner: the theme is a development dependency
-    // of the skin center, so this base always resolves inside the repo.
-    from: resolve(REPO_ROOT, 'packages/skins/skin-center'),
+    // of the skin center, so this base resolves from the submodule's install.
+    from: SKIN_CENTER,
     assets: ['lib'],
   },
   {
@@ -59,6 +62,14 @@ const SOURCE_PACKAGES = [
 const SCAN_EXTENSIONS = new Set(['.css', '.js', '.mjs'])
 const TOKEN_PATTERN = /--dsw-[a-z0-9-]+/g
 const EXCLUDED_PREFIX = '--dsw-static-'
+
+if (!existsSync(SKIN_CENTER)) {
+  fail(
+    'satellites/dsh-skins is missing',
+    "run 'git submodule update --init satellites/dsh-skins' — that working tree owns the\n" +
+      'contract and the generated registry this tool writes',
+  )
+}
 
 function fail(message, hint) {
   console.error(`official-tokens-snapshot: ${message}`)
@@ -79,8 +90,9 @@ function defaultTargets() {
     } catch (error) {
       fail(
         `cannot resolve ${name} from ${relative(REPO_ROOT, from) || '.'} (${error.code ?? error.message})`,
-        'Install the official cohort first (pnpm install in the repository root), or pass the\n' +
-          'files/directories to scan explicitly:\n' +
+        'Install the official cohort first: pnpm install here for the shell bundle, in\n' +
+          'satellites/dsh-skins for the theme. Otherwise pass the files/directories to scan\n' +
+          'explicitly:\n' +
           '  node scripts/official-tokens-snapshot.mjs <css-file-or-dir> [...]',
       )
     }
