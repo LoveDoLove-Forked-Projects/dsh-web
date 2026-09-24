@@ -87,7 +87,8 @@ jobs:
             );
 
             const globToRegExp = (pattern) => {
-              const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              // Escape the regex metacharacters, leaving * and ? for the glob tokens.
+              const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
               const tokenized = escaped
                 .replace(/\*\*/g, '\u0000')
                 .replace(/\*/g, '[^/]*')
