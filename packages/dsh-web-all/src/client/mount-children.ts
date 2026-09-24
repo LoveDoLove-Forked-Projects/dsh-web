@@ -63,7 +63,9 @@ function mountedRegistry(): Set<string> {
 }
 
 /** Same-origin row-state route served by the host shell (src/shell.ts). */
-const ROWS_ROUTE = '/api/dsh-web-all/rows'
+// DOCUMENT-RELATIVE (issue #1707): resolved against the served
+// `<base href="./">`, so the family gate works under a sub-path deployment.
+const ROWS_ROUTE = 'api/dsh-web-all/rows'
 
 /** Row-state fetch ceiling: a hung route must not delay the family UI. */
 const ROWS_TIMEOUT_MS = 1500

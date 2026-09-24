@@ -2,6 +2,10 @@
  * Browser-side wire helpers for the /api/pair surface. Plain fetch over
  * same-origin /api (like the connection client); JSON bodies, string
  * responses for the error codes.
+ *
+ * The paths are DOCUMENT-RELATIVE (issue #1707): the GUI is served with
+ * `<base href="./">`, so a sub-path deployment resolves them against its entry
+ * directory instead of escaping to the origin root.
  */
 
 /** issue() response. */
@@ -43,7 +47,7 @@ export interface PairGatePolicy {
 
 /** Read the host-authoritative desktop pairing policy. */
 export async function readPairGatePolicy(): Promise<PairGatePolicy> {
-  const response = await fetch('/api/pair/status')
+  const response = await fetch('api/pair/status')
   if (!response.ok) throw new Error(`remote-web-ui: status failed with ${String(response.status)}`)
   const value = await response.json() as { requirePairingForLan?: unknown }
   if (typeof value.requirePairingForLan !== 'boolean') {
@@ -116,7 +120,7 @@ export interface DeviceFrame {
  * origin — the panel is a desktop control endpoint).
  */
 export async function issuePair(address?: string): Promise<IssueResponse> {
-  const response = await fetch('/api/pair/issue', {
+  const response = await fetch('api/pair/issue', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -139,7 +143,7 @@ export async function issuePair(address?: string): Promise<IssueResponse> {
  * @returns the wire result.
  */
 export async function acceptPair(token: string): Promise<{ ok: true } | AcceptFailure> {
-  const response = await fetch('/api/pair/accept', {
+  const response = await fetch('api/pair/accept', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ token }),
@@ -153,7 +157,7 @@ export async function acceptPair(token: string): Promise<{ ok: true } | AcceptFa
 
 /** Revoke mobile access (paired devices + the current token). */
 export async function stopPair(): Promise<void> {
-  const response = await fetch('/api/pair/stop', { method: 'POST' })
+  const response = await fetch('api/pair/stop', { method: 'POST' })
   if (!response.ok) throw new Error(`remote-web-ui: stop failed with ${String(response.status)}`)
 }
 
@@ -162,7 +166,7 @@ export async function stopPair(): Promise<void> {
  * @param deviceId - the session id of the row to drop.
  */
 export async function revokePair(deviceId: string): Promise<void> {
-  const response = await fetch('/api/pair/revoke', {
+  const response = await fetch('api/pair/revoke', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ deviceId }),
@@ -177,7 +181,7 @@ export async function revokePair(deviceId: string): Promise<void> {
  *   proves this page is not paired (see {@link shouldStopHeartbeat}).
  */
 export async function sendHeartbeat(): Promise<number> {
-  const response = await fetch('/api/pair/heartbeat', { method: 'POST' })
+  const response = await fetch('api/pair/heartbeat', { method: 'POST' })
   return response.status
 }
 
@@ -242,7 +246,7 @@ export class LanBindStatusError extends Error {
 
 /** Read the LAN-bind facts (loopback-only endpoint). */
 export async function readLanBindStatus(): Promise<LanBindFrame> {
-  const response = await fetch('/api/pair/lan-bind')
+  const response = await fetch('api/pair/lan-bind')
   if (!response.ok) throw new LanBindStatusError(response.status, `remote-web-ui: lan-bind status failed with ${String(response.status)}`)
   return await response.json() as LanBindFrame
 }

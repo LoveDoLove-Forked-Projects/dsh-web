@@ -3,14 +3,22 @@
  * same-origin fetch; the host enforces the trust fence on its side.
  */
 
-/** Route paths mirrored from the host (src/routes.ts ROUTES). */
+/**
+ * Route paths mirrored from the host (src/routes.ts ROUTES).
+ *
+ * DOCUMENT-RELATIVE on purpose (no leading slash): the harness serves the GUI
+ * with `<base href="./">`, so a sub-path deployment (`/dsh/dsh/`) is the
+ * entry directory. A root-absolute `/api/...` escapes that prefix and the
+ * request never reaches the plugin's route (issue #1707); the official client
+ * posts its own routes the same way (`api/session.list`).
+ */
 const API = {
-  list: '/api/dsh-skill-explorer/list',
-  read: '/api/dsh-skill-explorer/read',
-  setEnabled: '/api/dsh-skill-explorer/set-enabled',
-  create: '/api/dsh-skill-explorer/create',
-  update: '/api/dsh-skill-explorer/update',
-  delete: '/api/dsh-skill-explorer/delete',
+  list: 'api/dsh-skill-explorer/list',
+  read: 'api/dsh-skill-explorer/read',
+  setEnabled: 'api/dsh-skill-explorer/set-enabled',
+  create: 'api/dsh-skill-explorer/create',
+  update: 'api/dsh-skill-explorer/update',
+  delete: 'api/dsh-skill-explorer/delete',
 } as const
 
 /** One skill entry as served by the host. */

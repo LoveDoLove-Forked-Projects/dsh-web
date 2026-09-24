@@ -133,7 +133,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
     // one frame on subscribe; polling the full /state snapshot every 5 s
     // re-cloned and re-serialized the whole ledger server-side for one field.
     let live = true
-    const events = new EventSource('/api/task-board/events')
+    const events = new EventSource('api/task-board/events')
     events.onmessage = (message: MessageEvent<string>): void => {
       try {
         const frame = JSON.parse(message.data) as { power?: TaskBoardPowerSnapshot }

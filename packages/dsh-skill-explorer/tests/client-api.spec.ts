@@ -53,7 +53,7 @@ describe('SkillApi', () => {
     await api.list('/my/path')
 
     // Then the cwd travels as an encoded query parameter
-    expect(capturedUrl).toBe('/api/dsh-skill-explorer/list?cwd=%2Fmy%2Fpath')
+    expect(capturedUrl).toBe('api/dsh-skill-explorer/list?cwd=%2Fmy%2Fpath')
   })
 
   it('user enabling a skill sends application/json with the picked state', async () => {
@@ -92,7 +92,7 @@ describe('SkillApi', () => {
     const result = await api.read('my skill', '/a b/SKILL.md')
 
     // Then both coordinates travel URL-encoded and the body comes back
-    expect(capturedUrl).toBe('/api/dsh-skill-explorer/read?name=my%20skill&path=%2Fa%20b%2FSKILL.md')
+    expect(capturedUrl).toBe('api/dsh-skill-explorer/read?name=my%20skill&path=%2Fa%20b%2FSKILL.md')
     expect(result.content).toBe('body')
   })
 
@@ -111,7 +111,7 @@ describe('SkillApi', () => {
     await api.update({ name: 'test-skill', path: '/path/SKILL.md', description: 'new', whenToUse: 'when', content: 'body' })
 
     // Then the update route receives a JSON POST with every edited field
-    expect(capturedUrl).toBe('/api/dsh-skill-explorer/update')
+    expect(capturedUrl).toBe('api/dsh-skill-explorer/update')
     expect(capturedInit?.method).toBe('POST')
     expect((capturedInit?.headers as Headers).get('content-type')).toBe('application/json')
     expect(JSON.parse(capturedInit?.body as string)).toEqual({

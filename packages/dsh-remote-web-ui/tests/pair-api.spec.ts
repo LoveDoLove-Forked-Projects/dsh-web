@@ -19,7 +19,7 @@ describe('sendHeartbeat', () => {
     const status = await sendHeartbeat()
     // Then the caller sees the status and the request kept its contract.
     expect(status).toBe(200)
-    expect(fetchStub).toHaveBeenCalledWith('/api/pair/heartbeat', { method: 'POST' })
+    expect(fetchStub).toHaveBeenCalledWith('api/pair/heartbeat', { method: 'POST' })
   })
 
   it('operator receives a refusal status instead of a throw', async () => {

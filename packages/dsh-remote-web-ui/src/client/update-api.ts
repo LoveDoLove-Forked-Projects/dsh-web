@@ -28,7 +28,7 @@ export class UpdateStatusError extends Error {
 export async function fetchUpdateStatus(): Promise<UpdateStatus> {
   let response: Response
   try {
-    response = await fetch('/api/update/status')
+    response = await fetch('api/update/status')
   } catch {
     // Network-level failure: nothing came back at all.
     throw new UpdateStatusError(0)
@@ -43,7 +43,7 @@ export async function fetchUpdateStatus(): Promise<UpdateStatus> {
  * @returns the run outcome.
  */
 export async function runUpdate(): Promise<UpdateRunResult> {
-  const response = await fetch('/api/update/run', { method: 'POST' })
+  const response = await fetch('api/update/run', { method: 'POST' })
   if (!response.ok) throw new Error('update run unavailable')
   return await response.json() as UpdateRunResult
 }

@@ -64,7 +64,10 @@ const STATUS_ENDPOINT = 'status'
 const FAILURES_ENDPOINT = 'failures'
 const SET_SAFE_MODE_ENDPOINT = 'set-safe-mode'
 
-const GATEWAY_PREFIX = '/api/plugin-manager'
+// DOCUMENT-RELATIVE (issue #1707): the GUI is served with `<base href="./">`,
+// so a sub-path deployment resolves the gateway prefix against its entry
+// directory rather than the origin root.
+const GATEWAY_PREFIX = 'api/plugin-manager'
 /** Gateway job polling cadence. */
 const JOB_POLL_MS = 500
 /** Gateway job wait ceiling (the host add deadline is six minutes). */

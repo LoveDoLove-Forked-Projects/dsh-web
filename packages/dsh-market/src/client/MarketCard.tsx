@@ -360,7 +360,7 @@ export function MarketCard(props: MarketCardProps): ReactNode {
     let alive = true
     const gatewayClient: AssetGateway = {
       async install(kind, id, force) {
-        const res = await fetch('/api/market/install-' + kind, {
+        const res = await fetch('api/market/install-' + kind, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ id, force }),
@@ -376,7 +376,7 @@ export function MarketCard(props: MarketCardProps): ReactNode {
         return { dest: data.dest ?? id }
       },
       async list() {
-        const raw = await fetchJson('/api/market/installed')
+        const raw = await fetchJson('api/market/installed')
         const r = raw as { skins?: string[]; pets?: string[]; presets?: string[] }
         return { skins: r.skins ?? [], pets: r.pets ?? [], presets: r.presets ?? [] }
       },
@@ -513,7 +513,7 @@ export function MarketCard(props: MarketCardProps): ReactNode {
       }).catch(() => { /* non-fatal */ })
       if (kind === 'skin') {
         try {
-          await fetch('/api/skin-center/v2/active', {
+          await fetch('api/skin-center/v2/active', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ active: id }),

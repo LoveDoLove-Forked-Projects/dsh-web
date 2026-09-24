@@ -11,6 +11,16 @@ import {
   type TaskBoardSnapshot,
 } from '../protocol.ts'
 
+/**
+ * Client-side base for the board's routes: DOCUMENT-RELATIVE (issue #1707).
+ *
+ * The host registers `TASK_BOARD_API_PREFIX` root-absolute; the page is served
+ * with `<base href="./">`, so the browser half must drop the leading slash or
+ * a sub-path deployment escapes its entry directory. Derived from the shared
+ * constant so host and client cannot drift.
+ */
+const CLIENT_API_PREFIX = TASK_BOARD_API_PREFIX.slice(1)
+
 const IMPORT_MARKER = 'dsh.taskBoard.v2.hostImported'
 const SOURCE_KEY = 'dsh.taskBoard.v2.sourceId'
 const IMPORT_REQUEST_KEY = 'dsh.taskBoard.v2.importRequestId'
@@ -114,7 +124,7 @@ export class HttpTaskBoardHostTransport implements TaskBoardHostTransport {
   }
 
   async state(): Promise<TaskBoardSnapshot> {
-    return await this.request(`${TASK_BOARD_API_PREFIX}/state`, { cache: 'no-store' })
+    return await this.request(`${CLIENT_API_PREFIX}/state`, { cache: 'no-store' })
   }
 
   async action(action: TaskBoardAction, initiator?: string): Promise<TaskBoardSnapshot> {
@@ -123,7 +133,7 @@ export class HttpTaskBoardHostTransport implements TaskBoardHostTransport {
 
   private async post(requestId: string, action: TaskBoardAction, initiator?: string): Promise<TaskBoardSnapshot> {
     const envelope: TaskBoardActionEnvelope = { requestId, action, ...(initiator === undefined || initiator === '' ? {} : { initiator }) }
-    return await this.request(`${TASK_BOARD_API_PREFIX}/action`, {
+    return await this.request(`${CLIENT_API_PREFIX}/action`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(envelope),
@@ -154,7 +164,7 @@ export class HttpTaskBoardHostTransport implements TaskBoardHostTransport {
   async parseDraft(request: TaskBoardParseRequest, signal?: AbortSignal): Promise<TaskBoardParseDraft> {
     let response: Response
     try {
-      response = await fetch(`${TASK_BOARD_API_PREFIX}/parse`, {
+      response = await fetch(`${CLIENT_API_PREFIX}/parse`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(request),
@@ -193,7 +203,7 @@ export class HttpTaskBoardHostTransport implements TaskBoardHostTransport {
   }
 
   subscribe(listener: (event?: TaskBoardEventPayload) => void): () => void {
-    const events = new EventSource(`${TASK_BOARD_API_PREFIX}/events`)
+    const events = new EventSource(`${CLIENT_API_PREFIX}/events`)
     let lastStreamErrorNotify = 0
     events.onmessage = (message: MessageEvent<string>): void => {
       try {

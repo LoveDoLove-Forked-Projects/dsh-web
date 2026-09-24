@@ -54,7 +54,8 @@ describe('HttpTaskBoardHostTransport migration', () => {
     await new HttpTaskBoardHostTransport(storage).bootstrap([
       createTask({ title: 'backup', description: '', prompt: '' }, 1, 'backup'),
     ])
-    expect(fetchMock).toHaveBeenCalledWith('/api/task-board/state', expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) }))
+    // The client posts DOCUMENT-RELATIVE routes (issue #1707).
+    expect(fetchMock).toHaveBeenCalledWith('api/task-board/state', expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) }))
   })
 
   it('imports the retained v1 backup again for a new Host ledger generation', async () => {

@@ -49,12 +49,12 @@ function mockFetch(issue: MockIssue | MockIssue[]) {
   const issues = Array.isArray(issue) ? [...issue] : [issue]
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (url === '/api/update/status') {
+    if (url === 'api/update/status') {
       return new Response(JSON.stringify({ mode: 'npm', packages: [], outdated: false }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     const current = issues.length > 1 ? issues.shift()! : issues[0]
-    const status = init?.method === 'POST' && url === '/api/pair/issue' && !current.ok ? (current.status ?? 409) : 200
-    const body = url === '/api/pair/issue' && current.ok
+    const status = init?.method === 'POST' && url === 'api/pair/issue' && !current.ok ? (current.status ?? 409) : 200
+    const body = url === 'api/pair/issue' && current.ok
       ? {
           ok: true,
           url: current.url,
@@ -63,7 +63,7 @@ function mockFetch(issue: MockIssue | MockIssue[]) {
           lanAddresses: current.lanAddresses ?? ['192.168.1.5'],
           ...(current.publicBaseUrl !== undefined ? { publicBaseUrl: current.publicBaseUrl } : {}),
         }
-      : url === '/api/pair/issue'
+      : url === 'api/pair/issue'
         ? { ok: false, code: current.code }
         : { ok: true }
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -102,7 +102,7 @@ describe('RemoteEntry', () => {
     const { fetch } = mount()
     const trigger = screen.getByRole('button', { name: 'Remote access' })
     fireEvent.click(trigger)
-    expect(fetch).toHaveBeenCalledWith('/api/pair/issue', expect.objectContaining({ method: 'POST' }))
+    expect(fetch).toHaveBeenCalledWith('api/pair/issue', expect.objectContaining({ method: 'POST' }))
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Remote access' })).toBeTruthy())
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText('Pair a phone or another computer to share the same Web GUI (official UI + mobile adaptation)')).toBeTruthy()
@@ -121,7 +121,7 @@ describe('RemoteEntry', () => {
     expect(screen.queryByText('Computer pairing link')).toBeNull()
     expect(screen.getByRole('button', { name: 'Copy link' })).toBeTruthy()
     // The issue payload no longer carries a workspace deep-link target.
-    const init = fetch.mock.calls.find(call => call[0] === '/api/pair/issue')?.[1] as RequestInit
+    const init = fetch.mock.calls.find(call => call[0] === 'api/pair/issue')?.[1] as RequestInit
     expect(JSON.parse(String(init.body))).toEqual({})
   })
 
@@ -142,7 +142,7 @@ describe('RemoteEntry', () => {
     // auto-tunnel may still be starting, and its running frame drives the
     // re-issue below.
     expect(FakeEventSource.instances).toHaveLength(1)
-    expect(FakeEventSource.instances[0]?.url).toBe('/api/pair/events')
+    expect(FakeEventSource.instances[0]?.url).toBe('api/pair/events')
   })
 
   it('re-issues once the auto-tunnel reaches running and renders the ready QR', async () => {
@@ -160,11 +160,11 @@ describe('RemoteEntry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remote access' }))
     await waitFor(() => expect(screen.getByText('This feature needs a LAN bind or a public address')).toBeTruthy())
     const source = FakeEventSource.instances[0]
-    expect(source?.url).toBe('/api/pair/events')
+    expect(source?.url).toBe('api/pair/events')
     source?.emit({ type: 'state', phase: 'lan-required', lanAvailable: true, deviceCount: 0, onlineCount: 0, tunnel: { state: 'running', url: 'https://tunnel.example' } })
     await waitFor(() => expect(screen.getByText('https://tunnel.example/pair-accept?pair=tok-2')).toBeTruthy())
     expect(document.querySelector('[data-testid="remote-qr"]')).not.toBeNull()
-    expect(fetch.mock.calls.filter(call => call[0] === '/api/pair/issue')).toHaveLength(2)
+    expect(fetch.mock.calls.filter(call => call[0] === 'api/pair/issue')).toHaveLength(2)
   })
 
   it('stays on the lan-required banner while the auto-tunnel is starting', async () => {
@@ -175,7 +175,7 @@ describe('RemoteEntry', () => {
     source?.emit({ type: 'state', phase: 'lan-required', lanAvailable: true, deviceCount: 0, onlineCount: 0, tunnel: { state: 'starting' } })
     // Let a stray re-issue surface before asserting none happened.
     await new Promise(resolve => setTimeout(resolve, 20))
-    expect(fetch.mock.calls.filter(call => call[0] === '/api/pair/issue')).toHaveLength(1)
+    expect(fetch.mock.calls.filter(call => call[0] === 'api/pair/issue')).toHaveLength(1)
     expect(screen.getByText('This feature needs a LAN bind or a public address')).toBeTruthy()
     expect(document.querySelector('[data-testid="remote-qr"]')).toBeNull()
   })
@@ -208,7 +208,7 @@ describe('RemoteEntry', () => {
     let resolveIssue: ((r: Response) => void) | undefined
     const fetch = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
-      if (url === '/api/update/status') {
+      if (url === 'api/update/status') {
         return Promise.resolve(new Response(JSON.stringify({ mode: 'npm', packages: [], outdated: false }), { status: 200, headers: { 'content-type': 'application/json' } }))
       }
       return new Promise<Response>((resolve) => { resolveIssue = resolve })
@@ -248,7 +248,7 @@ describe('RemoteEntry', () => {
     // the default selection.
     fireEvent.click(screen.getByLabelText('10.0.0.3'))
     await waitFor(() => {
-      const calls = fetch.mock.calls.filter(call => call[0] === '/api/pair/issue')
+      const calls = fetch.mock.calls.filter(call => call[0] === 'api/pair/issue')
       expect(calls).toHaveLength(2)
       const body = JSON.parse(String((calls[1]?.[1] as RequestInit).body))
       expect(body).toEqual({ address: '10.0.0.3' })
@@ -267,7 +267,7 @@ describe('RemoteEntry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remote access' }))
     await waitFor(() => expect(screen.getByText('Waiting for a device')).toBeTruthy())
     const source = FakeEventSource.instances[0]
-    expect(source?.url).toBe('/api/pair/events')
+    expect(source?.url).toBe('api/pair/events')
     source?.emit({
       type: 'state',
       phase: 'connected',
@@ -319,7 +319,7 @@ describe('RemoteEntry', () => {
     const refused = vi.fn(async () => new Response(JSON.stringify({ ok: false, code: 'forbidden' }), { status: 403, headers: { 'content-type': 'application/json' } }))
     vi.stubGlobal('fetch', refused)
     fireEvent.click(unpair)
-    await waitFor(() => expect(refused).toHaveBeenCalledWith('/api/pair/revoke', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(refused).toHaveBeenCalledWith('api/pair/revoke', expect.objectContaining({ method: 'POST' })))
     // Then the row stays: the session is still live server-side, so the panel
     // must not claim a revocation that did not happen.
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Unpair this device' }).length).toBe(1))
@@ -332,9 +332,9 @@ describe('RemoteEntry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remote access' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
-    expect(fetch).toHaveBeenCalledWith('/api/pair/stop', expect.objectContaining({ method: 'POST' }))
+    expect(fetch).toHaveBeenCalledWith('api/pair/stop', expect.objectContaining({ method: 'POST' }))
     fireEvent.click(screen.getByRole('button', { name: 'Refresh QR' }))
-    expect(fetch.mock.calls.filter(call => call[0] === '/api/pair/issue').length).toBe(2)
+    expect(fetch.mock.calls.filter(call => call[0] === 'api/pair/issue').length).toBe(2)
     // Clipboard: stub navigator.clipboard.
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })

@@ -42,8 +42,11 @@ async function usageFetch<T>(path: string, method: 'GET' | 'POST'): Promise<T> {
 }
 
 const usageApi: UsageHttpApi = {
-  overview: () => usageFetch('/api/dsh-usage/overview', 'GET'),
-  refresh: () => usageFetch('/api/dsh-usage/refresh', 'POST'),
+  // DOCUMENT-RELATIVE routes (issue #1707): the GUI is served with
+  // `<base href="./">`, so a sub-path deployment resolves these against its
+  // entry directory instead of escaping to the origin root.
+  overview: () => usageFetch('api/dsh-usage/overview', 'GET'),
+  refresh: () => usageFetch('api/dsh-usage/refresh', 'POST'),
 }
 
 /** Settings namespace the section edits (dsh-web-settings maps it onto this row's profile entry id). */

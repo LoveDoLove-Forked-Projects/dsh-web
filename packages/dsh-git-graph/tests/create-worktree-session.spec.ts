@@ -32,10 +32,11 @@ function setup(harness: Harness = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-    if (url === '/git/worktree-add') {
+    // The client posts DOCUMENT-RELATIVE routes (issue #1707).
+    if (url === 'git/worktree-add') {
       return new Response(JSON.stringify({ ok: true, value: WORKTREE }), { headers: { 'content-type': 'application/json' } })
     }
-    if (url === '/git/worktree-remove') {
+    if (url === 'git/worktree-remove') {
       removeCalls.push({ path: body.path as string, worktreePath: body.worktreePath as string })
       return new Response(JSON.stringify({ ok: true, value: { removed: true } }), { headers: { 'content-type': 'application/json' } })
     }

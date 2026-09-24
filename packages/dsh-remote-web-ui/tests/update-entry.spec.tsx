@@ -50,10 +50,10 @@ function outdatedStatus(): UpdateStatus {
 function mockFetch(status: UpdateStatus, runResult?: { ok: boolean; exitCode?: number | null; output?: string; errorCode?: string }) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (url === "/api/update/status") {
+    if (url === "api/update/status") {
       return new Response(JSON.stringify(status), { status: 200, headers: { "content-type": "application/json" } })
     }
-    if (url === "/api/update/run") {
+    if (url === "api/update/run") {
       return new Response(JSON.stringify(runResult ?? { ok: true, exitCode: 0, output: "" }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -95,8 +95,8 @@ describe("UpdateEntry", () => {
       expect(trigger.getAttribute('title')).toBe('New version available. Check for updates')
       expect(screen.getByText('Update available')).toBeTruthy()
     })
-    expect(fetch).toHaveBeenCalledWith('/api/update/status')
-    expect(fetch).not.toHaveBeenCalledWith('/api/update/run', expect.anything())
+    expect(fetch).toHaveBeenCalledWith('api/update/status')
+    expect(fetch).not.toHaveBeenCalledWith('api/update/run', expect.anything())
   })
 
   it("omits badge text in rail mode even when an update is available", async () => {
@@ -115,7 +115,7 @@ describe("UpdateEntry", () => {
   it("keeps the trigger unmarked and text-free when the background probe finds no update", async () => {
     const { fetch } = mount(upToDateStatus())
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/update/status'))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('api/update/status'))
     const trigger = screen.getByRole('button', { name: /Check for updates$/ })
     expect(trigger.getAttribute('data-update-available')).toBeNull()
     expect(screen.queryByText('Update available')).toBeNull()
@@ -125,12 +125,12 @@ describe("UpdateEntry", () => {
     const { fetch } = mount(upToDateStatus())
     const trigger = screen.getByRole('button', { name: /Check for updates$/ })
     fireEvent.click(trigger)
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/update/status"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("api/update/status"))
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     await waitFor(() => expect(screen.getByText('Everything is up to date')).toBeTruthy())
     expect(screen.getByText('@linxin666/dsh-web-all')).toBeTruthy()
     // No update run for an up-to-date install.
-    expect(fetch).not.toHaveBeenCalledWith("/api/update/run", expect.anything())
+    expect(fetch).not.toHaveBeenCalledWith("api/update/run", expect.anything())
   })
 
   it("shows release-note sections and keeps component versions collapsible", async () => {
@@ -160,9 +160,9 @@ describe("UpdateEntry", () => {
     fireEvent.click(screen.getByRole('button', { name: /Check for updates$/ }))
     // The result view shows the new version and waits; no run is triggered.
     await waitFor(() => expect(screen.getByText('A new version is available')).toBeTruthy())
-    expect(fetch).not.toHaveBeenCalledWith('/api/update/run', expect.anything())
+    expect(fetch).not.toHaveBeenCalledWith('api/update/run', expect.anything())
     fireEvent.click(screen.getByRole('button', { name: 'Update now' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/update/run', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('api/update/run', expect.objectContaining({ method: 'POST' })))
     await waitFor(() => expect(screen.getByText('Update complete')).toBeTruthy())
     expect(screen.getByText(/Restart dsh web/)).toBeTruthy()
   })
@@ -171,10 +171,10 @@ describe("UpdateEntry", () => {
     const update = deferred<Response>()
     const fetch = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
-      if (url === '/api/update/status') {
+      if (url === 'api/update/status') {
         return Promise.resolve(new Response(JSON.stringify(outdatedStatus()), { status: 200, headers: { 'content-type': 'application/json' } }))
       }
-      if (url === '/api/update/run') return update.promise
+      if (url === 'api/update/run') return update.promise
       return Promise.resolve(new Response('not found', { status: 404 }))
     })
     vi.stubGlobal('fetch', fetch)
@@ -183,7 +183,7 @@ describe("UpdateEntry", () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'New version available. Check for updates' })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /Check for updates$/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Update now' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/update/run', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('api/update/run', expect.objectContaining({ method: 'POST' })))
     fireEvent.click(screen.getByRole('button', { name: 'Close update panel' }))
     update.resolve(new Response(JSON.stringify({ ok: true, exitCode: 0, output: '' }), { status: 200, headers: { 'content-type': 'application/json' } }))
 
@@ -197,7 +197,7 @@ describe("UpdateEntry", () => {
     const { fetch } = mount(outdatedStatus(), { ok: false, exitCode: 1, output: "ERR! failed", errorCode: "pnpm-failed" })
     fireEvent.click(screen.getByRole('button', { name: /Check for updates$/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Update now' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/update/run', expect.anything()))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('api/update/run', expect.anything()))
     await waitFor(() => expect(screen.getByText(/exited with code 1/)).toBeTruthy())
     expect(screen.getByText('ERR! failed')).toBeTruthy()
   })
@@ -212,7 +212,7 @@ describe("UpdateEntry", () => {
     const { fetch } = mount(status)
     fireEvent.click(screen.getByRole('button', { name: /Check for updates$/ }))
     await waitFor(() => expect(screen.getByText('Local development mode')).toBeTruthy())
-    expect(fetch).not.toHaveBeenCalledWith("/api/update/run", expect.anything())
+    expect(fetch).not.toHaveBeenCalledWith("api/update/run", expect.anything())
   })
 
   it("shows an error when the status probe fails", async () => {
