@@ -362,7 +362,7 @@ describe('TaskBoardHostService scheduling without a browser', () => {
     const { gateway, stream } = makeGateway(request => {
       if (request.method === 'list') return { items: [{ sessionId: 'session-a', running: false }] }
       if (request.method === 'page') return {
-        records: [sessionEvent('turn/end', 10, 1_200, { reason: { kind: 'complete' } })],
+        records: [sessionEvent('turn/end', 10, 1_200, { reason: { kind: 'completed' } })],
         hasMore: false,
       }
       throw new Error('unexpected gateway call')
@@ -517,7 +517,7 @@ describe('TaskBoardHostService poll heartbeat', () => {
     ledger.applyRequest('import', { kind: 'import', sourceId: 'browser', tasks: [imported] })
     const list = vi.fn(async () => ({ items: [{ sessionId: 'session-a', running: false }] }))
     const page = vi.fn(async () => ({
-      records: [sessionEvent('turn/end', 10, 1_200, { reason: { kind: 'complete' } })],
+      records: [sessionEvent('turn/end', 10, 1_200, { reason: { kind: 'completed' } })],
       hasMore: false,
     }))
     const { gateway, stream } = makeGateway(request => {

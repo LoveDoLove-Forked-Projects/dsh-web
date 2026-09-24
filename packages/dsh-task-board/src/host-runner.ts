@@ -199,10 +199,27 @@ function tagPromptPreamble(task: TaskRecord): string | undefined {
   return `标签提示（任务看板标签，每次执行前注入）：\n${lines.join('\n')}`
 }
 
-function isErrorTurnEnd(data: unknown): boolean {
-  if (typeof data !== 'object' || data === null) return false
+/**
+ * Why a `turn/end` did not complete successfully, or undefined when it did.
+ *
+ * The harness treats exactly `completed` as success (`headless` maps the turn
+ * reason to its exit code, `subagent/projection` records `lastTurnCompleted`,
+ * and `max-tokens` is a ceiling, not a result). A task-board execution is a
+ * SUCCESS only on positive evidence of a completed turn; every other reason —
+ * and an unreadable one — must be reported, or the board stamps a failed run
+ * as `succeeded` and a schedule dies silently (issue #1708). `interrupted` is
+ * the reason a restart produces: `interruptedTurnClosers` synthesizes it for a
+ * log whose tail turn never ended, which is exactly an aborted resume.
+ * @param data - the `turn/end` event payload.
+ * @returns the reason kind when it is not `completed`, else undefined.
+ */
+function nonCompletedTurnEnd(data: unknown): string | undefined {
+  if (typeof data !== 'object' || data === null) return 'unknown'
   const reason = (data as { reason?: unknown }).reason
-  return typeof reason === 'object' && reason !== null && (reason as { kind?: unknown }).kind === 'error'
+  if (typeof reason !== 'object' || reason === null) return 'unknown'
+  const kind = (reason as { kind?: unknown }).kind
+  if (typeof kind !== 'string') return 'unknown'
+  return kind === 'completed' ? undefined : kind
 }
 
 /**
@@ -281,6 +298,15 @@ export class HostExecutionRunner {
     const reused = options.reuseSessionId as ExecutionSessionId | undefined
     if (reused !== undefined) {
       try {
+        // Assert the pinned preset against the one the session records before
+        // prompting. The reuse path must not call `session/create` (that would
+        // create or re-adopt a session the board only meant to continue), so
+        // the recorded preset is read through `session/projections` — the
+        // documented read that resolves NO Agent — and compared here. A card
+        // whose session was composed from a different preset now fails closed
+        // instead of silently running under the wrong composition, matching
+        // the fresh branch's `agentPreset` assertion (issue #1708).
+        await this.assertReusedPreset(reused, mode)
         await this.pinAndPrompt(reused, task, permission, options.promptContext)
       } catch (error) {
         throw new SessionLaunchError(reused, error)
@@ -299,6 +325,34 @@ export class HostExecutionRunner {
       throw new SessionLaunchError(sessionId, error)
     }
     return sessionId
+  }
+
+  /**
+   * Fail closed when a reused session records a different Agent preset than
+   * the one this task pins.
+   *
+   * The fresh branch asserts the pin by passing `agentPreset` to
+   * `session/create`; the reuse branch must not call that method (it would
+   * create or re-adopt the very session the board only meant to continue), so
+   * the recorded value is read through `session/projections` — the documented
+   * read that resolves no Agent — and compared here (issue #1708). A session
+   * whose preset cannot be read is not treated as a match: silently continuing
+   * under an unknown composition is the failure this guards.
+   * @param sessionId - the session this execution continues in.
+   * @param pinned - the preset id the task pins, when it pins one.
+   */
+  private async assertReusedPreset(sessionId: ExecutionSessionId, pinned: string | undefined): Promise<void> {
+    if (pinned === undefined) return
+    const projections = await this.invoke('session', 'projections', { sessionId }) as
+      | { values?: { agentPreset?: unknown } }
+      | null
+    const recorded = projections?.values?.agentPreset
+    if (recorded === pinned) return
+    throw new Error(
+      'reused session ' + sessionId + ' was composed from agent preset '
+      + (typeof recorded === 'string' ? '"' + recorded + '"' : 'an unreadable value')
+      + ', but the task pins "' + pinned + '"',
+    )
   }
 
   /**
@@ -457,8 +511,13 @@ export class HostExecutionRunner {
       return { outcome: 'pending' }
     }
     this.scanMemos.delete(sessionId)
-    return isErrorTurnEnd(turnEnd.event.data)
+    const reason = nonCompletedTurnEnd(turnEnd.event.data)
+    if (reason === undefined) return { outcome: 'succeeded' }
+    // `error` keeps its historical wording; every other non-completed reason
+    // (aborted / blocked / max-tokens / interrupted) now reports instead of
+    // silently counting as success.
+    return reason === 'error'
       ? { outcome: 'failed', error: 'agent turn ended with an error' }
-      : { outcome: 'succeeded' }
+      : { outcome: 'failed', error: 'agent turn ended without completing: ' + reason }
   }
 }
