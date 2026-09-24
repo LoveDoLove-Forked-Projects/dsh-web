@@ -49,6 +49,13 @@ concurrency:
 jobs:
   deploy:
     name: Deploy market to Workers
+    # Canonical-repository guard: the production Cloudflare, Turnstile and
+    # attestation secrets exist only here. A fork that enables Actions still
+    # fires this workflow on push and schedule, burns the gates above and then
+    # fails on the empty TURNSTILE_SECRET - noise for the fork, and a
+    # suggestion that the workflow is broken. Skip before checkout instead of
+    # copying credentials or weakening the gates.
+    if: github.repository == 'zhu1090093659/dsh-web'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
