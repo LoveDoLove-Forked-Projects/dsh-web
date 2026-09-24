@@ -19,7 +19,6 @@
     "build": "pnpm -r build",
     "dev:watch": "node scripts/dev-watch.mjs",
     "test": "pnpm -r test",
-    "test:desktop": "node --test desktop/tests/*.test.mjs",
     "test:standards": "node scripts/test-standards.mjs --check",
     "test:standards:write": "node scripts/test-standards.mjs --write-baseline",
     "typecheck": "pnpm -r typecheck",

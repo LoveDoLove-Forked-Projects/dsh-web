@@ -37,7 +37,6 @@ dsh-web/
 ├── shared/              # 跨包事实源：构建预设、平台模块表、host 与 client 运行时模块
 ├── scripts/             # 仓库维护工具（aggregate、sync-shared、market-build、verify-docs 等）
 ├── market/              # dsh-market.com：src 静态站源、shell 试穿壳、dist 提交产物、worker 边缘 API
-├── desktop/             # Electron 桌面应用（桌面启动场景）
 └── docs/                # 长期文档、发布说明与归档
 ```
 

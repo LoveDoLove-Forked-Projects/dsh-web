@@ -95,7 +95,7 @@ export const RULES = [
  * tests are ordinary unit tests of pure functions: naming them after a user
  * role would be fiction, so only the mechanical rules apply there.
  */
-const BUSINESS_LANE_RE = /^(?:packages|tests|desktop)\//
+const BUSINESS_LANE_RE = /^(?:packages|tests)\//
 const SCRIPT_LANE_RULES = ['no-arbitrary-sleep', 'no-ad-hoc-mock', 'call-count-only-assertion', 'tautological-assertion']
 
 /** Every rule applies to a business-behavior test file. */

@@ -2,7 +2,7 @@
 
 中文 | [English](README.en.md)
 
-dsh-web 是面向 DeepSeek Harness（DSH）Web GUI 的模块化插件生态与桌面工作台，为 AI 智能体开发提供任务自动化看板、手机与跨设备远程控制、SSH 终端运维、Git 历史可视化以及个性化主题皮肤。用户既可以通过官方 profile 机制将插件全家桶一键挂载至已有的 `dsh web` 实例，也可以直接下载内置完整 Node.js 运行时与全套插件的 macOS 与 Windows 桌面客户端 DSH Desktop。
+dsh-web 是面向 DeepSeek Harness（DSH）Web GUI 的模块化插件生态与桌面工作台，为 AI 智能体开发提供任务自动化看板、手机与跨设备远程控制、SSH 终端运维、Git 历史可视化以及个性化主题皮肤。用户既可以通过官方 profile 机制将插件全家桶一键挂载至已有的 `dsh web` 实例，也可以在官方 DeepSeek Harness 桌面客户端中以同样的方式安装。
 
 <p align="center">
   <img src="docs/dsh-web-banner.zh.jpg" alt="dsh-web — DeepSeek Harness Web GUI 插件与主题" width="100%">
@@ -35,7 +35,7 @@ dsh-web 是面向 DeepSeek Harness（DSH）Web GUI 的模块化插件生态与�
 
 <div align="center">
 
-[是什么](#是什么) · [DSH Desktop](#dsh-desktop桌面客户端) · [创意工坊](#创意工坊dsh-marketcom) · [功能插件](#功能插件) · [皮肤](#皮肤) · [快速上手](#快速上手) · [常见问题](#常见问题) · [已知限制](#已知限制) · [社区](#社区)
+[是什么](#是什么) · [桌面客户端](#官方桌面客户端) · [创意工坊](#创意工坊dsh-marketcom) · [功能插件](#功能插件) · [皮肤](#皮肤) · [快速上手](#快速上手) · [常见问题](#常见问题) · [已知限制](#已知限制) · [社区](#社区)
 
 </div>
 
@@ -71,19 +71,18 @@ dsh-web 通过官方 profile 机制挂载到 `dsh web`，零修改侵入官方�
 | 用手机或另一台电脑访问 DSH | [手机与 PC 浏览器远程控制](packages/dsh-remote-web-ui/README.zh.md) |
 | 通过 SSH 管理远程服务器 | [SSH 终端、文件传输与隧道](packages/dsh-ssh/README.zh.md) |
 | 自定义主题皮肤与宠物 | [浏览 DSH 创意工坊](https://dsh-market.com) |
-| 使用 macOS 或 Windows 桌面应用 | [DSH Desktop 下载与使用要求](#dsh-desktop桌面客户端) |
+| 在官方桌面客户端中使用 | [官方桌面客户端](#官方桌面客户端) |
 | 为已有 DSH 安装插件全家桶 | [插件安装快速上手](#快速上手) |
 
-## DSH Desktop（桌面客户端）
+## 官方桌面客户端
 
-DSH Desktop 将 DeepSeek Harness Web GUI 封装为跨平台桌面应用（支持 macOS 与 Windows）。安装包内置独立的 Node.js 运行时环境（包含 npm 与 pnpm）、dsh 宿主以及预配置的 web profile（官方 web bundle 与 dsh-web 全家桶），无需预先配置系统开发环境或单独安装 dsh CLI。安装包随每个 [Release](https://github.com/zhu1090093659/dsh-web/releases) 的 `dsh-desktop-*` 资产发布（提供 macOS dmg/zip 与 Windows exe/zip）。
+DeepSeek Harness 的桌面客户端由官方发布，本仓库不再随 Release 提供 `dsh-desktop-*` 安装包。桌面客户端与 `dsh web` 共用 `~/.dsh` 数据目录，其 profile 为 `desktop`，插件全家桶的安装命令与命令行一致：
 
-- **独立宿主与端口隔离**：内置运行时在 3082-3181 端口段启动专属 dsh 宿主，与原生 `dsh web` 的 3080/3081 端口完全隔离。桌面应用与独立命令行实例可并行运行，各自维护独立会话。
-- **共享数据目录**：与 dsh CLI 共用 `~/.dsh` 配置目录（包含全局配置、历史会话与密钥）；应用自动初始化的 profile 带有标识，在内置运行时升级时会自动重新部署并保留用户的自定义 patch 层，不改动用户自建的 profile。
-- **内置插件管理**：应用直接将 `dsh plugin add/remove` 命令转发给内置 pnpm 执行，增删插件无需额外配置外部开发工具链。
-- **启动诊断与容错**：若遇到组件缺失、宿主异常退出或启动超时，界面将自动进入诊断错误页并输出宿主日志末尾，支持一键重试或直接定位日志文件。
+```sh
+dsh plugin --profile desktop add @linxin666/dsh-web-all@latest
+```
 
-安装包目前未做商业代码签名。macOS 首次运行如遇安全提示，可通过“右键菜单 → 打开”启动；Windows 系统弹出 SmartScreen 提示时，选择“更多信息 → 仍要运行”。详细构建步骤、配置说明与安全规范见 [desktop README](desktop/README.zh.md)。
+安装后重启桌面客户端，即可在“设置 > 插件配置”中使用各插件入口。
 
 ## 创意工坊（dsh-market.com）
 
@@ -211,10 +210,10 @@ DSH Desktop 将 DeepSeek Harness Web GUI 封装为跨平台桌面应用（支持
   1. 安装聚合包：`dsh plugin --profile web add @linxin666/dsh-web-all@latest`
   2. 重启 `dsh web` 服务，侧边栏将自动呈现各插件入口
   3. 打开“设置 > 插件配置”按需开关插件，或在皮肤面板选用主题
-- **DSH Desktop（桌面客户端）**：
-  1. 从 [Releases](https://github.com/zhu1090093659/dsh-web/releases) 下载对应系统的 `dsh-desktop-*` 安装包（macOS dmg/zip、Windows exe/zip）
-  2. 安装并启动应用：内置运行时与全家桶已随安装包就绪，无需配置额外环境
-  3. 通过应用内置的插件管理器或设置面板管理扩展与主题
+- **官方桌面客户端（DeepSeek Harness Desktop）**：
+  1. 安装并启动官方桌面客户端
+  2. 安装插件全家桶：`dsh plugin --profile desktop add @linxin666/dsh-web-all@latest`
+  3. 重启客户端，在“设置 > 插件配置”中按需开关插件
 
 > 若仅需要皮肤功能，可单独安装 `@linxin666/dsh-client-ui-skin-center`。若因包管理器门禁安装到旧版本，请参阅后文“安装排障”。
 

@@ -9,18 +9,6 @@
     "tautological-assertion"
   ],
   "files": {
-    "desktop/tests/attention.test.mjs": {
-      "bdd-title": 10,
-      "given-when-then": 10
-    },
-    "desktop/tests/runtime.test.mjs": {
-      "bdd-title": 17,
-      "given-when-then": 17
-    },
-    "desktop/tests/tar-extract.test.mjs": {
-      "bdd-title": 3,
-      "given-when-then": 3
-    },
     "packages/dsh-git-graph/tests/access.spec.ts": {
       "bdd-title": 4,
       "given-when-then": 4

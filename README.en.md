@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-dsh-web is a modular plugin ecosystem and desktop workstation for the DeepSeek Harness (DSH) Web GUI. It equips AI coding workflows with task automation boards, cross-device mobile remote control, SSH terminal operations, visual Git commit graphs, and personalized theme skins. Users can install the complete plugin bundle into an existing `dsh web` instance via the official profile mechanism, or download DSH Desktop—a standalone application for macOS and Windows with the Node.js runtime and plugins pre-packaged.
+dsh-web is a modular plugin ecosystem and desktop workstation for the DeepSeek Harness (DSH) Web GUI. It equips AI coding workflows with task automation boards, cross-device mobile remote control, SSH terminal operations, visual Git commit graphs, and personalized theme skins. Users can install the complete plugin bundle into an existing `dsh web` instance via the official profile mechanism, or into the official DeepSeek Harness desktop client the same way.
 
 <p align="center">
   <img src="docs/dsh-web-banner.png" alt="dsh-web — DeepSeek Harness Web GUI plugins and themes" width="100%">
@@ -35,7 +35,7 @@ dsh-web is a modular plugin ecosystem and desktop workstation for the DeepSeek H
 
 <div align="center">
 
-[What It Is](#what-it-is) · [DSH Desktop](#dsh-desktop-desktop-client) · [Workshop](#workshop-dsh-marketcom) · [Feature Plugins](#feature-plugins) · [Skins](#skins) · [Quick Start](#quick-start) · [FAQ](#faq) · [Known Limitations](#known-limitations) · [Community](#community)
+[What It Is](#what-it-is) · [Desktop Client](#official-desktop-client) · [Workshop](#workshop-dsh-marketcom) · [Feature Plugins](#feature-plugins) · [Skins](#skins) · [Quick Start](#quick-start) · [FAQ](#faq) · [Known Limitations](#known-limitations) · [Community](#community)
 
 </div>
 
@@ -71,19 +71,18 @@ dsh-web mounts directly into `dsh web` via official profiles without modifying D
 | Access DSH from a mobile phone or another computer | [Mobile and PC browser remote control](packages/dsh-remote-web-ui/README.md) |
 | Manage remote servers over SSH | [SSH terminal, file transfer, and tunnels](packages/dsh-ssh/README.md) |
 | Customize skins and desktop pets | [Explore the DSH Workshop](https://dsh-market.com) |
-| Run as a macOS or Windows desktop app | [DSH Desktop download and requirements](#dsh-desktop-desktop-client) |
+| Run inside the official desktop client | [Official desktop client](#official-desktop-client) |
 | Add plugins to an existing DSH setup | [Quick start installation](#quick-start) |
 
-## DSH Desktop (Desktop Client)
+## Official Desktop Client
 
-DSH Desktop packages the DeepSeek Harness Web GUI into a native desktop application for macOS and Windows. The installer bundles a dedicated Node.js runtime environment (including npm and pnpm), the dsh host, and a preconfigured web profile (official web bundle plus dsh-web plugins). You do not need to install Node or configure the dsh CLI beforehand. Installers ship with each [Release](https://github.com/zhu1090093659/dsh-web/releases) under `dsh-desktop-*` (macOS dmg/zip and Windows exe/zip).
+The DeepSeek Harness desktop client ships from the official project; this repository no longer publishes `dsh-desktop-*` installers with its Releases. The desktop client shares the `~/.dsh` data directory with `dsh web`, and installs plugins into its own `desktop` profile with the same command:
 
-- **Isolated Host & Dedicated Ports**: The application runs its dsh host in the 3082-3181 port range using its bundled runtime, preventing port conflicts with the stock `dsh web` (ports 3080/3081). Both instances can run concurrently with independent sessions.
-- **Shared `~/.dsh` Storage**: Shares configuration, session history, and credentials with the dsh CLI. Application-seeded profiles are marked; upgrades re-seed runtime components while preserving custom user patch layers without touching user-managed profiles.
-- **In-App Plugin Management**: Forwards `dsh plugin add/remove` calls directly to bundled pnpm, eliminating the need for external build tools.
-- **Self-Diagnosing Startup**: If payloads are missing or the host fails to bind, the app displays a diagnostic error page showing host logs with options to retry or open the log file directly.
+```sh
+dsh plugin --profile desktop add @linxin666/dsh-web-all@latest
+```
 
-Installers are currently unsigned. On macOS, right-click and select "Open" on first launch to clear Gatekeeper. On Windows, click "More info" and select "Run anyway" when SmartScreen appears. See [desktop README](desktop/README.md) for build instructions, configuration, and security models.
+Restart the desktop client afterwards and the plugin entries appear under "Settings > Plugin Configuration".
 
 ## Workshop (dsh-market.com)
 
@@ -211,10 +210,10 @@ The classic Blue Fantasy theme serves as the built-in default skin: rich indigo 
   1. Install the bundle: `dsh plugin --profile web add @linxin666/dsh-web-all@latest`
   2. Restart `dsh web` to display new plugin icons in the sidebar
   3. Navigate to "Settings > Plugin Configuration" to toggle individual features, or select skins from the skin panel
-- **DSH Desktop (Desktop Client)**:
-  1. Download the `dsh-desktop-*` installer for your operating system from [Releases](https://github.com/zhu1090093659/dsh-web/releases) (macOS dmg/zip or Windows exe/zip)
-  2. Install and launch the application: the bundled runtime and complete plugin suite load immediately without prerequisite setup
-  3. Manage plugins or customize themes using the integrated plugin manager or settings view
+- **Official Desktop Client (DeepSeek Harness Desktop)**:
+  1. Install and launch the official desktop client
+  2. Install the bundle: `dsh plugin --profile desktop add @linxin666/dsh-web-all@latest`
+  3. Restart the client and toggle features under "Settings > Plugin Configuration"
 
 > To install only the skin engine, use `@linxin666/dsh-client-ui-skin-center`. If your package manager pins an older version due to release age restrictions, see "Install Troubleshooting" below.
 

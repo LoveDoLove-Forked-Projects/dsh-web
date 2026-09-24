@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Amended (2026-09-24, see [remove the repository's Electron desktop app](../simplification/2026-09-24-remove-electron-desktop-app.md)): the repository's Electron desktop app was removed; the root README's desktop section now covers the official desktop client.
+
 ## Problem
 
 The root README presented three surfaces that the default family install does not carry: LiangShen mode and rescue mode are factory-default-off optional rows (`aggregate.yml` `inactive`), and the external archive manager is not shipped at all. Their feature sections, single-plugin install commands, npm package rows and provenance entries advertised capability a fresh install does not load. In the same document the repository's own Electron desktop app — installable macOS/Windows builds that bundle the runtime and the family — had only a three-step Quick Start bullet, and that bullet told readers to run `dsh plugin --profile desktop add @linxin666/dsh-web-all@latest`. The app never reads a `desktop` profile: it seeds and serves `$DSH_HOME/profiles/web`, so the instruction installed into a profile the app ignores.
