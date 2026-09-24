@@ -2,8 +2,11 @@
 /**
  * Committed lib/ artifact guard.
  *
- * Four packages commit their build output (a lib/ directory per package): a consumer that
- * resolves the package without rebuilding it gets exactly those bytes. When
+ * Two packages in this repository commit their build output (a lib/ directory
+ * per package): a consumer that resolves the package without rebuilding it
+ * gets exactly those bytes. The satellite repositories (dsh-skins,
+ * dsh-presets) carry the same rule for their own packages in their own CI.
+ * When
  * that output was produced from a source snapshot that later moved on, the
  * repository ships stale code — the maid-atelier reviewed-hooks table did
  * exactly that (the committed bundle kept the previous hash while

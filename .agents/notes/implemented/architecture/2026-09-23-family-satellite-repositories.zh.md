@@ -8,29 +8,30 @@ Status: implemented
 
 皮肤贡献者要对着聚合仓库开 PR：一个新皮肤淹没在十六个插件包之间，评审路由与插件评审混在一起，而且资产只能搭下一次家族发布的顺风车才分发出去。宠物资产形状相同，体量 197 MB。社区索引——决定创意工坊列出哪些第三方插件的那个文件——与消费它的商店同处一仓，于是一行索引更新要等整条插件发布链。
 
-但这三个插件在代码上并不耦合：它们从不互相导入，也不导入任何兄弟包，家族共享运行时模块早就通过 `scripts/sync-shared.mjs` 生成的已提交副本抵达它们。把它们绑在本仓的是工具链与产物链，不是源码。
+但这些插件在代码上并不耦合：它们从不互相导入，也不导入任何兄弟包，家族共享运行时模块早就通过 `scripts/sync-shared.mjs` 生成的已提交副本抵达它们。把它们绑在本仓的是工具链与产物链，不是源码。
 
 ## 决策
 
-三个插件在各自仓库维护，在本仓按已发布的 npm 包消费：
+这些插件在各自仓库维护，在本仓按已发布的 npm 包消费：
 
 - `@linxin666/dsh-client-ui-skin-center` —— [dsh-skins](https://github.com/zhu1090093659/dsh-skins)，同时承载 42 个皮肤资产与皮肤投稿入口；
 - `@linxin666/dsh-pet` —— [dsh-pet](https://github.com/zhu1090093659/dsh-pet)，承载插件与全部宠物资产；
-- `@linxin666/dsh-client-ui-community-plugins` —— [dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins)，承载 `community.json`。
+- `@linxin666/dsh-client-ui-community-plugins` —— [dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins)，承载 `community.json`；
+- `@linxin666/dsh-client-ui-preset-center` —— [dsh-presets](https://github.com/zhu1090093659/dsh-presets)，承载插件与已发布的 `presets/` 目录。预设中心迁得更晚，该决策与下面的布局归属[预设中心迁往 dsh-presets 仓](2026-09-24-preset-center-satellite-repository.zh.md)。
 
 包名保持不变，消费方仍解析同一批 specifier。
 
-聚合包改用 `rows:`（外部 npm 行）加显式 semver 范围挂载它们，不再走 `patchFrom`/`deps`；`packages/dsh-web-all/package.json` 手写这三条依赖。行 id 与 `patchFrom` 时期逐字一致（`web-ui-pet`、`web-ui-skin-center`、`web-ui-community-plugins`），既有 profile 无需迁移。这些行原先挂载用的子路径导出（`./pet`、`./skin-center`、`./community-plugins`）以 `tombstones:` 保留在 exports 表里，因此记录了 `@linxin666/dsh-web-all/pet` 的 profile 仍可 import，而不会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`。
+聚合包改用 `rows:`（外部 npm 行）加显式 semver 范围挂载它们，不再走 `patchFrom`/`deps`；`packages/dsh-web-all/package.json` 手写这些依赖。行 id 与 `patchFrom` 时期逐字一致（`web-ui-pet`、`web-ui-skin-center`、`web-ui-community-plugins`、`web-ui-preset-center`），既有 profile 无需迁移。这些行原先挂载用的子路径导出（`./pet`、`./skin-center`、`./community-plugins`、`./preset-center`）以 `tombstones:` 保留在 exports 表里，因此记录了 `@linxin666/dsh-web-all/pet` 的 profile 仍可 import，而不会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`。
 
 ### 外部行用容错隔离换独立性
 
-外部行直接挂载真实包名：它没有 `config.plugin`，不被聚合包的 fault-isolation shell 包装，浏览器半区也不再内联进聚合包的 client bundle。壳存在的意义是让单个坏掉的家族插件拖不垮整个启动，这三行放弃了这一点。换回来的是：它们的浏览器半区由 loader 从各自的 loader entry 挂载，它们的源码改动不再强制重建 `dsh-web-all/lib`；新契约记录在 `packages/dsh-web-all/AGENTS.md`。
+外部行直接挂载真实包名：它没有 `config.plugin`，不被聚合包的 fault-isolation shell 包装，浏览器半区也不再内联进聚合包的 client bundle。壳存在的意义是让单个坏掉的家族插件拖不垮整个启动，这些外部行放弃了这一点。换回来的是：它们的浏览器半区由 loader 从各自的 loader entry 挂载，它们的源码改动不再强制重建 `dsh-web-all/lib`；新契约记录在 `packages/dsh-web-all/AGENTS.md`。
 
-`tests/satellite-rows.spec.ts` 固化让这次交换安全的那些不变量：行 id、直接挂载（无 `config.plugin`）、声明的 semver 范围、`scripts/aggregate.mjs` 解析外部行所依赖的 `./package.json` 导出、保留的兼容 tombstones、`remote-web-ui` 排在 `pet` 之前的顺序，以及三者已不在 client-children 列表里。
+`tests/satellite-rows.spec.ts` 固化让这次交换安全的那些不变量：行 id、直接挂载（无 `config.plugin`）、声明的 semver 范围、`scripts/aggregate.mjs` 解析外部行所依赖的 `./package.json` 导出、保留的兼容 tombstones、`remote-web-ui` 排在 `pet` 之前的顺序，以及四者均已不在 client-children 列表里。
 
 ### 市场内容按提交固定
 
-市场构建不从工作树读皮肤或宠物资产，也不从工作树读社区索引。三个内容仓是挂在 `satellites/` 下的 git submodule，submodule 的 gitlink 就是钉扎的提交：`market-inputs.lock.json` 记录哪份输入由哪个 submodule 承载、内容目录在它里面的哪一层，`scripts/market-fetch-inputs.mjs` 把该内容目录物化到 `.market-inputs/`（检出停在该提交就本地复制，否则按该提交下载 tarball；幂等，`--check` 只校验不下载，缺失或过期直接让运行失败），`scripts/market-build` 从那里读取。`--local` 读取 submodule 工作树当前所在的提交，开发者就是用它把卫星检出里的改动送进市场构建：缓存于是记录它读到的那个提交而不是钉扎的提交，离开钉扎提交的检出在不加它时会被提示并忽略，这样构建出的 `market/dist` 不得提交。社区索引同样按提交固定，而不是"npm 解析到什么算什么"：在固定它之前，删掉仓内包会让构建静默读到一份陈旧的已发布索引，产出与已提交 `market/dist` 不再一致的 `manifest/plugins.json`。
+市场构建不从工作树读皮肤或宠物资产，也不从工作树读社区索引。这些内容仓是挂在 `satellites/` 下的 git submodule，submodule 的 gitlink 就是钉扎的提交：`market-inputs.lock.json` 记录哪份输入由哪个 submodule 承载、内容目录在它里面的哪一层，`scripts/market-fetch-inputs.mjs` 把该内容目录物化到 `.market-inputs/`（检出停在该提交就本地复制，否则按该提交下载 tarball；幂等，`--check` 只校验不下载，缺失或过期直接让运行失败），`scripts/market-build` 从那里读取。`--local` 读取 submodule 工作树当前所在的提交，开发者就是用它把卫星检出里的改动送进市场构建：缓存于是记录它读到的那个提交而不是钉扎的提交，离开钉扎提交的检出在不加它时会被提示并忽略，这样构建出的 `market/dist` 不得提交。社区索引同样按提交固定，而不是"npm 解析到什么算什么"：在固定它之前，删掉仓内包会让构建静默读到一份陈旧的已发布索引，产出与已提交 `market/dist` 不再一致的 `manifest/plugins.json`。
 
 `scripts/market-verify-assets.mjs` 走遍生成清单承诺的每个路径，对 `market/dist` 或已部署站点校验，并把服务端字节数与本地文件比对。它必须用 Range GET 而不是 HEAD——Workers 静态资产层对 HEAD 返回 `content-length: 0`。部署流程在 `market:check` 之前拉取；对已部署站点的走查是维护者步骤而不是车道步骤，它每次最多向 Worker 的 `POST /api/asset-attest` 路由提交 500 个路径，读回部署版本用自身 `ASSETS` binding 为每个路径提供的字节数。
 
@@ -54,11 +55,11 @@ Status: implemented
 
 ## 后果
 
-- 三个仓各自拥有 CI 与贡献流程；本仓发布不再发布它们，`release.yml` 与 `scripts/lib/family-packages.mjs` 看到的是十六个包而不是十九个。从下一个版本起它们与本仓共用同一个版本号。
+- 四个仓各自拥有 CI 与贡献流程；本仓发布不再发布它们，`release.yml` 与 `scripts/lib/family-packages.mjs` 看到的是十五个包，而不是拆分前单仓的十九个。从下一个版本起它们与本仓共用同一个版本号。
 - 三行失去聚合包的 fault-isolation shell，它们在插件清单里的标题从 `web-all/<family>` 变成各自的包名。
-- SDK cohort 现在要在四个仓推进而不是一个；本次拆分后卫星已同步到 `0.1.7-rc.1`，将来一次 cohort 迁移要碰四个仓。
+- SDK cohort 现在要在五个仓推进而不是一个；本次拆分后卫星已同步到 `0.1.7-rc.1`，将来一次 cohort 迁移要碰五个仓。
 - 市场站的内容跟随 submodule 的 gitlink：一次合并的皮肤或宠物改动，在维护者把 `satellites/` 下的 submodule 移到该提交、部署流程重建并重新校验之后才到达 `dsh-market.com`，而不是卫星一合并就到。
-- `satellites/` 只记录三个 submodule 而不记录其内容，因此从未检出它们的 clone 仍能构建市场；`git submodule update --init` 是要就地改卫星仓内容时的选择，跳过它的人不必为 199 MB 的宠物仓付出 clone 代价。
+- `satellites/` 只记录 submodule 而不记录其内容，因此从未检出它们的 clone 仍能构建市场；`git submodule update --init` 是要就地改卫星仓内容时的选择，跳过它的人不必为 199 MB 的宠物仓付出 clone 代价。
 - 卫星内容的开发可以在本检出里走完：检出 submodule、改动、用 `--local` 读它、构建。`scripts/capture-previews` 出于同样的理由把预览图写进 `satellites/dsh-skins`。PR 仍然落在卫星仓。
 - `.market-inputs/` 是拉取来的构建输入（git-ignored），test-standards 与 emoji 审计会跳过它和 `satellites/`，避免把卫星内容当作一方代码审计。
-- 卫星各自携带一份 `shared/tsdown.client.ts` 与 vendored `shared/` 模块；`scripts/sync-shared.mjs` 现在覆盖 99 份副本而不是 114 份，且不再触达三者。
+- 卫星各自携带一份 `shared/tsdown.client.ts` 与 vendored `shared/` 模块；`scripts/sync-shared.mjs` 现在覆盖 96 份副本而不是 114 份，且不再触达它们中的任何一个。

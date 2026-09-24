@@ -1,6 +1,7 @@
 /**
  * Russian dictionary for the "dsh-web-ui-preset-center" locale namespace.
- * Source package: packages/dsh-preset-center (its zh dictionary is the key source).
+ * Source package: dsh-preset-center, in the dsh-presets repository since the
+ * family split (its zh dictionary is the key source).
  * Maintained centrally by the dsh-i18n language pack; when a zh key is added
  * or changed upstream, mirror it here and run `pnpm i18n:check`.
  */

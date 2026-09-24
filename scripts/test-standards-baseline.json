@@ -286,20 +286,6 @@
       "bdd-title": 16,
       "given-when-then": 16
     },
-    "packages/dsh-preset-center/tests/library.spec.ts": {
-      "given-when-then": 7
-    },
-    "packages/dsh-preset-center/tests/preset-panel.spec.tsx": {
-      "no-ad-hoc-mock": 1,
-      "given-when-then": 2
-    },
-    "packages/dsh-preset-center/tests/profile.spec.ts": {
-      "bdd-title": 4,
-      "given-when-then": 4
-    },
-    "packages/dsh-preset-center/tests/routes.spec.ts": {
-      "given-when-then": 3
-    },
     "packages/dsh-remote-web-ui/src/pairing.persist.test.ts": {
       "bdd-title": 11,
       "given-when-then": 11

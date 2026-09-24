@@ -15,6 +15,7 @@ const INPUTS = join(ROOT, '.market-inputs')
 const hasInputs = existsSync(join(INPUTS, 'skins'))
   && existsSync(join(INPUTS, 'pet'))
   && existsSync(join(INPUTS, 'community'))
+  && existsSync(join(INPUTS, 'presets'))
 const SKIP_REASON = 'market inputs not fetched; run node scripts/market-fetch-inputs.mjs'
 
 /** Resolve a package the aggregate depends on, the way market-build does. */
@@ -39,18 +40,19 @@ function fixture() {
     [join(ROOT, 'market', 'src'), join(dir, 'market', 'src')],
     [join(ROOT, 'market', 'editor-picks.json'), join(dir, 'market', 'editor-picks.json')],
     [join(ROOT, 'market', 'dist'), join(dir, 'market', 'dist')],
-    // The skin and pet content is fetched from its own repositories; the
-    // fixture mirrors the layout market-build reads at runtime.
+    // The skin, pet, community-index and preset content is fetched from its
+    // own repositories; the fixture mirrors the layout market-build reads at
+    // runtime.
     [join(INPUTS, 'skins'), join(dir, '.market-inputs', 'skins')],
     [join(INPUTS, 'pet'), join(dir, '.market-inputs', 'pet')],
     [join(INPUTS, 'community'), join(dir, '.market-inputs', 'community')],
+    [join(INPUTS, 'presets'), join(dir, '.market-inputs', 'presets')],
     // Published packages the aggregate depends on. market-build resolves them
     // through the dependency tree; the fixture has no node_modules, so the
     // in-repo fallback paths are populated instead and the package's own
     // dependency tree is linked beside them.
     [join(SKIN_CENTER_DIR, 'lib'), join(dir, 'packages', 'skins', 'skin-center', 'lib')],
     [join(SKIN_CENTER_DIR, 'package.json'), join(dir, 'packages', 'skins', 'skin-center', 'package.json')],
-    [join(ROOT, 'packages', 'dsh-preset-center', 'presets'), join(dir, 'packages', 'dsh-preset-center', 'presets')],
     // The installer source carries MAX_FILES_PER_ASSET; market-build reads the
     // cap from it to reject catalog assets the installer could not install.
     [join(ROOT, 'packages', 'dsh-market', 'src', 'core', 'installer.ts'), join(dir, 'packages', 'dsh-market', 'src', 'core', 'installer.ts')],

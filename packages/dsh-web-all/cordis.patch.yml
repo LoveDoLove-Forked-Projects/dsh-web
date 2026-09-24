@@ -94,13 +94,6 @@
       config:
         plugin: '@linxin666/dsh-client-ui-model-capabilities'
 
-# from ../dsh-preset-center
-- insert:
-    - id: web-ui-preset-center
-      name: '@linxin666/dsh-web-all/preset-center'
-      config:
-        plugin: '@linxin666/dsh-client-ui-preset-center'
-
 # from ../dsh-i18n
 - insert:
     - id: web-ui-i18n
@@ -128,6 +121,13 @@
 - insert:
     - id: web-ui-pet
       name: '@linxin666/dsh-pet'
+
+# external bundle: @linxin666/dsh-client-ui-preset-center
+
+# from external bundle @linxin666/dsh-client-ui-preset-center (insert row web-ui-preset-center)
+- insert:
+    - id: web-ui-preset-center
+      name: '@linxin666/dsh-client-ui-preset-center'
 
 # external bundle: @linxin666/dsh-client-ui-skin-center
 

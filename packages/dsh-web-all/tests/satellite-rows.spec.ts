@@ -1,9 +1,10 @@
 /**
  * Independent-repository satellite rows.
  *
- * The skin center, pet and community-index plugins live in their own GitHub
- * repositories and are consumed as published npm packages: the aggregate
- * mounts them through `rows:` (external rows) instead of `patchFrom`/`deps`.
+ * The skin center, pet, community-index and preset-center plugins live in
+ * their own GitHub repositories and are consumed as published npm packages:
+ * the aggregate mounts them through `rows:` (external rows) instead of
+ * `patchFrom`/`deps`.
  * External rows mount the real package name directly and are never wrapped by
  * the fault-isolation shell, so this lane pins the invariants that make the
  * arrangement safe:
@@ -41,6 +42,11 @@ const SATELLITES = [
     subpath: './community-plugins',
   },
   { pkg: '@linxin666/dsh-pet', id: 'web-ui-pet', subpath: './pet' },
+  {
+    pkg: '@linxin666/dsh-client-ui-preset-center',
+    id: 'web-ui-preset-center',
+    subpath: './preset-center',
+  },
   {
     pkg: '@linxin666/dsh-client-ui-skin-center',
     id: 'web-ui-skin-center',

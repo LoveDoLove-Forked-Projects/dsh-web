@@ -7,3 +7,6 @@
 [submodule "satellites/dsh-community-plugins"]
 	path = satellites/dsh-community-plugins
 	url = https://github.com/zhu1090093659/dsh-community-plugins.git
+[submodule "satellites/dsh-presets"]
+	path = satellites/dsh-presets
+	url = https://github.com/zhu1090093659/dsh-presets.git

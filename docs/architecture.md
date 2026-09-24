@@ -115,24 +115,24 @@ flowchart LR
 
 ## 创意工坊与市场站
 
-市场内容的事实源随家族拆分分开：三个独立仓作为 git submodule 挂在 `satellites/`，各自的 gitlink 就是市场读到的提交，[market-inputs.lock.json](../market-inputs.lock.json) 记录哪个 submodule 承载哪份输入及其内容目录，[scripts/market-fetch-inputs.mjs](../scripts/market-fetch-inputs.mjs) 把该提交的内容目录物化到 `.market-inputs/`（submodule 检出停在该提交就地复制，否则按该提交下载 tarball，不需要历史，只取内容目录）；插件索引 `community.json` 与皮肤样式安全管线 `transformSkinCss` 从聚合包依赖树解析已发布包；预设取 dsh-preset-center 的 presets/、编辑推荐取 market/editor-picks.json（手工维护的皮肤 / 宠物 / 插件引用清单，构建时逐条校验可解析）。[scripts/market-build](../scripts/market-build) 派生 `market/dist`（`manifest/{skins,pets,plugins,presets,editor-picks}.json`、预览与试穿资产；产物提交进仓，`market:check` 校验一致）。tryon 试穿壳来自 market/shell 的构建产物，拷入 `dist/tryon/`。部署经 [scripts/deploy-market](../scripts/deploy-market)：先拉取内容输入并 `market-build --check`，再 wrangler 应用 D1 migrations 并部署 [Worker](../market/worker/wrangler.jsonc)（ASSETS 绑定 dist、Turnstile secret 守卫）；push 到 dev 且触及市场相关路径时由 [deploy-market.yml](../.github/workflows/deploy-market.yml) 自动上架，整站资产校验按 manifest 用 [scripts/market-verify-assets.mjs](../scripts/market-verify-assets.mjs) 逐条核对部署版本能以其 ASSETS 绑定为每个路径提供与提交文件一致的字节数（`POST /api/asset-attest`，共享密钥门控，未配置或密钥不符时 fail closed），由维护者在策略允许的网络上按需执行，不在部署车道内。匿名点赞必须保持 Turnstile 门控并经单个 D1 batch 写入（信任边界见根 [AGENTS.md](../AGENTS.md)）。
+市场内容的事实源随家族拆分分开：四个独立仓作为 git submodule 挂在 `satellites/`，各自的 gitlink 就是市场读到的提交，[market-inputs.lock.json](../market-inputs.lock.json) 记录哪个 submodule 承载哪份输入及其内容目录，[scripts/market-fetch-inputs.mjs](../scripts/market-fetch-inputs.mjs) 把该提交的内容目录物化到 `.market-inputs/`（submodule 检出停在该提交就地复制，否则按该提交下载 tarball，不需要历史，只取内容目录）；插件索引 `community.json` 与皮肤样式安全管线 `transformSkinCss` 从聚合包依赖树解析已发布包；预设取 dsh-presets 的 presets/、编辑推荐取 market/editor-picks.json（手工维护的皮肤 / 宠物 / 插件引用清单，构建时逐条校验可解析）。[scripts/market-build](../scripts/market-build) 派生 `market/dist`（`manifest/{skins,pets,plugins,presets,editor-picks}.json`、预览与试穿资产；产物提交进仓，`market:check` 校验一致）。tryon 试穿壳来自 market/shell 的构建产物，拷入 `dist/tryon/`。部署经 [scripts/deploy-market](../scripts/deploy-market)：先拉取内容输入并 `market-build --check`，再 wrangler 应用 D1 migrations 并部署 [Worker](../market/worker/wrangler.jsonc)（ASSETS 绑定 dist、Turnstile secret 守卫）；push 到 dev 且触及市场相关路径时由 [deploy-market.yml](../.github/workflows/deploy-market.yml) 自动上架，整站资产校验按 manifest 用 [scripts/market-verify-assets.mjs](../scripts/market-verify-assets.mjs) 逐条核对部署版本能以其 ASSETS 绑定为每个路径提供与提交文件一致的字节数（`POST /api/asset-attest`，共享密钥门控，未配置或密钥不符时 fail closed），由维护者在策略允许的网络上按需执行，不在部署车道内。匿名点赞必须保持 Turnstile 门控并经单个 D1 batch 写入（信任边界见根 [AGENTS.md](../AGENTS.md)）。
 
 ```mermaid
 flowchart LR
     subgraph srcs["内容事实源"]
-        L["submodule gitlink：dsh-skins / dsh-pet / dsh-community-plugins 的固定提交"]
+        L["submodule gitlink：dsh-skins / dsh-pet / dsh-community-plugins / dsh-presets 的固定提交"]
         S1["dsh-skins 仓：skins 目录各皮肤 skin.json"]
         S2["dsh-pet 仓：assets 目录各宠物 pet.json"]
         S3["@linxin666/dsh-client-ui-community-plugins：community.json（已发布包）"]
-        S4["dsh-preset-center：presets 目录"]
+        S4["dsh-presets 仓：presets 目录"]
         S5["market/editor-picks.json：编辑推荐固定清单"]
     end
     L -- "node scripts/market-fetch-inputs.mjs 从该提交物化内容目录" --> FETCH[".market-inputs/"]
     S1 -.-> FETCH
     S2 -.-> FETCH
+    S4 -.-> FETCH
     FETCH --> MB["node scripts/market-build"]
     S3 --> MB
-    S4 --> MB
     S5 --> MB
     SHELL["market/shell 构建：浏览器版试穿壳"] --> DIST["market/dist（提交产物）"]
     MB --> DIST
@@ -145,7 +145,7 @@ flowchart LR
 
 ## 共享层与同步管线
 
-[shared/](../shared/tsdown.client.ts) 是跨包事实源：构建预设与平台模块表之外，`host/` 提供 dsh-home 解析、mount-once、poll-guard、run-guarded、loopback 等宿主侧模块，`client/` 提供设置卡三件套、侧栏入口、sse-leader 等浏览器侧模块。[scripts/sync-shared.mjs](../scripts/sync-shared.mjs) 把副本生成进各消费包（带 generated 头，禁手改），`test:scripts` 的 drift 门禁防副本漂移。三个包（dsh-market、dsh-preset-center、dsh-web-all）提交 `lib/` 构建产物，指纹由 `libs:write` 记录、`libs:check` 把关。
+[shared/](../shared/tsdown.client.ts) 是跨包事实源：构建预设与平台模块表之外，`host/` 提供 dsh-home 解析、mount-once、poll-guard、run-guarded、loopback 等宿主侧模块，`client/` 提供设置卡三件套、侧栏入口、sse-leader 等浏览器侧模块。[scripts/sync-shared.mjs](../scripts/sync-shared.mjs) 把副本生成进各消费包（带 generated 头，禁手改），`test:scripts` 的 drift 门禁防副本漂移。两个包（dsh-market、dsh-web-all）提交 `lib/` 构建产物，卫星仓各自在自己的 CI 里守同样的规则，指纹由 `libs:write` 记录、`libs:check` 把关。
 
 ```mermaid
 flowchart LR
@@ -178,7 +178,7 @@ flowchart LR
 | dsh-web-settings | 设置页一级分区：家族插件启停开关与配置表单（`web-ui.plugin.item` 子槽） |
 | dsh-plugin-manager | 插件管理页：npm/git 安装、启停、冲突恢复 |
 | dsh-market | 创意工坊商店卡：浏览 dsh-market.com 并一键安装皮肤、宠物、插件、预设 |
-| dsh-preset-center | 社区预设：惰性库、启停、工坊 Presets 面板 |
+| dsh-preset-center | 社区预设：惰性库、启停、工坊 Presets 面板（独立仓，以已发布包消费；presets 目录按 submodule 钉扎进市场构建） |
 | dsh-community-plugins | community.json 社区插件索引数据源（独立仓，以已发布包消费；惰性 cordis 行） |
 | dsh-skins | 皮肤中心：皮肤资产、试穿、无刷新原子切换（独立仓，以已发布包消费） |
 | dsh-pet | 注册表驱动桌宠：响应模型活动、命名与好感度（独立仓，以已发布包消费） |

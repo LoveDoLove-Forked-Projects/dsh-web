@@ -22,10 +22,10 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // the copy-count buckets below match on forward slashes.
   const entries = copyEntries().map(entry => ({ ...entry, target: entry.target.replaceAll('\\', '/') }))
   // The total is every generated copy in the manifest; the single-instance
-  // guard alone contributes one mount-once.ts per host half (16 today). The
+  // guard alone contributes one mount-once.ts per host half (15 today). The
   // buckets below split the same set by target location, and what neither
   // bucket holds is the package-root test setup (4 today).
-  assert.equal(entries.length, 101)
+  assert.equal(entries.length, 96)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
   assert.equal(clientTrio.length, 40)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
@@ -35,7 +35,7 @@ test('copies cover the settings trio for all consumers plus host and http helper
     || entry.target.includes('/src/pair-access.ts')
     || entry.target.includes('/src/agent/')
     || entry.target.endsWith('/packages/dsh-task-board/src/http.ts'))
-  assert.equal(hostCopies.length, 50)
+  assert.equal(hostCopies.length, 46)
 })
 
 test('checkSync detects drift and applySync repairs it', async () => {

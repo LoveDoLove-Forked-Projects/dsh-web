@@ -16,6 +16,11 @@
       "submodule": "satellites/dsh-community-plugins",
       "path": ".",
       "target": "community"
+    },
+    "presets": {
+      "submodule": "satellites/dsh-presets",
+      "path": "presets",
+      "target": "presets"
     }
   }
 }

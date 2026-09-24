@@ -25,9 +25,6 @@ patchFrom:
   - ../dsh-usage
   - ../dsh-session-archive
   - ../dsh-model-capabilities
-  # preset-center 排在 dsh-market 之后：创意工坊卡片先声明 dsh-workshop.panel
-  # 子槽位，预设面板再注册进该槽位（见 packages/dsh-preset-center）。
-  - ../dsh-preset-center
   # dsh-i18n 语言包无宿主行为、无时序依赖，放列表末尾：注册 ru 语言与全部
   # 家族插件命名空间的 ru 字典（见 packages/dsh-i18n）。
   - ../dsh-i18n
@@ -45,7 +42,6 @@ deps:
   - ../dsh-usage
   - ../dsh-session-archive
   - ../dsh-model-capabilities
-  - ../dsh-preset-center
   - ../dsh-web-settings
   - ../dsh-i18n
 
@@ -56,9 +52,12 @@ deps:
 # 依赖版本由 packages/dsh-web-all/package.json 手写并随生成器保留。
 # 代价：外部行不带聚合包的 fault-isolation shell，且客户端不再内联进本包 lib
 # （改由卫星自带的 loader entry 挂载）。
+# preset-center 排在 patchFrom 行之后：创意工坊卡片（本仓 dsh-market 行）先声明
+# dsh-workshop.panel 子槽位，预设面板再注册进该槽位（见 dsh-presets 仓）。
 rows:
   - {"id": "community-plugins", "name": "@linxin666/dsh-client-ui-community-plugins"}
   - {"id": "pet", "name": "@linxin666/dsh-pet"}
+  - {"id": "preset-center", "name": "@linxin666/dsh-client-ui-preset-center"}
   - {"id": "skin-center", "name": "@linxin666/dsh-client-ui-skin-center"}
 
 # 外部 npm 插件段：alpha 分支（2026-09-17 决策）不内置 dsh-better-sidebar。
@@ -97,8 +96,9 @@ tombstones:
   - describe-image
   - doctor
   # 迁出为独立仓库的家族子路径：行已改为 npm 外部行（直挂真实包名），但旧 profile
-  # 里记录的行名仍是 @linxin666/dsh-web-all/<family>。保留这三个 shell 子路径导出
+  # 里记录的行名仍是 @linxin666/dsh-web-all/<family>。保留这些 shell 子路径导出
   # 让那些 profile 仍可 import，不抛 ERR_PACKAGE_PATH_NOT_EXPORTED。
   - pet
+  - preset-center
   - skin-center
   - community-plugins

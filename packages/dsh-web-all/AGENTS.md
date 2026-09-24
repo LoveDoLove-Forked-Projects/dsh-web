@@ -7,10 +7,10 @@
 
 - `cordis.patch.yml` 是各 child 的 insert 行拼接（含每源注释头）；仓库内子包经
   package.json 的 `workspace:*` 拉入，安装单包即全部就位。
-- 已迁出为独立仓库的家族子插件（皮肤中心、宠物、社区插件索引）走 `rows:` 外部行：
-  依赖写成显式 semver 范围，行 `name` 直接是真实包名（不经共享壳包装），浏览器半区
-  由卫星自带的 loader entry 挂载、不再内联进本包 bundle。代价是这三行没有壳的
-  fault-isolation；收益是卫星客户端改动不再要求重建本包。
+- 已迁出为独立仓库的家族子插件（皮肤中心、宠物、社区插件索引、预设中心）走
+  `rows:` 外部行：依赖写成显式 semver 范围，行 `name` 直接是真实包名（不经共享壳
+  包装），浏览器半区由卫星自带的 loader entry 挂载、不再内联进本包 bundle。代价
+  是这些行没有壳的 fault-isolation；收益是卫星客户端改动不再要求重建本包。
 - 家族行的 `name` 是按家族的子路径导出 `@linxin666/dsh-web-all/<family>`（官方
   插件列表因此每行显示独立的 `web-all/<family>` 标题），全部子路径都指向共享
   壳再导出模块 `lib/shells/shell.js`；子路径下必须有扫描器标记 manifest

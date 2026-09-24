@@ -1,7 +1,6 @@
 > 提 PR 前请阅读 [CONTRIBUTING.md](../CONTRIBUTING.md) 与 [AGENTS.md](../AGENTS.md)；
 > 提交信息用 Conventional Commits（`type(scope): subject`），禁止 emoji。
-> 本仓库只接受一类内容贡献：预设增加（agent 预设收录）。新 agent 预设收录进本仓库部署的 dsh-market.com 服务器（Workshop），按需安装，默认安装不带。
-> 皮肤增加、宠物增加与社区插件索引登记已迁至各自的独立仓（[dsh-skins](https://github.com/zhu1090093659/dsh-skins) / [dsh-pet](https://github.com/zhu1090093659/dsh-pet) / [dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins)）；在本仓按这些类别提交的 PR 会被自动关闭并重定向到对应仓库。
+> 本仓库不再接受外部内容贡献：皮肤增加、宠物增加、社区插件索引登记与 agent 预设收录已全部迁至各自的独立仓（[dsh-skins](https://github.com/zhu1090093659/dsh-skins) / [dsh-pet](https://github.com/zhu1090093659/dsh-pet) / [dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins) / [dsh-presets](https://github.com/zhu1090093659/dsh-presets)）；在本仓按这些类别提交的 PR 会被自动关闭并重定向到对应仓库。
 > 其余改动（修复 / 增强 / 全新功能 / 文档 / 测试 / 维护）不接受直接 PR，请先提 Issue 讨论；仓库所有者、机器人与拥有写权限的协作者（维护者）不受此限制，可直接提交任意改动。
 > 仅文档类 PR（标题以 `docs:` 开头或勾选「仅文档」）不接受，会被自动关闭；文档改动请先提 Issue 讨论（仓库所有者、机器人与拥有写权限的协作者不受此限制）。
 ## 摘要（Summary）
@@ -18,23 +17,24 @@
 - [ ] 远程 Web UI `packages/dsh-remote-web-ui`
 - [ ] SSH 远程运维 `packages/dsh-ssh`
 - [ ] 宠物（[dsh-pet](https://github.com/zhu1090093659/dsh-pet) 仓）
-- [ ] 预设中心 `packages/dsh-preset-center`
+- [ ] 预设中心（[dsh-presets](https://github.com/zhu1090093659/dsh-presets) 仓）
 - [ ] 皮肤 / 皮肤中心（[dsh-skins](https://github.com/zhu1090093659/dsh-skins) 仓）
 - [ ] 聚合包 / 设置 `packages/dsh-web-all` / `packages/dsh-web-settings`
 - [ ] 其他（请说明）
 
 ## PR 类别（PR Category）
 
-<!-- 必填。勾选本 PR 最贴近的类别（可多选），用于机器人按类别自动分派给协作者。注意：本仓库只接受一类内容贡献（预设增加）——勾「插件功能」类别，并在下方 PR 类型中勾「新预设收录」。皮肤 / 皮肤中心与社区插件索引两类已迁至独立仓，勾选它们的 PR 会被自动关闭并重定向到对应仓库；「插件功能」里的功能改动与「维护 / 其他」不在接受范围，会被自动关闭，请改提 Issue；仓库所有者与拥有写权限的协作者（维护者）不受此限制。 -->
+<!-- 必填。勾选本 PR 最贴近的类别（可多选），用于机器人按类别自动分派给协作者。注意：本仓库不再接受外部内容贡献——皮肤 / 皮肤中心、社区插件索引与预设增加都已迁至独立仓（dsh-skins / dsh-community-plugins / dsh-presets），勾选这些类别的 PR 会被自动关闭并重定向；「插件功能」里的功能改动与「维护 / 其他」也不在接受范围，会被自动关闭，请改提 Issue；仓库所有者与拥有写权限的协作者（维护者）不受此限制。 -->
 
 - [ ] 皮肤 / 皮肤中心（新皮肤收录、皮肤样式）—— 已迁至 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) 仓，本仓提交会被自动关闭并重定向
-- [ ] 插件功能（任务看板 / Git 图谱 / 右侧面板 / 远程 Web UI / SSH / 预设中心 / 设置 / 聚合包）
+- [ ] 插件功能（任务看板 / Git 图谱 / 右侧面板 / 远程 Web UI / SSH / 设置 / 聚合包）
 - [ ] 社区插件索引 —— 已迁至 [dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins) 仓，本仓提交会被自动关闭并重定向
+- [ ] 预设 / 预设中心 —— 已迁至 [dsh-presets](https://github.com/zhu1090093659/dsh-presets) 仓，本仓提交会被自动关闭并重定向
 - [ ] 维护 / 其他
 
 ## PR 类型（PR Type）
 
-<!-- 勾选所有适用的类型；「新预设收录」是本仓库唯一接受的外部内容贡献类型。 -->
+<!-- 勾选所有适用的类型；四类内容贡献（新皮肤收录 / 新宠物收录 / 社区插件索引 / 新预设收录）都已在各自的独立仓提交。 -->
 
 - [ ] 面向用户的功能或行为变更
 - [ ] Bug 修复
@@ -42,7 +42,7 @@
 - [ ] 增强 / 优化（现有功能的改进、性能 / 体验优化）
 - [ ] 新皮肤收录（内容贡献，在 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) 仓提交；本仓提交会被自动关闭并重定向）
 - [ ] 新宠物收录（内容贡献，在 [dsh-pet](https://github.com/zhu1090093659/dsh-pet) 仓提交；本仓提交会被自动关闭并重定向）
-- [ ] 新预设收录（内容贡献，欢迎直接提交，无需先提 issue）
+- [ ] 新预设收录（内容贡献，在 [dsh-presets](https://github.com/zhu1090093659/dsh-presets) 仓提交；本仓提交会被自动关闭并重定向）
 - [ ] 维护 / 重构
 
 <!-- 仅文档类 PR 不接受，会被自动关闭；文档改动请先提 Issue 讨论。 -->
@@ -103,14 +103,7 @@
 
 ## 新预设收录（New Agent Preset）
 
-<!-- 仅当本 PR 新增 agent 预设时必填；其余改动可跳过本节。新预设属于内容贡献，欢迎直接提交（无需先提 issue）。预设是代码而不是资产：composition 可以挂载 npm 插件、加载预设目录内的文件、执行 !!js 表达式，启用后运行在 DSH 宿主进程内，评审重点审核 composition 实际加载了什么、为什么。发布格式见 packages/dsh-preset-center/presets/README.md。 -->
-
-- [ ] 按 packages/dsh-preset-center/presets/README.md 复制 `_template/` 为 `packages/dsh-preset-center/presets/<id>/`：目录名即预设 id，匹配 `^[a-z0-9][a-z0-9-]*$`，不与官方内置 id（minimal / ptc / standard / cordis）冲突。
-- [ ] `preset.yml` 展示文案齐全且均为单行标量（name / description 必填，order 可选），与 catalog.json 条目表达同一预设。
-- [ ] `agent.cordis.yml` composition 合规：service 行位于带 isolate realm 的 group 内；不挂载与预设用途无关的插件；使用的 `!!js` 表达式与本地文件加载已在 PR 描述中逐项说明用途。
-- [ ] `presets/catalog.json` 追加该预设条目（id / author / version 必填，可选 nameEn / descriptionEn / tags / rank / repo），version 用于 Workshop 更新提醒。
-- [ ] 已运行 `node scripts/market-build` 并提交重新生成的 `market/dist`；`pnpm market:check` 通过。
-- [ ] 已在本地实测：经 Workshop 安装进 `$DSH_HOME/agent-presets/<id>/`，启用确认后新会话能使用该预设；PR 描述附预设生效的证据（截图 / 会话输出）。
+<!-- 预设已迁至 dsh-presets 仓。本仓不再接受预设 PR：提交到本仓会被自动关闭并重定向。投稿清单见该仓的 CONTRIBUTING.md 与 presets/README.md。 -->
 
 ## 本地验证（Local Validation）
 

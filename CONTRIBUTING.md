@@ -19,9 +19,11 @@
 - `main` 是稳定分支：只接收从 `dev` 合入且测试通过的代码。
 - 提 PR 一律以 `dev` 为 base，不要以 `main` 为 base。
 
-## PR 范围：只接受四类内容贡献
+## PR 范围：内容贡献全部在独立仓
 
-本仓库对外部贡献者**只接受**以下内容贡献；其中插件申请、皮肤增加、宠物增加在各自的独立仓提交，预设增加在本仓提交：
+本仓库对外部贡献者**不再接受**任何直接 PR。四类内容贡献都在各自的独立仓提交
+（下表），其余改动请先提 Issue 讨论；插件功能、文档、测试、维护等范围内的 PR 同样
+不接受直接提交。
 
 - **插件申请（社区插件索引登记）**：第三方插件由作者在自己的仓库按官方
   cordis bundle 标准实现，然后向
@@ -39,21 +41,18 @@
   [dsh-pet](https://github.com/zhu1090093659/dsh-pet) 仓的 `assets/<id>/` 新增
   （`pet.json` manifest + 图集，可选语音包 / 预览 / 装饰），随该仓 PR 提交。
 - **预设增加（agent 预设收录）**：按
-  [presets README](packages/dsh-preset-center/presets/README.md) 的发布格式新增
-  `packages/dsh-preset-center/presets/<id>/`（`preset.yml` + `agent.cordis.yml`）
-  并登记 `catalog.json`，收录到我们部署的 dsh-market.com 服务器（Workshop）供
-  用户按需安装——**默认安装不带**。预设是代码：composition 可挂载 npm 插件、
-  加载预设目录内文件、执行 `!!js` 表达式，启用后运行在 DSH 宿主进程内，评审
-  重点审核 composition 实际加载内容与用途。
+  [dsh-presets](https://github.com/zhu1090093659/dsh-presets) 仓的
+  [presets README](https://github.com/zhu1090093659/dsh-presets/blob/main/presets/README.md)
+  发布格式新增 `presets/<id>/`（`preset.yml` + `agent.cordis.yml`）并登记
+  `catalog.json`，收录到我们部署的 dsh-market.com 服务器（Workshop）供用户按需
+  安装——**默认安装不带**。预设是代码：composition 可挂载 npm 插件、加载预设
+  目录内文件、执行 `!!js` 表达式，启用后运行在 DSH 宿主进程内，评审重点审核
+  composition 实际加载内容与用途。
 
-除上述四类外的所有改动（bug 修复、功能增强、全新功能、文档、测试、
-维护等）**不接受直接 PR**，请先在
-[Issues](https://github.com/zhu1090093659/dsh-web/issues) 提 issue
-讨论，确认后由维护者处理。本仓直接接收 PR 的只有预设增加：插件申请、
-皮肤增加、宠物增加按原类别向本仓提交时，会被
-`.github/workflows/reject-non-content-pr.yml` 关闭并重定向到对应独立仓，
-其余范围外的 PR 同样被自动关闭（仅文档类 PR 由 `reject-docs-pr.yml`
-处理）；仓库所有者、机器人与拥有写权限的协作者（维护者）的 PR 不受此限制。
+按上述类别向本仓提交的 PR 会被
+`.github/workflows/reject-non-content-pr.yml` 关闭并重定向到对应独立仓；其余
+范围外的 PR 同样被自动关闭（仅文档类 PR 由 `reject-docs-pr.yml` 处理）；仓库
+所有者、机器人与拥有写权限的协作者（维护者）的 PR 不受此限制。
 
 ## 开发前置
 
@@ -140,15 +139,16 @@ README 生成 `preview/{light,dark}.png`，`pnpm skin-center:check` 通过后随
 
 ### 预设增加（agent 预设收录）
 
-按 [presets README](packages/dsh-preset-center/presets/README.md) 把
-`packages/dsh-preset-center/presets/_template/` 复制为 `<id>/`（目录名即预设 id，
-匹配 `^[a-z0-9][a-z0-9-]*$`，官方内置 id 保留），编辑 `preset.yml`（展示文案，
-单行标量）与 `agent.cordis.yml`（composition，service 行置于带 isolate realm 的
-group 内），在 `catalog.json` 登记条目（id / author / version 必填），
-`node scripts/market-build` 重新生成并提交 `market/dist`，`pnpm market:check`
-通过后随 PR 提交。PR 类别勾选「插件功能」（该类别括号内含预设中心项），PR
-类型勾选「新预设收录」。预设启用后运行在 DSH 宿主进程内，PR 描述需说明
-composition 挂载了什么、为什么。
+预设已迁至独立仓 [dsh-presets](https://github.com/zhu1090093659/dsh-presets)：
+按该仓 CONTRIBUTING 把 `presets/_template/` 复制为 `presets/<id>/`（目录名即
+预设 id，匹配 `^[a-z0-9][a-z0-9-]*$`，官方内置 id 保留），编辑 `preset.yml`
+（展示文案，单行标量）与 `agent.cordis.yml`（composition，service 行置于带
+isolate realm 的 group 内），在 `catalog.json` 登记条目（id / author / version
+必填），运行该仓的 `pnpm preset:check` 与 `pnpm test` 后随该仓 PR 提交。市场
+构建按 submodule 钉扎读取该仓的 `presets/`，因此预设在该仓合并后，还要由维护者
+移动本仓 `satellites/dsh-presets` 的 gitlink 并重建 `market/dist` 才到达
+dsh-market.com。预设启用后运行在 DSH 宿主进程内，PR 描述需说明 composition
+挂载了什么、为什么。
 
 ### 范围边界
 

@@ -224,6 +224,7 @@ test('the committed lockfile only names submodules .gitmodules declares', () => 
     'zhu1090093659/dsh-skins',
     'zhu1090093659/dsh-pet',
     'zhu1090093659/dsh-community-plugins',
+    'zhu1090093659/dsh-presets',
   ])
 })
 

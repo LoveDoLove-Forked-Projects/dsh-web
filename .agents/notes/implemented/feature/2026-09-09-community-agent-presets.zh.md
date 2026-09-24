@@ -36,7 +36,7 @@ Status: implemented
 
 ### Market channel and publishing
 
-- 本仓库内的唯一事实源：`packages/dsh-preset-center/presets/<id>/`（预设目录本身）加 `presets/catalog.json`（作者、版本、标签、英文展示文案、排序）。预设 id 必须符合官方规则 `^[a-z0-9][a-z0-9-]*$`。
+- 唯一事实源：[dsh-presets](https://github.com/zhu1090093659/dsh-presets) 仓的 `presets/<id>/`（预设目录本身）加 `presets/catalog.json`（作者、版本、标签、英文展示文案、排序）。预设 id 必须符合官方规则 `^[a-z0-9][a-z0-9-]*$`。
 - `scripts/market-build` 产出 `market/dist/manifest/presets.json` 与 `market/dist/assets/presets/<id>/`，并校验每条 catalog 条目（id 规则、保留的内置 id、组合与元数据文件存在、`preset.yml` 的 name 可读），使坏 preset 无法发布。中文展示文案取自 `preset.yml`，因此 roster 与商店不会互相矛盾；catalog 承载英文文案与市场元数据。
 - `market/worker` 的资产白名单把 `preset` 映射到 `/manifest/presets.json`；Worker 的可接受类别集合与统计桶也需要同样的注册，首个发布批次暴露了这一点（见 [预设的点赞与安装上报被 Worker 拒绝](../../bug-fix/2026-09-10-preset-write-endpoints.zh.md)）。
 
@@ -66,12 +66,12 @@ Status: implemented
 - 创意工坊卡片多出第四个标签页；未安装预设中心时渲染兜底提示而不是面板，因此商店是降级而非损坏。
 - 声明后新会话立即可用，但官方设置分区可能需要刷新页面才会列出它。声明随 host 进程存在：`dsh web` 重启后所有已安装预设都回到惰性状态，直到面板逐个重新声明。
 - 禁用或卸载不会影响已经由该预设组合的会话——会话的组合在创建时固定。
-- 目录的首批内容是由 [角色扮演预设目录及其内容边界](2026-09-10-roleplay-preset-catalog.zh.md) 记录的 32 条目角色扮演批次；`packages/dsh-preset-center/presets/catalog.json` 仍是发布源，内容要求写在 `presets/README.md`。组合文件的审查质量仍是人工流程；确认门与 provenance 降低的是误操作风险，不是恶意意图。
+- 目录的首批内容是由 [角色扮演预设目录及其内容边界](2026-09-10-roleplay-preset-catalog.zh.md) 记录的 32 条目角色扮演批次；dsh-presets 仓的 `presets/catalog.json` 仍是发布源，内容要求写在 `presets/README.md`。组合文件的审查质量仍是人工流程；确认门与 provenance 降低的是误操作风险，不是恶意意图。
 - 用户可以手工删掉预设目录（官方分区只负责列出声明与选定默认值），此时面板报告为未安装，因此「卸载」与「被别处删除」在设计中不可区分。
 - host 进程仍持有句柄时删除目录可能在 Windows 瞬时失败；删除路径会重试并报告写入错误，而不是留下半成品状态。
 
 ## Testing
 
-- `packages/dsh-preset-center` 覆盖库与声明生命周期（安装/声明、禁用、卸载、未托管拒绝）、fail-closed 组合读取器、provenance 完整性、组合画像、真实 HTTP 服务器上的 loopback 网关（确认门、被遮蔽 id、默认预设拒绝、broken 回滚、roster 不可用）以及面板（状态徽标、安装/禁用流程、确认弹窗、空目录与网关不可用降级）。
+- `@linxin666/dsh-client-ui-preset-center`（拆分后维护在 dsh-presets 仓）覆盖库与声明生命周期（安装/声明、禁用、卸载、未托管拒绝）、fail-closed 组合读取器、provenance 完整性、组合画像、真实 HTTP 服务器上的 loopback 网关（确认门、被遮蔽 id、默认预设拒绝、broken 回滚、roster 不可用）以及面板（状态徽标、安装/禁用流程、确认弹窗、空目录与网关不可用降级）。
 - `packages/dsh-market` 覆盖 `preset` 安装类别（库目标、记录资产版本、id 规则）、网关 `install-preset` 路由、卡片预设标签页的 owner props，以及分区的子槽声明。
 - `scripts/market-build` 每次构建都校验目录；`pnpm market:check` 用全新构建比对提交的 `market/dist`。

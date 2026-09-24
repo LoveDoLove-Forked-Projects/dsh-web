@@ -9,10 +9,11 @@
  *   pets    — .market-inputs/pet/<dir>/pet.json                      (v2)
  *   plugins — .market-inputs/community/community.json
  *
- * The skin, pet and community-index content lives in its own repositories,
- * carried here as git submodules under satellites/; scripts/market-fetch-inputs.mjs
- * materializes the content directory of each pinned gitlink into .market-inputs/.
- *   presets — packages/dsh-preset-center/presets/<id>/preset.yml
+ * The skin, pet, community-index and preset content lives in its own
+ * repositories, carried here as git submodules under satellites/;
+ * scripts/market-fetch-inputs.mjs materializes the content directory of each
+ * pinned gitlink into .market-inputs/.
+ *   presets — .market-inputs/presets/<id>/preset.yml
  *             + presets/catalog.json (market metadata: author, version,
  *               tags, English copy); the preset directory is the asset
  *   picks   — market/editor-picks.json (hand-curated skin / pet / plugin
@@ -47,19 +48,22 @@ const { crc32 } = require('node:zlib')
 
 const ROOT = path.resolve(__dirname, '..')
 /**
- * Content sources. The skin and pet assets live in their own repositories
- * (dsh-skins, dsh-pet) since the family split; scripts/market-fetch-inputs.mjs
- * materializes the pinned gitlinks into MARKET_INPUTS_DIR. The in-repo paths
- * remain as a fallback so the build keeps working from a checkout that still
- * carries the packages (migration window and the fixture-based script tests).
+ * Content sources. The skin, pet and preset assets live in their own
+ * repositories (dsh-skins, dsh-pet, dsh-presets) since the family split;
+ * scripts/market-fetch-inputs.mjs materializes the pinned gitlinks into
+ * MARKET_INPUTS_DIR. The in-repo paths remain as a fallback so the build keeps
+ * working from a checkout that still carries the packages (migration window
+ * and the fixture-based script tests).
  */
 const MARKET_INPUTS_DIR = process.env.MARKET_INPUTS_DIR
   ? path.resolve(process.env.MARKET_INPUTS_DIR)
   : path.join(ROOT, '.market-inputs')
 const IN_REPO_SKINS_DIR = path.join(ROOT, 'packages', 'skins', 'skin-center', 'skins')
 const IN_REPO_PETS_DIR = path.join(ROOT, 'packages', 'dsh-pet', 'assets')
+const IN_REPO_PRESETS_DIR = path.join(ROOT, 'packages', 'dsh-preset-center', 'presets')
 const SKINS_DIR = fs.existsSync(path.join(MARKET_INPUTS_DIR, 'skins')) ? path.join(MARKET_INPUTS_DIR, 'skins') : IN_REPO_SKINS_DIR
 const PETS_DIR = fs.existsSync(path.join(MARKET_INPUTS_DIR, 'pet')) ? path.join(MARKET_INPUTS_DIR, 'pet') : IN_REPO_PETS_DIR
+const PRESETS_DIR = fs.existsSync(path.join(MARKET_INPUTS_DIR, 'presets')) ? path.join(MARKET_INPUTS_DIR, 'presets') : IN_REPO_PRESETS_DIR
 /**
  * Data sources that ship inside a published package: the community index and
  * the skin-center CSS pipeline. Resolving through the aggregate's dependency
@@ -86,7 +90,6 @@ const SKIN_CENTER_LIB = resolveFamilyAsset(
   '@linxin666/dsh-client-ui-skin-center',
   path.join(ROOT, 'packages', 'skins', 'skin-center', 'lib', 'index.js'),
 )
-const PRESETS_DIR = path.join(ROOT, 'packages', 'dsh-preset-center', 'presets')
 const PRESET_CATALOG = path.join(PRESETS_DIR, 'catalog.json')
 const INSTALLER_SOURCE = path.join(ROOT, 'packages', 'dsh-market', 'src', 'core', 'installer.ts')
 const EDITOR_PICKS_FILE = path.join(ROOT, 'market', 'editor-picks.json')

@@ -98,10 +98,10 @@
     "@linxin666/dsh-usage": "workspace:*",
     "@linxin666/dsh-session-archive": "workspace:*",
     "@linxin666/dsh-client-ui-model-capabilities": "workspace:*",
-    "@linxin666/dsh-client-ui-preset-center": "workspace:*",
     "@linxin666/dsh-client-ui-web-ui-settings": "workspace:*",
     "@linxin666/dsh-i18n": "workspace:*",
     "@linxin666/dsh-client-ui-community-plugins": "^0.3.25",
+    "@linxin666/dsh-client-ui-preset-center": "^0.4.1",
     "@linxin666/dsh-client-ui-skin-center": "^0.3.25",
     "@linxin666/dsh-pet": "^0.3.25"
   }
