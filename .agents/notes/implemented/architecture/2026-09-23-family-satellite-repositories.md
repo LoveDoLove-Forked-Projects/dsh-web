@@ -38,7 +38,7 @@ Measuring that from a GitHub runner meets the zone's own policy on that vantage:
 
 ### Release order
 
-The satellites release before this repository switches, because the aggregate mounts them as npm rows and the mount smoke asserts the registry path. `@linxin666/dsh-web-all` depends on the three satellite packages by semver range, and each satellite carries its own version line: the `0.3.25` releases hold the 0.1.7-rc.1 migration that removed the retired `settingsScope` inject, so the aggregate's mount smoke (`scripts/e2e-mount.sh`) is green on the registry path while its `FAMILY_TGZS_DIR` override covers the packages this repository builds.
+The satellites release before this repository switches, because the aggregate mounts them as npm rows and the mount smoke asserts the registry path. `@linxin666/dsh-web-all` depends on the satellite packages by semver range, and the `0.3.25` releases hold the 0.1.7-rc.1 migration that removed the retired `settingsScope` inject, so the aggregate's mount smoke (`scripts/e2e-mount.sh`) is green on the registry path while its `FAMILY_TGZS_DIR` override covers the packages this repository builds. From the next release on they also carry this repository's version number: every satellite tags and publishes its `vX.Y.Z` first, then this repository moves the aggregate's satellite ranges to `X.Y.Z` and tags `vX.Y.Z`. The alignment is not retroactive: releases published before it keep their numbers. [dsh-web-release](../../../../.agents/skills/dsh-web-release/SKILL.md) owns the step-by-step flow and [docs/publish-prep.md](../../../../docs/publish-prep.md) records it for release preparation.
 
 ## Alternatives considered
 
@@ -54,7 +54,7 @@ The satellites release before this repository switches, because the aggregate mo
 
 ## Consequences
 
-- Three repositories own their own CI, their own version line and their own contribution flow; this repository's release no longer publishes them, and `release.yml` / `scripts/lib/family-packages.mjs` see sixteen packages instead of nineteen.
+- Three repositories own their own CI and their own contribution flow; this repository's release no longer publishes them, and `release.yml` / `scripts/lib/family-packages.mjs` see sixteen packages instead of nineteen. From the next release on they carry the same version number as this repository.
 - The three rows lose the aggregate's fault-isolation shell, and their plugin-inventory titles change from `web-all/<family>` to their own package names.
 - The SDK cohort is now advanced in four repositories instead of one; the satellites were synced to `0.1.7-rc.1` after this split, and a future cohort move has to touch all four.
 - The market site's content follows the submodule gitlinks: a merged skin or pet change reaches `dsh-market.com` when a maintainer moves the `satellites/` submodule onto that commit and the deploy workflow rebuilds and re-verifies, not when the satellite merges.

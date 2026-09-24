@@ -6,8 +6,8 @@ whenToUse: Explicit dsh-web release/publish requests; release-pipeline, automati
 
 # dsh-web 发布（release / publish）
 
-本技能固化 dsh-web 全家桶的完整发版流程：全仓统一版本 → 提交 → 打 tag → 推送触发
-GitHub Actions 发布管线（构建/测试/npm 发布/GitHub Release）→ 发布后验证。
+本技能固化 dsh-web 全家桶的完整发版流程：全仓统一版本（四个卫星仓先发同版本）→ 提交 → 打 tag →
+推送触发 GitHub Actions 发布管线（构建/测试/npm 发布/GitHub Release）→ 发布后验证。
 
 ## 授权与按需入口
 
@@ -15,13 +15,14 @@ GitHub Actions 发布管线（构建/测试/npm 发布/GitHub Release）→ 发�
 - 只有用户当前明确要求实际发布时才进入完整流程；目标版本未指定时才适用下一 patch 默认。token、`NPM_PUBLISH_ENABLED`、已有 tag、历史发布许可和 CI 全绿均不是当前发布授权。
 - 坏版本调查先只读核实影响。deprecate、删除/重推 tag、补发、回滚和修改已发布说明须在当前明确授权范围内；越界则报告所需决定，不自行补救历史未经授权发布。
 - [根规则](../../../AGENTS.md)管安全与常规 dev 同步；本技能只补充获授权的发布集成与发布后版本提交回流。切分支/整合前遵循共享 checkout 保护，先核对基线、索引及其他会话占用；命令块是步骤示例，不是可整段无条件执行的脚本。
-- 审计自动升级读第 0 节；实际发布依次完成版本选择、兼容门禁、dev 集成、main 发版与第 4 节验证；失败时读取第 3 节恢复规则。只改文档无需构建、迁移矩阵或发布动作。
+- 审计自动升级读第 0 节；实际发布依次完成版本选择、卫星仓对齐发版、兼容门禁、dev 集成、main 发版与第 5 节验证；失败时读取第 4 节恢复规则。只改文档无需构建、迁移矩阵或发布动作。
 
 ## 仓库事实（先读，决定每一步怎么做）
 
 - 仓库：zhu1090093659/dsh-web（**PUBLIC**），本机路径 /Users/zcl/code/dsh-web。
-- 全家桶由 `scripts/lib/family-packages.mjs` 得到；皮肤中心、宠物与社区插件索引已迁至独立仓（dsh-skins / dsh-pet / dsh-community-plugins）并各自发版，不随本仓的统一版本发布。版本与包数量以 `node scripts/verify-version.mjs X.Y.Z` 的输出为准，不在技能中手抄固定数量。
-  全部发布到 npm scope `@linxin666`，registry 固定 registry.npmjs.org。
+- 本仓家族包由 `scripts/lib/family-packages.mjs` 得到，版本与包数量以 `node scripts/verify-version.mjs X.Y.Z` 的输出为准，不在技能中手抄固定数量；全部发布到 npm scope `@linxin666`，registry 固定 registry.npmjs.org。
+- **卫星仓（4 个）**：皮肤中心、宠物、社区插件索引与预设中心拥有独立仓库 dsh-skins / dsh-pet / dsh-community-plugins / dsh-presets，各自持有 CI、门禁与 tag 发布管线，本仓以已发布的 npm 包消费它们；清单与市场 pin 的归属见 [family-satellite Note](../../../.agents/notes/implemented/architecture/2026-09-23-family-satellite-repositories.md)。
+- **卫星仓版本策略（从下一版本起，见第 2 节）**：卫星仓不再各自持有版本线；每次发版四个卫星仓与本仓发同一个 `X.Y.Z`，且卫星先发、本仓后发。已有版本不追溯，对齐只从下一个版本开始。
 - **版本策略：全仓统一版本**（tag vX.Y.Z = 每个 package.json 的 version，由管线强制校验）。
 - **未指定具体版本号时**：不追问版本号；以远端最新且已发布的正式 `vX.Y.Z` tag 为上一版本，
   默认目标为下一个补丁版本 `X.Y.(Z+1)`。用户明确给出版本号，或明确要求 major/minor/prerelease
@@ -119,9 +120,9 @@ git log --oneline -5               # 确认包含本次全部改动、无未推�
 ```
 
 发版前提：待发布的全部改动先合入 `dev` 并在 `dev` 上全绿；发版时把
-`dev` 合入 `main`（见第 2 节），tag 从 `main` 打。
+`dev` 合入 `main`（见第 3 节），tag 从 `main` 打。
 
-皮肤、宠物与社区插件索引的改动不经过本仓发布：它们在 dsh-skins / dsh-pet / dsh-community-plugins 各自发版，市场内容按 submodule gitlink 固定的提交拉取（见 [docs/publish-prep.md](../../../docs/publish-prep.md)）。
+卫星仓（dsh-skins / dsh-pet / dsh-community-plugins / dsh-presets）的改动不经过本仓发布：它们在各自仓库评审、提交并打 tag，发布时与本仓同版本（见第 2 节），市场内容按 submodule gitlink 固定的提交拉取（见 [docs/publish-prep.md](../../../docs/publish-prep.md)）。
 
 **版本 bump 后必须重建产物并同步市场资产**（版本信息影响 bundle 内容）：
 
@@ -166,10 +167,53 @@ find packages -name package.json -not -path '*/node_modules/*' \
   -exec grep -H '"version"' {} \; | grep -v '"version": "X.Y.Z"'   # 必须无输出
 ```
 
-pnpm-lock.yaml 不记录包版本，无需改动；聚合包依赖用 workspace:*，发布时由 pnpm 自动替换为
-实际版本，无需手工改依赖链。
+pnpm-lock.yaml 不记录包版本，无需改动；家族包依赖用 workspace:*，发布时由 pnpm 自动替换为
+实际版本，无需手工改依赖链。卫星包不是 workspace 包，它们的依赖范围与锁文件条目在第 2 节随对齐一起更新。
 
-## 2. 提交与 tag
+## 2. 卫星仓同版本发版（先于本仓）
+
+从下一版本起，四个卫星仓与本仓发布同一个 `X.Y.Z`，且**卫星先发、本仓后发**：聚合包把卫星作为 npm 外部行依赖（范围手写在 `packages/dsh-web-all/package.json`），本仓 CI 的 `pnpm install --frozen-lockfile` 只能解析 registry 上已存在的版本。卫星此前的 `0.3.25` 版本线不追溯，对齐从 `TARGET_VERSION` 一次性完成。
+
+| 卫星仓 | npm 包 | 本仓检出 |
+| --- | --- | --- |
+| dsh-skins | `@linxin666/dsh-client-ui-skin-center` | `satellites/dsh-skins` |
+| dsh-pet | `@linxin666/dsh-pet` | `satellites/dsh-pet` |
+| dsh-community-plugins | `@linxin666/dsh-client-ui-community-plugins` | `satellites/dsh-community-plugins` |
+| dsh-presets | `@linxin666/dsh-client-ui-preset-center` | `satellites/dsh-presets` |
+
+每个卫星仓按自己的分支模型与门禁重复同一套步骤（其 `release.yml` 会拒绝 `package.json` 与 tag 不一致的发布）：
+
+```sh
+cd <卫星仓检出>
+git checkout main && git pull origin main
+# 1. 该仓 package.json 的 version 改成同一个 X.Y.Z，并重建该仓自己的产物
+# 2. 双语 release notes 写入该仓 docs/release-notes/vX.Y.Z.md
+# 3. 提交、推 main、打 tag 并推送，触发该仓 release.yml
+git tag "vX.Y.Z" && git push origin main && git push origin "vX.Y.Z"
+# 4. 断言 registry 已解析（各仓管线自带重试，这里只做最终复核）
+npm view <该仓包名>@X.Y.Z version
+```
+
+四个卫星版本都能从 registry 解析之后，才回到本仓完成对齐，再进入第 3 节：
+
+```sh
+# packages/dsh-web-all/package.json：卫星依赖范围改成 ^X.Y.Z（外部行版本手写并随生成器保留）
+# pnpm-workspace.yaml 的 minimumReleaseAgeExclude：卫星条目改成 @X.Y.Z
+pnpm install                       # 刷新 pnpm-lock.yaml，锁文件解析已发布的卫星版本
+node scripts/aggregate.mjs --check # 外部行依赖范围与清单一致
+for d in satellites/dsh-skins satellites/dsh-pet satellites/dsh-community-plugins satellites/dsh-presets; do
+  git -C "$d" fetch origin main
+  git add "$d"                     # gitlink 移到该仓本次发布提交，市场内容与发行版本一致
+done
+```
+
+失败处理：
+
+- 任一卫星未上 registry → 不得推送本仓 tag；先把它发出去（该仓管线支持对同一 tag 重跑 dispatch 车道），已发布的版本号不可重发。
+- 卫星已发、本仓未发 → 本仓仍停在上一版本；下次发布整体 bump 到新版本时把四个卫星一起抬上去，不要只对齐一部分。
+- 决定不再对齐 → 显式改回「各自版本线」并同步本技能与 owning note，不允许半对齐状态长期存在。
+
+## 3. 提交与 tag
 
 发版提交与 tag 在 `main` 上执行（tag 从 `main` 打）；打 tag 前先确保
 `main` 已包含全部待发布内容（= `dev`，含版本 bump 前的一切功能改动）：
@@ -207,13 +251,13 @@ git push origin "vX.Y.Z"            # 推送 tag 即触发发布管线（唯一�
 git checkout dev && git merge main && git push origin dev
 ```
 
-## 3. 发布管线（tag 触发，.github/workflows/release.yml）
+## 4. 发布管线（tag 触发，.github/workflows/release.yml）
 
 推送 v* tag 后 GitHub Actions 自动执行，顺序：
 
 1. actionlint + pnpm install（frozen lockfile，checkout 用 fetch-depth: 0 取全量历史）；
 2. 全量 gate：typecheck / build / test / test:scripts / aggregate --check，并按变更范围执行 `market:check`；`runtime-deps:check` 是发布前的运行时依赖安全门禁；
-3. **版本一致性校验**：运行 `node scripts/verify-version.mjs X.Y.Z`，由 `scripts/lib/family-packages.mjs` 遍历 `packages/` 的全部家族包并逐一比对 tag 版本；数量以脚本输出为准，不手抄固定数字；
+3. **版本一致性校验**：运行 `node scripts/verify-version.mjs X.Y.Z`，由 `scripts/lib/family-packages.mjs` 遍历 `packages/` 的全部家族包并逐一比对 tag 版本；数量以脚本输出为准，不手抄固定数字。该校验只看本仓 `packages/`，卫星仓的同版本由第 2 节各仓自己的 tag 校验与第 5 节复核覆盖；
 4. **生成 release notes**：优先使用已提交的 `docs/release-notes/$TAG.md`（v0.2.6 起维护者在发版提交中附带中文默认 + English 折叠的双语版，管线直接采用）；文件缺失时兜底跑 `node scripts/release-notes.mjs $TAG` 生成双视图草稿（把上一 tag 以来的**全部**常规提交——含合并进来的分支提交，不能只走 --first-parent，v0.1.15 曾因此漏掉整条 perf/refactor 分支——分组为新功能 / 修复 / 其他改动并链接 issue，中文默认视图与 English 折叠视图条目相同、均为原始提交主题）。发布前执行，失败即中止，不触碰 npm；
 5. `pnpm -r publish --no-git-checks --access public`（NPM_TOKEN 写入 ~/.npmrc，拓扑序发布，workspace:* 自动转真实版本；private 包由 pnpm 自动跳过——若某 private 包被聚合依赖引用，先解除引用或改为公开，否则全家桶安装 404），随后 `node scripts/verify-registry.mjs <tag版本>` 断言每个家族包的该版本都能从 registry 解析：pnpm 的逐包成功行不是信任边界，registry 传播会滞后数分钟（v0.3.18 实测约 10 分钟）甚至静默丢版本，而挂载冒烟的 auto 改写会用 workspace tarball 掩盖缺失的家族依赖；断言失败即中止，不进入 legacy 双发与 GitHub Release；
 6. 仅当仍处于迁移双发窗口、目标包已从 registry 验证可读且旧包该版本尚未占用时，运行 `node scripts/publish-legacy-aggregate.mjs <tag版本>` 发布旧聚合包 `@linxin666/dsh-web-ui-all`；脚本必须有窗口计数 / 跳过已发布版本的保护。窗口结束后不得继续发布旧包，改为执行一次 `npm deprecate @linxin666/dsh-web-ui-all "迁移到 @linxin666/dsh-web-all；详见该版本 Release notes"` 并核对 deprecation 元数据；
@@ -233,11 +277,16 @@ gh run list --workflow=release.yml    # 查历史
   或整体 bump 到下一个补丁版本重新发布。
 - 发布的是坏包（内容错误但版本已占用）→ 用 `npm deprecate` 标记弃用并立即发下一个补丁版本，不尝试覆盖。
 
-## 4. 发布后验证（必须逐项执行）
+## 5. 发布后验证（必须逐项执行）
 
 ```sh
-# NPM_PUBLISH_ENABLED='true'：期望 = X.Y.Z（satellite 包各自持有版本线，不在此断言）
+# NPM_PUBLISH_ENABLED='true'：期望 = X.Y.Z
 npm view @linxin666/dsh-web-all version
+# 卫星仓同版本（第 2 节已断言一次，这里是发布后复核）：四个都必须等于 X.Y.Z
+for p in @linxin666/dsh-client-ui-skin-center @linxin666/dsh-pet \
+         @linxin666/dsh-client-ui-community-plugins @linxin666/dsh-client-ui-preset-center; do
+  printf '%s -> %s\n' "$p" "$(npm view "$p@X.Y.Z" version)"
+done
 # 仅在双发窗口内执行：
 npm view @linxin666/dsh-web-ui-all version       # 期望 = X.Y.Z
 # 窗口结束后：旧包版本应保持窗口末版本，且 deprecated 字段必须非空
@@ -247,7 +296,7 @@ gh run list --workflow=release.yml                  # 全部成功
 git ls-remote --tags origin | grep "vX.Y.Z"         # tag 已在远端
 ```
 
-## 5. 纪律
+## 6. 纪律
 
 - tag 一旦推送且 npm 发布成功，同一版本号永不复用；补救只走「下一补丁版本」或 deprecate。
 - 发版前必须本地全量测试通过；管线里的版本一致性校验是最后防线，不是唯一防线。
@@ -272,4 +321,5 @@ git ls-remote --tags origin | grep "vX.Y.Z"         # tag 已在远端
   `user-mention` 是否为 0）。桌面安装包由 `desktop-release.yml` 在 tag 推送后
   自动构建并上传到 Release（dispatch 可为存量 tag 补发，`ref` 输入可指定
   构建分支）。
+- **卫星仓与本仓同版本**（从下一版本起，见第 2 节）：卫星先发、本仓后发；任一卫星版本未在 registry 解析前不得推送本仓 tag。
 - 本技能适用于 @linxin666/dsh-* 全家桶整体发版；单包 hotfix 也遵循同一流程（版本仍全仓统一）。

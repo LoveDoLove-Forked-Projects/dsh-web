@@ -38,7 +38,7 @@ Status: implemented
 
 ### 发布顺序
 
-卫星先发版，本仓才切换，因为聚合包把它们作为 npm 外部行挂载，而挂载冒烟断言的是 registry 路径。`@linxin666/dsh-web-all` 以 semver 范围依赖三个卫星包，每个卫星保有自己的版本线：`0.3.25` 携带移除已退役 `settingsScope` 注入的 0.1.7-rc.1 迁移，因此聚合包的挂载冒烟（`scripts/e2e-mount.sh`）在 registry 路径上是绿的，而它的 `FAMILY_TGZS_DIR` 覆盖目录只覆盖本仓构建的包。
+卫星先发版，本仓才切换，因为聚合包把它们作为 npm 外部行挂载，而挂载冒烟断言的是 registry 路径。`@linxin666/dsh-web-all` 以 semver 范围依赖卫星包：`0.3.25` 携带移除已退役 `settingsScope` 注入的 0.1.7-rc.1 迁移，因此聚合包的挂载冒烟（`scripts/e2e-mount.sh`）在 registry 路径上是绿的，而它的 `FAMILY_TGZS_DIR` 覆盖目录只覆盖本仓构建的包。从下一个版本起它们还与本仓共用同一个版本号：每个卫星先打并发布自己的 `vX.Y.Z`，本仓再把聚合包的卫星依赖范围移到 `X.Y.Z` 并打 `vX.Y.Z`。对齐不追溯——在此之前发布的版本各自保留版本号。逐步流程归属 [dsh-web-release](../../../../.agents/skills/dsh-web-release/SKILL.md)，发布准备记录在 [docs/publish-prep.md](../../../../docs/publish-prep.md)。
 
 ## 备选方案
 
@@ -54,7 +54,7 @@ Status: implemented
 
 ## 后果
 
-- 三个仓各自拥有 CI、版本线与贡献流程；本仓发布不再发布它们，`release.yml` 与 `scripts/lib/family-packages.mjs` 看到的是十六个包而不是十九个。
+- 三个仓各自拥有 CI 与贡献流程；本仓发布不再发布它们，`release.yml` 与 `scripts/lib/family-packages.mjs` 看到的是十六个包而不是十九个。从下一个版本起它们与本仓共用同一个版本号。
 - 三行失去聚合包的 fault-isolation shell，它们在插件清单里的标题从 `web-all/<family>` 变成各自的包名。
 - SDK cohort 现在要在四个仓推进而不是一个；本次拆分后卫星已同步到 `0.1.7-rc.1`，将来一次 cohort 迁移要碰四个仓。
 - 市场站的内容跟随 submodule 的 gitlink：一次合并的皮肤或宠物改动，在维护者把 `satellites/` 下的 submodule 移到该提交、部署流程重建并重新校验之后才到达 `dsh-market.com`，而不是卫星一合并就到。
