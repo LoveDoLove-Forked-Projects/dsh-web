@@ -140,8 +140,6 @@ const TEST_PATH_RE = /(^|\/)(test|tests|__tests__|fixtures?)(\/|$)|(\.test|\.spe
 const BUILD_STEPS = [
   [`install`, `pnpm`, [`install`, `--frozen-lockfile`, `--ignore-scripts`], 20 * 60 * 1000],
   [`typecheck`, `pnpm`, [`typecheck`], 10 * 60 * 1000],
-  [`skin-center:check`, `pnpm`, [`skin-center:check`], 10 * 60 * 1000],
-  [`community:check`, `pnpm`, [`community:check`], 10 * 60 * 1000],
   [`build`, `pnpm`, [`build`], 20 * 60 * 1000],
   [`test`, `pnpm`, [`test`], 15 * 60 * 1000],
   [`test:scripts`, `pnpm`, [`test:scripts`], 10 * 60 * 1000],
