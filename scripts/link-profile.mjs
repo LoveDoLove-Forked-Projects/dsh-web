@@ -12,6 +12,12 @@
  * children are transitively resolved, and repair links left over from older
  * manual setups.
  *
+ * The three satellite repositories under satellites/ are linked the same way.
+ * The aggregate mounts them as external rows, whose resolution also starts at
+ * the profile layer, so the link here is what makes a local checkout win over
+ * the published copy. Their lib/ has to exist: `pnpm install` inside a
+ * satellite builds it through its prepare script.
+ *
  * Idempotent and safe to rerun: stale links pointing elsewhere are replaced,
  * new packages are added, unrelated entries are left untouched. Real files or
  * directories at a link path are never removed — they are reported and
@@ -63,6 +69,29 @@ const FAMILY_SCOPE = '@linxin666/'
 function familyPackages() {
   const found = []
   for (const { dir, pkgPath } of walkFamilyPackages(REPO_ROOT)) {
+    let name
+    try { name = JSON.parse(readFileSync(pkgPath, 'utf8')).name } catch { continue }
+    if (name && name.startsWith(FAMILY_SCOPE)) {
+      found.push({ name: name.slice(FAMILY_SCOPE.length), dir })
+    }
+  }
+  return found
+}
+
+/**
+ * The satellite packages: satellites/<repo>/ that publish under the family
+ * scope. They are not part of this repository's release — family-packages.mjs
+ * deliberately sees sixteen packages — but they are rows in the aggregate, so
+ * a built local checkout has to be linked here like the in-repo family.
+ */
+export function satellitePackages(root = REPO_ROOT) {
+  const base = join(root, 'satellites')
+  if (!existsSync(base)) return []
+  const found = []
+  for (const entry of readdirSync(base).sort()) {
+    const dir = join(base, entry)
+    const pkgPath = join(dir, 'package.json')
+    if (!existsSync(pkgPath)) continue
     let name
     try { name = JSON.parse(readFileSync(pkgPath, 'utf8')).name } catch { continue }
     if (name && name.startsWith(FAMILY_SCOPE)) {
@@ -132,7 +161,10 @@ function main() {
   const LINK_DIR = join(PROFILES_NM, FAMILY_SCOPE)
 
   const packages = familyPackages()
+  const satellites = satellitePackages()
   report(`found ${packages.length} family package(s) under packages/`)
+  if (satellites.length) report(`found ${satellites.length} satellite package(s) under satellites/`)
+  packages.push(...satellites)
   if (DRY) report('--dry-run: no changes will be made')
 
   if (!existsSync(LINK_DIR)) {

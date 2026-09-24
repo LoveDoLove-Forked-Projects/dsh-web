@@ -35,7 +35,7 @@
  *   --limit N         stop after N paths (smoke runs)
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -191,7 +191,7 @@ const ATTEST_RETRY_MS = 2000
 export function attestSecret(env = process.env, file = env.MARKET_ATTEST_ENV_FILE || 'market/worker/.dev.vars') {
   const fromEnv = (env.MARKET_ATTEST_SECRET || '').trim()
   if (fromEnv) return fromEnv
-  const path = file.startsWith('/') ? file : join(REPO_ROOT, file)
+  const path = isAbsolute(file) ? file : join(REPO_ROOT, file)
   if (!existsSync(path)) return ''
   for (const line of readFileSync(path, 'utf8').split('\n')) {
     const match = /^\s*ASSET_ATTEST_SECRET\s*=\s*(.*)$/.exec(line)
