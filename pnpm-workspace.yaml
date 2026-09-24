@@ -1,7 +1,6 @@
 packages:
   - 'shared'
   - 'packages/*'
-  - 'packages/skins/*'
 
 # SDK peers 不自动安装，运行时由 DSH profile 树解析
 # （原 true 只为聚合包发布时解析 peers，现已不需要）。

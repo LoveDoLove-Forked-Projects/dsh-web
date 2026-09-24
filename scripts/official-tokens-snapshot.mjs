@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Snapshot the official shell's custom-property surface (--dsw-* tokens) into
- * packages/skins/skin-center/contracts/official-tokens-v1.json
+ * satellites/dsh-skins/contracts/official-tokens-v1.json
  * (and the generated TypeScript registry that the derivation reads).
  *
  * The skin center derives automatic fallback tints for tokens a skin does not
@@ -18,7 +18,9 @@
  * is the same rule the previous single-bundle-CSS scan used.
  *
  * Both packages must be installed at the cohort the contract describes; run
- * `pnpm install` first. The `source` field records exactly what was scanned.
+ * `pnpm install` in the repository root and in the skin center checkout
+ * (`satellites/dsh-skins`) first. The `source` field records exactly what was
+ * scanned.
  *
  * Usage:
  *   node scripts/official-tokens-snapshot.mjs [path ...]   # write the contract
@@ -35,18 +37,20 @@ import { createRequire } from 'node:module'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 
 const REPO_ROOT = resolve(import.meta.dirname, '..')
-const CONTRACT_PATH = resolve(REPO_ROOT, 'packages/skins/skin-center/contracts/official-tokens-v1.json')
+const SKIN_CENTER_ROOT = resolve(REPO_ROOT, 'satellites/dsh-skins')
+const CONTRACT_PATH = resolve(SKIN_CENTER_ROOT, 'contracts/official-tokens-v1.json')
 const GENERATED_PATH = resolve(
-  REPO_ROOT,
-  'packages/skins/skin-center/src/core/css-safety/official-tokens.generated.ts',
+  SKIN_CENTER_ROOT,
+  'src/core/css-safety/official-tokens.generated.ts',
 )
 
 const SOURCE_PACKAGES = [
   {
     name: '@deepseek-ai/dsh-client-ui-theme',
     // Resolved from the contract owner: the theme is a development dependency
-    // of the skin center, so this base always resolves inside the repo.
-    from: resolve(REPO_ROOT, 'packages/skins/skin-center'),
+    // of the skin center, so this base resolves once that checkout is
+    // installed. Both paths the contract lives at are in that repository.
+    from: SKIN_CENTER_ROOT,
     assets: ['lib'],
   },
   {
@@ -79,7 +83,8 @@ function defaultTargets() {
     } catch (error) {
       fail(
         `cannot resolve ${name} from ${relative(REPO_ROOT, from) || '.'} (${error.code ?? error.message})`,
-        'Install the official cohort first (pnpm install in the repository root), or pass the\n' +
+        'Install the official cohort first (pnpm install in the repository root, and in\n' +
+          'the skin center checkout at satellites/dsh-skins), or pass the\n' +
           'files/directories to scan explicitly:\n' +
           '  node scripts/official-tokens-snapshot.mjs <css-file-or-dir> [...]',
       )
