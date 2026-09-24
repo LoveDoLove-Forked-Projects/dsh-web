@@ -174,6 +174,10 @@ export async function verifyOrigin(origin, target, { fetchImpl = fetch, distDir,
 
 /** Paths one attestation request may cover; the route bounds its internal fetches the same way. */
 export const ATTEST_WINDOW = 500
+/** Re-posts of a window that the edge answered in place of the route. */
+export const ATTEST_ATTEMPTS = 3
+/** Pause before such a re-post; the first ask of a window carries none. */
+const ATTEST_RETRY_MS = 2000
 
 /**
  * The shared secret for the attestation route: from the environment, or, for a
@@ -193,39 +197,88 @@ export function attestSecret(env = process.env, file = env.MARKET_ATTEST_ENV_FIL
   return ''
 }
 
+/** One response header, or null when the response does not carry it. */
+function headerValue(response, name) {
+  const headers = response === null || response === undefined ? undefined : response.headers
+  if (headers === undefined || headers === null || typeof headers.get !== 'function') return null
+  const value = headers.get(name)
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+/**
+ * Name what refused a window.
+ *
+ * A refusal the route itself wrote carries its own error name. Anything that
+ * answered in the route's place — a challenge page, a block page, a gateway
+ * error — is nameable only by what the reader can look up afterwards: the
+ * status, the edge identifiers, and the start of the body.
+ */
+export function describeRefusal(response, text) {
+  let payload = null
+  try { payload = JSON.parse(text) } catch { payload = null }
+  if (payload !== null && typeof payload.error === 'string') return { message: `HTTP ${response.status} (${payload.error})`, verdict: true }
+  const parts = [`HTTP ${response.status}`]
+  for (const name of ['cf-ray', 'cf-mitigated', 'server']) {
+    const value = headerValue(response, name)
+    if (value !== null) parts.push(`${name}=${value}`)
+  }
+  const snippet = String(text).replace(/\s+/g, ' ').trim().slice(0, 120)
+  if (snippet !== '') parts.push(`body="${snippet}"`)
+  return { message: parts.join(' '), verdict: false }
+}
+
+/** Ask the route for one window: its measurements, or what refused them. */
+async function attestWindow(base, chunk, secret, fetchImpl) {
+  const response = await fetchImpl(`${base}/api/asset-attest`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-dsh-market-attest': secret },
+    body: JSON.stringify({ paths: chunk.map(target => `/${target.path}`) }),
+  })
+  const text = await response.text().catch(() => '')
+  let payload = null
+  try { payload = JSON.parse(text) } catch { payload = null }
+  if (payload !== null && payload.ok === true && Array.isArray(payload.sizes)) return { sizes: payload.sizes }
+  return { refusal: describeRefusal(response, text) }
+}
+
 /**
  * Verify the committed byte counts against what the deployed version measures
  * through its own asset binding.
  *
- * This is the vantage the edge does not refuse: the measurement happens inside
- * Cloudflare against the deployed assets, so an edge policy on the caller's
- * network cannot turn into a missing-asset verdict. The caller posts the paths
- * of one window and the route answers with the byte length each one serves; a
- * refusal (a status the route itself could not measure, a window the route
- * rejects, or a path the answer skipped) is reported as an error rather than
- * excused, because nothing about the assets was verified in that case.
+ * The measurement runs inside Cloudflare against the deployed assets, so an edge
+ * policy on the caller's network cannot turn into a missing-asset verdict. The
+ * caller posts the paths of one window and the route answers with the byte
+ * length each one serves; a refusal — a status the route itself could not
+ * measure, a window the route rejects, or a path the answer skipped — is
+ * reported as an error rather than excused, because nothing about the assets was
+ * verified in that case. A refusal the route did not write is re-asked, because
+ * it came from whatever the edge put in front of the route, and a second ask may
+ * reach the route itself.
  */
-export async function attestTargets(origin, targets, { secret, distDir, windowSize = ATTEST_WINDOW, fetchImpl = fetch } = {}) {
+export async function attestTargets(origin, targets, { secret, distDir, windowSize = ATTEST_WINDOW, fetchImpl = fetch, delay = sleep, attempts = ATTEST_ATTEMPTS } = {}) {
   const results = []
   const base = origin.replace(/\/+$/, '')
   for (let start = 0; start < targets.length; start += windowSize) {
     const chunk = targets.slice(start, start + windowSize)
     let measured
-    try {
-      const response = await fetchImpl(`${base}/api/asset-attest`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-dsh-market-attest': secret },
-        body: JSON.stringify({ paths: chunk.map(target => `/${target.path}`) }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (payload === null || payload.ok !== true || !Array.isArray(payload.sizes)) {
-        const reason = payload !== null && typeof payload.error === 'string' ? ` (${payload.error})` : ''
-        return { error: `attestation refused: HTTP ${response.status}${reason}` }
+    let refusal = null
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const answer = await attestWindow(base, chunk, secret, fetchImpl)
+        if (answer.sizes !== undefined) {
+          measured = answer.sizes
+          break
+        }
+        refusal = answer.refusal
+      } catch (error) {
+        refusal = { message: `request failed: ${error.message}`, verdict: false }
       }
-      measured = payload.sizes
-    } catch (error) {
-      return { error: `attestation request failed: ${error.message}` }
+      // The route's own verdict repeats on a second ask; what the edge answered
+      // in its place need not.
+      if (refusal.verdict || attempt === attempts) break
+      await delay(attempt * ATTEST_RETRY_MS)
     }
+    if (measured === undefined) return { error: `attestation refused: ${refusal.message}` }
     const byPath = new Map(measured.map(entry => [String(entry.path).replace(/^\//, ''), entry]))
     for (const target of chunk) {
       const entry = byPath.get(target.path)

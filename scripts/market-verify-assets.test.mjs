@@ -15,6 +15,7 @@ import {
   attestSecret,
   attestTargets,
   collectTargets,
+  describeRefusal,
   loadManifest,
   refusalNotice,
   remoteLength,
@@ -406,6 +407,7 @@ test('attestTargets reports a refused attestation instead of excusing the paths'
       const { results, error } = await attestTargets('https://dsh-market.com', targets, {
         secret: 'shared-secret',
         distDir: dist,
+        delay: async () => {},
         fetchImpl: async () => new Response(typeof payload === 'string' ? payload : JSON.stringify(payload), { status }),
       })
       // Then no path is reported as verified and the refusal is the error.
@@ -415,6 +417,62 @@ test('attestTargets reports a refused attestation instead of excusing the paths'
   } finally {
     rmSync(dist, { recursive: true, force: true })
   }
+})
+
+test('attestTargets re-asks a window the edge answered in place of the route', async () => {
+  // Given the edge refusing the first ask the way it refuses a runner range,
+  //   and the route answering the same window on the second,
+  const dist = fixtureDist({ skins: [{ id: 'harbor', files: ['skin.json'] }] })
+  try {
+    writeAsset(dist, 'assets/skins/harbor/skin.json', 12)
+    const targets = collectTargets(dist, ['skins'])
+    let asks = 0
+    const fetchImpl = async (url, init) => {
+      asks += 1
+      if (asks === 1) {
+        return new Response('<html><body>Sorry, you have been blocked</body></html>', {
+          status: 403,
+          headers: { 'cf-ray': '8f2a1b3c4d5e6f70-FRA', 'cf-mitigated': 'challenge' },
+        })
+      }
+      const body = JSON.parse(init.body)
+      return new Response(JSON.stringify({ ok: true, sizes: body.paths.map(path => ({ path, bytes: 12 })) }), { status: 200 })
+    }
+
+    // When the attestation verifies them,
+    const { results, error } = await attestTargets('https://dsh-market.com', targets, {
+      secret: 'shared-secret',
+      distDir: dist,
+      fetchImpl,
+      delay: async () => {},
+    })
+
+    // Then the second ask measured the window and every path verifies.
+    assert.equal(error, undefined)
+    assert.equal(asks, 2)
+    assert.deepEqual(results.map(entry => entry.result.ok), [true])
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('describeRefusal names the edge that refused instead of the route', () => {
+  // Given an edge answer put in front of the route, and the route's own verdict,
+  const blocked = new Response('<html><body>Sorry, you have been blocked</body></html>', {
+    status: 403,
+    headers: { 'cf-ray': '8f2a1b3c4d5e6f70-FRA', 'cf-mitigated': 'challenge' },
+  })
+
+  // When each refusal is described,
+  const edge = describeRefusal(blocked, '<html><body>Sorry, you have been blocked</body></html>')
+  const own = describeRefusal(new Response('', { status: 403 }), JSON.stringify({ ok: false, error: 'forbidden' }))
+
+  // Then the edge refusal is nameable by ray and body, and the route's own verdict by its error name.
+  assert.equal(edge.verdict, false)
+  assert.match(edge.message, /^HTTP 403 cf-ray=8f2a1b3c4d5e6f70-FRA cf-mitigated=challenge body="/)
+  assert.match(edge.message, /you have been blocked/)
+  assert.equal(own.verdict, true)
+  assert.equal(own.message, 'HTTP 403 (forbidden)')
 })
 
 test('attestTargets fails a path the attestation did not measure', async () => {
