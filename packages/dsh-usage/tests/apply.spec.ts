@@ -9,9 +9,12 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
  * the mountOnce single-instance guard, and the Host's row-reload path.
  *
  * Under the 0.1.7 settings model the plugin's own Config schema IS its
- * settings document: the Host hands the effective config to `apply` and
- * reloads the profile row (dispose + apply) when the user saves, so there is no
- * plugin-side settings registration and no in-place live re-arm left to test.
+ * settings document, and every field is volatile: the Host serves a form only
+ * for an entry that declares at least one volatile field, and a write is
+ * committed into the running activation's references (announced as
+ * `loader/volatile-update`) instead of remounting the row. Both edges are
+ * covered here — the schema markers, and the in-place re-arm that keeps the
+ * probe cycle, its ledger and its routes alive across a settings save.
  * The UsageService runs against a temp DSH_HOME with no provider services.
  *
  * The plugin module is re-imported per case because the runtime keeps one
@@ -27,12 +30,22 @@ async function loadPlugin(): Promise<UsagePlugin> {
   return import('../src/index.ts')
 }
 
+/** One volatile field as the 0.1.7 loader commits it into a running fiber. */
+function volatileField<T>(value: T): { get(): T; set(next: T): void } {
+  let current = value
+  return {
+    get: () => current,
+    set: (next) => { current = next },
+  }
+}
+
 /** Fiber disposers collected from the fake ctx; run after each case to reset mountOnce. */
 const disposers: Array<() => void> = []
 
 function makeCtx() {
   const registered = new Map<string, WebRoute>()
   let sessionListenerCount = 0
+  let volatileListener: ((paths: readonly (readonly string[])[]) => void) | undefined
   const effect = (fn: () => unknown) => {
     const disposer = fn()
     disposers.push(disposer as () => void)
@@ -40,8 +53,9 @@ function makeCtx() {
   }
   const ctx = {
     effect,
-    on: (event: string) => {
+    on: (event: string, listener: (paths: readonly (readonly string[])[]) => void) => {
       if (event === 'session/event') sessionListenerCount += 1
+      if (event === 'loader/volatile-update') volatileListener = listener
       return () => {}
     },
     get: () => undefined,
@@ -54,7 +68,13 @@ function makeCtx() {
       },
     },
   }
-  return { ctx: ctx as never, registered, listeners: () => sessionListenerCount }
+  return {
+    ctx: ctx as never,
+    registered,
+    listeners: () => sessionListenerCount,
+    /** Commit a volatile config change into the running activation, as the loader does. */
+    commitVolatile: (paths: readonly (readonly string[])[] = [['enabled']]) => { volatileListener?.(paths) },
+  }
 }
 
 /** Dispose every fiber the fake contexts collected, the way a row reload tears the old one down. */
@@ -98,6 +118,20 @@ describe('resolveConfig', () => {
       enabled: false, pollIntervalSec: 120, retainDays: 30,
     })
     expect(resolveConfig({ pollIntervalSec: 'fast' as unknown as number }).pollIntervalSec).toBe(60)
+  })
+
+  it('operator gets a settings field for every config key because each one is volatile', async () => {
+    // Given the Config schema the Host reads when it decides what the settings page may hold and write
+    const { Config } = await loadPlugin()
+    const dict = (Config as unknown as { dict: Record<string, { meta?: { volatile?: boolean } }> }).dict
+    // When every declared field is inspected
+    // Then each is volatile, which is exactly what the Host requires
+    // (`SettingsForms.describe` skips an entry with no volatile field, and a write to a
+    // non-volatile path is refused), so no documented setting can be unservable or unwritable
+    const fields = ['enabled', 'pollIntervalSec', 'retainDays']
+    for (const field of fields) {
+      expect(dict[field]?.meta?.volatile, field).toBe(true)
+    }
   })
 })
 
@@ -198,5 +232,67 @@ describe('host apply', () => {
     expect(second.registered.size).toBe(0)
     expect(second.listeners()).toBe(0)
     expect(first.registered.size).toBe(2)
+  })
+})
+
+describe('live settings write (volatile path)', () => {
+  it('operator disabling a live row through a volatile write unmounts it without a reload', async () => {
+    // Given a running activation whose enabled field the Host handed over as a live reference
+    const { apply } = await loadPlugin()
+    const enabled = volatileField(true)
+    const { ctx, registered, commitVolatile } = makeCtx()
+    apply(ctx, { enabled })
+    expect(registered.size).toBe(2)
+    // When the user saves the disable, which the Loader commits into that same reference
+    enabled.set(false)
+    commitVolatile()
+    // Then the routes are released on the same activation, with no remount of the row
+    expect(registered.size).toBe(0)
+  })
+
+  it('operator re-enabling a live row through a volatile write restores it in place', async () => {
+    // Given a row the user has switched off through the live write path
+    const { apply } = await loadPlugin()
+    const enabled = volatileField(true)
+    const { ctx, registered, commitVolatile } = makeCtx()
+    apply(ctx, { enabled })
+    enabled.set(false)
+    commitVolatile()
+    expect(registered.size).toBe(0)
+    // When the user saves the enable again
+    enabled.set(true)
+    commitVolatile()
+    // Then both routes come back on the same activation, after the stopped
+    // instance's final ledger flush has been serialized behind
+    await settle()
+    expect([...registered.keys()].sort()).toEqual(['/api/dsh-usage/overview', '/api/dsh-usage/refresh'])
+  })
+
+  it('operator saving an unrelated field keeps the running service and its routes', async () => {
+    // Given a live activation
+    const { apply } = await loadPlugin()
+    const pollIntervalSec = volatileField(60)
+    const { ctx, registered, commitVolatile } = makeCtx()
+    apply(ctx, { pollIntervalSec })
+    // When the user changes only the poll cadence
+    pollIntervalSec.set(300)
+    commitVolatile([['pollIntervalSec']])
+    // Then the routes stay registered: the edit reached the running instance
+    // instead of remounting it, so the ledger and the probe cycle survive
+    expect(registered.size).toBe(2)
+  })
+
+  it('operator gets the newly committed cadence read at call time, not the activation value', async () => {
+    // Given a live activation started with the default cadence
+    const { apply, resolveConfig } = await loadPlugin()
+    const pollIntervalSec = volatileField(60)
+    const { ctx, commitVolatile } = makeCtx()
+    apply(ctx, { pollIntervalSec })
+    // When the user commits a new cadence
+    pollIntervalSec.set(300)
+    commitVolatile([['pollIntervalSec']])
+    // Then re-reading the settings follows the live reference rather than the
+    // value the row was activated with
+    expect(resolveConfig({ pollIntervalSec }).pollIntervalSec).toBe(300)
   })
 })

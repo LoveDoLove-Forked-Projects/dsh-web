@@ -58,7 +58,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --pretty false"
   },
   "dependencies": {
-    "schemastery": "^3.18.0"
+    "@deepseek-ai/schemastery": "^3.18.4"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.1.7-rc.2",

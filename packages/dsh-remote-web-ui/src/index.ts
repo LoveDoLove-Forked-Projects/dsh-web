@@ -13,7 +13,7 @@ import { setInterval as nodeSetInterval, setTimeout as nodeSetTimeout } from 'no
 import type { IncomingMessage } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import z from 'schemastery'
+import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -44,6 +44,15 @@ import { UUID_POLYFILL_SCRIPT } from './uuid-polyfill.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /**
+     * Volatile config values were committed into the running fiber without a
+     * remount; dispatched to the owning fiber only. Spelled here because the
+     * Loader package is not a dependency of this plugin, with the Loader's own
+     * shape so the two declarations merge when a Host program carries both.
+     * @param paths - changed config paths as key arrays; every value is committed before dispatch.
+     * @mode emit
+     */
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void
     /**
      * Waterfall seam on the /api transport fence: the connection plugin
      * fires this per /api request before bridging to the API proxy on
@@ -199,22 +208,42 @@ export interface Config {
   enabled?: boolean
 }
 
-export const Config: z<Config> = z.object({
-  tokenTtlMs: z.number().step(1).min(60_000).default(10 * 60_000),
-  offlineAfterMs: z.number().step(1).min(5_000).default(25_000),
-  maxDevices: z.number().step(1).min(1).max(64).default(4),
-  idleExpireMs: z.number().step(1).min(60_000).default(DEFAULT_IDLE_EXPIRE_MS),
-  cookieName: z.string().min(1).default('dsh_pair'),
-  requirePairingForLan: z.boolean().default(true),
-  publicBaseUrl: z.string(),
+/**
+ * Plugin config schema. Under the 0.1.7 settings model this schema IS the
+ * entry's settings page: the Host derives one form per profile entry from it
+ * and serves that form only when at least one field is `volatile()`. The marker
+ * is also what admits a write and what keeps the edit on the live path — the
+ * Loader commits the new value into the field's reference and announces
+ * `loader/volatile-update` on this fiber instead of remounting the row, so the
+ * pairing service, its device sessions, the tunnel and the route registrations
+ * survive a settings save (see {@link applyImpl}'s sync).
+ *
+ * The schema is left to inference rather than annotated with `z<Config>`: a
+ * volatile field's parsed output is a live reference while its accepted input
+ * stays the plain value, so the two sides no longer share one shape and the
+ * annotation would reject the schema the Host must be given.
+ *
+ * The deployment-level fields (`trustedHosts`, `devicesFile`, `profile`) are
+ * deliberately NOT volatile: they belong in the profile patch, so the form
+ * leaves them to the operator instead of offering a card control that a
+ * document write could not honor.
+ */
+export const Config = z.object({
+  tokenTtlMs: z.number().step(1).min(60_000).default(10 * 60_000).volatile(),
+  offlineAfterMs: z.number().step(1).min(5_000).default(25_000).volatile(),
+  maxDevices: z.number().step(1).min(1).max(64).default(4).volatile(),
+  idleExpireMs: z.number().step(1).min(60_000).default(DEFAULT_IDLE_EXPIRE_MS).volatile(),
+  cookieName: z.string().min(1).default('dsh_pair').volatile(),
+  requirePairingForLan: z.boolean().default(true).volatile(),
+  publicBaseUrl: z.string().volatile(),
   trustedHosts: z.array(z.string()),
   devicesFile: z.string(),
-  autoTunnel: z.boolean().default(false),
-  tunnelToken: z.string().role('secret'),
-  relay: z.boolean().default(true),
-  lanBind: z.boolean(),
+  autoTunnel: z.boolean().default(false).volatile(),
+  tunnelToken: z.string().role('secret').volatile(),
+  relay: z.boolean().default(true).volatile(),
+  lanBind: z.boolean().volatile(),
   profile: z.string().pattern(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
-  enabled: z.boolean().default(true),
+  enabled: z.boolean().default(true).volatile(),
 })
 
 /** Presence sweep cadence (a stale device flips to disconnected within two sweeps). */
@@ -233,6 +262,60 @@ type ResolvedConfig = Required<Omit<Config, 'publicBaseUrl' | 'trustedHosts' | '
   lanBind: boolean | undefined
   tunnelToken: string | undefined
   profile: string
+}
+
+/**
+ * The stable reference a `volatile()` config field resolves to; its owner
+ * updates it in place when the user saves.
+ */
+interface ConfigRef<T> {
+  /** @returns the value currently committed for the running instance. */
+  get(): T
+}
+
+/** One resolved config field: a live reference, or a plain value from a hand-built context. */
+type ConfigField<T> = ConfigRef<T> | T
+
+/** The config the Host hands {@link applyImpl} — the runtime face of {@link Config}. */
+export interface ResolvedConfigFields {
+  tokenTtlMs?: ConfigField<number>
+  offlineAfterMs?: ConfigField<number>
+  maxDevices?: ConfigField<number>
+  idleExpireMs?: ConfigField<number>
+  cookieName?: ConfigField<string>
+  requirePairingForLan?: ConfigField<boolean>
+  publicBaseUrl?: ConfigField<string>
+  trustedHosts?: ConfigField<string[]>
+  devicesFile?: ConfigField<string>
+  autoTunnel?: ConfigField<boolean>
+  tunnelToken?: ConfigField<string>
+  relay?: ConfigField<boolean>
+  lanBind?: ConfigField<boolean>
+  profile?: ConfigField<string>
+  enabled?: ConfigField<boolean>
+}
+
+/** Read one resolved config field, following the live reference the schema produces. */
+function readConfigField<T>(field: ConfigField<T> | undefined, fallback: T): T {
+  if (field === undefined) return fallback
+  if (typeof field === 'object' && field !== null && typeof (field as ConfigRef<T>).get === 'function') {
+    const value = (field as ConfigRef<T>).get()
+    return value === undefined ? fallback : value
+  }
+  return field as T
+}
+
+/**
+ * Read one optional resolved config field. A volatile reference is read at
+ * call time, so an unset field stays `undefined` rather than falling back to a
+ * schema default (the distinction the LAN toggle and the tunnel plan depend on).
+ */
+function readOptionalConfigField<T>(field: ConfigField<T> | undefined): T | undefined {
+  if (field === undefined) return undefined
+  if (typeof field === 'object' && field !== null && typeof (field as ConfigRef<T>).get === 'function') {
+    return (field as ConfigRef<T>).get()
+  }
+  return field as T
 }
 
 /**
@@ -299,32 +382,31 @@ function launchedProfileName(ctx: Context): string | undefined {
  */
 export const apply = mountOnce('@linxin666/dsh-remote-web-ui', applyImpl)
 
-function applyImpl(ctx: Context, config?: Config): void {
+function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
   const envPublicBase = process.env.DSH_REMOTE_PUBLIC_BASE_URL?.trim() || undefined
-  const resolved: ResolvedConfig = {
-    tokenTtlMs: config?.tokenTtlMs ?? DEFAULTS.tokenTtlMs,
-    offlineAfterMs: config?.offlineAfterMs ?? DEFAULTS.offlineAfterMs,
-    maxDevices: config?.maxDevices ?? DEFAULTS.maxDevices,
-    idleExpireMs: config?.idleExpireMs ?? DEFAULTS.idleExpireMs,
-    cookieName: config?.cookieName ?? DEFAULTS.cookieName,
-    requirePairingForLan: config?.requirePairingForLan ?? DEFAULTS.requirePairingForLan,
-    publicBaseUrl: config?.publicBaseUrl ?? envPublicBase,
-    trustedHosts: config?.trustedHosts,
-    devicesFile: config?.devicesFile ?? DEFAULTS.devicesFile,
-    autoTunnel: config?.autoTunnel ?? DEFAULTS.autoTunnel,
-    tunnelToken: config?.tunnelToken,
-    relay: config?.relay ?? DEFAULTS.relay,
-    lanBind: config?.lanBind,
-    profile: resolveManagedProfile(config?.profile, launchedProfileName(ctx), process.env.DSH_PROFILE),
-    enabled: config?.enabled ?? DEFAULTS.enabled,
-  }
-  // The effective configuration this activation runs on: under the 0.1.7
-  // settings model the plugin's own Config IS its settings document, so the
-  // Host serves the settings page from this schema and reloads the row after a
-  // save — a live edit re-enters apply() with the new value instead of being
-  // pushed into a running instance.
-  const resolve = (): ResolvedConfig => resolved
-  const service = new PairingService(pairingConfigOf(resolved))
+  // The settings are read through the volatile references at every call rather
+  // than captured once: a settings save commits into those references and
+  // announces `loader/volatile-update` (see the listener below), so resolving
+  // them here is what makes a live edit reach the running instance without a
+  // remount — and keeps the device sessions, the tunnel and the routes alive.
+  const resolve = (): ResolvedConfig => ({
+    tokenTtlMs: readConfigField(config?.tokenTtlMs, DEFAULTS.tokenTtlMs),
+    offlineAfterMs: readConfigField(config?.offlineAfterMs, DEFAULTS.offlineAfterMs),
+    maxDevices: readConfigField(config?.maxDevices, DEFAULTS.maxDevices),
+    idleExpireMs: readConfigField(config?.idleExpireMs, DEFAULTS.idleExpireMs),
+    cookieName: readConfigField(config?.cookieName, DEFAULTS.cookieName),
+    requirePairingForLan: readConfigField(config?.requirePairingForLan, DEFAULTS.requirePairingForLan),
+    publicBaseUrl: readOptionalConfigField(config?.publicBaseUrl) ?? envPublicBase,
+    trustedHosts: readOptionalConfigField(config?.trustedHosts),
+    devicesFile: readConfigField(config?.devicesFile, DEFAULTS.devicesFile),
+    autoTunnel: readConfigField(config?.autoTunnel, DEFAULTS.autoTunnel),
+    tunnelToken: readOptionalConfigField(config?.tunnelToken),
+    relay: readConfigField(config?.relay, DEFAULTS.relay),
+    lanBind: readOptionalConfigField(config?.lanBind),
+    profile: resolveManagedProfile(readOptionalConfigField(config?.profile), launchedProfileName(ctx), process.env.DSH_PROFILE),
+    enabled: readConfigField(config?.enabled, DEFAULTS.enabled),
+  })
+  const service = new PairingService(pairingConfigOf(resolve()))
 
   // ── auto tunnel ─────────────────────────────────────────────────────────
   // The minted public URL becomes the QR base (and the pairing fence's
@@ -391,7 +473,7 @@ function applyImpl(ctx: Context, config?: Config): void {
   }
   // 'off' until a sync pass turns a mode on; the phase listener only feeds
   // the public base while a plugin-managed tunnel (quick or named) runs.
-  let tunnelMode: 'off' | 'quick' | 'named' = resolved.autoTunnel ? 'quick' : 'off'
+  let tunnelMode: 'off' | 'quick' | 'named' = resolve().autoTunnel ? 'quick' : 'off'
   tunnel.onPhase((info: TunnelInfo) => {
     if (tunnelMode === 'off') return
     if (info.phase === 'running' && info.url !== undefined) {
@@ -830,8 +912,17 @@ function applyImpl(ctx: Context, config?: Config): void {
     table.push({ kind: 'script', placement: 'head', text: REMOTE_CHANNEL_BOOT_SCRIPT })
   }), 'remote-web-ui: remote channel boot patch')
 
+  // The settings write path. The Host commits the new values into this row's
+  // volatile references and announces it here instead of remounting the row, so
+  // `sync` is what re-applies them: it re-reads every field through those
+  // references (see `resolve`) and is idempotent, so a save that changes
+  // nothing observable is a no-op while a disable, a bind flip or a tunnel
+  // change lands on the live instance without dropping the pairing service,
+  // its device sessions or the route registrations.
+  ctx.on('loader/volatile-update', () => { sync() })
+
   // No settings registration: the Host derives this plugin's settings page
-  // from the exported `Config` schema and reloads the row after a save, so
-  // every write re-enters apply() with the new config (see `resolve`).
+  // from the exported `Config` schema, whose volatile fields are what make the
+  // page writable and what route a save through the live path above.
   sync()
 }
