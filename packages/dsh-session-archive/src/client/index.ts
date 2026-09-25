@@ -31,6 +31,7 @@ import { ArchiveController } from './archive-controller.ts'
 import { mainViewSessionId } from './main-session.ts'
 import { SessionArchiveCard, type SessionArchiveFace } from './SessionArchiveCard.tsx'
 import { NS, en, zh } from './locales.ts'
+import { createServedEntryForm } from './settings-entry-form.ts'
 import type { SessionArchiveConfig } from '../core/config.ts'
 
 /** Minimal duck-typed face of the browser sessions service. */
@@ -43,10 +44,16 @@ interface SessionsFace {
  * Settings this section edits. The family binder (`ctx.get('webUiSettings')`)
  * resolves it onto the row's profile entry id — `web-ui-session-archive` under
  * the aggregate, `session-archive` standalone — while a deployment without the
- * group plugin addresses the entry id directly, which is the bundle patch row
- * id this package installs under.
+ * group plugin binds the entry id the describe mirror justifies, rebound as soon
+ * as the mirror answers.
  */
 const ARCHIVE_SETTINGS_NS = 'session-archive'
+
+/** Profile entry id the family aggregate's generated row carries. */
+const AGGREGATE_ENTRY_ID = 'web-ui-session-archive'
+
+/** Profile entry ids this package's patch rows carry, most likely first. */
+const ARCHIVE_ENTRY_IDS: readonly string[] = [AGGREGATE_ENTRY_ID, ARCHIVE_SETTINGS_NS]
 
 /**
  * Nav position (and id) of the official archived-sessions entry this plugin
@@ -103,11 +110,13 @@ export function apply(ctx: ClientContext): void {
 
   // The family binder resolves the family namespace onto this row's profile
   // entry id and binds the native shared form; a deployment without the group
-  // plugin addresses the entry id directly (the bundle row id is the entry id).
+  // plugin binds the entry id the describe mirror justifies, rebound as soon as
+  // the mirror answers (the namespace alone is an entry id only on a standalone
+  // install, so binding it on the aggregate left the form unavailable).
   const binder = ctx.get('webUiSettings')
   const settingsForm = binder !== undefined
     ? binder.bind<SessionArchiveConfig>({ namespace: ARCHIVE_SETTINGS_NS })
-    : ctx.configForms.get<SessionArchiveConfig>(ARCHIVE_SETTINGS_NS)
+    : createServedEntryForm<SessionArchiveConfig>({ forms: ctx.configForms, entryIds: ARCHIVE_ENTRY_IDS })
 
   const sessionsFace = (() => {
     try {

@@ -25,10 +25,12 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // guard alone contributes one mount-once.ts per host half (13 today). The
   // buckets below split the same set by target location, and what neither
   // bucket holds is the package-root test setup (5 today) plus the per-package
-  // http.ts and console-output.ts copies.
-  assert.equal(entries.length, 102)
+  // http.ts and console-output.ts copies. The settings bucket is the card trio
+  // plus the entry-bound form fallback, the latter one per package whose card
+  // binds a family namespace (6 today).
+  assert.equal(entries.length, 108)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 42)
+  assert.equal(clientTrio.length, 48)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')
@@ -49,6 +51,7 @@ test('checkSync detects drift and applySync repairs it', async () => {
     await writeFile(join(sourceDir, 'PluginSettingsCard.tsx'), 'export const card = 1' + String.fromCharCode(10))
     await writeFile(join(sourceDir, 'settings-card.module.css'), '.card { color: red }' + String.fromCharCode(10))
     await writeFile(join(sourceDir, 'plugin-card-seat.ts'), 'export const seat = 1' + String.fromCharCode(10))
+    await writeFile(join(sourceDir, 'settings-entry-form.ts'), 'export const entry = 1' + String.fromCharCode(10))
     await writeFile(join(root, 'shared', 'client', 'telemetry.ts'), 'export const beat = 1' + String.fromCharCode(10))
     await writeFile(join(root, 'shared', 'client', 'sse-leader.ts'), 'export const leader = 1' + String.fromCharCode(10))
     await writeFile(join(root, 'shared', 'client', 'sidebar-entry-core.ts'), 'export const sidecore = 1' + String.fromCharCode(10))

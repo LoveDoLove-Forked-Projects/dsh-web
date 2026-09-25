@@ -2052,6 +2052,96 @@ window.__ModuleLoader__.load({
 			};
 		}
 		//#endregion
+		//#region src/client/settings-entry-form.ts
+		/** The snapshot a form reports before the Host has answered with this entry. */
+		function pendingSnapshot() {
+			return {
+				status: "loading",
+				value: void 0,
+				base: void 0,
+				user: void 0,
+				revision: void 0,
+				writable: false,
+				mode: "host"
+			};
+		}
+		/**
+		* Create a settings form bound to the profile entry id this Host serves, and
+		* rebound whenever the shared describe mirror names a different one of this
+		* package's rows.
+		* @param options - the shared forms service and this package's candidate row ids.
+		* @returns a form delegating to the currently resolved entry's own form.
+		*/
+		function createServedEntryForm(options) {
+			const { forms, entryIds } = options;
+			const fallbackId = entryIds[0];
+			const namespaceId = entryIds[entryIds.length - 1];
+			const listeners = /* @__PURE__ */ new Set();
+			let boundId;
+			let bound;
+			let offBound;
+			let snapshot = pendingSnapshot();
+			/** Republish: the delegated snapshot when one is bound, the pending one otherwise. */
+			const publish = () => {
+				if (bound !== void 0) snapshot = bound.getSnapshot();
+				for (const listener of [...listeners]) listener();
+			};
+			/**
+			* The entry id the mirror currently justifies. An unanswered or empty mirror
+			* is not evidence of absence, so it keeps the first candidate; a mirror that
+			* answers without any of this package's rows leaves the namespace itself.
+			* @returns the entry id to bind.
+			*/
+			const resolve = () => {
+				let served;
+				try {
+					served = forms.describe().getSnapshot().view?.namespaces.map((row) => row.ns);
+				} catch {
+					served = void 0;
+				}
+				if (served === void 0 || served.length === 0) return fallbackId;
+				return entryIds.find((id) => served.includes(id)) ?? namespaceId;
+			};
+			/** Bind (or rebind) the resolved entry's form; a no-op while it is unchanged. */
+			const bind = () => {
+				const target = resolve();
+				if (target === boundId) return;
+				offBound?.();
+				offBound = void 0;
+				let form;
+				try {
+					form = forms.get(target);
+				} catch {
+					boundId = void 0;
+					return;
+				}
+				boundId = target;
+				bound = form;
+				offBound = form.subscribe(() => {
+					publish();
+				});
+				publish();
+			};
+			try {
+				forms.describe().subscribe(() => {
+					bind();
+				});
+			} catch {}
+			bind();
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				set: (field, value) => bound?.set(field, value) ?? Promise.resolve(false),
+				unset: (field) => bound?.unset(field) ?? Promise.resolve(false),
+				mutate: (ops, expectedRevision) => bound?.mutate(ops, expectedRevision) ?? Promise.resolve(false)
+			};
+		}
+		//#endregion
 		//#region src/client/locales.ts
 		/**
 		* Market card dictionaries. zh is the key source; en mirrors every key.
@@ -2326,8 +2416,18 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region src/client/index.ts
+		/**
+		* Settings namespace the store card edits: the family identity of this plugin's
+		* own settings form, and the locale namespace this half registers.
+		*/
 		const MARKET_NS = "dsh-web-ui-market";
 		const SECTION_ID = "dsh-workshop";
+		/** Profile entry ids this package's patch rows carry, most likely first. */
+		const MARKET_ENTRY_IDS = [
+			"web-ui-market",
+			"ui-market",
+			MARKET_NS
+		];
 		const inject = [
 			"slots",
 			"locale",
@@ -2350,7 +2450,10 @@ window.__ModuleLoader__.load({
 			}, "dsh-web-ui-market: dictionaries");
 			bridgePluginManager(ctx);
 			const binder = ctx.get("webUiSettings");
-			const controller = new MarketCardController(binder !== void 0 ? binder.bind({ namespace: MARKET_NS }) : ctx.configForms.get(MARKET_NS));
+			const controller = new MarketCardController(binder !== void 0 ? binder.bind({ namespace: MARKET_NS }) : createServedEntryForm({
+				forms: ctx.configForms,
+				entryIds: MARKET_ENTRY_IDS
+			}));
 			ctx.slots.inject("settings.section", () => {
 				try {
 					const unregister = ctx.slots.register({

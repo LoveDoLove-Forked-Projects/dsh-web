@@ -41,6 +41,7 @@ import { FenceNotice } from './FenceNotice.tsx'
 import { reportDailyHeartbeat } from './telemetry.ts'
 import { startMobileAdapt, type RemoteAdaptGlobal } from './mobile-adapt.ts'
 import { installPluginCard } from './plugin-card-seat.ts'
+import { createServedEntryForm } from './settings-entry-form.ts'
 
 // Portrait-touch adaptation of the official UI: installed under the plugin
 // lifecycle (apply) so disabling the plugin in cordis patch (disabled: true)
@@ -108,20 +109,68 @@ declare module '@deepseek-ai/cordis' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'remote'
 
-/** Settings namespace the remote-control card edits (the Host plugin registers it). */
+/**
+ * Settings namespace the remote-control card edits: the family identity of
+ * this plugin's own settings form, and the row id a standalone bundle install
+ * carries.
+ */
 const REMOTE_WEB_UI_NS = 'remote-web-ui'
+
+/** Profile entry id the family aggregate's generated row carries. */
 const AGGREGATE_ENTRY_ID = 'web-ui-remote-web-ui'
+
+/** Profile entry ids this package's patch rows carry, most specific first. */
 const REMOTE_WEB_UI_ENTRY_IDS: readonly string[] = [AGGREGATE_ENTRY_ID, 'ui-remote-web-ui', REMOTE_WEB_UI_NS]
 
-function servedEntryId(forms: ConfigForms): string {
+/**
+ * The profile entry id this package's own row carries, for a page that serves
+ * no family binder.
+ *
+ * The shared describe mirror answers asynchronously, so at plugin activation it
+ * usually holds nothing yet — and an unanswered or empty mirror is not evidence
+ * of absence. Binding the bare namespace there left the card bound to an entry
+ * the Host does not serve, and the form is bound once per session, so the card
+ * never recovered (every save answered `No configurable plugin entry`). The
+ * aggregate row id matches nearly every deployment; only a mirror that answers
+ * with OTHER plugins' rows falls back to the namespace itself (the pre-0.1.7
+ * keying shape), because that answer is the one that actually proves this
+ * package's own row is not served.
+ * @param forms - the shared configuration forms service.
+ * @returns the entry id to bind.
+ */
+export function servedEntryId(forms: ConfigForms): string {
   let served: readonly string[] | undefined
   try {
     served = forms.describe().getSnapshot().view?.namespaces.map(view => view.ns)
   } catch {
+    // A mirror that refuses the read is unanswered too, not absent.
     served = undefined
   }
-  if (!served || served.length === 0) return REMOTE_WEB_UI_NS
+  if (served === undefined || served.length === 0) return AGGREGATE_ENTRY_ID
   return REMOTE_WEB_UI_ENTRY_IDS.find(id => served.includes(id)) ?? REMOTE_WEB_UI_NS
+}
+
+/**
+ * Bind the settings form the remote-control card reads and writes.
+ *
+ * The family binder comes first: it resolves this package's family namespace
+ * onto the profile entry id the Host serves the form under, and keeps the
+ * loopback bridge as its own fallback. A page without that group (or one where
+ * its client half has not applied yet) binds through the shared forms service,
+ * on the entry id the describe mirror justifies and rebound as soon as the
+ * mirror answers — see {@link createServedEntryForm}.
+ * @param ctx - client context carrying the family binder and/or the shared forms service.
+ * @returns the form the card stages and saves through.
+ */
+export function bindSettingsForm(ctx: ClientContext): ConfigForm<RemoteSettings> {
+  const family = ctx.get('webUiSettings')
+  if (family !== undefined && typeof family.bind === 'function') {
+    return family.bind<RemoteSettings>({ namespace: REMOTE_WEB_UI_NS })
+  }
+  return createServedEntryForm<RemoteSettings>({
+    forms: ctx.configForms,
+    entryIds: REMOTE_WEB_UI_ENTRY_IDS,
+  })
 }
 
 /** Heartbeat cadence from a paired phone (presence + revocation liveness). */
@@ -202,10 +251,7 @@ export function apply(ctx: ClientContext): void {
   // shared form (natively, or over its loopback bridge); without that group the
   // namespace IS the owning entry id, so the official service is addressed
   // directly.
-  const family = ctx.get('webUiSettings')
-  const settingsForm: ConfigForm<RemoteSettings> = family !== undefined && typeof family.bind === 'function'
-    ? family.bind<RemoteSettings>({ namespace: REMOTE_WEB_UI_NS })
-    : ctx.configForms.get<RemoteSettings>(servedEntryId(ctx.configForms))
+  const settingsForm: ConfigForm<RemoteSettings> = bindSettingsForm(ctx)
   const enabled = (): boolean => {
     const snapshot = settingsForm.getSnapshot()
     return snapshot.status === 'ready'

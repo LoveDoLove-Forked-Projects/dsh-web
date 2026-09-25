@@ -29,6 +29,11 @@ export const REPO_ROOT = resolve(SCRIPT_DIR, '..')
 // Consumers of the settings card trio: one list, three derivations below.
 const SETTINGS_CONSUMERS = ['dsh-task-board', 'dsh-remote-web-ui', 'dsh-market', 'dsh-liangshen']
 const SETTINGS_CARD_CONSUMERS = [...SETTINGS_CONSUMERS]
+// Consumers of the entry-bound form fallback: every package whose card binds a
+// family settings namespace through the shared forms service. It is a superset
+// of the card trio — dsh-usage and dsh-session-archive carry their own cards but
+// bind the same way.
+const SETTINGS_ENTRY_FORM_CONSUMERS = [...SETTINGS_CONSUMERS, 'dsh-usage', 'dsh-session-archive']
 
 const MANIFEST = [
   {
@@ -58,6 +63,17 @@ const MANIFEST = [
       'packages/dsh-task-board/src/client/plugin-card-seat.ts',
       'packages/dsh-liangshen/src/client/plugin-card-seat.ts',
     ],
+  },
+  {
+    // Fallback settings transport for a page that serves no family binder: the
+    // form is bound to the profile entry id the Host actually serves, and
+    // rebound when the shared describe mirror answers with a different one of
+    // this package's rows. A one-shot guess left the card on an entry the Host
+    // does not serve, so every save was rejected (issue: the LiangShen card
+    // reported "the deployment did not accept these values" for every edit).
+    file: 'settings-entry-form.ts',
+    source: 'shared/client/settings/settings-entry-form.ts',
+    targets: SETTINGS_ENTRY_FORM_CONSUMERS.map(pkg => `packages/${pkg}/src/client/settings-entry-form.ts`),
   },
   {
     file: 'poll-guard.ts',

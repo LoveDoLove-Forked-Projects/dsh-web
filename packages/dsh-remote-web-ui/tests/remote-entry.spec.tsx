@@ -349,8 +349,18 @@ describe('apply registration', () => {
         spec: () => undefined,
       },
       // No webUiSettings face: the official per-entry form service carries the
-      // card, addressed by the profile entry id this plugin's namespace is.
+      // card, addressed by the profile entry id the describe mirror reports for
+      // this package's row. The mirror is what names it — the family namespace
+      // is NOT an entry id, and binding it produced "No configurable plugin
+      // entry \"remote-web-ui\"" on every save.
       configForms: {
+        describe: () => ({
+          getSnapshot: () => ({
+            status: 'ready' as const,
+            view: { namespaces: [{ ns: 'web-ui-remote-web-ui' }], writable: true, hasDocument: true },
+            error: null,
+          }),
+        }),
         get: (entryId: string) => {
           requested.push(entryId)
           return {
@@ -372,7 +382,7 @@ describe('apply registration', () => {
     // keyed seat here, because this double provides no webUiSettings face);
     // only the sidebar entry rides a declaration-lifetime injection.
     expect(injected).toEqual(['sidebar.footer.action'])
-    expect(requested).toEqual(['remote-web-ui'])
+    expect(requested).toEqual(['web-ui-remote-web-ui'])
   })
 
   it('waits for the settings snapshot before mounting the sidebar entry and runtime', async () => {

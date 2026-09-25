@@ -183,7 +183,7 @@ window.__ModuleLoader__.load({
 		/** The snapshots a form publishes before any Host answer, stable per status. */
 		const PENDING_SNAPSHOTS = /* @__PURE__ */ new Map();
 		/** The snapshot a page with no Host answer yet reports. */
-		function pendingSnapshot(status) {
+		function pendingSnapshot$6(status) {
 			const held = PENDING_SNAPSHOTS.get(status);
 			if (held !== void 0) return held;
 			const snapshot = {
@@ -200,7 +200,7 @@ window.__ModuleLoader__.load({
 		}
 		/** The snapshot a page with no settings transport at all reports. */
 		function unavailableSnapshot() {
-			return pendingSnapshot("unavailable");
+			return pendingSnapshot$6("unavailable");
 		}
 		/**
 		* A ConfigForm over the bridge face. Mirrors the native controller's ordering
@@ -220,7 +220,7 @@ window.__ModuleLoader__.load({
 			constructor(api, spec) {
 				this.api = api;
 				this.spec = spec;
-				this.store = createSnapshotStore(pendingSnapshot("loading"));
+				this.store = createSnapshotStore(pendingSnapshot$6("loading"));
 			}
 			getSnapshot() {
 				return this.store.getSnapshot();
@@ -4308,6 +4308,96 @@ window.__ModuleLoader__.load({
 			};
 		}
 		//#endregion
+		//#region ../dsh-market/src/client/settings-entry-form.ts
+		/** The snapshot a form reports before the Host has answered with this entry. */
+		function pendingSnapshot$5() {
+			return {
+				status: "loading",
+				value: void 0,
+				base: void 0,
+				user: void 0,
+				revision: void 0,
+				writable: false,
+				mode: "host"
+			};
+		}
+		/**
+		* Create a settings form bound to the profile entry id this Host serves, and
+		* rebound whenever the shared describe mirror names a different one of this
+		* package's rows.
+		* @param options - the shared forms service and this package's candidate row ids.
+		* @returns a form delegating to the currently resolved entry's own form.
+		*/
+		function createServedEntryForm$5(options) {
+			const { forms, entryIds } = options;
+			const fallbackId = entryIds[0];
+			const namespaceId = entryIds[entryIds.length - 1];
+			const listeners = /* @__PURE__ */ new Set();
+			let boundId;
+			let bound;
+			let offBound;
+			let snapshot = pendingSnapshot$5();
+			/** Republish: the delegated snapshot when one is bound, the pending one otherwise. */
+			const publish = () => {
+				if (bound !== void 0) snapshot = bound.getSnapshot();
+				for (const listener of [...listeners]) listener();
+			};
+			/**
+			* The entry id the mirror currently justifies. An unanswered or empty mirror
+			* is not evidence of absence, so it keeps the first candidate; a mirror that
+			* answers without any of this package's rows leaves the namespace itself.
+			* @returns the entry id to bind.
+			*/
+			const resolve = () => {
+				let served;
+				try {
+					served = forms.describe().getSnapshot().view?.namespaces.map((row) => row.ns);
+				} catch {
+					served = void 0;
+				}
+				if (served === void 0 || served.length === 0) return fallbackId;
+				return entryIds.find((id) => served.includes(id)) ?? namespaceId;
+			};
+			/** Bind (or rebind) the resolved entry's form; a no-op while it is unchanged. */
+			const bind = () => {
+				const target = resolve();
+				if (target === boundId) return;
+				offBound?.();
+				offBound = void 0;
+				let form;
+				try {
+					form = forms.get(target);
+				} catch {
+					boundId = void 0;
+					return;
+				}
+				boundId = target;
+				bound = form;
+				offBound = form.subscribe(() => {
+					publish();
+				});
+				publish();
+			};
+			try {
+				forms.describe().subscribe(() => {
+					bind();
+				});
+			} catch {}
+			bind();
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				set: (field, value) => bound?.set(field, value) ?? Promise.resolve(false),
+				unset: (field) => bound?.unset(field) ?? Promise.resolve(false),
+				mutate: (ops, expectedRevision) => bound?.mutate(ops, expectedRevision) ?? Promise.resolve(false)
+			};
+		}
+		//#endregion
 		//#region ../dsh-market/src/client/locales.ts
 		/**
 		* Market card dictionaries. zh is the key source; en mirrors every key.
@@ -4586,8 +4676,18 @@ window.__ModuleLoader__.load({
 			apply: () => apply$11,
 			inject: () => inject$11
 		});
+		/**
+		* Settings namespace the store card edits: the family identity of this plugin's
+		* own settings form, and the locale namespace this half registers.
+		*/
 		const MARKET_NS = "dsh-web-ui-market";
 		const SECTION_ID$1 = "dsh-workshop";
+		/** Profile entry ids this package's patch rows carry, most likely first. */
+		const MARKET_ENTRY_IDS = [
+			"web-ui-market",
+			"ui-market",
+			MARKET_NS
+		];
 		const inject$11 = [
 			"slots",
 			"locale",
@@ -4610,7 +4710,10 @@ window.__ModuleLoader__.load({
 			}, "dsh-web-ui-market: dictionaries");
 			bridgePluginManager(ctx);
 			const binder = ctx.get("webUiSettings");
-			const controller = new MarketCardController(binder !== void 0 ? binder.bind({ namespace: MARKET_NS }) : ctx.configForms.get(MARKET_NS));
+			const controller = new MarketCardController(binder !== void 0 ? binder.bind({ namespace: MARKET_NS }) : createServedEntryForm$5({
+				forms: ctx.configForms,
+				entryIds: MARKET_ENTRY_IDS
+			}));
 			ctx.slots.inject("settings.section", () => {
 				try {
 					const unregister = ctx.slots.register({
@@ -11180,11 +11283,102 @@ window.__ModuleLoader__.load({
 			reconcile();
 		}
 		//#endregion
+		//#region ../dsh-task-board/src/client/settings-entry-form.ts
+		/** The snapshot a form reports before the Host has answered with this entry. */
+		function pendingSnapshot$4() {
+			return {
+				status: "loading",
+				value: void 0,
+				base: void 0,
+				user: void 0,
+				revision: void 0,
+				writable: false,
+				mode: "host"
+			};
+		}
+		/**
+		* Create a settings form bound to the profile entry id this Host serves, and
+		* rebound whenever the shared describe mirror names a different one of this
+		* package's rows.
+		* @param options - the shared forms service and this package's candidate row ids.
+		* @returns a form delegating to the currently resolved entry's own form.
+		*/
+		function createServedEntryForm$4(options) {
+			const { forms, entryIds } = options;
+			const fallbackId = entryIds[0];
+			const namespaceId = entryIds[entryIds.length - 1];
+			const listeners = /* @__PURE__ */ new Set();
+			let boundId;
+			let bound;
+			let offBound;
+			let snapshot = pendingSnapshot$4();
+			/** Republish: the delegated snapshot when one is bound, the pending one otherwise. */
+			const publish = () => {
+				if (bound !== void 0) snapshot = bound.getSnapshot();
+				for (const listener of [...listeners]) listener();
+			};
+			/**
+			* The entry id the mirror currently justifies. An unanswered or empty mirror
+			* is not evidence of absence, so it keeps the first candidate; a mirror that
+			* answers without any of this package's rows leaves the namespace itself.
+			* @returns the entry id to bind.
+			*/
+			const resolve = () => {
+				let served;
+				try {
+					served = forms.describe().getSnapshot().view?.namespaces.map((row) => row.ns);
+				} catch {
+					served = void 0;
+				}
+				if (served === void 0 || served.length === 0) return fallbackId;
+				return entryIds.find((id) => served.includes(id)) ?? namespaceId;
+			};
+			/** Bind (or rebind) the resolved entry's form; a no-op while it is unchanged. */
+			const bind = () => {
+				const target = resolve();
+				if (target === boundId) return;
+				offBound?.();
+				offBound = void 0;
+				let form;
+				try {
+					form = forms.get(target);
+				} catch {
+					boundId = void 0;
+					return;
+				}
+				boundId = target;
+				bound = form;
+				offBound = form.subscribe(() => {
+					publish();
+				});
+				publish();
+			};
+			try {
+				forms.describe().subscribe(() => {
+					bind();
+				});
+			} catch {}
+			bind();
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				set: (field, value) => bound?.set(field, value) ?? Promise.resolve(false),
+				unset: (field) => bound?.unset(field) ?? Promise.resolve(false),
+				mutate: (ops, expectedRevision) => bound?.mutate(ops, expectedRevision) ?? Promise.resolve(false)
+			};
+		}
+		//#endregion
 		//#region ../dsh-task-board/src/client/index.ts
 		var client_exports$9 = /* @__PURE__ */ __exportAll({
 			apply: () => apply$10,
-			bindSettingsForm: () => bindSettingsForm,
-			inject: () => inject$10
+			bindSettingsForm: () => bindSettingsForm$2,
+			inject: () => inject$10,
+			servedEntryId: () => servedEntryId$2
 		});
 		/** Locale namespace this plugin owns. */
 		const NS$9 = "task-board";
@@ -11196,7 +11390,7 @@ window.__ModuleLoader__.load({
 		* addressed by profile entry id, so the shared-forms fallback below has to
 		* name it; the family binder resolves the family namespace instead.
 		*/
-		const AGGREGATE_ENTRY_ID = "web-ui-task-board";
+		const AGGREGATE_ENTRY_ID$2 = "web-ui-task-board";
 		/**
 		* Profile entry ids this package's two patch rows carry: the aggregate's
 		* generated row and the standalone bundle patch's row (`ui-task-board`), plus
@@ -11204,7 +11398,7 @@ window.__ModuleLoader__.load({
 		* by the family namespace itself.
 		*/
 		const TASK_BOARD_ENTRY_IDS = [
-			AGGREGATE_ENTRY_ID,
+			AGGREGATE_ENTRY_ID$2,
 			"ui-task-board",
 			TASK_BOARD_NS
 		];
@@ -11248,7 +11442,7 @@ window.__ModuleLoader__.load({
 			try {
 				setRuntimeTranslate$2(ctx.locale.bind(NS$9));
 			} catch {}
-			const settingsForm = bindSettingsForm(ctx);
+			const settingsForm = bindSettingsForm$2(ctx);
 			const settingsCard = new TaskBoardSettingsCardController(settingsForm);
 			installPluginCard$2(ctx, {
 				bundle: "@linxin666/dsh-client-ui-task-board",
@@ -11385,22 +11579,26 @@ window.__ModuleLoader__.load({
 		* @param ctx - client root context.
 		* @returns the form the settings card reads and writes.
 		*/
-		function bindSettingsForm(ctx) {
+		function bindSettingsForm$2(ctx) {
 			const binder = ctx.get("webUiSettings");
 			if (binder !== void 0 && typeof binder.bind === "function") return binder.bind({ namespace: TASK_BOARD_NS });
-			return ctx.configForms.get(servedEntryId$2(ctx.configForms));
+			return createServedEntryForm$4({
+				forms: ctx.configForms,
+				entryIds: TASK_BOARD_ENTRY_IDS
+			});
 		}
 		/**
-		* The profile entry id this package's own row carries.
+		* The profile entry id this package's own row carries, for a page that serves
+		* no family binder.
 		*
 		* The shared describe mirror is the only local evidence of which row id this
-		* profile actually serves, but it answers asynchronously: at plugin
-		* activation it usually holds nothing yet. An unanswered mirror therefore
-		* binds the aggregate row id rather than guessing among the candidates —
-		* the form is bound once for the session, so a wrong guess would leave the
-		* card reporting an unserved namespace even after the mirror settles.
+		* profile actually serves, but it answers asynchronously: at plugin activation
+		* it usually holds nothing yet. An unanswered mirror therefore binds the
+		* aggregate row id rather than guessing among the candidates, and the binding
+		* is re-resolved once the mirror answers — see
+		* {@link createServedEntryForm}, which owns that rebinding.
 		* @param forms - the shared configuration forms service.
-		* @returns the entry id to bind.
+		* @returns the entry id to bind before the mirror answers.
 		*/
 		function servedEntryId$2(forms) {
 			let served;
@@ -11409,7 +11607,7 @@ window.__ModuleLoader__.load({
 			} catch {
 				served = void 0;
 			}
-			if (served === void 0) return AGGREGATE_ENTRY_ID;
+			if (served === void 0) return AGGREGATE_ENTRY_ID$2;
 			return TASK_BOARD_ENTRY_IDS.find((id) => served.includes(id)) ?? TASK_BOARD_NS;
 		}
 		//#endregion
@@ -18580,6 +18778,96 @@ window.__ModuleLoader__.load({
 			reconcile();
 		}
 		//#endregion
+		//#region ../dsh-remote-web-ui/src/client/settings-entry-form.ts
+		/** The snapshot a form reports before the Host has answered with this entry. */
+		function pendingSnapshot$3() {
+			return {
+				status: "loading",
+				value: void 0,
+				base: void 0,
+				user: void 0,
+				revision: void 0,
+				writable: false,
+				mode: "host"
+			};
+		}
+		/**
+		* Create a settings form bound to the profile entry id this Host serves, and
+		* rebound whenever the shared describe mirror names a different one of this
+		* package's rows.
+		* @param options - the shared forms service and this package's candidate row ids.
+		* @returns a form delegating to the currently resolved entry's own form.
+		*/
+		function createServedEntryForm$3(options) {
+			const { forms, entryIds } = options;
+			const fallbackId = entryIds[0];
+			const namespaceId = entryIds[entryIds.length - 1];
+			const listeners = /* @__PURE__ */ new Set();
+			let boundId;
+			let bound;
+			let offBound;
+			let snapshot = pendingSnapshot$3();
+			/** Republish: the delegated snapshot when one is bound, the pending one otherwise. */
+			const publish = () => {
+				if (bound !== void 0) snapshot = bound.getSnapshot();
+				for (const listener of [...listeners]) listener();
+			};
+			/**
+			* The entry id the mirror currently justifies. An unanswered or empty mirror
+			* is not evidence of absence, so it keeps the first candidate; a mirror that
+			* answers without any of this package's rows leaves the namespace itself.
+			* @returns the entry id to bind.
+			*/
+			const resolve = () => {
+				let served;
+				try {
+					served = forms.describe().getSnapshot().view?.namespaces.map((row) => row.ns);
+				} catch {
+					served = void 0;
+				}
+				if (served === void 0 || served.length === 0) return fallbackId;
+				return entryIds.find((id) => served.includes(id)) ?? namespaceId;
+			};
+			/** Bind (or rebind) the resolved entry's form; a no-op while it is unchanged. */
+			const bind = () => {
+				const target = resolve();
+				if (target === boundId) return;
+				offBound?.();
+				offBound = void 0;
+				let form;
+				try {
+					form = forms.get(target);
+				} catch {
+					boundId = void 0;
+					return;
+				}
+				boundId = target;
+				bound = form;
+				offBound = form.subscribe(() => {
+					publish();
+				});
+				publish();
+			};
+			try {
+				forms.describe().subscribe(() => {
+					bind();
+				});
+			} catch {}
+			bind();
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				set: (field, value) => bound?.set(field, value) ?? Promise.resolve(false),
+				unset: (field) => bound?.unset(field) ?? Promise.resolve(false),
+				mutate: (ops, expectedRevision) => bound?.mutate(ops, expectedRevision) ?? Promise.resolve(false)
+			};
+		}
+		//#endregion
 		//#region ../dsh-remote-web-ui/src/client/index.ts
 		/**
 		* Remote control — browser half. Registers the `remote` dictionaries, the
@@ -18592,17 +18880,42 @@ window.__ModuleLoader__.load({
 		*/
 		var client_exports$7 = /* @__PURE__ */ __exportAll({
 			apply: () => apply$8,
-			inject: () => inject$8
+			bindSettingsForm: () => bindSettingsForm$1,
+			inject: () => inject$8,
+			servedEntryId: () => servedEntryId$1
 		});
 		/** Dictionary namespace owned by this plugin. */
 		const NS$7 = "remote";
-		/** Settings namespace the remote-control card edits (the Host plugin registers it). */
+		/**
+		* Settings namespace the remote-control card edits: the family identity of
+		* this plugin's own settings form, and the row id a standalone bundle install
+		* carries.
+		*/
 		const REMOTE_WEB_UI_NS = "remote-web-ui";
+		/** Profile entry id the family aggregate's generated row carries. */
+		const AGGREGATE_ENTRY_ID$1 = "web-ui-remote-web-ui";
+		/** Profile entry ids this package's patch rows carry, most specific first. */
 		const REMOTE_WEB_UI_ENTRY_IDS = [
-			"web-ui-remote-web-ui",
+			AGGREGATE_ENTRY_ID$1,
 			"ui-remote-web-ui",
 			REMOTE_WEB_UI_NS
 		];
+		/**
+		* The profile entry id this package's own row carries, for a page that serves
+		* no family binder.
+		*
+		* The shared describe mirror answers asynchronously, so at plugin activation it
+		* usually holds nothing yet — and an unanswered or empty mirror is not evidence
+		* of absence. Binding the bare namespace there left the card bound to an entry
+		* the Host does not serve, and the form is bound once per session, so the card
+		* never recovered (every save answered `No configurable plugin entry`). The
+		* aggregate row id matches nearly every deployment; only a mirror that answers
+		* with OTHER plugins' rows falls back to the namespace itself (the pre-0.1.7
+		* keying shape), because that answer is the one that actually proves this
+		* package's own row is not served.
+		* @param forms - the shared configuration forms service.
+		* @returns the entry id to bind.
+		*/
 		function servedEntryId$1(forms) {
 			let served;
 			try {
@@ -18610,8 +18923,28 @@ window.__ModuleLoader__.load({
 			} catch {
 				served = void 0;
 			}
-			if (!served || served.length === 0) return REMOTE_WEB_UI_NS;
+			if (served === void 0 || served.length === 0) return AGGREGATE_ENTRY_ID$1;
 			return REMOTE_WEB_UI_ENTRY_IDS.find((id) => served.includes(id)) ?? REMOTE_WEB_UI_NS;
+		}
+		/**
+		* Bind the settings form the remote-control card reads and writes.
+		*
+		* The family binder comes first: it resolves this package's family namespace
+		* onto the profile entry id the Host serves the form under, and keeps the
+		* loopback bridge as its own fallback. A page without that group (or one where
+		* its client half has not applied yet) binds through the shared forms service,
+		* on the entry id the describe mirror justifies and rebound as soon as the
+		* mirror answers — see {@link createServedEntryForm}.
+		* @param ctx - client context carrying the family binder and/or the shared forms service.
+		* @returns the form the card stages and saves through.
+		*/
+		function bindSettingsForm$1(ctx) {
+			const family = ctx.get("webUiSettings");
+			if (family !== void 0 && typeof family.bind === "function") return family.bind({ namespace: REMOTE_WEB_UI_NS });
+			return createServedEntryForm$3({
+				forms: ctx.configForms,
+				entryIds: REMOTE_WEB_UI_ENTRY_IDS
+			});
 		}
 		/** Heartbeat cadence from a paired phone (presence + revocation liveness). */
 		const HEARTBEAT_INTERVAL_MS = 1e4;
@@ -18663,8 +18996,7 @@ window.__ModuleLoader__.load({
 			};
 			const t = ctx.locale.bind(NS$7);
 			if (adapt !== void 0) adapt.translate = t;
-			const family = ctx.get("webUiSettings");
-			const settingsForm = family !== void 0 && typeof family.bind === "function" ? family.bind({ namespace: REMOTE_WEB_UI_NS }) : ctx.configForms.get(servedEntryId$1(ctx.configForms));
+			const settingsForm = bindSettingsForm$1(ctx);
 			const enabled = () => {
 				const snapshot = settingsForm.getSnapshot();
 				return snapshot.status === "ready" ? snapshot.value?.enabled ?? true : snapshot.status === "unavailable";
@@ -38072,6 +38404,96 @@ window.__ModuleLoader__.load({
 			reconcile();
 		}
 		//#endregion
+		//#region ../dsh-liangshen/src/client/settings-entry-form.ts
+		/** The snapshot a form reports before the Host has answered with this entry. */
+		function pendingSnapshot$2() {
+			return {
+				status: "loading",
+				value: void 0,
+				base: void 0,
+				user: void 0,
+				revision: void 0,
+				writable: false,
+				mode: "host"
+			};
+		}
+		/**
+		* Create a settings form bound to the profile entry id this Host serves, and
+		* rebound whenever the shared describe mirror names a different one of this
+		* package's rows.
+		* @param options - the shared forms service and this package's candidate row ids.
+		* @returns a form delegating to the currently resolved entry's own form.
+		*/
+		function createServedEntryForm$2(options) {
+			const { forms, entryIds } = options;
+			const fallbackId = entryIds[0];
+			const namespaceId = entryIds[entryIds.length - 1];
+			const listeners = /* @__PURE__ */ new Set();
+			let boundId;
+			let bound;
+			let offBound;
+			let snapshot = pendingSnapshot$2();
+			/** Republish: the delegated snapshot when one is bound, the pending one otherwise. */
+			const publish = () => {
+				if (bound !== void 0) snapshot = bound.getSnapshot();
+				for (const listener of [...listeners]) listener();
+			};
+			/**
+			* The entry id the mirror currently justifies. An unanswered or empty mirror
+			* is not evidence of absence, so it keeps the first candidate; a mirror that
+			* answers without any of this package's rows leaves the namespace itself.
+			* @returns the entry id to bind.
+			*/
+			const resolve = () => {
+				let served;
+				try {
+					served = forms.describe().getSnapshot().view?.namespaces.map((row) => row.ns);
+				} catch {
+					served = void 0;
+				}
+				if (served === void 0 || served.length === 0) return fallbackId;
+				return entryIds.find((id) => served.includes(id)) ?? namespaceId;
+			};
+			/** Bind (or rebind) the resolved entry's form; a no-op while it is unchanged. */
+			const bind = () => {
+				const target = resolve();
+				if (target === boundId) return;
+				offBound?.();
+				offBound = void 0;
+				let form;
+				try {
+					form = forms.get(target);
+				} catch {
+					boundId = void 0;
+					return;
+				}
+				boundId = target;
+				bound = form;
+				offBound = form.subscribe(() => {
+					publish();
+				});
+				publish();
+			};
+			try {
+				forms.describe().subscribe(() => {
+					bind();
+				});
+			} catch {}
+			bind();
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				set: (field, value) => bound?.set(field, value) ?? Promise.resolve(false),
+				unset: (field) => bound?.unset(field) ?? Promise.resolve(false),
+				mutate: (ops, expectedRevision) => bound?.mutate(ops, expectedRevision) ?? Promise.resolve(false)
+			};
+		}
+		//#endregion
 		//#region ../dsh-liangshen/src/client/index.ts
 		var client_exports$4 = /* @__PURE__ */ __exportAll({
 			LIANGSHEN_PRESET_ID: () => LIANGSHEN_PRESET_ID,
@@ -38080,25 +38502,50 @@ window.__ModuleLoader__.load({
 			NS: () => NS$4,
 			SETTINGS_NAMESPACE: () => SETTINGS_NAMESPACE,
 			apply: () => apply$5,
+			bindSettingsForm: () => bindSettingsForm,
 			inject: () => inject$5,
 			leverState: () => leverState,
-			restoreTarget: () => restoreTarget
+			restoreTarget: () => restoreTarget,
+			servedEntryId: () => servedEntryId
 		});
 		/** Locale namespace this half owns. */
 		const NS$4 = "liangshen";
 		/**
-		* Settings namespace the settings card edits. Under the 0.1.7 settings
-		* contract the namespace IS the Host profile entry id, so this names the
-		* standalone row; the aggregate install mounts the generated
-		* `web-ui-liangshen` row instead and the family binder resolves between the
-		* two. Without that binder the card binds the entry id directly.
+		* Settings namespace the settings card edits: the family identity of this
+		* plugin's own settings form, and the row id a standalone bundle install
+		* carries. The aggregate install mounts the generated `web-ui-liangshen` row
+		* instead, and the family binder resolves between the two.
 		*/
 		const SETTINGS_NAMESPACE = "liangshen";
+		/**
+		* Profile entry id the family aggregate's generated row carries — the shape
+		* nearly every user runs, and the id the shared-forms fallback binds when the
+		* family binder cannot resolve the namespace.
+		*/
+		const AGGREGATE_ENTRY_ID = "web-ui-liangshen";
+		/** Profile entry ids this package's patch rows carry, most specific first. */
 		const LIANGSHEN_ENTRY_IDS = [
-			"web-ui-liangshen",
+			AGGREGATE_ENTRY_ID,
 			"ui-liangshen",
 			SETTINGS_NAMESPACE
 		];
+		/**
+		* The profile entry id this package's own row carries, for a page that serves
+		* no family binder.
+		*
+		* The shared describe mirror is the only local evidence of which row id this
+		* profile actually serves, but it answers asynchronously: at plugin activation
+		* it usually holds nothing yet. An unanswered or empty mirror is therefore NOT
+		* evidence of absence, and binding the bare namespace there is what made every
+		* save fail with `No configurable plugin entry "liangshen"` — the form is
+		* bound once per session, so a wrong guess never recovers. The aggregate row id
+		* is the answer that matches nearly every deployment; only a mirror that
+		* answers with OTHER plugins' rows keeps the namespace as the last resort (the
+		* pre-0.1.7 keying shape), because that answer is the one that actually proves
+		* this package's own row is not served.
+		* @param forms - the shared configuration forms service.
+		* @returns the entry id to bind.
+		*/
 		function servedEntryId(forms) {
 			let served;
 			try {
@@ -38106,8 +38553,29 @@ window.__ModuleLoader__.load({
 			} catch {
 				served = void 0;
 			}
-			if (!served || served.length === 0) return SETTINGS_NAMESPACE;
+			if (served === void 0 || served.length === 0) return AGGREGATE_ENTRY_ID;
 			return LIANGSHEN_ENTRY_IDS.find((id) => served.includes(id)) ?? "liangshen";
+		}
+		/**
+		* Bind the settings form the card stages over.
+		*
+		* The family binder comes first: it is what resolves this package's family
+		* namespace onto the profile entry id the Host serves the form under, and it
+		* keeps the loopback bridge as its own fallback. A page without that group (or
+		* one where its client half has not applied yet) binds through the shared forms
+		* service, on the entry id the describe mirror justifies and rebound as soon as
+		* the mirror answers — see {@link createServedEntryForm} for why a one-shot
+		* guess cannot be right for both an aggregate and a standalone install.
+		* @param ctx - the browser plugin context.
+		* @returns the form the settings card reads and writes.
+		*/
+		function bindSettingsForm(ctx) {
+			const binder = ctx.get("webUiSettings");
+			if (binder !== void 0 && typeof binder.bind === "function") return binder.bind({ namespace: SETTINGS_NAMESPACE });
+			return createServedEntryForm$2({
+				forms: ctx.configForms,
+				entryIds: LIANGSHEN_ENTRY_IDS
+			});
 		}
 		/**
 		* Required client services: the slot registry, locale, sessions, the shared
@@ -38146,8 +38614,7 @@ window.__ModuleLoader__.load({
 				controller.start();
 			} catch {}
 			try {
-				const binder = ctx.get("webUiSettings");
-				const settingsCard = new LiangShenSettingsCardController(binder !== void 0 && typeof binder.bind === "function" ? binder.bind({ namespace: SETTINGS_NAMESPACE }) : ctx.configForms.get(servedEntryId(ctx.configForms)));
+				const settingsCard = new LiangShenSettingsCardController(bindSettingsForm(ctx));
 				installPluginCard(ctx, {
 					bundle: "@linxin666/dsh-liangshen",
 					id: "liangshen",
@@ -41917,6 +42384,96 @@ window.__ModuleLoader__.load({
 			};
 		}
 		//#endregion
+		//#region ../dsh-usage/src/client/settings-entry-form.ts
+		/** The snapshot a form reports before the Host has answered with this entry. */
+		function pendingSnapshot$1() {
+			return {
+				status: "loading",
+				value: void 0,
+				base: void 0,
+				user: void 0,
+				revision: void 0,
+				writable: false,
+				mode: "host"
+			};
+		}
+		/**
+		* Create a settings form bound to the profile entry id this Host serves, and
+		* rebound whenever the shared describe mirror names a different one of this
+		* package's rows.
+		* @param options - the shared forms service and this package's candidate row ids.
+		* @returns a form delegating to the currently resolved entry's own form.
+		*/
+		function createServedEntryForm$1(options) {
+			const { forms, entryIds } = options;
+			const fallbackId = entryIds[0];
+			const namespaceId = entryIds[entryIds.length - 1];
+			const listeners = /* @__PURE__ */ new Set();
+			let boundId;
+			let bound;
+			let offBound;
+			let snapshot = pendingSnapshot$1();
+			/** Republish: the delegated snapshot when one is bound, the pending one otherwise. */
+			const publish = () => {
+				if (bound !== void 0) snapshot = bound.getSnapshot();
+				for (const listener of [...listeners]) listener();
+			};
+			/**
+			* The entry id the mirror currently justifies. An unanswered or empty mirror
+			* is not evidence of absence, so it keeps the first candidate; a mirror that
+			* answers without any of this package's rows leaves the namespace itself.
+			* @returns the entry id to bind.
+			*/
+			const resolve = () => {
+				let served;
+				try {
+					served = forms.describe().getSnapshot().view?.namespaces.map((row) => row.ns);
+				} catch {
+					served = void 0;
+				}
+				if (served === void 0 || served.length === 0) return fallbackId;
+				return entryIds.find((id) => served.includes(id)) ?? namespaceId;
+			};
+			/** Bind (or rebind) the resolved entry's form; a no-op while it is unchanged. */
+			const bind = () => {
+				const target = resolve();
+				if (target === boundId) return;
+				offBound?.();
+				offBound = void 0;
+				let form;
+				try {
+					form = forms.get(target);
+				} catch {
+					boundId = void 0;
+					return;
+				}
+				boundId = target;
+				bound = form;
+				offBound = form.subscribe(() => {
+					publish();
+				});
+				publish();
+			};
+			try {
+				forms.describe().subscribe(() => {
+					bind();
+				});
+			} catch {}
+			bind();
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				set: (field, value) => bound?.set(field, value) ?? Promise.resolve(false),
+				unset: (field) => bound?.unset(field) ?? Promise.resolve(false),
+				mutate: (ops, expectedRevision) => bound?.mutate(ops, expectedRevision) ?? Promise.resolve(false)
+			};
+		}
+		//#endregion
 		//#region ../dsh-usage/src/client/index.ts
 		var client_exports$2 = /* @__PURE__ */ __exportAll({
 			apply: () => apply$3,
@@ -41936,8 +42493,17 @@ window.__ModuleLoader__.load({
 			overview: () => usageFetch("api/dsh-usage/overview", "GET"),
 			refresh: () => usageFetch("api/dsh-usage/refresh", "POST")
 		};
-		/** Settings namespace the section edits (dsh-web-settings maps it onto this row's profile entry id). */
+		/**
+		* Settings namespace the section edits: the family identity of this plugin's
+		* own settings form, and the row id a standalone bundle install carries.
+		*/
 		const USAGE_SETTINGS_NS = "dsh-usage";
+		/** Profile entry ids this package's patch rows carry, most likely first. */
+		const USAGE_ENTRY_IDS = [
+			"web-ui-usage",
+			"usage",
+			USAGE_SETTINGS_NS
+		];
 		/** First-level nav position: directly below the Workshop section (order 150). */
 		const SECTION_ORDER$1 = 151;
 		/** Required services. */
@@ -41966,7 +42532,10 @@ window.__ModuleLoader__.load({
 				}
 			}, "dsh-usage: dictionaries");
 			const binder = ctx.get("webUiSettings");
-			const settingsForm = binder !== void 0 ? binder.bind({ namespace: USAGE_SETTINGS_NS }) : ctx.configForms.get(USAGE_SETTINGS_NS);
+			const settingsForm = binder !== void 0 ? binder.bind({ namespace: USAGE_SETTINGS_NS }) : createServedEntryForm$1({
+				forms: ctx.configForms,
+				entryIds: USAGE_ENTRY_IDS
+			});
 			const store = createUsageStore().create();
 			let pollSeq = 0;
 			const poll = () => {
@@ -44069,6 +44638,96 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region ../dsh-session-archive/src/client/settings-entry-form.ts
+		/** The snapshot a form reports before the Host has answered with this entry. */
+		function pendingSnapshot() {
+			return {
+				status: "loading",
+				value: void 0,
+				base: void 0,
+				user: void 0,
+				revision: void 0,
+				writable: false,
+				mode: "host"
+			};
+		}
+		/**
+		* Create a settings form bound to the profile entry id this Host serves, and
+		* rebound whenever the shared describe mirror names a different one of this
+		* package's rows.
+		* @param options - the shared forms service and this package's candidate row ids.
+		* @returns a form delegating to the currently resolved entry's own form.
+		*/
+		function createServedEntryForm(options) {
+			const { forms, entryIds } = options;
+			const fallbackId = entryIds[0];
+			const namespaceId = entryIds[entryIds.length - 1];
+			const listeners = /* @__PURE__ */ new Set();
+			let boundId;
+			let bound;
+			let offBound;
+			let snapshot = pendingSnapshot();
+			/** Republish: the delegated snapshot when one is bound, the pending one otherwise. */
+			const publish = () => {
+				if (bound !== void 0) snapshot = bound.getSnapshot();
+				for (const listener of [...listeners]) listener();
+			};
+			/**
+			* The entry id the mirror currently justifies. An unanswered or empty mirror
+			* is not evidence of absence, so it keeps the first candidate; a mirror that
+			* answers without any of this package's rows leaves the namespace itself.
+			* @returns the entry id to bind.
+			*/
+			const resolve = () => {
+				let served;
+				try {
+					served = forms.describe().getSnapshot().view?.namespaces.map((row) => row.ns);
+				} catch {
+					served = void 0;
+				}
+				if (served === void 0 || served.length === 0) return fallbackId;
+				return entryIds.find((id) => served.includes(id)) ?? namespaceId;
+			};
+			/** Bind (or rebind) the resolved entry's form; a no-op while it is unchanged. */
+			const bind = () => {
+				const target = resolve();
+				if (target === boundId) return;
+				offBound?.();
+				offBound = void 0;
+				let form;
+				try {
+					form = forms.get(target);
+				} catch {
+					boundId = void 0;
+					return;
+				}
+				boundId = target;
+				bound = form;
+				offBound = form.subscribe(() => {
+					publish();
+				});
+				publish();
+			};
+			try {
+				forms.describe().subscribe(() => {
+					bind();
+				});
+			} catch {}
+			bind();
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				set: (field, value) => bound?.set(field, value) ?? Promise.resolve(false),
+				unset: (field) => bound?.unset(field) ?? Promise.resolve(false),
+				mutate: (ops, expectedRevision) => bound?.mutate(ops, expectedRevision) ?? Promise.resolve(false)
+			};
+		}
+		//#endregion
 		//#region ../dsh-session-archive/src/client/index.ts
 		var client_exports$1 = /* @__PURE__ */ __exportAll({
 			apply: () => apply$2,
@@ -44078,10 +44737,12 @@ window.__ModuleLoader__.load({
 		* Settings this section edits. The family binder (`ctx.get('webUiSettings')`)
 		* resolves it onto the row's profile entry id — `web-ui-session-archive` under
 		* the aggregate, `session-archive` standalone — while a deployment without the
-		* group plugin addresses the entry id directly, which is the bundle patch row
-		* id this package installs under.
+		* group plugin binds the entry id the describe mirror justifies, rebound as soon
+		* as the mirror answers.
 		*/
 		const ARCHIVE_SETTINGS_NS = "session-archive";
+		/** Profile entry ids this package's patch rows carry, most likely first. */
+		const ARCHIVE_ENTRY_IDS = ["web-ui-session-archive", ARCHIVE_SETTINGS_NS];
 		/**
 		* Nav position (and id) of the official archived-sessions entry this plugin
 		* supersedes: the native page seats `settings.section` id
@@ -44117,7 +44778,10 @@ window.__ModuleLoader__.load({
 				}
 			}, "dsh-session-archive: dictionaries");
 			const binder = ctx.get("webUiSettings");
-			const settingsForm = binder !== void 0 ? binder.bind({ namespace: ARCHIVE_SETTINGS_NS }) : ctx.configForms.get(ARCHIVE_SETTINGS_NS);
+			const settingsForm = binder !== void 0 ? binder.bind({ namespace: ARCHIVE_SETTINGS_NS }) : createServedEntryForm({
+				forms: ctx.configForms,
+				entryIds: ARCHIVE_ENTRY_IDS
+			});
 			const controller = new ArchiveController({ sessions: (() => {
 				try {
 					const sessions = ctx.get("sessions");

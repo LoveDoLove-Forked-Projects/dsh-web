@@ -67,6 +67,17 @@ function makeCtx() {
     get: () => undefined,
     configForms: {
       get: (entryId: string) => { requested.push(entryId); return marketForm },
+      // The describe mirror names the profile rows this Host serves. It answers
+      // asynchronously in the real client, which is why the fallback rebinds;
+      // here it answers with the aggregate row the profile actually carries.
+      describe: () => ({
+        getSnapshot: () => ({
+          status: 'ready',
+          view: { namespaces: [{ ns: 'web-ui-market' }], writable: true, hasDocument: true },
+          error: null,
+        }),
+        subscribe: () => () => {},
+      }),
     },
     slots: {
       inject: (name: string, fn: () => unknown) => { injected.push(name); fn(); return () => {} },
@@ -105,13 +116,15 @@ describe('dsh-web-ui-market client store registration', () => {
   })
 
   it('user gets the settings entry bound through the injected configForms service', () => {
-    // Given a context exposing only the configForms service
+    // Given a context exposing only the configForms service, whose mirror names
+    // the aggregate row this profile carries
     const { fakeCtx, requested } = makeCtx()
     // When apply() runs
     apply(fakeCtx as never)
-    // Then the namespace requested is the Host entry id the shared forms service
-    // is keyed by, because no family binder is loaded
-    expect(requested).toEqual(['dsh-web-ui-market'])
+    // Then the profile entry id the Host serves is the one bound, not the bare
+    // namespace (which is no entry id at all on an aggregate install, so every
+    // save answered "No configurable plugin entry")
+    expect(requested).toEqual(['web-ui-market'])
   })
 
   it('prefers the webUiSettings binder when the settings package is loaded', () => {

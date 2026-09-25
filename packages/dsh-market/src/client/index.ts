@@ -22,6 +22,7 @@ import {
   type WorkshopPanelOwnerProps,
 } from './MarketCard.tsx'
 import { createExternalLinkOpener } from './external-link.ts'
+import { createServedEntryForm } from './settings-entry-form.ts'
 import { en, zh, type MarketKey } from './locales.ts'
 import { bridgePluginManager } from './plugin-manager-bridge.ts'
 import { reportDailyHeartbeat } from './telemetry.ts'
@@ -35,8 +36,18 @@ export type {
 } from './MarketCard.tsx'
 export type { InstalledPluginItem, InstallProgressItem, PluginManagerService } from './plugin-manager-bridge.ts'
 
+/**
+ * Settings namespace the store card edits: the family identity of this plugin's
+ * own settings form, and the locale namespace this half registers.
+ */
 const MARKET_NS = 'dsh-web-ui-market'
 const SECTION_ID = 'dsh-workshop'
+
+/** Profile entry id the family aggregate's generated row carries. */
+const AGGREGATE_ENTRY_ID = 'web-ui-market'
+
+/** Profile entry ids this package's patch rows carry, most likely first. */
+const MARKET_ENTRY_IDS: readonly string[] = [AGGREGATE_ENTRY_ID, 'ui-market', MARKET_NS]
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -99,12 +110,14 @@ export function apply(ctx: ClientContext): void {
   bridgePluginManager(ctx)
 
   // The family binder resolves the family namespace to the profile entry id
-  // the Host serves the store card's configuration under; without it the
-  // namespace is itself the entry id the shared forms service is keyed by.
+  // the Host serves the store card's configuration under. Without it the shared
+  // forms service is addressed on the entry id the describe mirror justifies,
+  // rebound as soon as the mirror answers — the bare namespace is not an entry
+  // id on an aggregate install, and binding it failed every save.
   const binder = ctx.get('webUiSettings')
   const form = binder !== undefined
     ? binder.bind<MarketSettings>({ namespace: MARKET_NS })
-    : ctx.configForms.get<MarketSettings>(MARKET_NS)
+    : createServedEntryForm<MarketSettings>({ forms: ctx.configForms, entryIds: MARKET_ENTRY_IDS })
   const controller = new MarketCardController(form)
 
   // The Workshop: one first-level settings section rendering the store

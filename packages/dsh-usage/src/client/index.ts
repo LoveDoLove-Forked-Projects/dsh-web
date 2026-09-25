@@ -21,6 +21,7 @@ import { createUsageStore, type UsageStoreInstance } from './usage-store.ts'
 import { UsageSectionCard, type UsageSectionFace, type UsageSettings } from './UsageSectionCard.tsx'
 import { mountUsageFootCard, openUsageSettings } from './foot-card-mount.tsx'
 import { NS, en, zh, t } from './locales.ts'
+import { createServedEntryForm } from './settings-entry-form.ts'
 import type { UsageOverviewView } from '../core/types.ts'
 
 /** The host usage API as the browser sees it (same-origin JSON endpoints). */
@@ -49,8 +50,17 @@ const usageApi: UsageHttpApi = {
   refresh: () => usageFetch('api/dsh-usage/refresh', 'POST'),
 }
 
-/** Settings namespace the section edits (dsh-web-settings maps it onto this row's profile entry id). */
+/**
+ * Settings namespace the section edits: the family identity of this plugin's
+ * own settings form, and the row id a standalone bundle install carries.
+ */
 const USAGE_SETTINGS_NS = 'dsh-usage'
+
+/** Profile entry id the family aggregate's generated row carries. */
+const AGGREGATE_ENTRY_ID = 'web-ui-usage'
+
+/** Profile entry ids this package's patch rows carry, most likely first. */
+const USAGE_ENTRY_IDS: readonly string[] = [AGGREGATE_ENTRY_ID, 'usage', USAGE_SETTINGS_NS]
 
 /** First-level nav position: directly below the Workshop section (order 150). */
 const SECTION_ORDER = 151
@@ -101,15 +111,15 @@ export function apply(ctx: ClientContext): void {
   }, 'dsh-usage: dictionaries')
 
   // The family binder is what maps this namespace onto the row's profile entry
-  // id and hands back the native form. Without the group plugin the client can
-  // only address an entry id it already knows: the namespace itself is one when
-  // the profile keeps the family spelling. Any other entry id leaves the form
-  // unavailable, which renders the row's controls disabled — the Host's own
-  // generated page for the row still edits the same Config.
+  // id and hands back the native form. Without the group plugin the shared forms
+  // service is addressed on the entry id the describe mirror justifies, rebound
+  // as soon as the mirror answers: the namespace itself is only an entry id on a
+  // standalone install, so binding it on the aggregate left the form unavailable
+  // and the row's controls disabled.
   const binder = ctx.get('webUiSettings')
   const settingsForm = binder !== undefined
     ? binder.bind<UsageSettings>({ namespace: USAGE_SETTINGS_NS })
-    : ctx.configForms.get<UsageSettings>(USAGE_SETTINGS_NS)
+    : createServedEntryForm<UsageSettings>({ forms: ctx.configForms, entryIds: USAGE_ENTRY_IDS })
 
   // One store instance per apply body; the section mounts and unmounts with
   // the settings page, and the store survives between visits so the last

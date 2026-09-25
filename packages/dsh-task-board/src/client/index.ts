@@ -35,6 +35,7 @@ import { en, zh, setRuntimeTranslate, type TaskBoardKey } from './locales.ts'
 import { HttpTaskBoardHostTransport } from './host-api.ts'
 import { reportDailyHeartbeat } from './telemetry.ts'
 import { installPluginCard } from './plugin-card-seat.ts'
+import { createServedEntryForm } from './settings-entry-form.ts'
 
 /** Locale namespace this plugin owns. */
 const NS = 'task-board'
@@ -415,22 +416,26 @@ export function bindSettingsForm(ctx: ClientContext): ConfigForm<TaskBoardSettin
   if (binder !== undefined && typeof binder.bind === 'function') {
     return binder.bind<TaskBoardSettings>({ namespace: TASK_BOARD_NS })
   }
-  return ctx.configForms.get<TaskBoardSettings>(servedEntryId(ctx.configForms))
+  return createServedEntryForm<TaskBoardSettings>({
+    forms: ctx.configForms,
+    entryIds: TASK_BOARD_ENTRY_IDS,
+  })
 }
 
 /**
- * The profile entry id this package's own row carries.
+ * The profile entry id this package's own row carries, for a page that serves
+ * no family binder.
  *
  * The shared describe mirror is the only local evidence of which row id this
- * profile actually serves, but it answers asynchronously: at plugin
- * activation it usually holds nothing yet. An unanswered mirror therefore
- * binds the aggregate row id rather than guessing among the candidates —
- * the form is bound once for the session, so a wrong guess would leave the
- * card reporting an unserved namespace even after the mirror settles.
+ * profile actually serves, but it answers asynchronously: at plugin activation
+ * it usually holds nothing yet. An unanswered mirror therefore binds the
+ * aggregate row id rather than guessing among the candidates, and the binding
+ * is re-resolved once the mirror answers — see
+ * {@link createServedEntryForm}, which owns that rebinding.
  * @param forms - the shared configuration forms service.
- * @returns the entry id to bind.
+ * @returns the entry id to bind before the mirror answers.
  */
-function servedEntryId(forms: ConfigForms): string {
+export function servedEntryId(forms: ConfigForms): string {
   let served: readonly string[] | undefined
   try {
     served = forms.describe().getSnapshot().view?.namespaces.map(view => view.ns)
