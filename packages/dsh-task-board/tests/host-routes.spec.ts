@@ -95,6 +95,31 @@ describe('task-board HTTP routes', () => {
     })).status).toBe(400)
   })
 
+  it('operator sees the Desktop shell forward accepted through its browser-auth cookie', async () => {
+    // Given the official DSH Desktop shell, which serves the panel from
+    // dsh-app://app/ and re-issues its requests to this Host itself: origin
+    // and sec-fetch-site are deleted on the way, and the authority-bound
+    // browser-auth cookie the shell redeemed from the Host's launch URL is
+    // attached instead.
+    const shellCookie = { cookie: 'dsh-auth-cG9ydA=v1.body.signature' }
+    // When the panel reads its state and submits an action through that
+    // forward,
+    const state = await requestStatus(`${base}/api/task-board/state`, shellCookie)
+    const action = await fetch(`${base}/api/task-board/action`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...shellCookie },
+      body: JSON.stringify({ requestId: 'request-desktop', action: { kind: 'create', id: 'task-a', input: { title: 'A', description: '', prompt: '' } } }),
+    })
+    // Then both reach the board, while the credential stays a signal and not an
+    // authority: an explicit cross-site marker loses, and a marker-less request
+    // without the credential stays refused.
+    expect(state).toBe(200)
+    expect(action.status).toBe(200)
+    expect(await requestStatus(`${base}/api/task-board/state`, { ...shellCookie, 'sec-fetch-site': 'cross-site' })).toBe(403)
+    expect(await requestStatus(`${base}/api/task-board/state`, {})).toBe(403)
+    expect(await requestStatus(`${base}/api/task-board/state`, { cookie: 'theme=dark' })).toBe(403)
+  })
+
   it('accepts only an allowlisted same-origin proxy Host with its server token', async () => {
     const service = {
       snapshot: () => snapshot,

@@ -40,7 +40,7 @@ The board view renders on first open and keeps its local view state when closed 
 - `src/host-service.ts` owns cron ticks, missed-trigger skipping, runner launch, restart reconciliation, and power reasons.
 - `src/client/host-api.ts` imports legacy browser data once, submits idempotent actions, and treats Host snapshots as the only confirmed UI state.
 - Same-origin endpoints are `GET /api/task-board/state`, `GET /api/task-board/events`, and `POST /api/task-board/action`.
-- Every endpoint requires a browser same-origin marker. Direct access is restricted to the DSH loopback origin; an authenticated same-host reverse proxy must use an explicit Host allowlist and a server-injected token. POST requests additionally require JSON. Ordinary actions are limited to 64 KiB and import to 2 MiB. The action union has no command, executable path, shell text, or arbitrary argument field.
+- Every endpoint requires a browser same-origin marker: `sec-fetch-site: same-origin`, an `Origin` header, or the Host's `dsh-auth-*` browser-auth cookie. The last one is how the DSH Desktop shell reaches the board: it serves the Web GUI from `dsh-app://app/` and forwards that page's requests itself, dropping `Origin` and `sec-fetch-site` and attaching the authority-bound cookie it redeemed from the Host's launch URL at startup. Direct access is restricted to the DSH loopback origin; an authenticated same-host reverse proxy must use an explicit Host allowlist and a server-injected token. POST requests additionally require JSON. Ordinary actions are limited to 64 KiB and import to 2 MiB. The action union has no command, executable path, shell text, or arbitrary argument field.
 
 ## Agent tools
 

@@ -40,7 +40,7 @@
 - `src/host-service.ts` 负责 cron tick、错过触发跳过、runner 启动、重启对账和电源保护理由。
 - `src/client/host-api.ts` 单次导入旧浏览器数据、提交幂等动作，并把 Host snapshot 当作唯一已确认 UI 状态。
 - 同源接口为 `GET /api/task-board/state`、`GET /api/task-board/events` 和 `POST /api/task-board/action`。
-- 所有接口都要求浏览器同源标记。直接访问只允许 DSH loopback origin；同机认证反向代理必须使用显式 Host 白名单和服务端注入 token。POST 还必须为 JSON。普通动作上限 64 KiB，导入上限 2 MiB。action 联合中没有命令、可执行路径、shell 文本或任意参数字段。
+- 所有接口都要求浏览器同源标记：`sec-fetch-site: same-origin`、`Origin` 头，或 Host 的 `dsh-auth-*` 浏览器认证 cookie。最后一种是 DSH 桌面版到达看板的方式：它从 `dsh-app://app/` 提供 Web GUI，并自行转发该页面的请求，转发时删掉 `Origin` 与 `sec-fetch-site`，改为附上启动时用 Host 启动链接换来的、与 authority 绑定的 cookie。直接访问只允许 DSH loopback origin；同机认证反向代理必须使用显式 Host 白名单和服务端注入 token。POST 还必须为 JSON。普通动作上限 64 KiB，导入上限 2 MiB。action 联合中没有命令、可执行路径、shell 文本或任意参数字段。
 
 ## Agent 工具
 
