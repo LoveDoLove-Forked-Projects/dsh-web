@@ -82,13 +82,14 @@ the named credential is the part of that forward the repository's own precedent
 already treats as the identity: the `dsh-auth-` prefix is an authority-bound
 value rather than 'some cookie'.
 
-Relying on the application-scheme Origin acceptance added to the shared fence
-([the desktop shell's own origin passes the loopback route fence](2026-09-25-desktop-shell-origin-route-fence.md))
-was rejected because it does not reach this path. That note assumes the host-route
-fetches of the shell carry `Origin: dsh-app://app`; the shell deletes `origin`
-before forwarding and Node's `fetch` adds none, so no desktop request presents
-that origin. The scheme acceptance is inert where it is used, and is not the
-mechanism that unblocks the desktop panel.
+Relying on an application-scheme Origin allowance at the shared fence was
+rejected, and that proposal is recorded as declined
+([the desktop shell's own scheme at the loopback route fence - rejected](../../rejected/bug-fix/2026-09-25-desktop-shell-origin-route-fence.md)):
+it assumed the host-route fetches of the shell carry `Origin: dsh-app://app`,
+while the shell deletes `origin` before forwarding and Node's `fetch` adds none,
+so no desktop request presents that origin. It bought nothing for the desktop
+and widened the fence for every non-web scheme, so the fence keeps its previous
+shape.
 
 Teaching the shell to synthesize `sec-fetch-site: same-origin` the way
 `loopback-proxy.ts` does was rejected as out of this repository's hands: the shell

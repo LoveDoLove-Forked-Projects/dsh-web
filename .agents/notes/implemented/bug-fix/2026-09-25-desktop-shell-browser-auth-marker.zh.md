@@ -65,11 +65,11 @@ git graph、更新——都只用 `isLoopbackRequest` 做围栏。
 cookie，而仓库自己的先例认定的身份正是这枚具名凭据：`dsh-auth-` 前缀是与 authority 绑定的值，
 不是「随便一个 cookie」。
 
-依赖共享围栏新增的应用方案 Origin 接受
-（[the desktop shell's own origin passes the loopback route fence](2026-09-25-desktop-shell-origin-route-fence.zh.md)）
-被否决，因为它够不到这条路径。那份记录假定外壳的宿主路由请求携带 `Origin: dsh-app://app`；
-而外壳在转发前就删掉了 `origin`，Node 的 `fetch` 也不会补上，因此桌面上没有任何请求会呈现该
-origin。该方案接受逻辑在被使用的场合是空转的，也不是解开桌面面板的机制。
+依赖共享围栏放行应用方案 Origin 的方案被否决，并已作为「已否决」记录在案
+（[the desktop shell's own scheme at the loopback route fence - rejected](../../rejected/bug-fix/2026-09-25-desktop-shell-origin-route-fence.zh.md)）：
+它假定外壳的宿主路由请求携带 `Origin: dsh-app://app`，而外壳在转发前就删掉了 `origin`，
+Node 的 `fetch` 也不会补上，因此桌面上没有任何请求会呈现该 origin。它对桌面毫无收益，却对所有
+非 web 方案来源放宽了围栏，因此围栏保持原状。
 
 教外壳像 `loopback-proxy.ts` 那样合成 `sec-fetch-site: same-origin`，被否决：外壳就是 DSH 本身，
 不在本仓库手里，宿主侧的路由族不能要求未来的外壳版本配合改动。
