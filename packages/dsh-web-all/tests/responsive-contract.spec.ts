@@ -220,7 +220,7 @@ describe('aggregate responsive compat contract', () => {
   // The group row toggles aria-expanded in place, so folding the drawer on that
   // click reads as "the group will not open"; the same click on the row's
   // ellipsis discarded the menu before it could be used.
-  it('keeps the mobile drawer open for a group row and its actions menu', () => {
+  it('operator tapping a group row or its actions keeps the mobile drawer open', () => {
     document.body.innerHTML = `<main data-dsh-frame><aside data-pane="sidebar"><div data-slot="sidebar"><div><div><button data-dsh-responsive-part="sidebar-toggle">toggle</button></div></div>
       <div class="hash_projectRow" role="treeitem" aria-expanded="true"><span>workspace</span>
         <span class="hash_rowActions"><button aria-label="actions">dots</button><button aria-label="new session">plus</button></span>
@@ -237,6 +237,8 @@ describe('aggregate responsive compat contract', () => {
     let cleanup: (() => void) | undefined
     apply({ effect: (effect: () => (() => void) | void) => { cleanup = effect() ?? undefined } } as never)
 
+    // Given the drawer open on a narrow viewport with a group row that has a
+    // menu trigger and a new-session button beside its label
     // When the operator taps the group row to expand it
     document.querySelector<HTMLElement>('[class*="projectRow"] > span')!.click()
     // Then the drawer stays open for the rows the expansion just revealed
