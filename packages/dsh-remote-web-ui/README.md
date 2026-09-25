@@ -89,7 +89,9 @@ The relay above already fixes the phone's origin on a shared dsh-market subdomai
 2. Copy the tunnel's token and paste it into **固定域名隧道令牌** (tunnelToken) in the settings card.
 3. Set the same hostname as **公网地址** (publicBaseUrl). The token does not carry the hostname, so without this step the tunnel stays off and a warning names the missing piece.
 
-The plugin then runs `cloudflared tunnel run --token` with the same lifecycle management as the quick tunnel: the binary ships with the package, unexpected exits restart with backoff, and the posture probe audits the `/api` fence for the fixed host. The token is stored as a settings secret and read back redacted. The auto quick tunnel takes precedence while it is on.
+The plugin then runs `cloudflared tunnel run --token` with the same lifecycle management as the quick tunnel: the binary ships with the package, unexpected exits restart with backoff, a running tunnel's public URL is probed every 60 s and two consecutive failures mint a fresh tunnel through that same restart path, and the posture probe audits the `/api` fence for the fixed host. The token is stored as a settings secret and read back redacted. The auto quick tunnel takes precedence while it is on.
+
+A `running` tunnel is not a terminal state: a connector that lost its Cloudflare edge registration keeps its process and its metrics port alive while the minted hostname stops resolving, so the plugin used to report `running` indefinitely and the relay kept forwarding the phone to the dead address (Cloudflare 530 / Error 1016) instead of the relay's offline page (issue #1723). The readiness watchdog now treats a public URL that stops answering — DNS failure, refused connection, or a Cloudflare 5xx such as 530 — as a dead tunnel after two consecutive probes, and the ordinary backoff restart mints a new URL and re-registers the relay. An unauthenticated `401`/`403` answer still counts as alive, because that is a healthy round trip to a harness that has not been paired yet.
 
 ### Manual tunnels (bring your own)
 
