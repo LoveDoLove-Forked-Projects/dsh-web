@@ -6,6 +6,7 @@ export const zh = {
   'entry.label': '技能中心',
   'entry.tooltip': '技能中心：浏览与管理已加载的 skill',
   'panel.title': '技能中心',
+  'panel.backToConversation': '返回会话',
   'tab.list': '技能',
   'tab.create': '创建',
   'tab.edit': '编辑技能',
@@ -67,20 +68,18 @@ export const zh = {
   'filter.workspaceCurrent': '当前工作区 ({name})',
   'filter.searchLabel': '搜索',
   'filter.searchPlaceholder': '按名称或描述筛选',
-  'filter.clear': '清空',
   'filter.empty': '没有匹配「{query}」的技能',
   'filter.emptyWorkspace': '当前筛选下没有技能。',
   'workspace.isolated': '工作区隔离',
   'workspace.isolatedHint': '该技能属于工作区「{workspace}」，在当前会话上下文隔离不生效',
   'refresh': '刷新',
-  'close': '关闭',
-  'cwd': 'cwd: {cwd}',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
   'entry.label': 'Skill Center',
   'entry.tooltip': 'Skill center: browse and manage loaded skills',
   'panel.title': 'Skill Center',
+  'panel.backToConversation': 'Back to chat',
   'tab.list': 'Skills',
   'tab.create': 'Create',
   'tab.edit': 'Edit skill',
@@ -142,14 +141,11 @@ export const en: Record<keyof typeof zh, string> = {
   'filter.workspaceCurrent': 'Current workspace ({name})',
   'filter.searchLabel': 'Search',
   'filter.searchPlaceholder': 'Filter by name or description',
-  'filter.clear': 'Clear',
   'filter.empty': 'No skills match "{query}"',
   'filter.emptyWorkspace': 'No skills under the current filter.',
   'workspace.isolated': 'Workspace isolated',
   'workspace.isolatedHint': 'This skill belongs to workspace "{workspace}" and is isolated from the current session context',
   'refresh': 'Refresh',
-  'close': 'Close',
-  'cwd': 'cwd: {cwd}',
 }
 
 /** Locale key union for the slot map. */

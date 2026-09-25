@@ -9574,24 +9574,51 @@ window.__ModuleLoader__.load({
 		*
 		* Consuming plugins keep a thin wrapper that supplies the panel tree,
 		* container attribute names, and stylesheet class; those names are pinned by
-		* each package's CSS, skins, and the semantic-attributes contract. The
-		* sidebar row toggling the panel shares its core the same way
+		* each package's CSS, skins, and the semantic-attributes contract. Occupancy
+		* across the family rides {@link PANEL_FAMILY}, not per-plugin sibling pairs,
+		* so a third panel cannot leave a stale occupant behind. The sidebar row
+		* toggling the panel shares its core the same way
 		* (shared/client/sidebar-entry-core.ts, synced copy).
 		*/
-		const CONVERSATION_COLUMN_SELECTOR$1 = "[data-pane=\"conversation\"], [class*=\"centerCol\"]";
+		/**
+		* The center column's panel family: the single source of occupancy truth.
+		*
+		* Every family panel appears exactly once. Opening one clears the other rows'
+		* `<html>` attributes and broadcasts its own name; an open panel closes when
+		* the broadcast name is not its own. The previous shape paired each panel with
+		* ONE sibling (ssh <-> task-board), which cannot express three panels: a panel
+		* that did not name the third one stayed logically open while invisible, so
+		* its sidebar row needed a second click to reopen. Adding a family panel is
+		* one row here, not N pairwise options.
+		*/
+		const PANEL_FAMILY$2 = [
+			{
+				panel: "taskboard",
+				activeAttribute: "data-dsh-taskboard-active"
+			},
+			{
+				panel: "ssh",
+				activeAttribute: "data-dsh-ssh-active"
+			},
+			{
+				panel: "skill-explorer",
+				activeAttribute: "data-dsh-skill-explorer-active"
+			}
+		];
+		const CONVERSATION_COLUMN_SELECTOR$2 = "[data-pane=\"conversation\"], [class*=\"centerCol\"]";
 		/** Cross-plugin activation event; detail is the activating panel name. */
-		const ACTIVATE_EVENT$1 = "dsh-panel-activate";
-		const SIDEBAR_ROW_SELECTOR$1 = "[class*=\"sessionRow\"], [class*=\"projectRow\"], [class*=\"searchResultRow\"], [class*=\"searchResultWorkspace\"], [class*=\"newSession\"]";
+		const ACTIVATE_EVENT$2 = "dsh-panel-activate";
+		const SIDEBAR_ROW_SELECTOR$2 = "[class*=\"sessionRow\"], [class*=\"projectRow\"], [class*=\"searchResultRow\"], [class*=\"searchResultWorkspace\"], [class*=\"newSession\"]";
 		/** Find the center column, or undefined while the frame is not mounted. */
-		function conversationColumn$1() {
-			return document.querySelector(CONVERSATION_COLUMN_SELECTOR$1) ?? void 0;
+		function conversationColumn$2() {
+			return document.querySelector(CONVERSATION_COLUMN_SELECTOR$2) ?? void 0;
 		}
 		/**
 		* Mount a family panel into the center column and bind its visibility to the
 		* owning controller's open state.
 		* @returns disposer unmounting the tree and restoring the column.
 		*/
-		function mountCenterPanel$1(options) {
+		function mountCenterPanel$2(options) {
 			let root;
 			let container;
 			let unsubscribeLocale;
@@ -9608,7 +9635,7 @@ window.__ModuleLoader__.load({
 					container = void 0;
 				}
 				if (container === void 0) {
-					const column = conversationColumn$1();
+					const column = conversationColumn$2();
 					if (column === void 0) return;
 					container = document.createElement("div");
 					container.dataset[options.viewDatasetKey] = "";
@@ -9626,28 +9653,28 @@ window.__ModuleLoader__.load({
 			const applyActive = () => {
 				if (options.isOpen()) {
 					ensure();
-					document.documentElement.removeAttribute(options.siblingActiveAttribute);
+					for (const member of PANEL_FAMILY$2) if (member.panel !== options.panelName) document.documentElement.removeAttribute(member.activeAttribute);
 					document.documentElement.setAttribute(options.activeAttribute, "");
-					document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT$1, { detail: options.panelName }));
+					document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT$2, { detail: options.panelName }));
 				} else document.documentElement.removeAttribute(options.activeAttribute);
 			};
 			const onOtherActivate = (event) => {
-				if (event.detail === options.siblingPanelName && options.isOpen()) options.close();
+				if (event.detail !== options.panelName && options.isOpen()) options.close();
 			};
 			const onClickSidebarRow = (event) => {
 				if (!options.isOpen()) return;
 				const target = event.target;
 				if (target === null) return;
-				if (target.closest(SIDEBAR_ROW_SELECTOR$1) !== null) options.close();
+				if (target.closest(SIDEBAR_ROW_SELECTOR$2) !== null) options.close();
 			};
 			document.addEventListener("click", onClickSidebarRow, true);
-			document.addEventListener(ACTIVATE_EVENT$1, onOtherActivate);
+			document.addEventListener(ACTIVATE_EVENT$2, onOtherActivate);
 			const unsubscribe = options.subscribe(applyActive);
 			applyActive();
 			ensure();
 			return () => {
 				document.removeEventListener("click", onClickSidebarRow, true);
-				document.removeEventListener(ACTIVATE_EVENT$1, onOtherActivate);
+				document.removeEventListener(ACTIVATE_EVENT$2, onOtherActivate);
 				unsubscribeBody();
 				unsubscribe();
 				unsubscribeLocale?.();
@@ -9669,15 +9696,13 @@ window.__ModuleLoader__.load({
 		* @returns disposer unmounting the tree and restoring the column.
 		*/
 		function mountBoard(controller, locale) {
-			return mountCenterPanel$1({
+			return mountCenterPanel$2({
 				render: (root) => root.render(/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskBoard, { controller })),
 				viewDatasetKey: "dshTaskboardView",
 				pluginName: "task-board",
 				viewClassName: board_module_css_default.boardView,
 				activeAttribute: "data-dsh-taskboard-active",
-				siblingActiveAttribute: "data-dsh-ssh-active",
 				panelName: "taskboard",
-				siblingPanelName: "ssh",
 				isOpen: () => controller.getSnapshot().boardOpen,
 				close: () => controller.closeBoard(),
 				subscribe: (listener) => controller.subscribe(listener),
@@ -20279,7 +20304,7 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$6;
 			document.head.appendChild(tag);
 		}
-		var panel_module_css_default = {
+		var panel_module_css_default$1 = {
 			"actions": "mL8Uca_actions",
 			"backButton": "mL8Uca_backButton",
 			"badge": "mL8Uca_badge",
@@ -20403,18 +20428,18 @@ window.__ModuleLoader__.load({
 				}
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: panel_module_css_default.fillBody,
+				className: panel_module_css_default$1.fillBody,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.clusterForm,
+						className: panel_module_css_default$1.clusterForm,
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("cluster.command")
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
-									className: panel_module_css_default.input + " " + panel_module_css_default.commandInput,
+									className: panel_module_css_default$1.input + " " + panel_module_css_default$1.commandInput,
 									value: command,
 									onChange: (event) => {
 										setCommand(event.target.value);
@@ -20422,10 +20447,10 @@ window.__ModuleLoader__.load({
 								})]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: panel_module_css_default.clusterFilters,
+								className: panel_module_css_default$1.clusterFilters,
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										placeholder: tt$1("cluster.aliases"),
 										value: aliases,
 										onChange: (event) => {
@@ -20433,7 +20458,7 @@ window.__ModuleLoader__.load({
 										}
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										placeholder: tt$1("cluster.environment"),
 										value: environment,
 										onChange: (event) => {
@@ -20441,7 +20466,7 @@ window.__ModuleLoader__.load({
 										}
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										placeholder: tt$1("cluster.tags"),
 										value: tags,
 										onChange: (event) => {
@@ -20452,7 +20477,7 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.primaryButton,
+								className: panel_module_css_default$1.primaryButton,
 								disabled: running || command.trim() === "",
 								onClick: () => {
 									run();
@@ -20462,22 +20487,22 @@ window.__ModuleLoader__.load({
 						]
 					}),
 					error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "error",
 						children: tt$1("common.error", { error })
 					}),
 					results === null && error === null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.empty,
+						className: panel_module_css_default$1.empty,
 						children: tt$1("cluster.empty")
 					}),
 					results !== null && results.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.empty,
+						className: panel_module_css_default$1.empty,
 						children: tt$1("cluster.noMatch")
 					}),
 					results !== null && results.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.tableWrap,
+						className: panel_module_css_default$1.tableWrap,
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("table", {
-							className: panel_module_css_default.table,
+							className: panel_module_css_default$1.table,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", { children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", { children: tt$1("cluster.col.alias") }),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", { children: tt$1("cluster.col.status") }),
@@ -20491,38 +20516,38 @@ window.__ModuleLoader__.load({
 								const label = result.ok ? tt$1("cluster.ok") : result.timedOut === true ? tt$1("cluster.timeout") : tt$1("cluster.fail");
 								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", { children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-										className: panel_module_css_default.mono,
+										className: panel_module_css_default$1.mono,
 										children: result.alias
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.badge,
+										className: panel_module_css_default$1.badge,
 										"data-status": status,
 										children: label
 									}) }),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-										className: panel_module_css_default.mono,
+										className: panel_module_css_default$1.mono,
 										children: result.exitCode ?? "-"
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: result.stdout !== void 0 && result.stdout !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
-										className: panel_module_css_default.cellDetails,
+										className: panel_module_css_default$1.cellDetails,
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("summary", { children: tt$1("cluster.col.stdout") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-											className: panel_module_css_default.cellPre,
+											className: panel_module_css_default$1.cellPre,
 											children: result.stdout
 										})]
 									}) }),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: result.stderr !== void 0 && result.stderr !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
-										className: panel_module_css_default.cellDetails,
+										className: panel_module_css_default$1.cellDetails,
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("summary", { children: tt$1("cluster.col.stderr") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-											className: panel_module_css_default.cellPre,
+											className: panel_module_css_default$1.cellPre,
 											children: result.stderr
 										})]
 									}) }),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-										className: panel_module_css_default.cellMuted,
+										className: panel_module_css_default$1.cellMuted,
 										children: result.error ?? ""
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-										className: panel_module_css_default.mono,
+										className: panel_module_css_default$1.mono,
 										children: result.durationMs !== void 0 ? result.durationMs + " ms" : "-"
 									})
 								] }, result.alias);
@@ -20637,10 +20662,10 @@ window.__ModuleLoader__.load({
 				}
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: panel_module_css_default.modalBackdrop,
+				className: panel_module_css_default$1.modalBackdrop,
 				onClick: onClose,
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: panel_module_css_default.modal,
+					className: panel_module_css_default$1.modal,
 					role: "dialog",
 					"aria-modal": "true",
 					onClick: (event) => {
@@ -20648,20 +20673,20 @@ window.__ModuleLoader__.load({
 					},
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-							className: panel_module_css_default.modalTitle,
+							className: panel_module_css_default$1.modalTitle,
 							children: editing != null ? tt$1("form.title.edit", { alias: editing.alias }) : tt$1("form.title.create")
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.formRow,
+							className: panel_module_css_default$1.formRow,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.fieldLabel,
+										className: panel_module_css_default$1.fieldLabel,
 										children: tt$1("form.alias")
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										value: form.alias,
 										disabled: editing != null,
 										onChange: (event) => {
@@ -20669,17 +20694,17 @@ window.__ModuleLoader__.load({
 										}
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.hint,
+										className: panel_module_css_default$1.hint,
 										children: tt$1("form.aliasHint")
 									})
 								]
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.host")
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									value: form.host,
 									onChange: (event) => {
 										set("host", event.target.value);
@@ -20688,14 +20713,14 @@ window.__ModuleLoader__.load({
 							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.formRow,
+							className: panel_module_css_default$1.formRow,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.port")
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									type: "number",
 									min: 1,
 									max: 65535,
@@ -20705,12 +20730,12 @@ window.__ModuleLoader__.load({
 									}
 								})]
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.user")
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									value: form.user,
 									onChange: (event) => {
 										set("user", event.target.value);
@@ -20719,17 +20744,17 @@ window.__ModuleLoader__.load({
 							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.field,
+							className: panel_module_css_default$1.field,
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.auth")
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: panel_module_css_default.radioRow,
+									className: panel_module_css_default$1.radioRow,
 									children: [
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-											className: panel_module_css_default.radioLabel,
+											className: panel_module_css_default$1.radioLabel,
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 												type: "radio",
 												name: "dsh-ssh-auth",
@@ -20740,7 +20765,7 @@ window.__ModuleLoader__.load({
 											}), tt$1("form.auth.key")]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-											className: panel_module_css_default.radioLabel,
+											className: panel_module_css_default$1.radioLabel,
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 												type: "radio",
 												name: "dsh-ssh-auth",
@@ -20751,7 +20776,7 @@ window.__ModuleLoader__.load({
 											}), tt$1("form.auth.password")]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-											className: panel_module_css_default.radioLabel,
+											className: panel_module_css_default$1.radioLabel,
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 												type: "radio",
 												name: "dsh-ssh-auth",
@@ -20764,39 +20789,39 @@ window.__ModuleLoader__.load({
 									]
 								}),
 								editing != null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.hint,
+									className: panel_module_css_default$1.hint,
 									children: tt$1("form.authKeepHint")
 								})
 							]
 						}),
 						form.authKind === "key" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.formRow,
+							className: panel_module_css_default$1.formRow,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.fieldLabel,
+										className: panel_module_css_default$1.fieldLabel,
 										children: tt$1("form.keyPath")
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										value: form.keyPath,
 										onChange: (event) => {
 											set("keyPath", event.target.value);
 										}
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.hint,
+										className: panel_module_css_default$1.hint,
 										children: tt$1("form.keyPathHint")
 									})
 								]
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.passphrase")
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									type: "password",
 									value: form.passphrase,
 									onChange: (event) => {
@@ -20805,33 +20830,33 @@ window.__ModuleLoader__.load({
 								})]
 							})]
 						}) : form.authKind === "agent" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: panel_module_css_default.field,
+							className: panel_module_css_default$1.field,
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.agentPath")
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									value: form.agentPath,
 									onChange: (event) => {
 										set("agentPath", event.target.value);
 									}
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.hint,
+									className: panel_module_css_default$1.hint,
 									children: tt$1("form.agentPathHint")
 								})
 							]
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: panel_module_css_default.field,
+							className: panel_module_css_default$1.field,
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.password")
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									type: "password",
 									value: form.password,
 									onChange: (event) => {
@@ -20839,40 +20864,40 @@ window.__ModuleLoader__.load({
 									}
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.hint,
+									className: panel_module_css_default$1.hint,
 									children: tt$1("form.passwordHint")
 								})
 							]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: panel_module_css_default.field,
+							className: panel_module_css_default$1.field,
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.proxyJump")
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									value: form.proxyJump,
 									onChange: (event) => {
 										set("proxyJump", event.target.value);
 									}
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.hint,
+									className: panel_module_css_default$1.hint,
 									children: tt$1("form.proxyJumpHint")
 								})
 							]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: panel_module_css_default.field,
+							className: panel_module_css_default$1.field,
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.proxyCommand")
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									value: form.proxyCommand,
 									placeholder: "corp-vpn proxy %h %p %r",
 									onChange: (event) => {
@@ -20880,39 +20905,39 @@ window.__ModuleLoader__.load({
 									}
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.hint,
+									className: panel_module_css_default$1.hint,
 									children: tt$1("form.proxyCommandHint")
 								})
 							]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.formRow,
+							className: panel_module_css_default$1.formRow,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.fieldLabel,
+										className: panel_module_css_default$1.fieldLabel,
 										children: tt$1("form.environment")
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										value: form.environment,
 										onChange: (event) => {
 											set("environment", event.target.value);
 										}
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.hint,
+										className: panel_module_css_default$1.hint,
 										children: tt$1("form.environmentHint")
 									})
 								]
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								className: panel_module_css_default.field,
+								className: panel_module_css_default$1.field,
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.location")
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									value: form.location,
 									onChange: (event) => {
 										set("location", event.target.value);
@@ -20921,12 +20946,12 @@ window.__ModuleLoader__.load({
 							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: panel_module_css_default.field,
+							className: panel_module_css_default$1.field,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.fieldLabel,
+								className: panel_module_css_default$1.fieldLabel,
 								children: tt$1("form.description")
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								className: panel_module_css_default.input,
+								className: panel_module_css_default$1.input,
 								value: form.description,
 								onChange: (event) => {
 									set("description", event.target.value);
@@ -20934,40 +20959,40 @@ window.__ModuleLoader__.load({
 							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: panel_module_css_default.field,
+							className: panel_module_css_default$1.field,
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.fieldLabel,
+									className: panel_module_css_default$1.fieldLabel,
 									children: tt$1("form.tags")
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: panel_module_css_default.input,
+									className: panel_module_css_default$1.input,
 									value: form.tags,
 									onChange: (event) => {
 										set("tags", event.target.value);
 									}
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: panel_module_css_default.hint,
+									className: panel_module_css_default$1.hint,
 									children: tt$1("form.tagsHint")
 								})
 							]
 						}),
 						error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: panel_module_css_default.formError,
+							className: panel_module_css_default$1.formError,
 							children: tt$1("common.error", { error })
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.modalFooter,
+							className: panel_module_css_default$1.modalFooter,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.ghostButton,
+								className: panel_module_css_default$1.ghostButton,
 								disabled: saving,
 								onClick: onClose,
 								children: tt$1("form.cancel")
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.primaryButton,
+								className: panel_module_css_default$1.primaryButton,
 								disabled: saving,
 								onClick: () => {
 									save();
@@ -21131,17 +21156,17 @@ window.__ModuleLoader__.load({
 				const test = testResults[host.alias];
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", { children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-						className: panel_module_css_default.mono,
+						className: panel_module_css_default$1.mono,
 						children: host.alias
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("td", {
-						className: panel_module_css_default.mono,
+						className: panel_module_css_default$1.mono,
 						children: [
 							host.host,
 							":",
 							host.port,
 							host.proxyCommand !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.badge,
+								className: panel_module_css_default$1.badge,
 								"data-kind": "proxy",
 								title: host.proxyCommand,
 								children: tt$1("hosts.proxyBadge")
@@ -21150,28 +21175,28 @@ window.__ModuleLoader__.load({
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: host.user }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: panel_module_css_default.badge,
+						className: panel_module_css_default$1.badge,
 						"data-kind": host.auth,
 						children: host.auth === "key" ? tt$1("form.auth.key") : host.auth === "password" ? tt$1("form.auth.password") : tt$1("form.auth.agent")
 					}) }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-						className: panel_module_css_default.cellMuted,
+						className: panel_module_css_default$1.cellMuted,
 						children: host.environment ?? ""
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-						className: panel_module_css_default.cellMuted,
+						className: panel_module_css_default$1.cellMuted,
 						children: host.tags.join(", ")
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-						className: panel_module_css_default.cellMuted,
+						className: panel_module_css_default$1.cellMuted,
 						children: host.description ?? ""
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.actions,
+						className: panel_module_css_default$1.actions,
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.linkButton,
+								className: panel_module_css_default$1.linkButton,
 								disabled: testingAlias === host.alias,
 								onClick: () => {
 									runTest(host.alias);
@@ -21179,17 +21204,17 @@ window.__ModuleLoader__.load({
 								children: testingAlias === host.alias ? tt$1("hosts.testing") : tt$1("hosts.test")
 							}),
 							testingAlias === host.alias && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.spinner,
+								className: panel_module_css_default$1.spinner,
 								"aria-hidden": "true"
 							}),
 							test !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.inlineTest,
+								className: panel_module_css_default$1.inlineTest,
 								"data-status": test.ok ? "ok" : "fail",
 								children: test.ok ? tt$1("hosts.testOk", { latency: test.latencyMs ?? 0 }) : tt$1("hosts.testFail", { error: test.error ?? "" })
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.linkButton,
+								className: panel_module_css_default$1.linkButton,
 								onClick: () => {
 									setDialog({
 										mode: "edit",
@@ -21200,7 +21225,7 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.linkButton,
+								className: panel_module_css_default$1.linkButton,
 								"data-danger": true,
 								onClick: () => {
 									deleteHost(host.alias);
@@ -21209,7 +21234,7 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.ghostButton,
+								className: panel_module_css_default$1.ghostButton,
 								onClick: () => {
 									onConnect(host.alias);
 								},
@@ -21220,7 +21245,7 @@ window.__ModuleLoader__.load({
 				] }, host.alias);
 			};
 			const renderHostTable = (rows) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("table", {
-				className: panel_module_css_default.table,
+				className: panel_module_css_default$1.table,
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", { children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", { children: tt$1("hosts.col.alias") }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", { children: tt$1("hosts.col.host") }),
@@ -21234,13 +21259,13 @@ window.__ModuleLoader__.load({
 			});
 			const groups = hosts === null ? [] : groupHosts(hosts, groupBy);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: panel_module_css_default.fillBody,
+				className: panel_module_css_default$1.fillBody,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.toolbar,
+						className: panel_module_css_default$1.toolbar,
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								className: panel_module_css_default.search,
+								className: panel_module_css_default$1.search,
 								type: "search",
 								placeholder: tt$1("hosts.search"),
 								value: search,
@@ -21249,7 +21274,7 @@ window.__ModuleLoader__.load({
 								}
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-								className: panel_module_css_default.groupBySelect,
+								className: panel_module_css_default$1.groupBySelect,
 								"aria-label": tt$1("hosts.groupBy.label"),
 								value: groupBy,
 								onChange: (event) => {
@@ -21270,10 +21295,10 @@ window.__ModuleLoader__.load({
 									})
 								]
 							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: panel_module_css_default.toolbarSpacer }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: panel_module_css_default$1.toolbarSpacer }),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.primaryButton,
+								className: panel_module_css_default$1.primaryButton,
 								onClick: () => {
 									setDialog({ mode: "create" });
 								},
@@ -21281,7 +21306,7 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.ghostButton,
+								className: panel_module_css_default$1.ghostButton,
 								disabled: importing,
 								onClick: () => {
 									importConfig();
@@ -21291,58 +21316,58 @@ window.__ModuleLoader__.load({
 						]
 					}),
 					notice !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "ok",
 						children: notice
 					}),
 					notice !== null && importSkips.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("ul", {
-						className: panel_module_css_default.importSkips,
+						className: panel_module_css_default$1.importSkips,
 						children: [importSkips.slice(0, IMPORT_SKIP_LIMIT).map((block) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-							className: panel_module_css_default.importSkipRow,
+							className: panel_module_css_default$1.importSkipRow,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.mono,
+								className: panel_module_css_default$1.mono,
 								children: block.name
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.cellMuted,
+								className: panel_module_css_default$1.cellMuted,
 								children: tt$1(IMPORT_REASON_KEY[block.reason])
 							})]
 						}, block.name)), importSkips.length > IMPORT_SKIP_LIMIT && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", {
-							className: panel_module_css_default.importSkipRow,
+							className: panel_module_css_default$1.importSkipRow,
 							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.cellMuted,
+								className: panel_module_css_default$1.cellMuted,
 								children: tt$1("import.more", { count: importSkips.length - IMPORT_SKIP_LIMIT })
 							})
 						})]
 					}),
 					error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "error",
 						children: tt$1("common.error", { error })
 					}),
 					hosts === null && error === null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.loading,
+						className: panel_module_css_default$1.loading,
 						children: tt$1("common.loading")
 					}),
 					hosts !== null && hosts.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.empty,
+						className: panel_module_css_default$1.empty,
 						children: tt$1("hosts.empty")
 					}),
 					hosts !== null && hosts.length > 0 && groupBy === "none" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.tableWrap,
+						className: panel_module_css_default$1.tableWrap,
 						children: renderHostTable(hosts)
 					}),
 					hosts !== null && hosts.length > 0 && groupBy !== "none" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.tableWrap,
+						className: panel_module_css_default$1.tableWrap,
 						children: groups.map((group) => {
 							const isCollapsed = collapsed[group.key] === true;
 							const label = group.key === "" ? groupBy === "tags" ? tt$1("hosts.group.noTags") : tt$1("hosts.group.ungrouped") : group.key;
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-								className: panel_module_css_default.groupSection,
+								className: panel_module_css_default$1.groupSection,
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: panel_module_css_default.groupHeader,
+									className: panel_module_css_default$1.groupHeader,
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 										type: "button",
-										className: panel_module_css_default.groupToggle,
+										className: panel_module_css_default$1.groupToggle,
 										"aria-expanded": !isCollapsed,
 										onClick: () => {
 											setCollapsed((prev) => ({
@@ -21352,22 +21377,22 @@ window.__ModuleLoader__.load({
 										},
 										children: [
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: panel_module_css_default.groupChevron,
+												className: panel_module_css_default$1.groupChevron,
 												"data-collapsed": isCollapsed || void 0,
 												"aria-hidden": "true"
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: panel_module_css_default.groupName,
+												className: panel_module_css_default$1.groupName,
 												children: label
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: panel_module_css_default.groupCount,
+												className: panel_module_css_default$1.groupCount,
 												children: tt$1("hosts.group.count", { count: group.hosts.length })
 											})
 										]
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
-										className: panel_module_css_default.linkButton,
+										className: panel_module_css_default$1.linkButton,
 										disabled: testingGroup === group.key,
 										onClick: () => {
 											testGroup(group);
@@ -34630,13 +34655,13 @@ window.__ModuleLoader__.load({
 			};
 			const active = status.kind === "connecting" || status.kind === "connected";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: panel_module_css_default.termBody,
+				className: panel_module_css_default$1.termBody,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.controls,
+						className: panel_module_css_default$1.controls,
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-								className: panel_module_css_default.input,
+								className: panel_module_css_default$1.input,
 								value: alias,
 								onChange: (event) => {
 									setAlias(event.target.value);
@@ -34656,14 +34681,14 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.primaryButton,
+								className: panel_module_css_default$1.primaryButton,
 								disabled: alias === "" || active,
 								onClick: connect,
 								children: tt$1("terminal.connect")
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.ghostButton,
+								className: panel_module_css_default$1.ghostButton,
 								disabled: !active,
 								onClick: disconnect,
 								children: tt$1("terminal.disconnect")
@@ -34671,67 +34696,67 @@ window.__ModuleLoader__.load({
 						]
 					}),
 					status.kind === "connecting" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "info",
 						children: tt$1("terminal.connecting")
 					}),
 					status.kind === "connected" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "ok",
 						children: tt$1("terminal.ready", { alias: status.alias })
 					}),
 					status.kind === "exited" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "info",
 						children: [tt$1("terminal.exited", { alias: status.alias }), status.detail !== void 0 ? " (" + status.detail + ")" : ""]
 					}),
 					status.kind === "error" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "error",
 						children: tt$1("terminal.error", { error: status.detail })
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.termWrap,
+						className: panel_module_css_default$1.termWrap,
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								ref: containerRef,
-								className: panel_module_css_default.termContainer,
+								className: panel_module_css_default$1.termContainer,
 								"data-dsh-part": "terminal"
 							}),
 							status.kind === "idle" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: panel_module_css_default.termPlaceholder,
+								className: panel_module_css_default$1.termPlaceholder,
 								children: hosts.length === 0 ? tt$1("hosts.empty") : tt$1("terminal.placeholder")
 							}),
 							authPrompt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: panel_module_css_default.modalBackdrop,
+								className: panel_module_css_default$1.modalBackdrop,
 								style: {
 									position: "absolute",
 									zIndex: 10
 								},
 								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
-									className: panel_module_css_default.modalCard,
+									className: panel_module_css_default$1.modalCard,
 									style: { maxWidth: 420 },
 									onSubmit: submitAuth,
 									children: [
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-											className: panel_module_css_default.modalHeader,
+											className: panel_module_css_default$1.modalHeader,
 											children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-												className: panel_module_css_default.modalTitle,
+												className: panel_module_css_default$1.modalTitle,
 												children: authPrompt.name || tt$1("terminal.auth.title")
 											})
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-											className: panel_module_css_default.hint,
+											className: panel_module_css_default$1.hint,
 											children: authPrompt.instructions || tt$1("terminal.auth.hint")
 										}),
 										authPrompt.prompts.map((p, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-											className: panel_module_css_default.field,
+											className: panel_module_css_default$1.field,
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: panel_module_css_default.fieldLabel,
+												className: panel_module_css_default$1.fieldLabel,
 												children: p.prompt.trim() || tt$1("terminal.auth.title")
 											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 												autoFocus: idx === 0,
-												className: panel_module_css_default.input,
+												className: panel_module_css_default$1.input,
 												type: p.echo ? "text" : "password",
 												placeholder: tt$1("terminal.auth.placeholder"),
 												value: authInputs[idx] ?? "",
@@ -34743,15 +34768,15 @@ window.__ModuleLoader__.load({
 											})]
 										}, idx)),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-											className: panel_module_css_default.modalFooter,
+											className: panel_module_css_default$1.modalFooter,
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
-												className: panel_module_css_default.ghostButton,
+												className: panel_module_css_default$1.ghostButton,
 												onClick: disconnect,
 												children: tt$1("terminal.auth.cancel")
 											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "submit",
-												className: panel_module_css_default.primaryButton,
+												className: panel_module_css_default$1.primaryButton,
 												children: tt$1("terminal.auth.submit")
 											})]
 										})
@@ -34922,13 +34947,13 @@ window.__ModuleLoader__.load({
 			};
 			const ready = alias !== "" && remotePath.trim() !== "" && transfer === null;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: panel_module_css_default.tabBody,
+				className: panel_module_css_default$1.tabBody,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.controls,
+						className: panel_module_css_default$1.controls,
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-								className: panel_module_css_default.input,
+								className: panel_module_css_default$1.input,
 								value: alias,
 								onChange: (event) => {
 									setAlias(event.target.value);
@@ -34947,7 +34972,7 @@ window.__ModuleLoader__.load({
 								}, host.alias))]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								className: panel_module_css_default.input,
+								className: panel_module_css_default$1.input,
 								placeholder: tt$1("transfer.remotePathHint"),
 								value: remotePath,
 								onChange: (event) => {
@@ -34956,15 +34981,15 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.ghostButton,
+								className: panel_module_css_default$1.ghostButton,
 								disabled: alias === "",
 								onClick: openBrowse,
 								children: tt$1("transfer.browseRemote")
 							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: panel_module_css_default.toolbarSpacer }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: panel_module_css_default$1.toolbarSpacer }),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.primaryButton,
+								className: panel_module_css_default$1.primaryButton,
 								disabled: !ready,
 								onClick: () => {
 									fileRef.current?.click();
@@ -34973,7 +34998,7 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.ghostButton,
+								className: panel_module_css_default$1.ghostButton,
 								disabled: !ready,
 								onClick: () => {
 									handleDownload();
@@ -34983,7 +35008,7 @@ window.__ModuleLoader__.load({
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 								ref: fileRef,
 								type: "file",
-								className: panel_module_css_default.hiddenFile,
+								className: panel_module_css_default$1.hiddenFile,
 								onChange: (event) => {
 									handleFile(event);
 								}
@@ -34991,20 +35016,20 @@ window.__ModuleLoader__.load({
 						]
 					}),
 					listError !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "error",
 						children: tt$1("common.error", { error: listError })
 					}),
 					browseOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.browsePanel,
+						className: panel_module_css_default$1.browsePanel,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.browseHeader,
+							className: panel_module_css_default$1.browseHeader,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.browsePath,
+								className: panel_module_css_default$1.browsePath,
 								children: browseDir
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.linkButton,
+								className: panel_module_css_default$1.linkButton,
 								disabled: browsing,
 								onClick: () => {
 									loadDir(browseDir);
@@ -35012,25 +35037,25 @@ window.__ModuleLoader__.load({
 								children: tt$1("transfer.refresh")
 							})]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.browseList,
+							className: panel_module_css_default$1.browseList,
 							children: [browseDir !== "/" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								type: "button",
-								className: panel_module_css_default.dirRow,
+								className: panel_module_css_default$1.dirRow,
 								"data-up": true,
 								onClick: () => {
 									loadDir(parentOf(browseDir));
 								},
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.dirName,
+										className: panel_module_css_default$1.dirName,
 										children: tt$1("transfer.upLevel")
 									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: panel_module_css_default.dirType }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: panel_module_css_default.dirSize })
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: panel_module_css_default$1.dirType }),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: panel_module_css_default$1.dirSize })
 								]
 							}), entries.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								type: "button",
-								className: panel_module_css_default.dirRow,
+								className: panel_module_css_default$1.dirRow,
 								"data-type": entry.type,
 								onClick: () => {
 									if (entry.type === "dir") loadDir(joinRemotePath(browseDir, entry.name));
@@ -35038,15 +35063,15 @@ window.__ModuleLoader__.load({
 								},
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.dirName,
+										className: panel_module_css_default$1.dirName,
 										children: entry.name
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.dirType,
+										className: panel_module_css_default$1.dirType,
 										children: entry.type === "dir" ? "[" + tt$1("transfer.dir") + "]" : entry.type === "file" ? "[" + tt$1("transfer.file") + "]" : ""
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.dirSize,
+										className: panel_module_css_default$1.dirSize,
 										children: formatBytes$1(entry.size)
 									})
 								]
@@ -35054,24 +35079,24 @@ window.__ModuleLoader__.load({
 						})]
 					}),
 					transfer !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.transferBlock,
+						className: panel_module_css_default$1.transferBlock,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.progressMeta,
+							className: panel_module_css_default$1.progressMeta,
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: transfer.kind === "upload" ? tt$1("transfer.uploading", { file: transfer.file }) : tt$1("transfer.downloading") }),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: tt$1("transfer.percent", { value: Math.round(transfer.percent) }) }),
 								transfer.speedBps !== void 0 && transfer.phase === "transferring" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: tt$1("transfer.speed", { value: formatBytes$1(transfer.speedBps) }) })
 							]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: panel_module_css_default.progressTrack,
+							className: panel_module_css_default$1.progressTrack,
 							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: panel_module_css_default.progressBar,
+								className: panel_module_css_default$1.progressBar,
 								style: { width: Math.min(100, Math.max(0, transfer.percent)) + "%" }
 							})
 						})]
 					}),
 					status !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": status.kind,
 						children: status.kind === "ok" ? tt$1("transfer.done", { bytes: status.bytes }) : tt$1("transfer.failed", { error: status.error })
 					})
@@ -35247,13 +35272,13 @@ window.__ModuleLoader__.load({
 				}
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: panel_module_css_default.tabBody,
+				className: panel_module_css_default$1.tabBody,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.controls,
+						className: panel_module_css_default$1.controls,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
-							className: panel_module_css_default.ghostButton,
+							className: panel_module_css_default$1.ghostButton,
 							disabled: busy,
 							onClick: () => {
 								stopAll();
@@ -35261,7 +35286,7 @@ window.__ModuleLoader__.load({
 							children: tt$1("tunnel.stopAll")
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
-							className: panel_module_css_default.ghostButton,
+							className: panel_module_css_default$1.ghostButton,
 							onClick: () => {
 								refresh();
 							},
@@ -35269,26 +35294,26 @@ window.__ModuleLoader__.load({
 						})]
 					}),
 					error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "error",
 						children: error
 					}),
 					notice !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.banner,
+						className: panel_module_css_default$1.banner,
 						"data-kind": "ok",
 						children: notice
 					}),
 					tunnels !== null && tunnels.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.empty,
+						className: panel_module_css_default$1.empty,
 						children: tt$1("tunnel.empty")
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.tunnelList,
+						className: panel_module_css_default$1.tunnelList,
 						children: (tunnels ?? []).map((tunnel) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.tunnelRow,
+							className: panel_module_css_default$1.tunnelRow,
 							"data-state": tunnel.state,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: panel_module_css_default.tunnelLabel,
+								className: panel_module_css_default$1.tunnelLabel,
 								children: tt$1("tunnel.row", {
 									alias: tunnel.alias,
 									localPort: tunnel.localPort,
@@ -35297,7 +35322,7 @@ window.__ModuleLoader__.load({
 								})
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: panel_module_css_default.ghostButton,
+								className: panel_module_css_default$1.ghostButton,
 								onClick: () => {
 									stopTunnel(tunnel.id);
 								},
@@ -35306,17 +35331,17 @@ window.__ModuleLoader__.load({
 						}, tunnel.id))
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.formCard,
+						className: panel_module_css_default$1.formCard,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: panel_module_css_default.formRow,
+							className: panel_module_css_default$1.formRow,
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-									className: panel_module_css_default.field,
+									className: panel_module_css_default$1.field,
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.fieldLabel,
+										className: panel_module_css_default$1.fieldLabel,
 										children: tt$1("tunnel.alias")
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										value: alias,
 										onChange: (event) => {
 											setAlias(event.target.value);
@@ -35331,12 +35356,12 @@ window.__ModuleLoader__.load({
 									})]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-									className: panel_module_css_default.field,
+									className: panel_module_css_default$1.field,
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.fieldLabel,
+										className: panel_module_css_default$1.fieldLabel,
 										children: tt$1("tunnel.remotePort")
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										type: "number",
 										min: 1,
 										max: 65535,
@@ -35347,12 +35372,12 @@ window.__ModuleLoader__.load({
 									})]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-									className: panel_module_css_default.field,
+									className: panel_module_css_default$1.field,
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.fieldLabel,
+										className: panel_module_css_default$1.fieldLabel,
 										children: tt$1("tunnel.remoteHost")
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										value: remoteHost,
 										placeholder: tt$1("tunnel.remoteHostHint"),
 										onChange: (event) => {
@@ -35361,12 +35386,12 @@ window.__ModuleLoader__.load({
 									})]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-									className: panel_module_css_default.field,
+									className: panel_module_css_default$1.field,
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: panel_module_css_default.fieldLabel,
+										className: panel_module_css_default$1.fieldLabel,
 										children: tt$1("tunnel.localPort")
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: panel_module_css_default.input,
+										className: panel_module_css_default$1.input,
 										type: "number",
 										min: 1,
 										max: 65535,
@@ -35380,7 +35405,7 @@ window.__ModuleLoader__.load({
 							]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
-							className: panel_module_css_default.primaryButton,
+							className: panel_module_css_default$1.primaryButton,
 							disabled: busy || alias === "" || remotePort.trim() === "",
 							onClick: () => {
 								start();
@@ -35436,14 +35461,14 @@ window.__ModuleLoader__.load({
 				}));
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: panel_module_css_default.panel,
+				className: panel_module_css_default$1.panel,
 				"data-dsh-plugin": "ssh",
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.panelHeader,
+						className: panel_module_css_default$1.panelHeader,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 							type: "button",
-							className: `${panel_module_css_default.ghostButton} ${panel_module_css_default.backButton}`,
+							className: `${panel_module_css_default$1.ghostButton} ${panel_module_css_default$1.backButton}`,
 							"aria-label": tt$1("panel.backToConversation"),
 							"data-dsh-center-view-back": "",
 							onClick: () => {
@@ -35454,12 +35479,12 @@ window.__ModuleLoader__.load({
 								children: "‹"
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: tt$1("panel.backToConversation") })]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
-							className: panel_module_css_default.panelTitle,
+							className: panel_module_css_default$1.panelTitle,
 							children: tt$1("panel.title")
 						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: panel_module_css_default.tabBar,
+						className: panel_module_css_default$1.tabBar,
 						role: "tablist",
 						"data-dsh-part": "tab-bar",
 						children: TABS.map((tab) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -35468,7 +35493,7 @@ window.__ModuleLoader__.load({
 							"aria-selected": activeTab === tab.id,
 							"data-active": activeTab === tab.id ? "" : void 0,
 							"data-dsh-part": "tab",
-							className: panel_module_css_default.tab,
+							className: panel_module_css_default$1.tab,
 							onClick: () => {
 								setActiveTab(tab.id);
 							},
@@ -35476,7 +35501,7 @@ window.__ModuleLoader__.load({
 						}, tab.id))
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: panel_module_css_default.panelContent,
+						className: panel_module_css_default$1.panelContent,
 						children: [
 							activeTab === "hosts" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(HostsTab, {
 								api,
@@ -35605,24 +35630,51 @@ window.__ModuleLoader__.load({
 		*
 		* Consuming plugins keep a thin wrapper that supplies the panel tree,
 		* container attribute names, and stylesheet class; those names are pinned by
-		* each package's CSS, skins, and the semantic-attributes contract. The
-		* sidebar row toggling the panel shares its core the same way
+		* each package's CSS, skins, and the semantic-attributes contract. Occupancy
+		* across the family rides {@link PANEL_FAMILY}, not per-plugin sibling pairs,
+		* so a third panel cannot leave a stale occupant behind. The sidebar row
+		* toggling the panel shares its core the same way
 		* (shared/client/sidebar-entry-core.ts, synced copy).
 		*/
-		const CONVERSATION_COLUMN_SELECTOR = "[data-pane=\"conversation\"], [class*=\"centerCol\"]";
+		/**
+		* The center column's panel family: the single source of occupancy truth.
+		*
+		* Every family panel appears exactly once. Opening one clears the other rows'
+		* `<html>` attributes and broadcasts its own name; an open panel closes when
+		* the broadcast name is not its own. The previous shape paired each panel with
+		* ONE sibling (ssh <-> task-board), which cannot express three panels: a panel
+		* that did not name the third one stayed logically open while invisible, so
+		* its sidebar row needed a second click to reopen. Adding a family panel is
+		* one row here, not N pairwise options.
+		*/
+		const PANEL_FAMILY$1 = [
+			{
+				panel: "taskboard",
+				activeAttribute: "data-dsh-taskboard-active"
+			},
+			{
+				panel: "ssh",
+				activeAttribute: "data-dsh-ssh-active"
+			},
+			{
+				panel: "skill-explorer",
+				activeAttribute: "data-dsh-skill-explorer-active"
+			}
+		];
+		const CONVERSATION_COLUMN_SELECTOR$1 = "[data-pane=\"conversation\"], [class*=\"centerCol\"]";
 		/** Cross-plugin activation event; detail is the activating panel name. */
-		const ACTIVATE_EVENT = "dsh-panel-activate";
-		const SIDEBAR_ROW_SELECTOR = "[class*=\"sessionRow\"], [class*=\"projectRow\"], [class*=\"searchResultRow\"], [class*=\"searchResultWorkspace\"], [class*=\"newSession\"]";
+		const ACTIVATE_EVENT$1 = "dsh-panel-activate";
+		const SIDEBAR_ROW_SELECTOR$1 = "[class*=\"sessionRow\"], [class*=\"projectRow\"], [class*=\"searchResultRow\"], [class*=\"searchResultWorkspace\"], [class*=\"newSession\"]";
 		/** Find the center column, or undefined while the frame is not mounted. */
-		function conversationColumn() {
-			return document.querySelector(CONVERSATION_COLUMN_SELECTOR) ?? void 0;
+		function conversationColumn$1() {
+			return document.querySelector(CONVERSATION_COLUMN_SELECTOR$1) ?? void 0;
 		}
 		/**
 		* Mount a family panel into the center column and bind its visibility to the
 		* owning controller's open state.
 		* @returns disposer unmounting the tree and restoring the column.
 		*/
-		function mountCenterPanel(options) {
+		function mountCenterPanel$1(options) {
 			let root;
 			let container;
 			let unsubscribeLocale;
@@ -35639,7 +35691,7 @@ window.__ModuleLoader__.load({
 					container = void 0;
 				}
 				if (container === void 0) {
-					const column = conversationColumn();
+					const column = conversationColumn$1();
 					if (column === void 0) return;
 					container = document.createElement("div");
 					container.dataset[options.viewDatasetKey] = "";
@@ -35657,28 +35709,28 @@ window.__ModuleLoader__.load({
 			const applyActive = () => {
 				if (options.isOpen()) {
 					ensure();
-					document.documentElement.removeAttribute(options.siblingActiveAttribute);
+					for (const member of PANEL_FAMILY$1) if (member.panel !== options.panelName) document.documentElement.removeAttribute(member.activeAttribute);
 					document.documentElement.setAttribute(options.activeAttribute, "");
-					document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: options.panelName }));
+					document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT$1, { detail: options.panelName }));
 				} else document.documentElement.removeAttribute(options.activeAttribute);
 			};
 			const onOtherActivate = (event) => {
-				if (event.detail === options.siblingPanelName && options.isOpen()) options.close();
+				if (event.detail !== options.panelName && options.isOpen()) options.close();
 			};
 			const onClickSidebarRow = (event) => {
 				if (!options.isOpen()) return;
 				const target = event.target;
 				if (target === null) return;
-				if (target.closest(SIDEBAR_ROW_SELECTOR) !== null) options.close();
+				if (target.closest(SIDEBAR_ROW_SELECTOR$1) !== null) options.close();
 			};
 			document.addEventListener("click", onClickSidebarRow, true);
-			document.addEventListener(ACTIVATE_EVENT, onOtherActivate);
+			document.addEventListener(ACTIVATE_EVENT$1, onOtherActivate);
 			const unsubscribe = options.subscribe(applyActive);
 			applyActive();
 			ensure();
 			return () => {
 				document.removeEventListener("click", onClickSidebarRow, true);
-				document.removeEventListener(ACTIVATE_EVENT, onOtherActivate);
+				document.removeEventListener(ACTIVATE_EVENT$1, onOtherActivate);
 				unsubscribeBody();
 				unsubscribe();
 				unsubscribeLocale?.();
@@ -35702,7 +35754,7 @@ window.__ModuleLoader__.load({
 		* @returns disposer unmounting the tree and restoring the column.
 		*/
 		function mountPanel$1(controller, api, terminalFont, locale) {
-			return mountCenterPanel({
+			return mountCenterPanel$1({
 				render: (root) => root.render(/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SshPanel, {
 					controller,
 					api,
@@ -35710,11 +35762,9 @@ window.__ModuleLoader__.load({
 				})),
 				viewDatasetKey: "dshSshView",
 				pluginName: "ssh",
-				viewClassName: panel_module_css_default.view,
+				viewClassName: panel_module_css_default$1.view,
 				activeAttribute: "data-dsh-ssh-active",
-				siblingActiveAttribute: "data-dsh-taskboard-active",
 				panelName: "ssh",
-				siblingPanelName: "taskboard",
 				isOpen: () => controller.getSnapshot().panelOpen,
 				close: () => controller.close(),
 				subscribe: (listener) => controller.subscribe(listener),
@@ -35724,7 +35774,7 @@ window.__ModuleLoader__.load({
 		//#endregion
 		//#region ../dsh-ssh/src/client/panel/controller.ts
 		/** The panel state owner the sidebar entry toggles and the view renders from. */
-		var PanelController = class {
+		var PanelController$1 = class {
 			panelOpen = false;
 			listeners = /* @__PURE__ */ new Set();
 			getSnapshot() {
@@ -36010,7 +36060,7 @@ window.__ModuleLoader__.load({
 				rowSelector: ENTRY_SELECTOR$1,
 				plugin: "ssh",
 				icon: ICON$1,
-				css: panel_module_css_default,
+				css: panel_module_css_default$1,
 				label: () => tt$1("entry.label"),
 				tooltip: () => tt$1("entry.tooltip"),
 				refresh: locale === void 0 ? void 0 : { subscribe: (listener) => locale.subscribe(listener) },
@@ -36135,7 +36185,7 @@ window.__ModuleLoader__.load({
 			try {
 				setRuntimeTranslate$1(ctx.locale.bind(NS$5));
 			} catch {}
-			const controller = new PanelController();
+			const controller = new PanelController$1();
 			const api = new SshApi();
 			const settings = bindSettingsReader(ctx, SETTINGS_NS, TERMINAL_FONT_FIELD);
 			const terminalFont = {
@@ -38223,6 +38273,7 @@ window.__ModuleLoader__.load({
 			"entry.label": "技能中心",
 			"entry.tooltip": "技能中心：浏览与管理已加载的 skill",
 			"panel.title": "技能中心",
+			"panel.backToConversation": "返回会话",
 			"tab.list": "技能",
 			"tab.create": "创建",
 			"tab.edit": "编辑技能",
@@ -38284,19 +38335,17 @@ window.__ModuleLoader__.load({
 			"filter.workspaceCurrent": "当前工作区 ({name})",
 			"filter.searchLabel": "搜索",
 			"filter.searchPlaceholder": "按名称或描述筛选",
-			"filter.clear": "清空",
 			"filter.empty": "没有匹配「{query}」的技能",
 			"filter.emptyWorkspace": "当前筛选下没有技能。",
 			"workspace.isolated": "工作区隔离",
 			"workspace.isolatedHint": "该技能属于工作区「{workspace}」，在当前会话上下文隔离不生效",
-			"refresh": "刷新",
-			"close": "关闭",
-			"cwd": "cwd: {cwd}"
+			"refresh": "刷新"
 		};
 		const en$3 = {
 			"entry.label": "Skill Center",
 			"entry.tooltip": "Skill center: browse and manage loaded skills",
 			"panel.title": "Skill Center",
+			"panel.backToConversation": "Back to chat",
 			"tab.list": "Skills",
 			"tab.create": "Create",
 			"tab.edit": "Edit skill",
@@ -38358,14 +38407,11 @@ window.__ModuleLoader__.load({
 			"filter.workspaceCurrent": "Current workspace ({name})",
 			"filter.searchLabel": "Search",
 			"filter.searchPlaceholder": "Filter by name or description",
-			"filter.clear": "Clear",
 			"filter.empty": "No skills match \"{query}\"",
 			"filter.emptyWorkspace": "No skills under the current filter.",
 			"workspace.isolated": "Workspace isolated",
 			"workspace.isolatedHint": "This skill belongs to workspace \"{workspace}\" and is isolated from the current session context",
-			"refresh": "Refresh",
-			"close": "Close",
-			"cwd": "cwd: {cwd}"
+			"refresh": "Refresh"
 		};
 		//#endregion
 		//#region ../dsh-skill-explorer/src/client/panel-helpers.ts
@@ -38396,52 +38442,9 @@ window.__ModuleLoader__.load({
 			return text;
 		}
 		//#endregion
-		//#region ../dsh-skill-explorer/src/client/skill-filter.ts
-		/**
-		* Match rank of one skill against a lowercased needle: 0 when the name hits,
-		* 1 when only the description hits, undefined when neither does. An empty
-		* needle matches everything at rank 0.
-		*/
-		function matchRank(skill, needle) {
-			if (needle === "") return 0;
-			if (skill.name.toLowerCase().includes(needle)) return 0;
-			if (skill.description.toLowerCase().includes(needle)) return 1;
-		}
-		/**
-		* Whether a skill survives the workspace axis. Skills without a workspace
-		* root are global and stay visible in every selection; that is the pre-search
-		* behavior and the search must not change it.
-		*/
-		function inWorkspace(skill, workspace) {
-			if (workspace === "all") return true;
-			return skill.workspaceRoot === void 0 || skill.workspaceRoot === workspace;
-		}
-		/**
-		* Apply both axes to a payload's groups: workspace filter first, then the
-		* query (name hits ranked before description hits, stable within a rank).
-		* Empty groups are dropped so the caller renders only what has content.
-		* @param groups - host payload groups in host order.
-		* @param filter - workspace + query.
-		* @returns the visible groups; the input is never mutated.
-		*/
-		function selectGroups(groups, filter) {
-			const needle = filter.query.trim().toLowerCase();
-			return groups.map((group) => {
-				const ranked = group.skills.filter((skill) => inWorkspace(skill, filter.workspace)).map((skill) => ({
-					skill,
-					rank: matchRank(skill, needle)
-				})).filter((row) => row.rank !== void 0);
-				if (needle !== "") ranked.sort((left, right) => left.rank - right.rank);
-				return {
-					...group,
-					skills: ranked.map((row) => row.skill)
-				};
-			}).filter((group) => group.skills.length > 0);
-		}
-		//#endregion
-		//#region \0dsh-css:packages/dsh-skill-explorer/src/client/skill-panel.module.css.mjs
-		const css$3 = ".cBrkua_entry{box-sizing:border-box;min-height:36px;color:var(--dsw-alias-label-primary);cursor:pointer;font:inherit;text-align:left;white-space:nowrap;background:0 0;border:none;border-radius:12px;align-items:center;gap:8px;margin:0 2px;padding:7px 8px;font-size:14px;line-height:22px;display:flex}.cBrkua_entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.cBrkua_entryIcon{flex:none;justify-content:center;align-items:center;width:16px;height:16px;display:inline-flex}.cBrkua_entryIcon svg{width:16px;height:16px;display:block}.cBrkua_entryLabel{text-overflow:ellipsis;overflow:hidden}[data-dsh-frame][data-sidebar-collapsed] .cBrkua_entry,[data-sidebar-collapsed] .cBrkua_entry{border-radius:12px;justify-content:center;width:36px;height:36px;margin:0 auto 12px;padding:0}[data-dsh-frame][data-sidebar-collapsed] .cBrkua_entryIcon,[data-sidebar-collapsed] .cBrkua_entryIcon,[data-dsh-frame][data-sidebar-collapsed] .cBrkua_entryIcon svg,[data-sidebar-collapsed] .cBrkua_entryIcon svg{width:18px;height:18px}[data-dsh-frame][data-sidebar-collapsed] .cBrkua_entryLabel,[data-sidebar-collapsed] .cBrkua_entryLabel{display:none}.cBrkua_overlay{background:var(--dsw-alias-bg-mask-2,#080a1073);z-index:9999;justify-content:center;align-items:center;font-family:system-ui,-apple-system,Segoe UI,sans-serif;display:flex;position:fixed;inset:0}.cBrkua_card{background:var(--dsw-alias-bg-overlay,#fdfdfd);width:min(780px,92vw);max-height:84vh;color:var(--dsw-alias-label-primary,#1c1e26);border-radius:12px;flex-direction:column;display:flex;overflow:hidden;box-shadow:0 18px 60px #00000059}.cBrkua_head{background:var(--dsw-alias-bg-base,#fff);align-items:center;gap:10px;padding:12px 16px;display:flex}.cBrkua_headTitle{flex:1;margin:0;font-size:15px;font-weight:600}.cBrkua_headButton{color:var(--dsw-alias-label-primary,#3a3f4b);cursor:pointer;background:#f2f3f5;border:none;border-radius:6px;padding:4px 10px;font-size:12px}.cBrkua_headButton:hover{background:#e7e8ea}.cBrkua_tabs{background:var(--dsw-alias-bg-layer-1,#f7f8fa);gap:4px;padding:8px 16px 0;display:flex}.cBrkua_tab{border:1px solid var(--dsw-alias-border-l1,#d7dae0);color:var(--dsw-alias-label-secondary,#8a8f9c);cursor:pointer;background:0 0;border-bottom:none;border-radius:8px 8px 0 0;padding:6px 14px;font-size:12px}.cBrkua_tabActive{background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);font-weight:600}.cBrkua_body{padding:12px 16px;overflow:auto}.cBrkua_status{color:var(--dsw-alias-label-secondary,#6b7280);text-align:center;padding:18px;font-size:13px}.cBrkua_group{margin-bottom:18px}.cBrkua_groupTitle{color:var(--dsw-alias-label-primary,#2f3542);margin:0 0 2px;font-size:13px;font-weight:600}.cBrkua_groupHint{color:var(--dsw-alias-label-secondary,#8a8f9c);margin:0 0 8px;font-size:11px}.cBrkua_count{color:var(--dsw-alias-label-secondary,#8a8f9c);margin-left:6px;font-weight:400}.cBrkua_skill{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);background:var(--dsw-alias-bg-base,#fff);border-radius:8px;margin-bottom:8px;padding:10px 12px}.cBrkua_skillHeader{flex-wrap:wrap;align-items:center;gap:8px;display:flex}.cBrkua_skillName{color:var(--dsw-alias-label-primary,#111827);font-family:ui-monospace,Consolas,monospace;font-size:13px;font-weight:600}.cBrkua_badge{background:var(--dsw-alias-state-business-secondary,#eef2ff);color:var(--dsw-alias-state-business-primary,#4353a3);border:1px solid var(--dsw-alias-state-business-tertiary,#dde3f8);border-radius:99px;padding:1px 6px;font-size:10px}.cBrkua_badgeInvokable{background:var(--dsw-alias-state-success-secondary,#e6f4ea);color:var(--dsw-alias-state-success-primary,#0d6832);border-color:var(--dsw-alias-state-success-tertiary,#b7e1cd)}.cBrkua_badgeWorkspace{background:var(--dsw-alias-bg-layer-2,#ebeef5);color:var(--dsw-alias-label-secondary,#4b5563);border-color:var(--dsw-alias-border-l1,#d1d5db)}.cBrkua_badgeIsolated{color:#b45309;cursor:help;background:#f59e0b1f;border-color:#f59e0b59}.cBrkua_skillIsolated{opacity:.76}.cBrkua_skillIsolated:hover{opacity:.98}.cBrkua_filterBar{background:var(--dsw-alias-bg-layer-1,#f7f8fa);border-radius:6px;flex-direction:column;gap:6px;margin-bottom:12px;padding:8px 10px;font-size:12px;display:flex}.cBrkua_filterRow{align-items:center;gap:8px;display:flex}.cBrkua_filterLabel{color:var(--dsw-alias-label-secondary,#6b7280);flex:none;font-weight:500}.cBrkua_filterInput,.cBrkua_filterSelect{border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);max-width:280px;height:26px;color:var(--dsw-alias-label-primary,#1c1e26);border-radius:4px;outline:none;flex:1;padding:0 8px;font-size:12px}.cBrkua_filterInput:focus,.cBrkua_filterSelect:focus{border-color:var(--dsw-alias-border-l2,#d1d5db)}.cBrkua_filterClear{border:1px solid var(--dsw-alias-border-l1,#d7dae0);height:24px;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;background:0 0;border-radius:4px;flex:none;padding:0 10px;font-size:12px}.cBrkua_filterClear:hover{color:var(--dsw-alias-label-primary,#1c1e26)}.cBrkua_filterEmpty{color:var(--dsw-alias-label-secondary,#6b7280);text-align:center;padding:18px 0;font-size:13px}.cBrkua_switch{cursor:pointer;background:0 0;border:none;border-radius:99px;align-items:center;margin-left:auto;padding:2px;display:inline-flex}.cBrkua_switchTrack{background:var(--dsw-alias-border-l2,#d1d5db);border-radius:99px;flex:none;width:30px;height:16px;transition:background .18s;position:relative}.cBrkua_switchThumb{background:var(--dsw-alias-bg-base,#fff);border-radius:50%;width:12px;height:12px;transition:left .18s;position:absolute;top:2px;left:2px;box-shadow:0 1px 2px #00000040}.cBrkua_switch[aria-checked=true] .cBrkua_switchTrack{background:var(--dsw-alias-state-success-primary,#10b981)}.cBrkua_switch[aria-checked=true] .cBrkua_switchThumb{left:16px}.cBrkua_editButton{color:var(--dsw-alias-label-primary,#3a3f4b);cursor:pointer;background:#f2f3f5;border:none;border-radius:6px;padding:3px 9px;font-size:11px}.cBrkua_editButton:hover{background:#e7e8ea}.cBrkua_deleteButton{color:#d92d20;cursor:pointer;background:#feeceb;border:none;border-radius:6px;padding:3px 9px;font-size:11px}.cBrkua_deleteButton:hover{background:#fbdcd9}.cBrkua_skillDesc{color:var(--dsw-alias-label-primary,#3a3f4b);margin:6px 0 0;font-size:12px;line-height:1.5}.cBrkua_skillWhen{color:var(--dsw-alias-label-secondary,#8a8f9c);margin:4px 0 0;font-size:11px}.cBrkua_skillPath{color:var(--dsw-alias-label-tertiary,#a2a7b3);word-break:break-all;margin:6px 0 0;font-family:ui-monospace,Consolas,monospace;font-size:10px}.cBrkua_feedback{color:var(--dsw-alias-state-error-primary,#b42318);font-size:11px}.cBrkua_feedbackOk{color:var(--dsw-alias-state-success-primary,#0f9d6e)}.cBrkua_form{flex-direction:column;gap:8px;max-width:640px;display:flex}.cBrkua_formLabel{color:var(--dsw-alias-label-secondary,#5f6672);flex-direction:column;gap:4px;font-size:12px;display:flex}.cBrkua_formInput{box-sizing:border-box;background:var(--dsw-alias-bg-layer-1,#f7f8fa);width:100%;color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid #0000;border-radius:6px;padding:6px 8px;font-size:12px}select.cBrkua_formInput{height:30px;padding:0 8px}.cBrkua_formTextarea{resize:vertical;min-height:120px;font-family:ui-monospace,monospace}.cBrkua_formActionsRow{gap:8px;display:flex}.cBrkua_formButtonGhost{color:var(--dsw-alias-label-primary,#3a3f4b);cursor:pointer;background:#f2f3f5;border:none;border-radius:6px;align-self:flex-start;padding:6px 14px;font-size:12px}.cBrkua_formButtonGhost:hover{background:#e7e8ea}body[data-ds-dark-theme] .cBrkua_formButtonGhost{color:#e5e5ea;background:#2a2a2c}body[data-ds-dark-theme] .cBrkua_formButtonGhost:hover{background:#3a3a3c}.cBrkua_formButton{color:#fff;cursor:pointer;background:#111;border:1px solid #0000;border-radius:6px;align-self:flex-start;padding:6px 14px;font-size:12px}.cBrkua_formButton:hover{background:#2a2a2c}body[data-ds-dark-theme] .cBrkua_formButton{color:#111827;background:#e5e5ea}body[data-ds-dark-theme] .cBrkua_formButton:hover{background:#d1d5db}.cBrkua_note{color:var(--dsw-alias-label-tertiary,#a0a5b1);margin-top:10px;font-size:11px;line-height:1.7}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_card,body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_head{background:#2c2c2e}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_tabs{background:#1e1e1e}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_skill{background:#48484a;border-color:#ffffff14}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_badge{color:#a5b4fc;background:#6378dc38;border-color:#6378dc66}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_badgeInvokable{color:#30d158;background:#30d15826;border-color:#30d1584d}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_switchThumb{background:#fff}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_tab{color:#ffffff80}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_tabActive{color:#fff;background:#3a3a3c;border:.5px solid #ffffff14;box-shadow:0 1px 3px #0000004d}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_formInput{background:#1c1c1e;border-color:#ffffff0f}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_headButton{color:#ffffffd9;background:#ffffff1a;border-color:#0000}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_headButton:hover{background:#ffffff26}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_headButton:active{background:#ffffff0d}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_deleteButton{color:#ff6b61;background:#ff3b3029;border-color:#0000}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_deleteButton:hover{background:#ff3b3042}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_filterBar{background:#1e1e1e}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_filterInput,body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_filterSelect{color:#fff;background:#2c2c2e;border-color:#ffffff1a}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_filterClear{color:#ffffffb3;border-color:#ffffff1a}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_filterEmpty{color:#ffffffb3}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_badgeWorkspace{color:#ffffffb3;background:#ffffff1a;border-color:#ffffff26}body[data-ds-dark-theme]:not([data-dsh-skin]) .cBrkua_badgeIsolated{color:#fbbf24;background:#f59e0b33;border-color:#f59e0b66}";
-		const tagId$3 = "@linxin666/dsh-web-all/packages/dsh-skill-explorer/src/client/skill-panel.module.css";
+		//#region \0dsh-css:packages/dsh-skill-explorer/src/client/panel/panel.module.css.mjs
+		const css$3 = "[data-pane=conversation],[class*=centerCol]{position:relative}[data-dsh-skill-explorer-view]{z-index:60;background:var(--dsw-alias-bg-base);display:none;position:absolute;inset:0}html[data-dsh-skill-explorer-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-active]) [data-dsh-skill-explorer-view]{display:block}html[data-dsh-skill-explorer-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-active]) [data-pane=conversation]>:not([data-dsh-skill-explorer-view]),html[data-dsh-skill-explorer-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-active]) [class*=centerCol]>:not([data-dsh-skill-explorer-view]){display:none!important}.ptK59a_entry{box-sizing:border-box;min-height:36px;color:var(--dsw-alias-label-primary);cursor:pointer;font:inherit;text-align:left;white-space:nowrap;background:0 0;border:none;border-radius:12px;align-items:center;gap:8px;margin:0 2px;padding:7px 8px;font-size:14px;line-height:22px;display:flex}.ptK59a_entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.ptK59a_entry[data-active]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary);font-weight:600}.ptK59a_entryIcon{flex:none;justify-content:center;align-items:center;width:16px;height:16px;display:inline-flex}.ptK59a_entryIcon svg{width:16px;height:16px;display:block}.ptK59a_entryLabel{text-overflow:ellipsis;overflow:hidden}[data-dsh-frame][data-sidebar-collapsed] .ptK59a_entry,[data-sidebar-collapsed] .ptK59a_entry{border-radius:12px;justify-content:center;width:36px;height:36px;margin:0 auto 12px;padding:0}[data-dsh-frame][data-sidebar-collapsed] .ptK59a_entryIcon,[data-sidebar-collapsed] .ptK59a_entryIcon,[data-dsh-frame][data-sidebar-collapsed] .ptK59a_entryIcon svg,[data-sidebar-collapsed] .ptK59a_entryIcon svg{width:18px;height:18px}[data-dsh-frame][data-sidebar-collapsed] .ptK59a_entryLabel,[data-sidebar-collapsed] .ptK59a_entryLabel{display:none}.ptK59a_view{overflow:hidden}.ptK59a_panel{background:var(--dsw-alias-bg-base);min-width:0;height:100%;min-height:0;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);flex-direction:column;gap:10px;padding:14px 16px 16px;display:flex}.ptK59a_panelHeader{flex:none;align-items:center;gap:10px;display:flex}.ptK59a_panelTitle{color:var(--dsw-alias-label-primary);white-space:nowrap;flex:1;margin:0;font-size:16px;font-weight:700}.ptK59a_backButton{align-items:center;gap:4px;display:inline-flex}.ptK59a_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;gap:2px;display:flex}.ptK59a_tab{color:var(--dsw-alias-label-secondary);cursor:pointer;white-space:nowrap;background:0 0;border:none;border-bottom:2px solid #0000;border-radius:6px 6px 0 0;padding:7px 14px;font-size:13px}.ptK59a_tab:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.ptK59a_tab[data-active]{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-state-business-primary);font-weight:600}.ptK59a_panelContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.ptK59a_fillBody{flex-direction:column;flex:1;gap:10px;min-height:0;display:flex;overflow:hidden}.ptK59a_tabBody{flex-direction:column;flex:1;gap:10px;min-height:0;display:flex;overflow-y:auto}.ptK59a_toolbar{flex-wrap:wrap;flex:none;align-items:center;gap:8px;display:flex}.ptK59a_search{min-width:120px;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;flex:0 260px;padding:6px 10px;font-size:13px}.ptK59a_search::placeholder{color:var(--dsw-alias-label-tertiary)}.ptK59a_select{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;padding:6px 8px;font-size:13px}.ptK59a_toolbarSpacer{flex:1}.ptK59a_checkboxLabel{color:var(--dsw-alias-label-secondary);cursor:pointer;align-items:center;gap:6px;font-size:12px;display:inline-flex}.ptK59a_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.ptK59a_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.ptK59a_ghostButton:disabled{opacity:.45;cursor:default}.ptK59a_formActions{align-items:center;gap:8px;display:flex}.ptK59a_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;align-self:flex-start;padding:6px 14px;font-size:13px;font-weight:600}.ptK59a_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.ptK59a_primaryButton:disabled{opacity:.5;cursor:default}.ptK59a_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.ptK59a_linkButton:hover:not(:disabled){text-decoration:underline}.ptK59a_linkButton:disabled{opacity:.45;cursor:default}.ptK59a_linkButton[data-danger]{color:var(--dsw-alias-state-error-primary)}.ptK59a_banner{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;border-radius:8px;padding:8px 12px;font-size:12.5px;line-height:1.5}.ptK59a_banner[data-kind=ok]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.ptK59a_banner[data-kind=error]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.ptK59a_empty{text-align:center;color:var(--dsw-alias-label-tertiary);padding:28px 12px;font-size:12.5px}.ptK59a_list{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;flex-direction:column;flex:1;gap:14px;min-height:0;padding:8px 12px 10px;display:flex;overflow-y:auto}.ptK59a_group{flex-direction:column;gap:6px;display:flex}.ptK59a_groupTitle{color:var(--dsw-alias-label-primary);margin:0;font-size:13px;font-weight:600}.ptK59a_count{color:var(--dsw-alias-label-secondary);margin-left:6px;font-weight:400}.ptK59a_groupHint{color:var(--dsw-alias-label-secondary);margin:0;font-size:11px}.ptK59a_skillRow{border-bottom:1px solid var(--dsw-alias-border-l1);padding:8px 0}.ptK59a_skillRow:last-child{border-bottom:none}.ptK59a_skillRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.ptK59a_skillHeader{flex-wrap:wrap;align-items:center;gap:8px;display:flex}.ptK59a_skillName{color:var(--dsw-alias-label-primary);font-size:13px;font-weight:600;font-family:var(--ds-font-family-code)}.ptK59a_badge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);white-space:nowrap;border-radius:999px;padding:1px 8px;font-size:11px;line-height:1.6;display:inline-block}.ptK59a_badgeWorkspace{color:var(--dsw-alias-label-secondary)}.ptK59a_badgeInvokable{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.ptK59a_badgeIsolated{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.ptK59a_skillIsolated{opacity:.76}.ptK59a_skillIsolated:hover{opacity:.98}.ptK59a_switch{cursor:pointer;background:0 0;border:none;border-radius:99px;align-items:center;margin-left:auto;padding:2px;display:inline-flex}.ptK59a_switch:disabled{opacity:.45;cursor:default}.ptK59a_switchTrack{background:var(--dsw-alias-border-l2);border-radius:99px;flex:none;width:30px;height:16px;transition:background .18s;position:relative}.ptK59a_switchThumb{background:var(--dsw-alias-bg-base);border-radius:50%;width:12px;height:12px;transition:left .18s;position:absolute;top:2px;left:2px}.ptK59a_switch[aria-checked=true] .ptK59a_switchTrack{background:var(--dsw-alias-state-success-primary)}.ptK59a_switch[aria-checked=true] .ptK59a_switchThumb{left:16px}.ptK59a_deleteButton{margin-left:4px}.ptK59a_skillDesc{color:var(--dsw-alias-label-primary);margin:6px 0 0;font-size:12px;line-height:1.5}.ptK59a_skillWhen{color:var(--dsw-alias-label-secondary);margin:4px 0 0;font-size:11px}.ptK59a_skillPath{color:var(--dsw-alias-label-tertiary);font-size:10px;font-family:var(--ds-font-family-code);word-break:break-all;margin:6px 0 0}.ptK59a_form{flex-direction:column;gap:10px;max-width:640px;display:flex}.ptK59a_field{flex-direction:column;gap:5px;display:flex}.ptK59a_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.ptK59a_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.ptK59a_input:focus{border-color:var(--dsw-alias-state-business-primary)}.ptK59a_input::placeholder{color:var(--dsw-alias-label-tertiary)}.ptK59a_input:disabled{opacity:.55}.ptK59a_textarea{min-height:140px;font-family:var(--ds-font-family-code)}.ptK59a_note{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:1.7}";
+		const tagId$3 = "@linxin666/dsh-web-all/packages/dsh-skill-explorer/src/client/panel/panel.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$3) + "]") === null) {
 			const tag = document.createElement("style");
 			tag.dataset.plugin = "@linxin666/dsh-web-all";
@@ -38449,352 +38452,76 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$3;
 			document.head.appendChild(tag);
 		}
-		var skill_panel_module_css_default = {
-			"badge": "cBrkua_badge",
-			"badgeInvokable": "cBrkua_badgeInvokable",
-			"badgeIsolated": "cBrkua_badgeIsolated",
-			"badgeWorkspace": "cBrkua_badgeWorkspace",
-			"body": "cBrkua_body",
-			"card": "cBrkua_card",
-			"count": "cBrkua_count",
-			"deleteButton": "cBrkua_deleteButton",
-			"editButton": "cBrkua_editButton",
-			"entry": "cBrkua_entry",
-			"entryIcon": "cBrkua_entryIcon",
-			"entryLabel": "cBrkua_entryLabel",
-			"feedback": "cBrkua_feedback",
-			"feedbackOk": "cBrkua_feedbackOk",
-			"filterBar": "cBrkua_filterBar",
-			"filterClear": "cBrkua_filterClear",
-			"filterEmpty": "cBrkua_filterEmpty",
-			"filterInput": "cBrkua_filterInput",
-			"filterLabel": "cBrkua_filterLabel",
-			"filterRow": "cBrkua_filterRow",
-			"filterSelect": "cBrkua_filterSelect",
-			"form": "cBrkua_form",
-			"formActionsRow": "cBrkua_formActionsRow",
-			"formButton": "cBrkua_formButton",
-			"formButtonGhost": "cBrkua_formButtonGhost",
-			"formInput": "cBrkua_formInput",
-			"formLabel": "cBrkua_formLabel",
-			"formTextarea": "cBrkua_formTextarea",
-			"group": "cBrkua_group",
-			"groupHint": "cBrkua_groupHint",
-			"groupTitle": "cBrkua_groupTitle",
-			"head": "cBrkua_head",
-			"headButton": "cBrkua_headButton",
-			"headTitle": "cBrkua_headTitle",
-			"note": "cBrkua_note",
-			"overlay": "cBrkua_overlay",
-			"skill": "cBrkua_skill",
-			"skillDesc": "cBrkua_skillDesc",
-			"skillHeader": "cBrkua_skillHeader",
-			"skillIsolated": "cBrkua_skillIsolated",
-			"skillName": "cBrkua_skillName",
-			"skillPath": "cBrkua_skillPath",
-			"skillWhen": "cBrkua_skillWhen",
-			"status": "cBrkua_status",
-			"switch": "cBrkua_switch",
-			"switchThumb": "cBrkua_switchThumb",
-			"switchTrack": "cBrkua_switchTrack",
-			"tab": "cBrkua_tab",
-			"tabActive": "cBrkua_tabActive",
-			"tabs": "cBrkua_tabs"
+		var panel_module_css_default = {
+			"backButton": "ptK59a_backButton",
+			"badge": "ptK59a_badge",
+			"badgeInvokable": "ptK59a_badgeInvokable",
+			"badgeIsolated": "ptK59a_badgeIsolated",
+			"badgeWorkspace": "ptK59a_badgeWorkspace",
+			"banner": "ptK59a_banner",
+			"checkboxLabel": "ptK59a_checkboxLabel",
+			"count": "ptK59a_count",
+			"deleteButton": "ptK59a_deleteButton",
+			"empty": "ptK59a_empty",
+			"entry": "ptK59a_entry",
+			"entryIcon": "ptK59a_entryIcon",
+			"entryLabel": "ptK59a_entryLabel",
+			"field": "ptK59a_field",
+			"fieldLabel": "ptK59a_fieldLabel",
+			"fillBody": "ptK59a_fillBody",
+			"form": "ptK59a_form",
+			"formActions": "ptK59a_formActions",
+			"ghostButton": "ptK59a_ghostButton",
+			"group": "ptK59a_group",
+			"groupHint": "ptK59a_groupHint",
+			"groupTitle": "ptK59a_groupTitle",
+			"input": "ptK59a_input",
+			"linkButton": "ptK59a_linkButton",
+			"list": "ptK59a_list",
+			"note": "ptK59a_note",
+			"panel": "ptK59a_panel",
+			"panelContent": "ptK59a_panelContent",
+			"panelHeader": "ptK59a_panelHeader",
+			"panelTitle": "ptK59a_panelTitle",
+			"primaryButton": "ptK59a_primaryButton",
+			"search": "ptK59a_search",
+			"select": "ptK59a_select",
+			"skillDesc": "ptK59a_skillDesc",
+			"skillHeader": "ptK59a_skillHeader",
+			"skillIsolated": "ptK59a_skillIsolated",
+			"skillName": "ptK59a_skillName",
+			"skillPath": "ptK59a_skillPath",
+			"skillRow": "ptK59a_skillRow",
+			"skillWhen": "ptK59a_skillWhen",
+			"switch": "ptK59a_switch",
+			"switchThumb": "ptK59a_switchThumb",
+			"switchTrack": "ptK59a_switchTrack",
+			"tab": "ptK59a_tab",
+			"tabBar": "ptK59a_tabBar",
+			"tabBody": "ptK59a_tabBody",
+			"textarea": "ptK59a_textarea",
+			"toolbar": "ptK59a_toolbar",
+			"toolbarSpacer": "ptK59a_toolbarSpacer",
+			"view": "ptK59a_view"
 		};
 		//#endregion
-		//#region ../dsh-skill-explorer/src/client/SkillPanel.tsx
+		//#region ../dsh-skill-explorer/src/client/panel/CreateTab.tsx
 		/**
-		* Skill center panel (browser half): an overlay modal with the grouped skill
-		* list (enable/disable switch, edit, delete) plus create and edit forms.
-		* Talks to the host route family through SkillApi.
+		* Create tab: the new-skill form (user or project root).
+		*
+		* The host's create route needs the workspace the panel is showing, which the
+		* list payload carries. The inactive tab unmounts, so a user who opens this
+		* tab first has no cwd: the first submit resolves it with one list call and
+		* reuses it afterwards.
 		*/
-		/** Marks shown next to a skill (model/user invocable). */
-		function invokableMarks(skill) {
-			const marks = [];
-			if (skill.modelInvocable) marks.push(tt("list.mark.model"));
-			if (skill.userInvocable) marks.push(tt("list.mark.user"));
-			return marks.join(" / ");
-		}
-		/** Localized provider label with fallback. */
-		function providerLabel(provider) {
-			const key = `provider.${provider}`;
-			const translated = tt(key);
-			return translated === key ? provider : translated;
-		}
-		/** One skill card: name, badges, toggle switch, edit and delete buttons. */
-		function SkillCard({ skill, api, onChanged, onEdit }) {
-			const [busy, setBusy] = (0, react.useState)(false);
-			const [error, setError] = (0, react.useState)(void 0);
-			const busyRef = (0, react.useRef)(false);
-			const toggle = async () => {
-				if (busyRef.current) return;
-				const path = skill.path;
-				if (path === void 0) return;
-				busyRef.current = true;
-				setBusy(true);
-				setError(void 0);
-				try {
-					await api.setEnabled(skill.name, path, !skill.modelInvocable);
-					onChanged();
-				} catch (err) {
-					setError(tt("list.toggleFailed", { error: err instanceof Error ? err.message : String(err) }));
-				} finally {
-					busyRef.current = false;
-					setBusy(false);
-				}
-			};
-			const remove = async () => {
-				const path = skill.path;
-				if (path === void 0) return;
-				if (!window.confirm(tt("list.deleteConfirm", { name: skill.name }))) return;
-				if (busyRef.current) return;
-				busyRef.current = true;
-				setBusy(true);
-				setError(void 0);
-				try {
-					await api.remove(skill.name, path);
-					onChanged();
-				} catch (err) {
-					setError(tt("list.deleteFailed", { error: err instanceof Error ? err.message : String(err) }));
-				} finally {
-					busyRef.current = false;
-					setBusy(false);
-				}
-			};
-			const isIsolated = skill.isActiveWorkspace === false;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
-				className: `${skill_panel_module_css_default.skill}${isIsolated ? ` ${skill_panel_module_css_default.skillIsolated}` : ""}`,
-				"data-dsh-part": "skill-row",
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-						className: skill_panel_module_css_default.skillHeader,
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: skill_panel_module_css_default.skillName,
-								children: skill.name
-							}),
-							skill.workspaceName !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: `${skill_panel_module_css_default.badge} ${skill_panel_module_css_default.badgeWorkspace}`,
-								children: skill.workspaceName
-							}),
-							isIsolated && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: `${skill_panel_module_css_default.badge} ${skill_panel_module_css_default.badgeIsolated}`,
-								title: tt("workspace.isolatedHint", { workspace: skill.workspaceName ?? "" }),
-								children: tt("workspace.isolated")
-							}),
-							skill.provider !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: skill_panel_module_css_default.badge,
-								title: tt("provider.tooltip", { provider: providerLabel(skill.provider) }),
-								children: providerLabel(skill.provider)
-							}),
-							skill.linked === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: skill_panel_module_css_default.badge,
-								children: tt("list.linked")
-							}),
-							(skill.modelInvocable || skill.userInvocable) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: `${skill_panel_module_css_default.badge} ${skill_panel_module_css_default.badgeInvokable}`,
-								title: tt("list.invokableTooltip"),
-								children: tt("list.invokable", { marks: invokableMarks(skill) })
-							}),
-							skill.path !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: skill_panel_module_css_default.switch,
-								role: "switch",
-								"aria-checked": skill.modelInvocable,
-								title: skill.modelInvocable ? tt("list.enabled") : tt("list.disabled"),
-								disabled: busy,
-								onClick: () => {
-									toggle();
-								},
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: skill_panel_module_css_default.switchTrack,
-									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: skill_panel_module_css_default.switchThumb })
-								})
-							}),
-							skill.path !== void 0 && skill.linked !== true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: skill_panel_module_css_default.editButton,
-								disabled: busy,
-								onClick: () => {
-									onEdit(skill);
-								},
-								children: tt("list.edit")
-							}),
-							skill.path !== void 0 && skill.linked !== true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: skill_panel_module_css_default.deleteButton,
-								disabled: busy,
-								onClick: () => {
-									remove();
-								},
-								children: tt("list.delete")
-							})
-						]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: skill_panel_module_css_default.skillDesc,
-						children: skill.description
-					}),
-					skill.whenToUse !== void 0 && skill.whenToUse !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: skill_panel_module_css_default.skillWhen,
-						children: tt("list.when", { when: skill.whenToUse })
-					}),
-					skill.path !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: skill_panel_module_css_default.skillPath,
-						children: skill.path
-					}),
-					error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: skill_panel_module_css_default.feedback,
-						children: error
-					})
-				]
-			});
-		}
-		/** The grouped skill list tab. */
-		function ListTab({ api, refreshTick, onCwd, onEdit }) {
-			const [payload, setPayload] = (0, react.useState)(void 0);
-			const [selectedWorkspace, setSelectedWorkspace] = (0, react.useState)("all");
-			const [query, setQuery] = (0, react.useState)("");
-			const [error, setError] = (0, react.useState)(void 0);
-			const loadSeq = (0, react.useRef)(0);
-			const load = async () => {
-				const seq = ++loadSeq.current;
-				try {
-					const next = await api.list();
-					if (seq !== loadSeq.current) return;
-					setPayload(next);
-					onCwd(next.cwd);
-					setError(void 0);
-				} catch (err) {
-					if (seq !== loadSeq.current) return;
-					console.error("[dsh-skill-explorer] failed to load skills:", err);
-					setError(tt("list.loadFailed", { error: err instanceof Error ? err.message : String(err) }));
-				}
-			};
-			(0, react.useEffect)(() => {
-				load();
-			}, [api, refreshTick]);
-			if (error !== void 0 && payload === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: skill_panel_module_css_default.status,
-				children: error
-			});
-			if (payload === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: skill_panel_module_css_default.status,
-				children: tt("list.loading")
-			});
-			if (payload.groups.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: skill_panel_module_css_default.status,
-				children: tt("list.empty")
-			});
-			const visibleGroups = selectGroups(payload.groups, {
-				workspace: selectedWorkspace,
-				query
-			});
-			const visibleCount = visibleGroups.reduce((total, group) => total + group.skills.length, 0);
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [
-				error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-					className: skill_panel_module_css_default.feedback,
-					children: error
-				}),
-				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: skill_panel_module_css_default.filterBar,
-					"data-dsh-part": "filter-bar",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: skill_panel_module_css_default.filterRow,
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-								htmlFor: "dsh-skill-search",
-								className: skill_panel_module_css_default.filterLabel,
-								children: [tt("filter.searchLabel"), ":"]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								id: "dsh-skill-search",
-								className: skill_panel_module_css_default.filterInput,
-								type: "text",
-								value: query,
-								spellCheck: false,
-								placeholder: tt("filter.searchPlaceholder"),
-								onChange: (e) => {
-									setQuery(e.target.value);
-								},
-								onKeyDown: (e) => {
-									if (e.key === "Escape" && query !== "") setQuery("");
-								}
-							}),
-							query !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: skill_panel_module_css_default.filterClear,
-								onClick: () => {
-									setQuery("");
-								},
-								children: tt("filter.clear")
-							})
-						]
-					}), payload.workspaces !== void 0 && payload.workspaces.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: skill_panel_module_css_default.filterRow,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							htmlFor: "dsh-skill-workspace-filter",
-							className: skill_panel_module_css_default.filterLabel,
-							children: [tt("filter.workspaceLabel"), ":"]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-							id: "dsh-skill-workspace-filter",
-							className: skill_panel_module_css_default.filterSelect,
-							value: selectedWorkspace,
-							onChange: (e) => {
-								setSelectedWorkspace(e.target.value);
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: "all",
-								children: tt("filter.workspaceAll")
-							}), payload.workspaces.map((ws) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: ws.root,
-								children: ws.active ? tt("filter.workspaceCurrent", { name: ws.name }) : ws.name
-							}, ws.root))]
-						})]
-					})]
-				}),
-				visibleCount === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-					className: skill_panel_module_css_default.filterEmpty,
-					children: query.trim() === "" ? tt("filter.emptyWorkspace") : tt("filter.empty", { query: query.trim() })
-				}) : visibleGroups.map((group) => {
-					const groupKey = `group.${group.key}`;
-					const hintKey = `groupHint.${group.key}`;
-					const title = groupKey in zh$3 ? tt(groupKey) : group.title;
-					const hint = hintKey in zh$3 ? tt(hintKey) : group.hint;
-					return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-						className: skill_panel_module_css_default.group,
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h3", {
-								className: skill_panel_module_css_default.groupTitle,
-								children: [title, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: skill_panel_module_css_default.count,
-									children: tt("list.count", { count: String(group.skills.length) })
-								})]
-							}),
-							hint !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: skill_panel_module_css_default.groupHint,
-								children: hint
-							}),
-							group.skills.map((skill) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCard, {
-								skill,
-								api,
-								onChanged: () => {
-									load();
-								},
-								onEdit
-							}, skill.name))
-						]
-					}, group.key);
-				})
-			] });
-		}
-		/** The create form tab. */
-		function CreateTab({ api, cwd }) {
+		/** The create tab body. */
+		function CreateTab({ api }) {
 			const [root, setRoot] = (0, react.useState)("user");
 			const [name, setName] = (0, react.useState)("");
 			const [description, setDescription] = (0, react.useState)("");
 			const [whenToUse, setWhenToUse] = (0, react.useState)("");
 			const [content, setContent] = (0, react.useState)("");
+			const [cwd, setCwd] = (0, react.useState)(void 0);
 			const [busy, setBusy] = (0, react.useState)(false);
 			const [feedback, setFeedback] = (0, react.useState)(void 0);
 			const submit = async (event) => {
@@ -38802,23 +38529,25 @@ window.__ModuleLoader__.load({
 				if (name.trim() === "" || description.trim() === "" || content.trim() === "") {
 					setFeedback({
 						text: tt("create.empty"),
-						ok: false
+						kind: "error"
 					});
 					return;
 				}
 				setBusy(true);
 				try {
+					const workspace = cwd ?? (await api.list()).cwd;
+					setCwd(workspace);
 					const result = await api.create({
 						root,
 						name: name.trim(),
 						description: description.trim(),
 						whenToUse: whenToUse.trim() || void 0,
 						content,
-						cwd: cwd ?? ""
+						cwd: workspace
 					});
 					setFeedback({
 						text: tt("create.created", { path: result.path }),
-						ok: true
+						kind: "ok"
 					});
 					setName("");
 					setDescription("");
@@ -38827,94 +38556,122 @@ window.__ModuleLoader__.load({
 				} catch (err) {
 					setFeedback({
 						text: tt("create.failed", { error: err instanceof Error ? err.message : String(err) }),
-						ok: false
+						kind: "error"
 					});
 				} finally {
 					setBusy(false);
 				}
 			};
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
-				className: skill_panel_module_css_default.form,
-				onSubmit: (event) => {
-					submit(event);
-				},
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("create.root"), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-							className: skill_panel_module_css_default.formInput,
-							value: root,
-							onChange: (event) => {
-								setRoot(event.target.value);
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: "user",
-								children: tt("create.root.user")
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: "project",
-								children: tt("create.root.project")
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: panel_module_css_default.tabBody,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
+					className: panel_module_css_default.form,
+					onSubmit: (event) => {
+						submit(event);
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("create.root")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+								className: panel_module_css_default.select,
+								value: root,
+								onChange: (event) => {
+									setRoot(event.target.value);
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "user",
+									children: tt("create.root.user")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "project",
+									children: tt("create.root.project")
+								})]
 							})]
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("create.name"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: skill_panel_module_css_default.formInput,
-							value: name,
-							placeholder: tt("create.namePlaceholder"),
-							onChange: (event) => {
-								setName(event.target.value);
-							}
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("create.description"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: skill_panel_module_css_default.formInput,
-							value: description,
-							onChange: (event) => {
-								setDescription(event.target.value);
-							}
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("create.whenToUse"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: skill_panel_module_css_default.formInput,
-							value: whenToUse,
-							onChange: (event) => {
-								setWhenToUse(event.target.value);
-							}
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("create.content"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
-							className: `${skill_panel_module_css_default.formInput} ${skill_panel_module_css_default.formTextarea}`,
-							value: content,
-							onChange: (event) => {
-								setContent(event.target.value);
-							}
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-						type: "submit",
-						className: skill_panel_module_css_default.formButton,
-						disabled: busy,
-						children: tt("create.submit")
-					}),
-					feedback !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: feedback.ok ? `${skill_panel_module_css_default.feedback} ${skill_panel_module_css_default.feedbackOk}` : skill_panel_module_css_default.feedback,
-						children: feedback.text
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: skill_panel_module_css_default.note,
-						children: tt("create.note")
-					})
-				]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("create.name")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: panel_module_css_default.input,
+								value: name,
+								placeholder: tt("create.namePlaceholder"),
+								onChange: (event) => {
+									setName(event.target.value);
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("create.description")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: panel_module_css_default.input,
+								value: description,
+								onChange: (event) => {
+									setDescription(event.target.value);
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("create.whenToUse")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: panel_module_css_default.input,
+								value: whenToUse,
+								onChange: (event) => {
+									setWhenToUse(event.target.value);
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("create.content")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+								className: `${panel_module_css_default.input} ${panel_module_css_default.textarea}`,
+								value: content,
+								onChange: (event) => {
+									setContent(event.target.value);
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "submit",
+							className: panel_module_css_default.primaryButton,
+							disabled: busy,
+							children: tt("create.submit")
+						}),
+						feedback !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: panel_module_css_default.banner,
+							"data-kind": feedback.kind,
+							children: feedback.text
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: panel_module_css_default.note,
+							children: tt("create.note")
+						})
+					]
+				})
 			});
 		}
-		/** The edit form tab: loads the skill's editable fields and rewrites it in place. */
+		//#endregion
+		//#region ../dsh-skill-explorer/src/client/panel/EditTab.tsx
+		/**
+		* Edit tab: the in-place editor for one skill.
+		*
+		* The list carries metadata only, so the host re-reads the file before the form
+		* is shown and writes it back on save; the name and the location are fixed, and
+		* the enabled state keeps its own control on the row.
+		*/
+		/** The edit tab body. */
 		function EditTab({ api, skill, onDone, onCancel }) {
 			const skillPath = skill.path ?? "";
 			const [description, setDescription] = (0, react.useState)("");
@@ -38973,264 +38730,530 @@ window.__ModuleLoader__.load({
 				}
 			};
 			if (loading) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: skill_panel_module_css_default.status,
-				children: tt("edit.loading")
+				className: panel_module_css_default.tabBody,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: panel_module_css_default.empty,
+					children: tt("edit.loading")
+				})
 			});
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
-				className: skill_panel_module_css_default.form,
-				onSubmit: (event) => {
-					submit(event);
-				},
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("edit.name"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: skill_panel_module_css_default.formInput,
-							value: skill.name,
-							readOnly: true
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("create.description"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: skill_panel_module_css_default.formInput,
-							value: description,
-							onChange: (event) => {
-								setDescription(event.target.value);
-							}
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("create.whenToUse"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: skill_panel_module_css_default.formInput,
-							value: whenToUse,
-							onChange: (event) => {
-								setWhenToUse(event.target.value);
-							}
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: skill_panel_module_css_default.formLabel,
-						children: [tt("create.content"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
-							className: `${skill_panel_module_css_default.formInput} ${skill_panel_module_css_default.formTextarea}`,
-							value: content,
-							onChange: (event) => {
-								setContent(event.target.value);
-							}
-						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: skill_panel_module_css_default.formActionsRow,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: skill_panel_module_css_default.formButtonGhost,
-							disabled: busy,
-							onClick: onCancel,
-							children: tt("edit.back")
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "submit",
-							className: skill_panel_module_css_default.formButton,
-							disabled: busy,
-							children: tt("edit.submit")
-						})]
-					}),
-					error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: skill_panel_module_css_default.feedback,
-						children: error
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: skill_panel_module_css_default.note,
-						children: tt("edit.note")
-					})
-				]
-			});
-		}
-		/** The skill center overlay modal. */
-		function SkillPanel({ api, onClose }) {
-			const [tab, setTab] = (0, react.useState)("list");
-			const [cwd, setCwd] = (0, react.useState)(void 0);
-			const [refreshTick, setRefreshTick] = (0, react.useState)(0);
-			const [editing, setEditing] = (0, react.useState)(void 0);
-			/** Open the edit form for one card (issue #1622). */
-			const openEdit = (skill) => {
-				setEditing(skill);
-				setTab("edit");
-			};
-			/** Leave the edit form; the list refetches so the saved copy is visible. */
-			const closeEdit = () => {
-				setEditing(void 0);
-				setTab("list");
-				setRefreshTick((tick) => tick + 1);
-			};
-			(0, react.useEffect)(() => {
-				const onKey = (event) => {
-					if (event.key !== "Escape") return;
-					const target = event.target;
-					if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
-					onClose();
-				};
-				document.addEventListener("keydown", onKey);
-				return () => document.removeEventListener("keydown", onKey);
-			}, [onClose]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: skill_panel_module_css_default.overlay,
-				onClick: (event) => {
-					if (event.target === event.currentTarget) onClose();
-				},
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: skill_panel_module_css_default.card,
-					"data-dsh-part": "card",
+				className: panel_module_css_default.tabBody,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
+					className: panel_module_css_default.form,
+					onSubmit: (event) => {
+						submit(event);
+					},
 					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-							className: skill_panel_module_css_default.head,
-							"data-dsh-part": "head",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
-									className: skill_panel_module_css_default.headTitle,
-									children: tt("panel.title")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: skill_panel_module_css_default.headButton,
-									onClick: () => {
-										setRefreshTick((tick) => tick + 1);
-									},
-									children: tt("refresh")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: skill_panel_module_css_default.headButton,
-									onClick: onClose,
-									children: tt("close")
-								})
-							]
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("edit.name")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: panel_module_css_default.input,
+								value: skill.name,
+								readOnly: true
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("create.description")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: panel_module_css_default.input,
+								value: description,
+								onChange: (event) => {
+									setDescription(event.target.value);
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("create.whenToUse")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: panel_module_css_default.input,
+								value: whenToUse,
+								onChange: (event) => {
+									setWhenToUse(event.target.value);
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.fieldLabel,
+								children: tt("create.content")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+								className: `${panel_module_css_default.input} ${panel_module_css_default.textarea}`,
+								value: content,
+								onChange: (event) => {
+									setContent(event.target.value);
+								}
+							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: skill_panel_module_css_default.tabs,
-							"data-dsh-part": "tab-bar",
-							role: "tablist",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									role: "tab",
-									className: `${skill_panel_module_css_default.tab} ${tab === "list" ? skill_panel_module_css_default.tabActive : ""}`,
-									"data-dsh-part": "tab",
-									"aria-selected": tab === "list",
-									"data-active": tab === "list" ? "" : void 0,
-									onClick: () => {
-										setTab("list");
-									},
-									children: tt("tab.list")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									role: "tab",
-									className: `${skill_panel_module_css_default.tab} ${tab === "create" ? skill_panel_module_css_default.tabActive : ""}`,
-									"data-dsh-part": "tab",
-									"aria-selected": tab === "create",
-									"data-active": tab === "create" ? "" : void 0,
-									onClick: () => {
-										setTab("create");
-									},
-									children: tt("tab.create")
-								}),
-								editing !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									role: "tab",
-									className: `${skill_panel_module_css_default.tab} ${tab === "edit" ? skill_panel_module_css_default.tabActive : ""}`,
-									"data-dsh-part": "tab",
-									"aria-selected": tab === "edit",
-									"data-active": tab === "edit" ? "" : void 0,
-									onClick: () => {
-										setTab("edit");
-									},
-									children: tt("tab.edit")
-								})
-							]
+							className: panel_module_css_default.formActions,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: panel_module_css_default.ghostButton,
+								disabled: busy,
+								onClick: onCancel,
+								children: tt("edit.back")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "submit",
+								className: panel_module_css_default.primaryButton,
+								disabled: busy,
+								children: tt("edit.submit")
+							})]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: skill_panel_module_css_default.body,
-							children: tab === "edit" && editing !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EditTab, {
-								api,
-								skill: editing,
-								onDone: closeEdit,
-								onCancel: closeEdit
-							}) : tab === "create" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CreateTab, {
-								api,
-								cwd
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ListTab, {
-								api,
-								refreshTick,
-								onCwd: setCwd,
-								onEdit: openEdit
-							})
+						error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: panel_module_css_default.banner,
+							"data-kind": "error",
+							children: error
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: panel_module_css_default.note,
+							children: tt("edit.note")
 						})
 					]
 				})
 			});
 		}
 		//#endregion
-		//#region ../dsh-skill-explorer/src/client/panel-mount.tsx
+		//#region ../dsh-skill-explorer/src/client/skill-filter.ts
 		/**
-		* Skill center panel mounting (browser half).
+		* Match rank of one skill against a lowercased needle: 0 when the name hits,
+		* 1 when only the description hits, undefined when neither does. An empty
+		* needle matches everything at rank 0.
+		*/
+		function matchRank(skill, needle) {
+			if (needle === "") return 0;
+			if (skill.name.toLowerCase().includes(needle)) return 0;
+			if (skill.description.toLowerCase().includes(needle)) return 1;
+		}
+		/**
+		* Whether a skill survives the workspace axis. Skills without a workspace
+		* root are global and stay visible in every selection; that is the pre-search
+		* behavior and the search must not change it.
+		*/
+		function inWorkspace(skill, workspace) {
+			if (workspace === "all") return true;
+			return skill.workspaceRoot === void 0 || skill.workspaceRoot === workspace;
+		}
+		/**
+		* Apply both axes to a payload's groups: workspace filter first, then the
+		* query (name hits ranked before description hits, stable within a rank).
+		* Empty groups are dropped so the caller renders only what has content.
+		* @param groups - host payload groups in host order.
+		* @param filter - workspace + query.
+		* @returns the visible groups; the input is never mutated.
+		*/
+		function selectGroups(groups, filter) {
+			const needle = filter.query.trim().toLowerCase();
+			return groups.map((group) => {
+				const ranked = group.skills.filter((skill) => inWorkspace(skill, filter.workspace)).map((skill) => ({
+					skill,
+					rank: matchRank(skill, needle)
+				})).filter((row) => row.rank !== void 0);
+				if (needle !== "") ranked.sort((left, right) => left.rank - right.rank);
+				return {
+					...group,
+					skills: ranked.map((row) => row.skill)
+				};
+			}).filter((group) => group.skills.length > 0);
+		}
+		//#endregion
+		//#region ../dsh-skill-explorer/src/client/panel/SkillsTab.tsx
+		/**
+		* Skills tab: the grouped skill list with the search / workspace toolbar and
+		* the per-row enable switch, edit and delete actions.
 		*
-		* The panel is an overlay modal rendered with its own React root appended to
-		* document.body (no slot exists for external plugins). Opening mounts the
-		* tree; closing unmounts and removes the container. The entry row toggles it
-		* through the returned controller.
+		* The host route family is the only data source; a failed refresh keeps the
+		* previous payload visible with an inline error.
 		*/
-		/**
-		* Mount the skill center overlay panel.
-		* @param api - the skill center API client.
-		* @param locale - locale-change source; when given, re-renders an open panel
-		*   on a Language switch.
-		* @returns controller (toggle/open/close) and the disposer.
-		*/
-		function mountPanel(api, locale) {
-			let root;
-			let container;
-			let unsubscribeLocale;
-			const close = () => {
-				if (root === void 0) return;
-				root.unmount();
-				root = void 0;
-				container?.remove();
-				container = void 0;
-			};
-			try {
-				unsubscribeLocale = locale?.subscribe(() => {
-					if (root !== void 0) root.render(/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillPanel, {
-						api,
-						onClose: close
-					}));
-				});
-			} catch {}
-			const open = () => {
-				if (root !== void 0) return;
-				container = document.createElement("div");
-				container.dataset.dshSkillExplorerView = "";
-				container.dataset.dshPlugin = "skill-explorer";
-				document.body.appendChild(container);
-				root = (0, react_dom_client.createRoot)(container);
-				root.render(/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillPanel, {
-					api,
-					onClose: close
-				}));
-			};
-			const toggle = () => {
-				if (root !== void 0) close();
-				else open();
-			};
-			return {
-				toggle,
-				open,
-				close,
-				dispose: () => {
-					close();
-					unsubscribeLocale?.();
+		/** Localized provider label with fallback to the raw provider id. */
+		function providerLabel(provider) {
+			const key = `provider.${provider}`;
+			return key in zh$3 ? tt(key) : provider;
+		}
+		/** Marks shown next to a skill (model/user invocable). */
+		function invokableMarks(skill) {
+			const marks = [];
+			if (skill.modelInvocable) marks.push(tt("list.mark.model"));
+			if (skill.userInvocable) marks.push(tt("list.mark.user"));
+			return marks.join(" / ");
+		}
+		/** One skill row: name, badges, enable switch, edit and delete actions. */
+		function SkillRow({ skill, api, onChanged, onEdit }) {
+			const [busy, setBusy] = (0, react.useState)(false);
+			const [error, setError] = (0, react.useState)(void 0);
+			const busyRef = (0, react.useRef)(false);
+			const toggle = async () => {
+				if (busyRef.current) return;
+				const path = skill.path;
+				if (path === void 0) return;
+				busyRef.current = true;
+				setBusy(true);
+				setError(void 0);
+				try {
+					await api.setEnabled(skill.name, path, !skill.modelInvocable);
+					onChanged();
+				} catch (err) {
+					setError(tt("list.toggleFailed", { error: err instanceof Error ? err.message : String(err) }));
+				} finally {
+					busyRef.current = false;
+					setBusy(false);
 				}
 			};
+			const remove = async () => {
+				const path = skill.path;
+				if (path === void 0) return;
+				if (!window.confirm(tt("list.deleteConfirm", { name: skill.name }))) return;
+				if (busyRef.current) return;
+				busyRef.current = true;
+				setBusy(true);
+				setError(void 0);
+				try {
+					await api.remove(skill.name, path);
+					onChanged();
+				} catch (err) {
+					setError(tt("list.deleteFailed", { error: err instanceof Error ? err.message : String(err) }));
+				} finally {
+					busyRef.current = false;
+					setBusy(false);
+				}
+			};
+			const isIsolated = skill.isActiveWorkspace === false;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
+				className: `${panel_module_css_default.skillRow}${isIsolated ? ` ${panel_module_css_default.skillIsolated}` : ""}`,
+				"data-dsh-part": "skill-row",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+						className: panel_module_css_default.skillHeader,
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.skillName,
+								children: skill.name
+							}),
+							skill.workspaceName !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: `${panel_module_css_default.badge} ${panel_module_css_default.badgeWorkspace}`,
+								children: skill.workspaceName
+							}),
+							isIsolated && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: `${panel_module_css_default.badge} ${panel_module_css_default.badgeIsolated}`,
+								title: tt("workspace.isolatedHint", { workspace: skill.workspaceName ?? "" }),
+								children: tt("workspace.isolated")
+							}),
+							skill.provider !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.badge,
+								title: tt("provider.tooltip", { provider: providerLabel(skill.provider) }),
+								children: providerLabel(skill.provider)
+							}),
+							skill.linked === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.badge,
+								children: tt("list.linked")
+							}),
+							(skill.modelInvocable || skill.userInvocable) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: `${panel_module_css_default.badge} ${panel_module_css_default.badgeInvokable}`,
+								title: tt("list.invokableTooltip"),
+								children: tt("list.invokable", { marks: invokableMarks(skill) })
+							}),
+							skill.path !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: panel_module_css_default.switch,
+								role: "switch",
+								"aria-checked": skill.modelInvocable,
+								"aria-label": skill.modelInvocable ? tt("list.enabled") : tt("list.disabled"),
+								title: skill.modelInvocable ? tt("list.enabled") : tt("list.disabled"),
+								disabled: busy,
+								onClick: () => {
+									toggle();
+								},
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: panel_module_css_default.switchTrack,
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: panel_module_css_default.switchThumb })
+								})
+							}),
+							skill.path !== void 0 && skill.linked !== true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: panel_module_css_default.linkButton,
+								disabled: busy,
+								onClick: () => {
+									onEdit(skill);
+								},
+								children: tt("list.edit")
+							}),
+							skill.path !== void 0 && skill.linked !== true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: `${panel_module_css_default.linkButton} ${panel_module_css_default.deleteButton}`,
+								"data-danger": "",
+								disabled: busy,
+								onClick: () => {
+									remove();
+								},
+								children: tt("list.delete")
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: panel_module_css_default.skillDesc,
+						children: skill.description
+					}),
+					skill.whenToUse !== void 0 && skill.whenToUse !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: panel_module_css_default.skillWhen,
+						children: tt("list.when", { when: skill.whenToUse })
+					}),
+					skill.path !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: panel_module_css_default.skillPath,
+						children: skill.path
+					}),
+					error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: panel_module_css_default.banner,
+						"data-kind": "error",
+						children: error
+					})
+				]
+			});
+		}
+		/** The skills tab body. */
+		function SkillsTab({ api, onEdit }) {
+			const [payload, setPayload] = (0, react.useState)(void 0);
+			const [selectedWorkspace, setSelectedWorkspace] = (0, react.useState)("all");
+			const [query, setQuery] = (0, react.useState)("");
+			const [error, setError] = (0, react.useState)(void 0);
+			const [loading, setLoading] = (0, react.useState)(true);
+			const loadSeq = (0, react.useRef)(0);
+			const load = async () => {
+				const seq = ++loadSeq.current;
+				setLoading(true);
+				try {
+					const next = await api.list();
+					if (seq !== loadSeq.current) return;
+					setPayload(next);
+					setError(void 0);
+				} catch (err) {
+					if (seq !== loadSeq.current) return;
+					setError(tt("list.loadFailed", { error: err instanceof Error ? err.message : String(err) }));
+				} finally {
+					if (seq === loadSeq.current) setLoading(false);
+				}
+			};
+			(0, react.useEffect)(() => {
+				load();
+			}, [api]);
+			const refreshButton = loading ? void 0 : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: panel_module_css_default.ghostButton,
+				onClick: () => {
+					load();
+				},
+				children: tt("refresh")
+			});
+			if (payload === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: panel_module_css_default.fillBody,
+				children: loading ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: panel_module_css_default.empty,
+					children: tt("list.loading")
+				}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: panel_module_css_default.empty,
+					children: error
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: panel_module_css_default.toolbar,
+					children: refreshButton
+				})] })
+			});
+			const visibleGroups = selectGroups(payload.groups, {
+				workspace: selectedWorkspace,
+				query
+			});
+			const visibleCount = visibleGroups.reduce((total, group) => total + group.skills.length, 0);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: panel_module_css_default.fillBody,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: panel_module_css_default.toolbar,
+						"data-dsh-part": "filter-bar",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: panel_module_css_default.search,
+								type: "search",
+								value: query,
+								spellCheck: false,
+								"aria-label": tt("filter.searchLabel"),
+								placeholder: tt("filter.searchPlaceholder"),
+								onChange: (event) => {
+									setQuery(event.target.value);
+								},
+								onKeyDown: (event) => {
+									if (event.key === "Escape" && query !== "") setQuery("");
+								}
+							}),
+							payload.workspaces !== void 0 && payload.workspaces.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+								className: panel_module_css_default.select,
+								value: selectedWorkspace,
+								"aria-label": tt("filter.workspaceLabel"),
+								onChange: (event) => {
+									setSelectedWorkspace(event.target.value);
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "all",
+									children: tt("filter.workspaceAll")
+								}), payload.workspaces.map((ws) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: ws.root,
+									children: ws.active ? tt("filter.workspaceCurrent", { name: ws.name }) : ws.name
+								}, ws.root))]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: panel_module_css_default.toolbarSpacer }),
+							refreshButton
+						]
+					}),
+					error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: panel_module_css_default.banner,
+						"data-kind": "error",
+						children: error
+					}),
+					visibleCount === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: panel_module_css_default.empty,
+						children: query.trim() === "" ? tt("filter.emptyWorkspace") : tt("filter.empty", { query: query.trim() })
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: panel_module_css_default.list,
+						children: visibleGroups.map((group) => {
+							const groupKey = `group.${group.key}`;
+							const hintKey = `groupHint.${group.key}`;
+							const title = groupKey in zh$3 ? tt(groupKey) : group.title;
+							const hint = hintKey in zh$3 ? tt(hintKey) : group.hint;
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+								className: panel_module_css_default.group,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h3", {
+										className: panel_module_css_default.groupTitle,
+										children: [title, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: panel_module_css_default.count,
+											children: tt("list.count", { count: String(group.skills.length) })
+										})]
+									}),
+									hint !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: panel_module_css_default.groupHint,
+										children: hint
+									}),
+									group.skills.map((skill) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillRow, {
+										skill,
+										api,
+										onChanged: () => {
+											load();
+										},
+										onEdit
+									}, skill.name))
+								]
+							}, group.key);
+						})
+					})
+				]
+			});
+		}
+		//#endregion
+		//#region ../dsh-skill-explorer/src/client/panel/SkillPanel.tsx
+		/**
+		* The skill center panel shell: a header with the back-to-conversation
+		* control, a tab bar, and the active tab's content. Tab state lives here
+		* (browser session state); the inactive tab unmounts, so the tab that needs
+		* the workspace resolves it itself and the list refetches when it returns.
+		*
+		* The edit tab appears only while a skill is being edited: the list row hands
+		* the chosen skill over, and leaving the editor returns to the list.
+		*
+		* The panel occupies the center column while the controller reports it open
+		* (see mount.tsx); the conversation subtree underneath stays mounted.
+		*/
+		/** The skill center panel. */
+		function SkillPanel({ controller, api }) {
+			const [activeTab, setActiveTab] = (0, react.useState)("skills");
+			const [editing, setEditing] = (0, react.useState)(void 0);
+			/** Open the editor for one row; the edit tab appears while it is set. */
+			const openEditor = (skill) => {
+				setEditing(skill);
+				setActiveTab("edit");
+			};
+			/** Leave the editor; the list remounts and refetches the saved copy. */
+			const closeEditor = () => {
+				setEditing(void 0);
+				setActiveTab("skills");
+			};
+			const tabs = [
+				{
+					id: "skills",
+					label: () => tt("tab.list")
+				},
+				{
+					id: "create",
+					label: () => tt("tab.create")
+				},
+				...editing === void 0 ? [] : [{
+					id: "edit",
+					label: () => tt("tab.edit")
+				}]
+			];
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: panel_module_css_default.panel,
+				"data-dsh-plugin": "skill-explorer",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: panel_module_css_default.panelHeader,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: `${panel_module_css_default.ghostButton} ${panel_module_css_default.backButton}`,
+							"aria-label": tt("panel.backToConversation"),
+							"data-dsh-center-view-back": "",
+							onClick: () => {
+								controller.close();
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								"aria-hidden": "true",
+								children: "‹"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: tt("panel.backToConversation") })]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+							className: panel_module_css_default.panelTitle,
+							children: tt("panel.title")
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: panel_module_css_default.tabBar,
+						role: "tablist",
+						"data-dsh-part": "tab-bar",
+						children: tabs.map((tab) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							role: "tab",
+							"aria-selected": activeTab === tab.id,
+							"data-active": activeTab === tab.id ? "" : void 0,
+							"data-dsh-part": "tab",
+							className: panel_module_css_default.tab,
+							onClick: () => {
+								setActiveTab(tab.id);
+							},
+							children: tab.label()
+						}, tab.id))
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: panel_module_css_default.panelContent,
+						children: [
+							activeTab === "skills" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillsTab, {
+								api,
+								onEdit: openEditor
+							}),
+							activeTab === "create" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CreateTab, { api }),
+							activeTab === "edit" && editing !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EditTab, {
+								api,
+								skill: editing,
+								onDone: closeEditor,
+								onCancel: closeEditor
+							})
+						]
+					})
+				]
+			});
 		}
 		//#endregion
 		//#region ../dsh-skill-explorer/src/client/body-mutations.ts
@@ -39320,6 +39343,196 @@ window.__ModuleLoader__.load({
 				}
 			};
 		}
+		//#endregion
+		//#region ../dsh-skill-explorer/src/client/panel-mount-core.ts
+		/**
+		* Center-column panel takeover lifecycle.
+		*
+		* The `conversation` slot is single-occupant (ui-conversation) and external
+		* plugins cannot declare slots, so a family panel takes over the center
+		* column at the DOM level: a container is appended inside the center column
+		* (`[class*="centerCol"]`, the 0.1.0-rc.6+ AppFrame layout; previously
+		* `[data-pane="conversation"]` on older shells — the mount selector keeps
+		* both, ssh #243 / task-board #107) as an extra trailing child React never
+		* manages, and a stylesheet rule hides the conversation content while the
+		* panel is active. Toggling is a data attribute on <html> — no React
+		* involvement, so the conversation subtree underneath stays mounted and
+		* stateful.
+		*
+		* Consuming plugins keep a thin wrapper that supplies the panel tree,
+		* container attribute names, and stylesheet class; those names are pinned by
+		* each package's CSS, skins, and the semantic-attributes contract. Occupancy
+		* across the family rides {@link PANEL_FAMILY}, not per-plugin sibling pairs,
+		* so a third panel cannot leave a stale occupant behind. The sidebar row
+		* toggling the panel shares its core the same way
+		* (shared/client/sidebar-entry-core.ts, synced copy).
+		*/
+		/**
+		* The center column's panel family: the single source of occupancy truth.
+		*
+		* Every family panel appears exactly once. Opening one clears the other rows'
+		* `<html>` attributes and broadcasts its own name; an open panel closes when
+		* the broadcast name is not its own. The previous shape paired each panel with
+		* ONE sibling (ssh <-> task-board), which cannot express three panels: a panel
+		* that did not name the third one stayed logically open while invisible, so
+		* its sidebar row needed a second click to reopen. Adding a family panel is
+		* one row here, not N pairwise options.
+		*/
+		const PANEL_FAMILY = [
+			{
+				panel: "taskboard",
+				activeAttribute: "data-dsh-taskboard-active"
+			},
+			{
+				panel: "ssh",
+				activeAttribute: "data-dsh-ssh-active"
+			},
+			{
+				panel: "skill-explorer",
+				activeAttribute: "data-dsh-skill-explorer-active"
+			}
+		];
+		const CONVERSATION_COLUMN_SELECTOR = "[data-pane=\"conversation\"], [class*=\"centerCol\"]";
+		/** Cross-plugin activation event; detail is the activating panel name. */
+		const ACTIVATE_EVENT = "dsh-panel-activate";
+		const SIDEBAR_ROW_SELECTOR = "[class*=\"sessionRow\"], [class*=\"projectRow\"], [class*=\"searchResultRow\"], [class*=\"searchResultWorkspace\"], [class*=\"newSession\"]";
+		/** Find the center column, or undefined while the frame is not mounted. */
+		function conversationColumn() {
+			return document.querySelector(CONVERSATION_COLUMN_SELECTOR) ?? void 0;
+		}
+		/**
+		* Mount a family panel into the center column and bind its visibility to the
+		* owning controller's open state.
+		* @returns disposer unmounting the tree and restoring the column.
+		*/
+		function mountCenterPanel(options) {
+			let root;
+			let container;
+			let unsubscribeLocale;
+			try {
+				unsubscribeLocale = options.locale?.subscribe(() => {
+					if (root !== void 0) options.render(root);
+				});
+			} catch {}
+			const ensure = () => {
+				if (container !== void 0 && !container.isConnected) {
+					root?.unmount();
+					root = void 0;
+					container.remove();
+					container = void 0;
+				}
+				if (container === void 0) {
+					const column = conversationColumn();
+					if (column === void 0) return;
+					container = document.createElement("div");
+					container.dataset[options.viewDatasetKey] = "";
+					container.dataset.dshPlugin = options.pluginName;
+					container.className = options.viewClassName;
+					column.appendChild(container);
+				}
+				if (root !== void 0 || !options.isOpen()) return;
+				root = (0, react_dom_client.createRoot)(container);
+				options.render(root);
+			};
+			const unsubscribeBody = subscribeBodyInvalidations$2(() => {
+				ensure();
+			});
+			const applyActive = () => {
+				if (options.isOpen()) {
+					ensure();
+					for (const member of PANEL_FAMILY) if (member.panel !== options.panelName) document.documentElement.removeAttribute(member.activeAttribute);
+					document.documentElement.setAttribute(options.activeAttribute, "");
+					document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: options.panelName }));
+				} else document.documentElement.removeAttribute(options.activeAttribute);
+			};
+			const onOtherActivate = (event) => {
+				if (event.detail !== options.panelName && options.isOpen()) options.close();
+			};
+			const onClickSidebarRow = (event) => {
+				if (!options.isOpen()) return;
+				const target = event.target;
+				if (target === null) return;
+				if (target.closest(SIDEBAR_ROW_SELECTOR) !== null) options.close();
+			};
+			document.addEventListener("click", onClickSidebarRow, true);
+			document.addEventListener(ACTIVATE_EVENT, onOtherActivate);
+			const unsubscribe = options.subscribe(applyActive);
+			applyActive();
+			ensure();
+			return () => {
+				document.removeEventListener("click", onClickSidebarRow, true);
+				document.removeEventListener(ACTIVATE_EVENT, onOtherActivate);
+				unsubscribeBody();
+				unsubscribe();
+				unsubscribeLocale?.();
+				document.documentElement.removeAttribute(options.activeAttribute);
+				root?.unmount();
+				root = void 0;
+				container?.remove();
+				container = void 0;
+			};
+		}
+		//#endregion
+		//#region ../dsh-skill-explorer/src/client/mount.tsx
+		/**
+		* Mount the panel React tree into the center column and bind its visibility
+		* to the controller's panelOpen state.
+		* @param controller - the panel controller driving the view.
+		* @param api - the skill center API client the tabs operate through.
+		* @param locale - locale-change source; when given, re-renders an open panel
+		*   on a Language switch.
+		* @returns disposer unmounting the tree and restoring the column.
+		*/
+		function mountPanel(controller, api, locale) {
+			return mountCenterPanel({
+				render: (root) => root.render(/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillPanel, {
+					controller,
+					api
+				})),
+				viewDatasetKey: "dshSkillExplorerView",
+				pluginName: "skill-explorer",
+				viewClassName: panel_module_css_default.view,
+				activeAttribute: "data-dsh-skill-explorer-active",
+				panelName: "skill-explorer",
+				isOpen: () => controller.getSnapshot().panelOpen,
+				close: () => controller.close(),
+				subscribe: (listener) => controller.subscribe(listener),
+				locale
+			});
+		}
+		//#endregion
+		//#region ../dsh-skill-explorer/src/client/panel/controller.ts
+		/** The panel state owner the sidebar entry toggles and the view renders from. */
+		var PanelController = class {
+			panelOpen = false;
+			listeners = /* @__PURE__ */ new Set();
+			getSnapshot() {
+				return { panelOpen: this.panelOpen };
+			}
+			subscribe(fn) {
+				this.listeners.add(fn);
+				return () => {
+					this.listeners.delete(fn);
+				};
+			}
+			open() {
+				if (this.panelOpen) return;
+				this.panelOpen = true;
+				this.notify();
+			}
+			close() {
+				if (!this.panelOpen) return;
+				this.panelOpen = false;
+				this.notify();
+			}
+			toggle() {
+				if (this.panelOpen) this.close();
+				else this.open();
+			}
+			notify() {
+				for (const fn of [...this.listeners]) fn();
+			}
+		};
 		//#endregion
 		//#region ../dsh-skill-explorer/src/client/sidebar-entry-core.ts
 		/**
@@ -39456,18 +39669,6 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region ../dsh-skill-explorer/src/client/sidebar-entry.ts
-		/**
-		* Sidebar entry injection — package-specific wiring over the shared core.
-		*
-		* dsh's sidebar shell exposes no slot an external plugin can register into,
-		* so — following the task-board / dsh-ssh precedent of DOM-level extension —
-		* the entry row is injected between the shell's New Session button and the
-		* workspace browser. The DOM injection / self-healing / idempotency logic
-		* lives exactly once in shared/client/sidebar-entry-core.ts (synced copy);
-		* this wrapper supplies the skill-explorer icon, copy, CSS module, and the
-		* overlay toggle. The row is plain DOM (no React tree); clicking it toggles
-		* the skill center overlay (see SkillPanel.tsx).
-		*/
 		/** Stable data attribute identifying the injected entry row. */
 		const ENTRY_SELECTOR = "[data-dsh-skill-explorer-entry]";
 		/** Inline book icon normalized to the shell's 16px navigation glyph size. */
@@ -39475,28 +39676,34 @@ window.__ModuleLoader__.load({
 		/**
 		* Mount the sidebar entry, waiting for the shell to render and self-healing
 		* on later React re-renders.
-		* @param onClick - opens the skill center overlay.
+		* @param controller - the panel controller the entry toggles.
 		* @param locale - locale-change source; when given, re-applies the label on
 		*   a Language switch (the plain-DOM row otherwise keeps the mount-time copy).
 		* @returns disposer removing the entry and its observers.
 		*/
-		function mountSidebarEntry(onClick, locale) {
+		function mountSidebarEntry(controller, locale) {
 			return mountSidebarEntry$1({
 				rowAttribute: "data-dsh-skill-explorer-entry",
 				rowSelector: ENTRY_SELECTOR,
 				plugin: "skill-explorer",
 				icon: ICON,
-				css: skill_panel_module_css_default,
+				css: panel_module_css_default,
 				label: () => tt("entry.label"),
 				tooltip: () => tt("entry.tooltip"),
 				refresh: locale === void 0 ? void 0 : { subscribe: (listener) => locale.subscribe(listener) },
-				onToggle: onClick,
+				onToggle: () => {
+					controller.toggle();
+				},
 				position: "after",
 				familySelectors: [
 					"[data-dsh-taskboard-entry]",
 					"[data-dsh-ssh-entry]",
 					"[data-dsh-skill-explorer-entry]"
-				]
+				],
+				active: {
+					subscribe: (listener) => controller.subscribe(listener),
+					isOpen: () => controller.getSnapshot().panelOpen
+				}
 			});
 		}
 		//#endregion
@@ -39598,11 +39805,12 @@ window.__ModuleLoader__.load({
 			try {
 				setRuntimeTranslate(ctx.locale.bind(NS$3));
 			} catch {}
-			const panel = mountPanel(new SkillApi(), ctx.locale);
+			const api = new SkillApi();
+			const controller = new PanelController();
 			const disposers = [];
 			try {
-				disposers.push(mountSidebarEntry(() => panel.toggle(), ctx.locale));
-				disposers.push(() => panel.dispose());
+				disposers.push(mountSidebarEntry(controller, ctx.locale));
+				disposers.push(mountPanel(controller, api, ctx.locale));
 			} catch (error) {
 				console.warn("[skill-explorer] mount failed:", error);
 			}

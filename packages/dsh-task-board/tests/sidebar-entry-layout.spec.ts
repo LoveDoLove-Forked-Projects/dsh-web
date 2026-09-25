@@ -11,7 +11,7 @@ const source = readFileSync(new URL('../src/client/sidebar-entry.ts', import.met
 // list so a drift in any one of them fails here.
 const siblingRows = [
   new URL('../../dsh-ssh/src/client/panel/panel.module.css', import.meta.url),
-  new URL('../../dsh-skill-explorer/src/client/skill-panel.module.css', import.meta.url),
+  new URL('../../dsh-skill-explorer/src/client/panel/panel.module.css', import.meta.url),
 ]
 
 /** The declarations of one class rule, or '' when the rule is absent. */

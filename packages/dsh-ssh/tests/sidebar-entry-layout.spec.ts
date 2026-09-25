@@ -9,7 +9,7 @@ const source = readFileSync(new URL('../src/client/sidebar-entry.ts', import.met
 // panel rows; the board spec owns the full cross-package sweep (#1535).
 const siblingEntryGaps = [
   new URL('../../dsh-task-board/src/client/board.module.css', import.meta.url),
-  new URL('../../dsh-skill-explorer/src/client/skill-panel.module.css', import.meta.url),
+  new URL('../../dsh-skill-explorer/src/client/panel/panel.module.css', import.meta.url),
 ].map((url) => ({
   path: url.pathname.split('/packages/')[1] ?? url.pathname,
   gap: readFileSync(url, 'utf8').match(/(?:^|\n)\.entry\s*\{([^}]*)\}/s)?.[1]?.match(/gap:\s*([^;]+);/)?.[1],

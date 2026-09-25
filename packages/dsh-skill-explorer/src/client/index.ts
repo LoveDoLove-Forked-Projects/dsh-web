@@ -18,9 +18,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the LocaleNamespaceMap merge table.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { SkillApi } from './api.ts'
+import { mountPanel } from './mount.tsx'
+import { PanelController } from './panel/controller.ts'
 import { setRuntimeTranslate } from './panel-helpers.ts'
 import { en, zh, type SkillExplorerKey } from './locales.ts'
-import { mountPanel } from './panel-mount.tsx'
 import { mountSidebarEntry } from './sidebar-entry.ts'
 import { reportDailyHeartbeat } from './telemetry.ts'
 
@@ -38,7 +39,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const inject = ['slots', 'locale']
 
 /** Type-only surface (export discipline: no value exports beyond the plugin contract). */
-export type { SkillPanelProps } from './SkillPanel.tsx'
+export type { SkillPanelProps } from './panel/SkillPanel.tsx'
 export type { SkillExplorerKey } from './locales.ts'
 export type { SkillApi } from './api.ts'
 
@@ -65,11 +66,11 @@ export function apply(ctx: ClientContext): void {
   try { setRuntimeTranslate(ctx.locale.bind(NS)) } catch { /* locale missing: document-language fallback stays */ }
 
   const api = new SkillApi()
-  const panel = mountPanel(api, ctx.locale)
+  const controller = new PanelController()
   const disposers: Array<() => void> = []
   try {
-    disposers.push(mountSidebarEntry(() => panel.toggle(), ctx.locale))
-    disposers.push(() => panel.dispose())
+    disposers.push(mountSidebarEntry(controller, ctx.locale))
+    disposers.push(mountPanel(controller, api, ctx.locale))
   } catch (error) {
     // DOM failures degrade the panel, never the GUI.
     console.warn('[skill-explorer] mount failed:', error)

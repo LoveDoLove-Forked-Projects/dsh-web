@@ -14,12 +14,22 @@ DSH Web GUI 的**技能中心**插件：侧边栏「技能中心」入口打开�
   围栏，已配对设备 cookie 为额外放行路径（不硬依赖 remote-web-ui）；数据来自
   文件系统扫描（官方根约定）+ `ctx.skills` 注册表合并。
 - client 半区（`src/client/`）注入侧边栏入口（DOM 级，MutationObserver
-  自愈），面板为 React overlay 模态（`SkillPanel.tsx`），不接管中心列。
+  自愈），面板是**中间列整页面板**（`src/client/panel/`，`SkillPanel.tsx` 壳
+  + 技能/创建页签，编辑时多出编辑页签），接管方式与 ssh / 任务看板同族：
+  `mount.tsx` 包装 `panel-mount-core.ts`（sync 生成的副本，禁止手改；家族
+  互斥表在共享源里），打开时 `<html>` 打 `data-dsh-skill-explorer-active`
+  并顶掉其他家族面板。
 - 纯逻辑（扫描/分组/frontmatter 解析）在 host 侧单测锁定行为
   （`tests/collect.spec.ts`、`tests/frontmatter.spec.ts`、
   `tests/routes.spec.ts`、`tests/access.spec.ts`）；路由围栏与错误路径必须带测试。
 - 安全语义（loopback 围栏、已配对 cookie 额外放行、写路由只信任扫描路径）
   见 README「安全模型」节，修改安全语义时必须同步更新 README 与测试。
+- 样式纪律（`src/client/panel/panel.module.css`）：面板不持有自己的调色板——
+  颜色 / 表面 / 边框 / 阴影 / 字体一律取自官方主题 token（`--dsw-alias-*`、
+  `--dsw-specific-*`、`--dsw-shadow-*`、`--dsw-font-*`），不写 hex/rgb 字面量、
+  不给 `var()` 写颜色兜底、不写 `[data-ds-dark-theme]` 覆写块。明暗由主题负责；
+  填充主按钮用 `button-primary-fill` + `label-primary-foreground` 配对
+  （官方主题下即亮色黑底白字、暗色白底黑字）。
 
 ## 提交前检查
 

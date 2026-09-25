@@ -20,7 +20,7 @@ function Draft() {
   return <button onClick={() => { setCount(count + 1) }}>{count}</button>
 }
 
-function mount(name = 'ssh', initiallyOpen = false) {
+function mount(name: 'ssh' | 'taskboard' | 'skill-explorer' = 'ssh', initiallyOpen = false) {
   let open = initiallyOpen
   const listeners = new Set<() => void>()
   const locales = new Set<() => void>()
@@ -32,10 +32,13 @@ function mount(name = 'ssh', initiallyOpen = false) {
   const render = vi.fn((root: Root) => { root.render(<Draft />) })
   disposers.push(mountCenterPanel({
     render,
-    viewDatasetKey: name + 'View', pluginName: name, viewClassName: '',
-    activeAttribute: 'data-test-' + name,
-    siblingActiveAttribute: 'data-test-' + (name === 'ssh' ? 'taskboard' : 'ssh'),
-    panelName: name, siblingPanelName: name === 'ssh' ? 'taskboard' : 'ssh',
+    // dataset keys cannot carry dashes, so the family's hyphenated panel names
+    // map to the camelCase keys the real wrappers use.
+    viewDatasetKey: name.replace(/-/g, '') + 'View', pluginName: name, viewClassName: '',
+    // The real family rows: occupancy eviction rides PANEL_FAMILY, so the
+    // attribute names under test are the shipped ones.
+    activeAttribute: 'data-dsh-' + name + '-active',
+    panelName: name,
     isOpen: () => open, close: () => { setOpen(false) },
     subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
     locale: { subscribe: listener => { locales.add(listener); return () => { locales.delete(listener) } } },
@@ -95,18 +98,27 @@ describe('center panel activity', () => {
     expect(unmounted).toBe(0)
   })
 
-  it('preserves single-panel occupancy when SSH and Task Board alternate', async () => {
-    const ssh = mount()
+  it('preserves single-panel occupancy across the three family panels', async () => {
+    const ssh = mount('ssh')
     const board = mount('taskboard')
+    const skills = mount('skill-explorer')
     await act(async () => { ssh.setOpen(true) })
     await act(async () => { board.setOpen(true) })
     expect(ssh.isOpen()).toBe(false)
     expect(board.isOpen()).toBe(true)
-    expect(document.documentElement.hasAttribute('data-test-ssh')).toBe(false)
-    expect(document.documentElement.hasAttribute('data-test-taskboard')).toBe(true)
-    await act(async () => { ssh.setOpen(true) })
+    expect(document.documentElement.hasAttribute('data-dsh-ssh-active')).toBe(false)
+    expect(document.documentElement.hasAttribute('data-dsh-taskboard-active')).toBe(true)
+    // The third panel evicts whichever panel holds the column, not just its
+    // former pairwise sibling.
+    await act(async () => { skills.setOpen(true) })
     expect(board.isOpen()).toBe(false)
-    expect(mounted).toBe(2)
+    expect(ssh.isOpen()).toBe(false)
+    expect(document.documentElement.hasAttribute('data-dsh-taskboard-active')).toBe(false)
+    expect(document.documentElement.hasAttribute('data-dsh-skill-explorer-active')).toBe(true)
+    await act(async () => { ssh.setOpen(true) })
+    expect(skills.isOpen()).toBe(false)
+    expect(document.documentElement.hasAttribute('data-dsh-skill-explorer-active')).toBe(false)
+    expect(mounted).toBe(3)
   })
 
   it('mounts an already-open panel when the shell arrives later', async () => {

@@ -237,7 +237,7 @@ const MANIFEST = [
     ],
   },
   {
-    // Center-column takeover lifecycle shared by the two family panels; the
+    // Center-column takeover lifecycle shared by the family panels; the
     // wrappers supply the panel tree, container attribute names, and CSS
     // class (pinned by each package's CSS and the semantic-attrs contract).
     file: 'panel-mount-core.ts',
@@ -245,6 +245,7 @@ const MANIFEST = [
     targets: [
       'packages/dsh-ssh/src/client/panel-mount-core.ts',
       'packages/dsh-task-board/src/client/panel-mount-core.ts',
+      'packages/dsh-skill-explorer/src/client/panel-mount-core.ts',
     ],
   },
 ]

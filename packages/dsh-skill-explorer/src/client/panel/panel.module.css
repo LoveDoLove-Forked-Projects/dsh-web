@@ -1,0 +1,614 @@
+/**
+ * Skill center panel styles, following the family's center-column panel
+ * conventions (dsh-ssh / dsh-task-board).
+ *
+ * Scoped by the plugin's own data attributes so nothing leaks into the rest of
+ * the GUI. Theme-only rule: every color, surface, border, shadow and font
+ * comes from the official theme tokens (--dsw-alias-*, --dsw-specific-*,
+ * --dsw-shadow-*, --dsw-font-*); this file declares no color of its own, gives
+ * no var() a color fallback, and carries no [data-ds-dark-theme] block — light
+ * and dark are the theme's job. The filled primary action is
+ * button-primary-fill + label-primary-foreground, the matched pair the theme
+ * flips so the label always contrasts with the fill.
+ *
+ * The center-column hide rules are attribute-scoped and must stay in this
+ * stylesheet (it is imported by mount.tsx and the sidebar entry, so the styles
+ * load with the plugin).
+ */
+
+/* --- center-column takeover (global rules, attribute-scoped) ----------------- */
+
+[data-pane='conversation'],
+[class*='centerCol'] {
+  position: relative;
+}
+
+/* The panel container rides inside the conversation grid item as an extra
+   trailing child; hidden unless the panel is active. */
+[data-dsh-skill-explorer-view] {
+  position: absolute;
+  inset: 0;
+  display: none;
+  /* Above the conversation composer so the panel paints over the input card. */
+  z-index: 60;
+  /* Opaque backdrop: the conversation subtree stays mounted under the panel. */
+  background: var(--dsw-alias-bg-base);
+}
+
+/* The center column is single-occupant. The family table in
+   panel-mount-core.ts already clears the other panels' attributes, so these
+   guards only decide a tie if two attributes ever coexist; the skill center
+   yields to the other two panels. */
+html[data-dsh-skill-explorer-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-active]) [data-dsh-skill-explorer-view] {
+  display: block;
+}
+
+/* While the panel is active, the conversation content underneath is hidden
+   (it stays mounted and stateful). */
+html[data-dsh-skill-explorer-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-active]) [data-pane='conversation'] > :not([data-dsh-skill-explorer-view]),
+html[data-dsh-skill-explorer-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-active]) [class*='centerCol'] > :not([data-dsh-skill-explorer-view]) {
+  display: none !important;
+}
+
+/* --- sidebar entry row ------------------------------------------------------- */
+
+/* Same geometry as the shell's own panel rows (SidebarRoot .panelRow): 2px
+   inset with a 12px radius, 8px content padding, 36px row, 14/22 type, and the
+   primary ink — so an injected row and an official row line up column for
+   column instead of each carrying its own box. */
+.entry {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 8px;
+  margin: 0 2px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.entry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.entry[data-active] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* Icon box matches the shell's panel glyph exactly (16px), so the glyph column
+   and the label column land on the official rows' x positions. */
+.entryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.entryIcon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.entryLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapsed rail: icon-only, centered, matching the shell's 56px rail. The
+   shell asks its own panel rows for an 18px glyph on the rail, so the icon box
+   and the svg step up together with the 12px rail radius. */
+:global([data-dsh-frame][data-sidebar-collapsed]) .entry,
+:global([data-sidebar-collapsed]) .entry {
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: 0 auto 12px;
+  border-radius: 12px;
+}
+
+:global([data-dsh-frame][data-sidebar-collapsed]) .entryIcon,
+:global([data-sidebar-collapsed]) .entryIcon,
+:global([data-dsh-frame][data-sidebar-collapsed]) .entryIcon svg,
+:global([data-sidebar-collapsed]) .entryIcon svg {
+  width: 18px;
+  height: 18px;
+}
+
+:global([data-dsh-frame][data-sidebar-collapsed]) .entryLabel,
+:global([data-sidebar-collapsed]) .entryLabel {
+  display: none;
+}
+
+/* --- panel frame -------------------------------------------------------------- */
+
+.view {
+  overflow: hidden;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 16px 16px;
+  gap: 10px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.panelTitle {
+  margin: 0;
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+}
+
+.backButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- tab bar ------------------------------------------------------------------ */
+
+.tabBar {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.tab {
+  padding: 7px 14px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tab[data-active] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  border-bottom-color: var(--dsw-alias-state-business-primary);
+}
+
+.panelContent {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Fixed toolbar with an internally scrolling list. */
+.fillBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Scrollable tab body (the create form). */
+.tabBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* --- controls ----------------------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  flex-wrap: wrap;
+}
+
+.search {
+  flex: 0 1 260px;
+  min-width: 120px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-specific-input-major);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+}
+
+.search::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.select {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-specific-input-major);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+}
+
+.toolbarSpacer {
+  flex: 1;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.ghostButton {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ghostButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.ghostButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Cancel/save row of the editors (create and edit forms). */
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.primaryButton {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary-foreground);
+  background: var(--dsw-alias-button-primary-fill);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  align-self: flex-start;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.linkButton {
+  padding: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-state-business-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.linkButton:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.linkButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.linkButton[data-danger] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.banner {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.banner[data-kind='ok'] {
+  color: var(--dsw-alias-state-success-primary);
+  border-color: var(--dsw-alias-state-success-primary);
+}
+
+.banner[data-kind='error'] {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.empty {
+  padding: 28px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* --- skill list --------------------------------------------------------------- */
+
+/* The family's list treatment (dsh-ssh hosts table): one bordered board whose
+   rows are transparent and hairline-separated, so the list area keeps the
+   panel's own surface instead of stacking a filled card per row. */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  padding: 8px 12px 10px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.count {
+  font-weight: 400;
+  color: var(--dsw-alias-label-secondary);
+  margin-left: 6px;
+}
+
+.groupHint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  margin: 0;
+}
+
+.skillRow {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.skillRow:last-child {
+  border-bottom: none;
+}
+
+.skillRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.skillHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.skillName {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.badgeWorkspace {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.badgeInvokable {
+  color: var(--dsw-alias-state-success-primary);
+  border-color: var(--dsw-alias-state-success-primary);
+}
+
+.badgeIsolated {
+  color: var(--dsw-alias-state-warn-primary);
+  border-color: var(--dsw-alias-state-warn-primary);
+}
+
+.skillIsolated {
+  opacity: 0.76;
+}
+
+.skillIsolated:hover {
+  opacity: 0.98;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  margin-left: auto;
+  cursor: pointer;
+  border-radius: 99px;
+}
+
+.switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.switchTrack {
+  width: 30px;
+  height: 16px;
+  border-radius: 99px;
+  background: var(--dsw-alias-border-l2);
+  position: relative;
+  transition: background 0.18s ease;
+  flex: none;
+}
+
+.switchThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-base);
+  transition: left 0.18s ease;
+}
+
+.switch[aria-checked='true'] .switchTrack {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.switch[aria-checked='true'] .switchThumb {
+  left: 16px;
+}
+
+.deleteButton {
+  margin-left: 4px;
+}
+
+.skillDesc {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  line-height: 1.5;
+}
+
+.skillWhen {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.skillPath {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  word-break: break-all;
+}
+
+/* --- create form -------------------------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 640px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.input {
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-specific-input-major);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.input:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.input:disabled {
+  opacity: 0.55;
+}
+
+.textarea {
+  min-height: 140px;
+  font-family: var(--ds-font-family-code);
+}
+
+.note {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  line-height: 1.7;
+  margin: 0;
+}

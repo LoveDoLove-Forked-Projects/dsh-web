@@ -8,9 +8,11 @@ dsh-ssh 的 `src/client/mount.tsx` 与 dsh-task-board 的 `src/client/board-moun
 
 ## Decision
 
-接管生命周期现在只存在于 `shared/client/panel-mount-core.ts` 一处：`mountCenterPanel(options)` 拥有中栏选择器、MutationObserver 重挂载、驱逐加激活序列、侧边栏点击退出监听与 disposer 清理顺序；`CenterPanelMountOptions` 契约承载七个按插件变化的参数，外加控制器 subscribe 与可选 locale 源。该文件加入 sync-shared 清单，生成两份同步副本（`packages/dsh-ssh/src/client/panel-mount-core.ts`、`packages/dsh-task-board/src/client/panel-mount-core.ts`）；sync-shared 测试的副本计数桶由 112→114（总数）、41→43（client）。两个包装层缩到只剩参数接线（各约 45 行），公开导出不变（`mountPanel` + `PANEL_VIEW_SELECTOR`、`mountBoard` + `BOARD_VIEW_SELECTOR`），消费方代码与测试零改动。重建的聚合客户端 bundle（`packages/dsh-web-all/lib/client.js`）按源内联，行为一致。
+接管生命周期现在只存在于 `shared/client/panel-mount-core.ts` 一处：`mountCenterPanel(options)` 拥有中栏选择器、MutationObserver 重挂载、驱逐加激活序列、侧边栏点击退出监听与 disposer 清理顺序；`CenterPanelMountOptions` 契约承载按插件变化的参数（面板树、视图 dataset 键、语义插件名、CSS 类、插件自己的 html 激活属性、面板名），外加控制器 subscribe 与可选 locale 源。该文件加入 sync-shared 清单，并在提取当时生成两份同步副本（`packages/dsh-ssh/src/client/panel-mount-core.ts`、`packages/dsh-task-board/src/client/panel-mount-core.ts`）；sync-shared 测试的副本计数桶由 112→114（总数）、41→43（client）。两个包装层缩到只剩参数接线（各约 45 行），公开导出不变（`mountPanel` + `PANEL_VIEW_SELECTOR`、`mountBoard` + `BOARD_VIEW_SELECTOR`），消费方代码与测试零改动。重建的聚合客户端 bundle（`packages/dsh-web-all/lib/client.js`）按源内联，行为一致。
 
-容器属性名保持为包装层传入的参数：它们被各包 CSS（`panel.module.css` / `board.module.css` 互相引用对方兄弟面板的 html 属性）、wallpaper-exclusive 皮肤补丁与语义属性契约钉死，本次提取刻意一个都不改。
+技能中心成为第三个中栏面板时，跨面板互斥从「每个面板各自声明兄弟」搬到了共享的 `PANEL_FAMILY` 表：见[一个中栏面板家族](../../architecture/2026-09-23-center-column-panel-family.zh.md)。该共享文件现在有三份生成副本（第三份是 `dsh-skill-explorer/src/client/panel-mount-core.ts`），本笔记描述的成对 sibling 参数已不存在。
+
+容器属性名保持为包装层传入的参数：它们被各包 CSS（`panel.module.css` / `board.module.css` / 技能中心的 `panel.module.css` 互相引用家族内的 html 属性）、wallpaper-exclusive 皮肤补丁与语义属性契约钉死，本次提取刻意一个都不改。
 
 ## Testing
 
@@ -24,4 +26,4 @@ dsh-ssh 的 `src/client/mount.tsx` 与 dsh-task-board 的 `src/client/board-moun
 
 ## Consequences
 
-今后接管生命周期的行为修复只改 `shared/client/panel-mount-core.ts` 一处并跑一次 `node scripts/sync-shared.mjs`。第三个采用接管模式的面板新增一份生成副本加一个包装层即可，不再复制 100 行。原始提交行数略升（一份共享源加两份生成副本）——这是 sync-shared 模式的既定取舍：单一可编辑源，包自包含。行为、CSS 选择器、html 属性、事件名与语义属性契约全部不变；[重挂载韧性修复](../../bug-fix/2026-08-27-task-board-return-button-and-remount-resilience.zh.md) 现在由这一个核心承载。
+今后接管生命周期的行为修复只改 `shared/client/panel-mount-core.ts` 一处并跑一次 `node scripts/sync-shared.mjs`。第三个采用接管模式的面板新增一份生成副本加一个包装层即可，不再复制 100 行——技能中心离开浮层模态形态时正是这么做的（[一个中栏面板家族](../../architecture/2026-09-23-center-column-panel-family.zh.md)）。原始提交行数略升（一份共享源加三份生成副本）——这是 sync-shared 模式的既定取舍：单一可编辑源，包自包含。行为、CSS 选择器、html 属性、事件名与语义属性契约全部不变；[重挂载韧性修复](../../bug-fix/2026-08-27-task-board-return-button-and-remount-resilience.zh.md) 现在由这一个核心承载。

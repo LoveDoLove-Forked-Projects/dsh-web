@@ -37,6 +37,7 @@ html[data-dsh-skin="wallpaper-exclusive"] body:not([data-ds-dark-theme]) [class*
    uses fixed glass instead of a runtime slider. */
 html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="task-board"]:not([data-dsh-part="sidebar-entry"]),
 html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="ssh"]:not([data-dsh-part="sidebar-entry"]),
+html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="skill-explorer"]:not([data-dsh-part="sidebar-entry"]),
 html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="git-graph"],
 html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="pet"],
 html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="remote-web-ui"],
@@ -125,19 +126,18 @@ html[data-dsh-skin="wallpaper-exclusive"] [data-gitgraph-chip-anchor] [class*="a
   background: transparent !important;
 }
 
-/* Skill center (skill-explorer) board: in the fixed-glass set (direction:
+/* Skill center (skill-explorer) panel: in the fixed-glass set (direction:
    the input-card related expanded boards —+ / command, access, model, context,
    skill center —all use fixed glass; the four role-based ones are already
-   covered by the generic dialog/menu/listbox group). head / tab-bar / inactive
-   tab stay transparent; the active tab keeps a visible tint. */
-html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="skill-explorer"] [data-dsh-part="card"],
+   covered by the generic dialog/menu/listbox group). The panel root is covered
+   by the family rule above; the skill rows take fixed glass, tab-bar / inactive
+   tab stay transparent, and the active tab keeps a visible tint. */
 html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="skill-explorer"] [data-dsh-part="skill-row"] {
   background-color: var(--dsw-wallpaper-glass-fill) !important;
   -webkit-backdrop-filter: blur(var(--dsw-wallpaper-glass-blur, 10px));
   backdrop-filter: blur(var(--dsw-wallpaper-glass-blur, 10px));
 }
 
-html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="skill-explorer"] [data-dsh-part="head"],
 html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="skill-explorer"] [data-dsh-part="tab-bar"],
 html[data-dsh-skin="wallpaper-exclusive"] [data-dsh-plugin="skill-explorer"] [data-dsh-part="tab"] {
   background-color: transparent !important;

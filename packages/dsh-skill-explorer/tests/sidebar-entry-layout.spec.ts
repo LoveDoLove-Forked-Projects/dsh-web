@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const css = readFileSync(new URL('../src/client/skill-panel.module.css', import.meta.url), 'utf8')
+const css = readFileSync(new URL('../src/client/panel/panel.module.css', import.meta.url), 'utf8')
 const source = readFileSync(new URL('../src/client/sidebar-entry.ts', import.meta.url), 'utf8')
 
 describe('skill-explorer sidebar entry layout', () => {

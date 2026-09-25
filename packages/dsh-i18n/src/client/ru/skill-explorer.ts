@@ -6,7 +6,6 @@
  */
 
 export const ru: Record<string, string> = {
-  'close': 'Закрыть',
   'create.content': 'Инструкции (тело SKILL.md, Markdown)',
   'create.created': 'Создано: {path}',
   'create.description': 'Описание (как модель определяет, когда применять навык)',
@@ -27,13 +26,11 @@ export const ru: Record<string, string> = {
   'create.root.user': 'Навыки пользователя (~/.dsh/skills, доступны во всех проектах)',
   'create.submit': 'Создать навык',
   'create.whenToUse': 'Когда использовать (необязательно)',
-  'cwd': 'cwd: {cwd}',
   'filter.workspaceAll': 'Все рабочие пространства',
   'filter.workspaceCurrent': 'Текущее рабочее пространство ({name})',
   'filter.workspaceLabel': 'Рабочее пространство',
   'filter.searchLabel': 'Поиск',
   'filter.searchPlaceholder': 'Фильтр по названию или описанию',
-  'filter.clear': 'Очистить',
   'filter.empty': 'Нет навыков, соответствующих «{query}»',
   'filter.emptyWorkspace': 'При текущем фильтре навыков нет.',
   'entry.label': 'Центр навыков',
@@ -72,6 +69,7 @@ export const ru: Record<string, string> = {
   'list.toggleFailed': 'Не удалось выполнить операцию: {error}',
   'list.when': 'Когда применять: {when}',
   'panel.title': 'Центр навыков',
+  'panel.backToConversation': 'Назад к чату',
   'refresh': 'Обновить',
   'tab.create': 'Создание',
   'tab.edit': 'Редактировать навык',

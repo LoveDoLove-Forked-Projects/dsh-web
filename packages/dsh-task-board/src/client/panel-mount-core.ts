@@ -15,12 +15,39 @@
  *
  * Consuming plugins keep a thin wrapper that supplies the panel tree,
  * container attribute names, and stylesheet class; those names are pinned by
- * each package's CSS, skins, and the semantic-attributes contract. The
- * sidebar row toggling the panel shares its core the same way
+ * each package's CSS, skins, and the semantic-attributes contract. Occupancy
+ * across the family rides {@link PANEL_FAMILY}, not per-plugin sibling pairs,
+ * so a third panel cannot leave a stale occupant behind. The sidebar row
+ * toggling the panel shares its core the same way
  * (shared/client/sidebar-entry-core.ts, synced copy).
  */
 import { createRoot, type Root } from 'react-dom/client'
 import { subscribeBodyInvalidations } from './body-mutations.ts'
+
+/** One center-column panel of the family. */
+export interface PanelFamilyMember {
+  /** Activation name broadcast on the cross-plugin activation event. */
+  panel: string
+  /** `<html>` attribute set while that panel occupies the center column. */
+  activeAttribute: string
+}
+
+/**
+ * The center column's panel family: the single source of occupancy truth.
+ *
+ * Every family panel appears exactly once. Opening one clears the other rows'
+ * `<html>` attributes and broadcasts its own name; an open panel closes when
+ * the broadcast name is not its own. The previous shape paired each panel with
+ * ONE sibling (ssh <-> task-board), which cannot express three panels: a panel
+ * that did not name the third one stayed logically open while invisible, so
+ * its sidebar row needed a second click to reopen. Adding a family panel is
+ * one row here, not N pairwise options.
+ */
+export const PANEL_FAMILY: readonly PanelFamilyMember[] = [
+  { panel: 'taskboard', activeAttribute: 'data-dsh-taskboard-active' },
+  { panel: 'ssh', activeAttribute: 'data-dsh-ssh-active' },
+  { panel: 'skill-explorer', activeAttribute: 'data-dsh-skill-explorer-active' },
+]
 
 /** Options for mountCenterPanel; dsh-ssh mount.tsx and dsh-task-board board-mount.tsx are the canonical consumers. */
 export interface CenterPanelMountOptions {
@@ -34,12 +61,8 @@ export interface CenterPanelMountOptions {
   viewClassName: string
   /** <html> attribute set while this panel is active. */
   activeAttribute: string
-  /** the sibling panel's active attribute, removed from <html> when this panel opens. */
-  siblingActiveAttribute: string
-  /** detail value this panel broadcasts on the cross-plugin activation event. */
+  /** this panel's name; must match its {@link PANEL_FAMILY} row. */
   panelName: string
-  /** sibling detail value whose activation closes this panel. */
-  siblingPanelName: string
   /** open flag of the owning controller. */
   isOpen: () => boolean
   /** close the panel, handing the center column back to the conversation. */
@@ -112,11 +135,14 @@ export function mountCenterPanel(options: CenterPanelMountOptions): () => void {
   const applyActive = (): void => {
     if (options.isOpen()) {
       ensure()
-      // Single-occupant center column: opening this panel must evict the
-      // sibling panel, both its html attribute and its controller state,
-      // otherwise the two panels' visibility rules fight and the second
-      // click appears dead.
-      document.documentElement.removeAttribute(options.siblingActiveAttribute)
+      // Single-occupant center column: opening this panel evicts every other
+      // family panel, both its html attribute (here) and its controller state
+      // (through the activation broadcast below). Miss either half and the two
+      // panels' visibility rules fight while the loser's sidebar row needs a
+      // second click.
+      for (const member of PANEL_FAMILY) {
+        if (member.panel !== options.panelName) document.documentElement.removeAttribute(member.activeAttribute)
+      }
       document.documentElement.setAttribute(options.activeAttribute, '')
       document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: options.panelName }))
     } else {
@@ -124,7 +150,7 @@ export function mountCenterPanel(options: CenterPanelMountOptions): () => void {
     }
   }
   const onOtherActivate = (event: Event): void => {
-    if ((event as CustomEvent).detail === options.siblingPanelName && options.isOpen()) {
+    if ((event as CustomEvent).detail !== options.panelName && options.isOpen()) {
       options.close()
     }
   }

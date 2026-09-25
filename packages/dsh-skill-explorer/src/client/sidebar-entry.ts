@@ -6,12 +6,13 @@
  * the entry row is injected between the shell's New Session button and the
  * workspace browser. The DOM injection / self-healing / idempotency logic
  * lives exactly once in shared/client/sidebar-entry-core.ts (synced copy);
- * this wrapper supplies the skill-explorer icon, copy, CSS module, and the
- * overlay toggle. The row is plain DOM (no React tree); clicking it toggles
- * the skill center overlay (see SkillPanel.tsx).
+ * this wrapper supplies the skill center icon, copy, CSS module, the panel
+ * controller, and the entry's active-state bridge. The row is plain DOM (no
+ * React tree); clicking it toggles the center-column panel (see mount.tsx).
  */
+import type { PanelController } from './panel/controller.ts'
 import { tt } from './panel-helpers.ts'
-import css from './skill-panel.module.css'
+import css from './panel/panel.module.css'
 import { mountSidebarEntry as mountSharedSidebarEntry } from './sidebar-entry-core.ts'
 
 /** Stable data attribute identifying the injected entry row. */
@@ -26,12 +27,12 @@ export interface LocaleRefreshSource { subscribe(listener: () => void): () => vo
 /**
  * Mount the sidebar entry, waiting for the shell to render and self-healing
  * on later React re-renders.
- * @param onClick - opens the skill center overlay.
+ * @param controller - the panel controller the entry toggles.
  * @param locale - locale-change source; when given, re-applies the label on
  *   a Language switch (the plain-DOM row otherwise keeps the mount-time copy).
  * @returns disposer removing the entry and its observers.
  */
-export function mountSidebarEntry(onClick: () => void, locale?: LocaleRefreshSource): () => void {
+export function mountSidebarEntry(controller: PanelController, locale?: LocaleRefreshSource): () => void {
   return mountSharedSidebarEntry({
     rowAttribute: 'data-dsh-skill-explorer-entry',
     rowSelector: ENTRY_SELECTOR,
@@ -43,8 +44,12 @@ export function mountSidebarEntry(onClick: () => void, locale?: LocaleRefreshSou
     label: () => tt('entry.label'),
     tooltip: () => tt('entry.tooltip'),
     refresh: locale === undefined ? undefined : { subscribe: (listener) => locale.subscribe(listener) },
-    onToggle: onClick,
+    onToggle: () => { controller.toggle() },
     position: 'after',
     familySelectors: ['[data-dsh-taskboard-entry]', '[data-dsh-ssh-entry]', '[data-dsh-skill-explorer-entry]'],
+    active: {
+      subscribe: (listener) => controller.subscribe(listener),
+      isOpen: () => controller.getSnapshot().panelOpen,
+    },
   })
 }
