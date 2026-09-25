@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-24",
+  "generated": "2026-09-25",
   "items": [
     {
       "id": "whale-song",
@@ -972,26 +972,96 @@
       }
     },
     {
+      "id": "ice-princess",
+      "name": "冰晶公主",
+      "nameEn": "Ice Crystal Princess",
+      "author": "stushansusu",
+      "rank": 26,
+      "tagline": "暗色专用 · 冰殿 · 深蓝外袍 · 银灰描框 · 霜棱画框",
+      "description": "按桌面宠物「冰晶公主」的设定色走：主深蓝 #1A4B94 是外袍与蝴蝶结，中宝蓝 #3277D8 是衣饰与宝石，浅天蓝 #63B8F0 是发梢高光与裙摆渐变，亮白 #FFFFFF 是衣身与长袜，银灰 #D6E4F5 走腰带与镶边，瞳色 #589CE6 是那双眼睛。界面就照着这身衣服分：白铺面（衣身）、深蓝压底（外袍）、银灰走所有发丝级的分割线、宝蓝与天蓝只做宝石与高光，不铺面。整套唯一的暖色是肤色 #F9DDD0——只留在首屏霜环的正中心，冰里还亮着一点体温。",
+      "tags": [
+        "anime",
+        "ice",
+        "princess",
+        "sapphire",
+        "silver",
+        "snowflake",
+        "frost",
+        "companion",
+        "css-only",
+        "dual-theme"
+      ],
+      "version": "1.1.0",
+      "accent": "#3277D8",
+      "preview": {
+        "light": "assets/skins/ice-princess/preview/light.jpg",
+        "dark": "assets/skins/ice-princess/preview/dark.jpg"
+      },
+      "files": [
+        "README.md",
+        "README.zh.md",
+        "assets/bingjing-bg.webp",
+        "assets/crystal-corner-bl.svg",
+        "assets/crystal-corner-br.svg",
+        "assets/crystal-corner-tl.svg",
+        "assets/crystal-corner-tr.svg",
+        "assets/crystal-crest.svg",
+        "assets/crystal-divider.svg",
+        "assets/crystal-lace-drop-flip.svg",
+        "assets/crystal-lace-drop.svg",
+        "assets/crystal-seal-bad.svg",
+        "assets/crystal-seal.svg",
+        "assets/crystal-tick-bl.svg",
+        "assets/crystal-tick-br.svg",
+        "assets/crystal-tick-tl.svg",
+        "assets/crystal-tick-tr.svg",
+        "assets/crystal-wind-far.svg",
+        "assets/crystal-wind-near.svg",
+        "assets/sparkle-dark.svg",
+        "patches.css",
+        "preview/dark.jpg",
+        "preview/light.jpg",
+        "skin.css",
+        "skin.json"
+      ],
+      "repo": "https://github.com/zhu1090093659/dsh-skins/tree/main/skins/ice-princess",
+      "contributes": {
+        "stylesheet": "skin.css",
+        "patches": "patches.css",
+        "backgroundMedia": {
+          "light": {
+            "type": "image",
+            "src": "assets/skins/ice-princess/assets/bingjing-bg.webp",
+            "scrim": "linear-gradient(180deg, rgba(7,14,30,0.42) 0%, rgba(7,14,30,0.5) 45%, rgba(7,14,30,0.68) 100%)"
+          },
+          "dark": {
+            "type": "image",
+            "src": "assets/skins/ice-princess/assets/bingjing-bg.webp",
+            "scrim": "linear-gradient(180deg, rgba(7,14,30,0.42) 0%, rgba(7,14,30,0.5) 45%, rgba(7,14,30,0.68) 100%)"
+          }
+        }
+      }
+    },
+    {
       "id": "observatory",
       "name": "天文台",
       "nameEn": "Observatory",
       "author": "stushansusu",
       "rank": 27,
       "tagline": "午夜靛 · 老黄铜 · 穹顶肋缝 · 时辰刻度",
-      "description": "山顶天文台的观测室：黄铜仪器、午夜靛的天。不是「工程蓝图」那套制图——那是青线网格；这套是圆、弧、刻度、铆钉，全是线，没有一处面积填充。中性层是午夜靛，只带色温不带彩度；老黄铜是全场唯一有彩度的东西，只走线、走字、走点睛。母题是观测室本身：穹顶的纬度环与扇形肋缝、底部的十二时辰刻度带、一排黄铜铆钉，加上首屏的观测环（方位刻度／赤经赤纬读数／十字丝）、星等标尺与水准泡。红只留给需要你看一眼的信号灯。",
+      "description": "山顶天文台的观测室：黄铜仪器、午夜靛的天。不是「工程蓝图」那套制图——那是青线网格；这套是圆、弧、刻度、铆钉，全是线，没有一处面积填充。中性层是午夜靛，只带色温不带彩度；老黄铜是全场唯一有彩度的东西，只走线、走字、走点睛。母题是观测室本身：穹顶的纬度环与扇形肋缝、底部的十二时辰刻度带、一排黄铜铆钉，加上星等标尺与水准泡。红只留给需要你看一眼的信号灯。",
       "tags": [
         "observatory",
         "brass",
         "midnight",
         "dome",
-        "reticle",
         "instrument",
         "scale",
         "precise",
         "css-only",
         "dark-only"
       ],
-      "version": "1.0.0",
+      "version": "1.1.0",
       "accent": "#c2a55a",
       "preview": {
         "light": "assets/skins/observatory/preview/light.jpg",
@@ -1002,8 +1072,6 @@
         "README.zh.md",
         "assets/dome-plate-dark.svg",
         "assets/dome-plate-light.svg",
-        "assets/hero-reticle-dark.svg",
-        "assets/hero-reticle-light.svg",
         "assets/observatory-bg.webp",
         "assets/ws-sleeve-dark.svg",
         "assets/ws-sleeve-light.svg",
@@ -1464,7 +1532,7 @@
       "author": "stushansusu",
       "rank": 35,
       "tagline": "椰影沙滩 · 银河星海 · 棋盘抖动 · 精灵描边",
-      "description": "同一个海岸的两段时间。明亮是白昼的沙滩椰林：暖沙地、湿沙的水痕、断断续续的浪线、近岸泛青的海，椰子树用二十格高的点阵剪影立在沙上，天上挂着一颗带八条光芒的阶梯太阳和四朵点阵云；暗色是深夜的星空银河：夜空蓝黑、二百三十颗点阵星加一条由淡点堆出来的银河拱、右上角一枚下弦月，海平线往上是月亮照亮的暖褐滩涂，水里压着几道月光与星光。两套都不靠渐变——明暗是 8px 一格的棋盘抖动堆出来的，像素画里没有平滑 ramp。所有圆角归零（像素画只有直角和 45 度），每张卡片一圈 2px 精灵描边加 4px 实心投影。整片海岸画在画布层（沙 286px、海 134px，锚在底边），而画布与机壳之间不留任何中间层：bg-base 全透明，会话背景与主页背景是同一幅画。侧栏的文件夹行是沙台、选中行下缘压一道碎浪，输入卡下缘也是碎浪、发送键是落日橙（夜里银河紫），工具行与用户气泡共用同一个实心底色。",
+      "description": "同一个海岸的两段时间。明亮是白昼的沙滩椰林：暖沙地、湿沙的水痕、断断续续的浪线、近岸泛青的海，椰子树用二十格高的点阵剪影立在沙上，天上挂着一颗阶梯太阳；暗色是深夜的星空银河：夜空蓝黑、二百三十颗点阵星加一条由淡点堆出来的银河拱，海平线往上是月亮照亮的银灰滩涂，水里压着几道星光倒影。两套都不靠渐变——明暗是 8px 一格的棋盘抖动堆出来的，像素画里没有平滑 ramp。所有圆角归零（像素画只有直角和 45 度），每张卡片一圈 2px 精灵描边加 4px 实心投影。海岸线锚在底边上（沙 286px、海 134px），从一千像素到七百像素高，椰子树都站在沙里。",
       "tags": [
         "anime",
         "pixel",
@@ -1478,7 +1546,7 @@
         "css-only",
         "dual-theme"
       ],
-      "version": "1.0.0",
+      "version": "1.1.0",
       "accent": "#0F7182",
       "preview": {
         "light": "assets/skins/pixel-anime/preview/light.jpg",
@@ -1568,76 +1636,122 @@
       }
     },
     {
-      "id": "ice-princess",
-      "name": "冰晶公主",
-      "nameEn": "Ice Crystal Princess",
+      "id": "shangmei-jinbi",
+      "name": "金碧重彩",
+      "nameEn": "Gold & Mineral",
       "author": "stushansusu",
-      "rank": 42,
-      "tagline": "纯暗色 · 霜棱画框 · 冰晶切面 · 六出雪花 · 风雪视差 · 配套桌宠立绘",
-      "description": "暗色专用皮肤：无论系统设为浅色还是深色，呈现的都是同一套冰殿，所以两个主题的预览图一致（实测两态逐像素差 0%）。配色直接取自桌面宠物「冰晶公主」的立绘设定——主深蓝 #1A4B94 是外袍与蝴蝶结，中宝蓝 #3277D8 是衣饰与宝石，浅天蓝 #63B8F0 是发梢高光与裙摆渐变，亮白 #FFFFFF 是衣身与长袜，银灰 #D6E4F5 走腰带与镶边，瞳色 #589CE6 是那双眼睛；整套唯一的暖色是肤色 #F9DDD0，只留在首屏霜环正中心。装饰层走「冰殿」引擎：四角霜棱角花（同一母题镜像四次）、六棱冰印、开光角线、霜纹分隔线、切面冰宝石主按钮；首屏是六出雪花霜环，工作区面板是冰壁。背景为角色立绘，人物缩放 0.85、水平中心 65%，四周用无结构色场铺底并做椭圆羽化；其上叠两层雪片贴图做从左向右的风雪，两层贴图宽度不同（1400/900px）故产生视差，并尊重 prefers-reduced-motion。",
+      "rank": 45,
+      "tagline": "赭石泥金 · 土红平涂 · 重彩描金 · 靛蓝夜色",
+      "description": "重彩的一路，上美影的单线平涂：一笔墨线勾轮廓，里面填平色，面上不铺渐变，只有主按钮留一道金属斜光。浅色坐在绢本赭石上，土红作可点的主色、泥金作提醒；夜色换成靛蓝压底，泥金在深底上才真的像金。首屏只覆写一层径向光。用户自己说的话套一圈朱砂（朱批）。硬投影比常规厚一格（3px），因为金碧的线本来就重，投影薄了会被线吃掉。",
       "tags": [
-        "ice",
-        "crystal",
-        "princess",
-        "snowflake",
-        "frost",
-        "snow",
-        "wind",
-        "aurora",
-        "sapphire",
-        "silver",
-        "companion",
-        "dark-only",
-        "css-only",
-        "character-art"
+        "chinese",
+        "guofeng",
+        "shanghai-animation",
+        "gold",
+        "mineral",
+        "dunhuang",
+        "cel",
+        "seal",
+        "dual-theme"
       ],
       "version": "1.0.0",
-      "accent": "#3277D8",
+      "accent": "#A8462A",
       "preview": {
-        "light": "assets/skins/ice-princess/preview/light.jpg",
-        "dark": "assets/skins/ice-princess/preview/dark.jpg"
+        "light": "assets/skins/shangmei-jinbi/preview/light.jpg",
+        "dark": "assets/skins/shangmei-jinbi/preview/dark.jpg"
       },
       "files": [
         "README.md",
         "README.zh.md",
-        "assets/bingjing-bg.webp",
-        "assets/crystal-corner-bl.svg",
-        "assets/crystal-corner-br.svg",
-        "assets/crystal-corner-tl.svg",
-        "assets/crystal-corner-tr.svg",
-        "assets/crystal-crest.svg",
-        "assets/crystal-divider.svg",
-        "assets/crystal-lace-drop-flip.svg",
-        "assets/crystal-lace-drop.svg",
-        "assets/crystal-seal-bad.svg",
-        "assets/crystal-seal.svg",
-        "assets/crystal-tick-bl.svg",
-        "assets/crystal-tick-br.svg",
-        "assets/crystal-tick-tl.svg",
-        "assets/crystal-tick-tr.svg",
-        "assets/crystal-wind-far.svg",
-        "assets/crystal-wind-near.svg",
-        "assets/sparkle-dark.svg",
+        "assets/sym-composer-dark.webp",
+        "assets/sym-composer-light.webp",
+        "assets/sym-dark.webp",
+        "assets/sym-header-dark.webp",
+        "assets/sym-header-light.webp",
+        "assets/sym-light.webp",
+        "assets/sym-masthead-dark.webp",
+        "assets/sym-masthead-light.webp",
+        "assets/sym-scroll-dark.webp",
+        "assets/sym-scroll-light.webp",
+        "assets/sym-sidebar-pattern-dark.webp",
+        "assets/sym-sidebar-pattern-light.webp",
         "patches.css",
         "preview/dark.jpg",
         "preview/light.jpg",
         "skin.css",
         "skin.json"
       ],
-      "repo": "https://github.com/zhu1090093659/dsh-skins/tree/main/skins/ice-princess",
+      "repo": "https://github.com/zhu1090093659/dsh-skins/tree/main/skins/shangmei-jinbi",
       "contributes": {
         "stylesheet": "skin.css",
         "patches": "patches.css",
         "backgroundMedia": {
           "light": {
             "type": "image",
-            "src": "assets/skins/ice-princess/assets/bingjing-bg.webp",
-            "scrim": "linear-gradient(180deg, rgba(7,14,30,0.42) 0%, rgba(7,14,30,0.5) 45%, rgba(7,14,30,0.68) 100%)"
+            "src": "assets/skins/shangmei-jinbi/assets/sym-light.webp",
+            "scrim": "linear-gradient(104deg, rgba(253,243,224,0.48) 0%, rgba(253,243,224,0.28) 28%, rgba(253,243,224,0.08) 60%, rgba(253,243,224,0) 100%), linear-gradient(0deg, rgba(253,243,224,0.26) 0%, rgba(253,243,224,0) 32%)"
           },
           "dark": {
             "type": "image",
-            "src": "assets/skins/ice-princess/assets/bingjing-bg.webp",
-            "scrim": "linear-gradient(180deg, rgba(7,14,30,0.42) 0%, rgba(7,14,30,0.5) 45%, rgba(7,14,30,0.68) 100%)"
+            "src": "assets/skins/shangmei-jinbi/assets/sym-dark.webp",
+            "scrim": "linear-gradient(104deg, rgba(7,16,42,0.52) 0%, rgba(7,16,42,0.3) 28%, rgba(7,16,42,0.09) 60%, rgba(7,16,42,0) 100%), linear-gradient(0deg, rgba(7,16,42,0.32) 0%, rgba(7,16,42,0) 32%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "mid-autumn",
+      "name": "桂影月华",
+      "nameEn": "Osmanthus Moonlight",
+      "author": "stushansusu",
+      "rank": 46,
+      "tagline": "金桂浮光 · 靛夜悬月 · 玉兔衔枝 · 花灯千盏",
+      "description": "中秋的一路：底图是用户给的那张月夜图（右半暖金、左半靛蓝），明暗两个主题都走它，所以整套皮肤没有浅色版。界面全部改成夜色玻璃给画让路，再补一圈中秋家具——侧栏右缘「靛在外金在内」双线；首屏左上压一团月华柔光；顶栏是一整幅插画（月上桂梢、云头、三盏孔明灯、回纹边）；输入卡只留一圈金桂键线；会话头部只留夜色玻璃与一道底缘金线；工作区分组行做成灯谜签。朱批不用朱砂：金桂在外、青玉在内。强调色是金桂 #E7B44E，辅色青玉 #6BC6B0。",
+      "tags": [
+        "chinese",
+        "mid-autumn",
+        "mooncake",
+        "osmanthus",
+        "moon",
+        "jade-rabbit",
+        "lantern",
+        "night",
+        "dark",
+        "dark-only"
+      ],
+      "version": "1.0.0",
+      "accent": "#E7B44E",
+      "preview": {
+        "light": "assets/skins/mid-autumn/preview/light.jpg",
+        "dark": "assets/skins/mid-autumn/preview/dark.jpg"
+      },
+      "files": [
+        "README.md",
+        "README.zh.md",
+        "assets/zq-bg.webp",
+        "assets/zq-folder-mooncake.png",
+        "assets/zq-masthead.webp",
+        "assets/zq-row-tag.svg",
+        "patches.css",
+        "preview/dark.jpg",
+        "preview/light.jpg",
+        "skin.css",
+        "skin.json"
+      ],
+      "repo": "https://github.com/zhu1090093659/dsh-skins/tree/main/skins/mid-autumn",
+      "contributes": {
+        "stylesheet": "skin.css",
+        "patches": "patches.css",
+        "backgroundMedia": {
+          "light": {
+            "type": "image",
+            "src": "assets/skins/mid-autumn/assets/zq-bg.webp",
+            "scrim": "linear-gradient(180deg, rgba(6,6,8,0.36) 0%, rgba(6,6,8,0.04) 20%, rgba(6,6,8,0.04) 58%, rgba(6,6,8,0.40) 100%), radial-gradient(58% 54% at 72% 54%, rgba(6,6,8,0.44) 0%, rgba(6,6,8,0) 82%), radial-gradient(92% 74% at 16% 4%, rgba(6,6,8,0.10) 0%, rgba(6,6,8,0) 62%)"
+          },
+          "dark": {
+            "type": "image",
+            "src": "assets/skins/mid-autumn/assets/zq-bg.webp",
+            "scrim": "linear-gradient(180deg, rgba(6,6,8,0.36) 0%, rgba(6,6,8,0.04) 20%, rgba(6,6,8,0.04) 58%, rgba(6,6,8,0.40) 100%), radial-gradient(58% 54% at 72% 54%, rgba(6,6,8,0.44) 0%, rgba(6,6,8,0) 82%), radial-gradient(92% 74% at 16% 4%, rgba(6,6,8,0.10) 0%, rgba(6,6,8,0) 62%)"
           }
         }
       }
@@ -2447,7 +2561,7 @@
         "bubbles",
         "dual-theme"
       ],
-      "version": "1.0.0",
+      "version": "1.1.0",
       "accent": "#2E6FD0",
       "preview": {
         "light": "assets/skins/whale-maid/preview/light.jpg",
