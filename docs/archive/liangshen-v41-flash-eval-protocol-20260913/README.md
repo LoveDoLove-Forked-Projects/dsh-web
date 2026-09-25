@@ -1,6 +1,6 @@
 # 梁神模式 V4.1 Flash 评测协议与工具交接（2026-09-13）
 
-一次性交接快照，不进入长期文档。内容为[梁神模式针对 DeepSeek V4.1 Flash 的改进计划](../../../.agents/notes/proposed/feature/2026-09-13-liangshen-v41-flash-improvement-plan.zh.md)第 1–4 阶段落地的评测协议、工具用法与当前状态。
+一次性交接快照，不进入长期文档。内容为[梁神模式针对 DeepSeek V4.1 Flash 的改进计划](../../../.agents/notes/implemented/feature/2026-09-13-liangshen-v41-flash-improvement-plan.zh.md)第 1–4 阶段落地的评测协议、工具用法与当前状态。
 
 ## 状态
 

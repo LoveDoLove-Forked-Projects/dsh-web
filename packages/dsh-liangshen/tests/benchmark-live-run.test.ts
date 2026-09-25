@@ -33,6 +33,7 @@ import {
   assertPriceEntry,
   buildPatch,
   evaluateCheck,
+  FIXED_ROUTE,
   hashTree,
   inlineComposition,
   loadTaskFile,
@@ -40,11 +41,14 @@ import {
   harnessInstallAvailable,
   officialMinimalPresetPatch,
   priceRun,
+  resolvePriceTable,
+  routePriceKey,
   routePrices,
   runLiveSuite,
   replacePersonaPrefix,
   suitePlan,
   summarizeSession,
+  versionLine,
   summarizeUsage,
   taskRevision,
 } from '../tools/benchmark-live-run.mjs'
@@ -268,9 +272,9 @@ describe('benchmark task corpus and acceptance checks', () => {
       tasks: corpus,
       groups: ['B'],
       maxSessions: 1,
-      budgetUsd: 5,
+      budgetCny: 5,
       outDir: scratchDir(),
-    })).rejects.toThrow(/--budget-usd needs a price entry/)
+    })).rejects.toThrow(/--budget-cny needs a price entry/)
   })
 
   it('rejects a budget whose price table has no usable rates', async () => {
@@ -279,10 +283,26 @@ describe('benchmark task corpus and acceptance checks', () => {
       tasks: corpus,
       groups: ['B'],
       maxSessions: 1,
-      budgetUsd: 5,
+      budgetCny: 5,
       prices: { 'deepseek-flash': {} },
       outDir: scratchDir(),
     })).rejects.toThrow(/needs a finite non-negative input rate/)
+  })
+
+  it('operator prices the shipped book in CNY and reads a route-keyed table', () => {
+    // Given the shipped price book, When a run's usage is priced, Then the cost
+    // is the book's own currency and the route key resolves without a model-name
+    // fallback that would price an unrelated route.
+    const book = JSON.parse(readFileSync(
+      new URL('../tools/prices/deepseek-flash.json', import.meta.url),
+      'utf8',
+    ))
+    expect(book.currency).toBe('CNY')
+    const table = resolvePriceTable(book)
+    expect(routePrices(table, FIXED_ROUTE)).toEqual({ input: 1, output: 4, cacheRead: 0.02, cacheWrite: 1 })
+    const cost = priceRun({ uncachedInputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0 }, table, FIXED_ROUTE)
+    expect(cost).toBeCloseTo(1, 6)
+    expect(routePriceKey(FIXED_ROUTE)).toBe('deepseek-official/deepseek-flash')
   })
 
   it('interleaves every group inside each task so a limit cannot starve later groups', () => {
@@ -398,9 +418,68 @@ describe('benchmark live harness session evidence', () => {
     expect(evidence.ptcDispatches).toBe(1)
   })
 
+  it('operator separates transport failures from the errors the model caused', () => {
+    // Given a session whose workspace could not reach a host, When the run is
+    // summarized, Then the network failure is not counted as a model mistake,
+    // because "looked and could not fetch" must not read as "guessed".
+    const path = log([
+      { type: 'tool/result', seq: 20, data: { error: { name: 'WebError', code: 'WEB_BLOCKED_URL' } } },
+      { type: 'tool/result', seq: 21, data: { error: { name: 'ToolCallError', code: 'E_BAD' } } },
+      { type: 'tool/result', seq: 22, data: { message: { role: 'tool', content: [] } } },
+    ])
+    const evidence = summarizeSession(path)
+    expect(evidence.toolErrors).toBe(2)
+    expect(evidence.transportFailures).toBe(1)
+    expect(evidence.modelToolErrors).toBe(1)
+    expect(evidence.toolFailureCodes).toEqual({ WEB_BLOCKED_URL: 1, E_BAD: 1 })
+  })
+
+  it('operator counts research calls and the inspections before the first write', () => {
+    // Given a run that inspected twice, searched once, then wrote, When the run
+    // is summarized, Then the guardrail counts the inspections that preceded the
+    // first mutation rather than every call in the session.
+    const path = log([
+      { type: 'tool/call', seq: 20, data: { name: 'read' } },
+      { type: 'tool/call', seq: 21, data: { name: 'glob' } },
+      { type: 'tool/call', seq: 22, data: { name: 'web_search' } },
+      { type: 'tool/call', seq: 23, data: { name: 'edit' } },
+      { type: 'tool/call', seq: 24, data: { name: 'read' } },
+    ])
+    const evidence = summarizeSession(path)
+    expect(evidence.inspectionsBeforeFirstWrite).toBe(3)
+    expect(evidence.firstWriteIndex).toBe(3)
+    expect(evidence.researchCalls).toBe(1)
+    expect(evidence.researchCallsByName).toEqual({ web_search: 1, web_fetch: 0 })
+  })
+
+  it('operator counts every call as an inspection when the run never wrote', () => {
+    // Given a session that only read, When it is summarized, Then the guardrail
+    // reports the whole call list instead of an undefined pre-write count.
+    const path = log([
+      { type: 'tool/call', seq: 20, data: { name: 'read' } },
+      { type: 'tool/call', seq: 21, data: { name: 'grep' } },
+    ])
+    const evidence = summarizeSession(path)
+    expect(evidence.firstWriteIndex).toBe(-1)
+    expect(evidence.inspectionsBeforeFirstWrite).toBe(2)
+  })
+
   it('skips unparsable lines rather than failing the whole report', () => {
     const path = join(scratchDir(), 'session.v3.jsonl')
     writeFileSync(path, ['not json', JSON.stringify({ type: 'tool/call', seq: 1, data: {} })].join('\n'), 'utf8')
     expect(summarizeSession(path).toolCalls).toBe(1)
+  })
+})
+
+describe('benchmark version capture', () => {
+  it('operator ignores shell error text and takes the version line', () => {
+    // Given a Windows shim whose quoting makes cmd.exe answer with its own error
+    // text, When the output is parsed, Then that text is not recorded as the
+    // harness version.
+    const error = '\'"dsh" "--version"\' is not recognized as an internal or external command,'
+    expect(versionLine(error)).toBeNull()
+    expect(versionLine(error + '\n0.1.7-rc.2')).toBe('0.1.7-rc.2')
+    expect(versionLine('   ')).toBeNull()
+    expect(versionLine('dsh 0.1.7-rc.2')).toBe('0.1.7-rc.2')
   })
 })

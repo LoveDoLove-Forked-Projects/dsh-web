@@ -69,11 +69,21 @@ function sumOf(entries, pick) {
   return entries.reduce((total, entry) => total + (pick(entry) ?? 0), 0)
 }
 
+/**
+ * A sum over the records that actually carry the field. A directory written by an
+ * older runner carries no such field at all, and reporting 0 for it would read as
+ * a measured zero (no research calls, no model mistakes) rather than as unmeasured.
+ */
+function sumIfPresent(entries, pick) {
+  const present = entries.map(pick).filter((value) => typeof value === 'number' && Number.isFinite(value))
+  return present.length === 0 ? null : present.reduce((total, value) => total + value, 0)
+}
+
 function costOf(entries) {
   let total = 0
   let priced = 0
   for (const entry of entries) {
-    if (typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd)) { total += entry.costUsd; priced += 1 }
+    if (typeof entry.costCny === 'number' && Number.isFinite(entry.costCny)) { total += entry.costCny; priced += 1 }
   }
   return priced === 0 ? null : total
 }
@@ -106,9 +116,17 @@ export function aggregateGroups(runs) {
       durationMs: sumOf(entries, (run) => run.durationMs),
       toolCalls: sumOf(entries, (run) => run.toolCalls),
       toolErrors: sumOf(entries, (run) => run.toolErrors),
+      // Transport failures are the subset of tool errors the workspace caused by
+      // being unable to reach a host; only the remainder is the model's own.
+      modelToolErrors: sumIfPresent(entries, (run) => run.modelToolErrors),
+      transportFailures: sumIfPresent(entries, (run) => run.transportFailures),
+      researchCalls: sumIfPresent(entries, (run) => run.researchCalls),
+      inspectionsBeforeFirstWrite: meanConfidenceInterval(
+        entries.map((run) => run.inspectionsBeforeFirstWrite).filter((value) => typeof value === 'number'),
+      ),
       humanInterventions: sumOf(entries, (run) => run.humanInterventions),
       approvalAsks: sumOf(entries, (run) => run.approvalsAsked),
-      estimatedCostUsd: costOf(entries),
+      estimatedCostCny: costOf(entries),
     }
   }
   return groups
@@ -273,8 +291,8 @@ export function renderMarkdown(report) {
   }
   lines.push('## Group results')
   lines.push('')
-  lines.push('| Group | Sessions | Graded | Passed | Success rate (95% CI) | Infra failures | Timeouts | Input tokens | Output tokens | Cache read | Tool calls | Tool errors | Interventions | Cost USD |')
-  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+  lines.push('| Group | Sessions | Graded | Passed | Success rate (95% CI) | Infra failures | Timeouts | Input tokens | Output tokens | Cache read | Tool calls | Model tool errors | Transport failures | Research calls | Inspections before first write (mean) | Interventions | Cost CNY |')
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
   for (const group of GROUP_ORDER) {
     const stats = report.groups[group]
     if (stats === undefined) continue
@@ -290,9 +308,12 @@ export function renderMarkdown(report) {
       stats.outputTokens,
       stats.cacheReadTokens,
       stats.toolCalls,
-      stats.toolErrors,
+      stats.modelToolErrors ?? 'n/a',
+      stats.transportFailures ?? 'n/a',
+      stats.researchCalls ?? 'n/a',
+      stats.inspectionsBeforeFirstWrite === null ? 'n/a' : stats.inspectionsBeforeFirstWrite.mean.toFixed(1),
       stats.humanInterventions,
-      stats.estimatedCostUsd === null ? 'n/a' : stats.estimatedCostUsd.toFixed(4),
+      stats.estimatedCostCny === null ? 'n/a' : stats.estimatedCostCny.toFixed(4),
     ].join(' | ') + ' |')
   }
   lines.push('')
@@ -302,8 +323,8 @@ export function renderMarkdown(report) {
   lines.push('| --- | --- | --- | --- |')
   const purposes = {
     'B-P': 'isolates the persona change',
-    'P-T': 'tests whether anchoring helps',
-    'T-N': 'compares PTC against native presentation',
+    'P-T': "compares the 'both' presentation against 'ptc'",
+    'T-N': 'compares the PTC transport against the native roster',
     'B-M': 'external reference, not single-factor attribution',
   }
   for (const comparison of report.comparisons) {
@@ -324,7 +345,9 @@ export function renderMarkdown(report) {
   lines.push('- The report reads only the run records listed in the suite index and rejects a directory whose runs disagree on commit, preset hash, route, or task revision.')
   lines.push('- Group M is the bundle-provided Minimal preset as an external reference; it is not a single-factor arm.')
   lines.push('- Group N is the full native roster, not Minimal and not a curated minimal toolset.')
-  lines.push('- Language-style counters (we and let me) stay with tools/analyze-session.mjs and are not part of the outcome measures here.')
+  lines.push('- Model tool errors exclude transport failures: a run that cannot reach a host is evidence about the network, not about the model, so the two are reported side by side.')
+  lines.push('- Cost is the price book currency (CNY), not USD: the route bills in CNY and the published row is quoted per million CNY.')
+  lines.push('- Language-style counters (we and let me) stay with tools/analyze-session.mjs, which needs reasoning text the durable log does not always carry; those counters are not part of the outcome measures here.')
   lines.push('- A small sample screens a direction; it does not claim a stable improvement. Widen the sample within the stated budget before concluding.')
   lines.push('')
   return lines.join('\n')

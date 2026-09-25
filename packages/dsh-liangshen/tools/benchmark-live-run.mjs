@@ -27,7 +27,13 @@
  *
  * Usage:
  *   node tools/benchmark-live-run.mjs --variant B [--timeout 300000] [--keep]
- *   node tools/benchmark-live-run.mjs --tasks tools/tasks/liangshen-v41-flash.json --groups B,P,T,N,M --repeat 3 --max-sessions 60 --budget-usd 5 --out .benchmark-results
+ *   node tools/benchmark-live-run.mjs --tasks tools/tasks/liangshen-v41-flash.json --groups B,P,T,N,M --repeat 3 --max-sessions 60 --budget-cny 10 --prices tools/prices/deepseek-flash.json --out .benchmark-results
+ *
+ * Cost is CNY: DeepSeek bills in CNY, and the published row the route prices at
+ * is quoted in CNY per million tokens (cache hit / cache miss / output) off-peak,
+ * doubled while peaking. A run reads an explicit price book, so the budget gate
+ * and the report's cost column share one source of truth instead of a conversion
+ * factor living in a reader's head.
  */
 
 import { execFileSync, spawn } from 'node:child_process'
@@ -374,6 +380,24 @@ export function summarizeUsage(events) {
 }
 
 /**
+ * The tool names that mutate a workspace. The first one in a session's call order
+ * marks the moment the model stopped inspecting and started writing; how many
+ * inspections precede it is the "did it verify before acting" guardrail.
+ */
+const WRITE_TOOL_NAMES = new Set(['write', 'edit', 'str_replace_editor', 'apply_patch'])
+
+/**
+ * A provider transport failure recorded as a tool result: the workspace never
+ * reached the destination, so the call is evidence about the network rather than
+ * about the model's behaviour. Reading a fact the workspace cannot fetch must
+ * stay distinguishable from a model that guessed instead of looking.
+ */
+function isTransportFailure(event) {
+  const code = event?.data?.error?.code
+  return typeof code === 'string' && code.startsWith('WEB_')
+}
+
+/**
  * Read one session log into the evidence the comparison actually needs.
  *
  * The durable shapes this reads are the ones the harness writes:
@@ -422,6 +446,27 @@ export function summarizeSession(logPath) {
     }
   }
 
+  // Model-issued research calls, counted per call name so a run reports how much
+  // it verified rather than only what it produced, plus the plain "did it look
+  // before it wrote" guardrail we-need measured (30 -> 6 inspections).
+  const researchCallsByName = {}
+  for (const name of ['web_search', 'web_fetch']) {
+    researchCallsByName[name] = toolCallsByName[name] ?? 0
+  }
+  const callOrder = events.filter((event) => event.type === 'tool/call').map((event) => event.data?.name)
+  const firstWriteIndex = callOrder.findIndex((name) => WRITE_TOOL_NAMES.has(name))
+  const inspectionsBeforeFirstWrite = firstWriteIndex === -1 ? callOrder.length : firstWriteIndex
+
+  const toolFailureCodes = {}
+  for (const event of events) {
+    if (event.type !== 'tool/result' || event.data?.error === undefined) continue
+    const code = event.data.error.code ?? event.data.error.name ?? 'unknown'
+    toolFailureCodes[code] = (toolFailureCodes[code] ?? 0) + 1
+  }
+
+  const toolResults = events.filter((event) => event.type === 'tool/result')
+  const transportFailures = toolResults.filter(isTransportFailure).length
+
   return {
     requests,
     prompts,
@@ -429,7 +474,16 @@ export function summarizeSession(logPath) {
     ptcDispatches: events.filter((event) => event.type === 'tool/ptc-dispatch').length,
     toolCalls: events.filter((event) => event.type === 'tool/call').length,
     toolCallsByName,
-    toolErrors: events.filter((event) => event.type === 'tool/result' && event.data?.error !== undefined).length,
+    toolErrors: toolResults.filter((event) => event.data?.error !== undefined).length,
+    // Transport failures are a subset of tool errors: subtract them to get the
+    // failures the model itself caused.
+    modelToolErrors: toolResults.filter((event) => event.data?.error !== undefined && !isTransportFailure(event)).length,
+    transportFailures,
+    toolFailureCodes,
+    researchCalls: researchCallsByName.web_search + researchCallsByName.web_fetch,
+    researchCallsByName,
+    firstWriteIndex,
+    inspectionsBeforeFirstWrite,
     approvalsAsked: events.filter((event) => event.type === 'approval/asked').length,
     humanInterventions: toolCallsByName.ask_user_question ?? 0,
   }
@@ -452,6 +506,13 @@ const EMPTY_EVIDENCE = {
   toolCalls: 0,
   toolCallsByName: {},
   toolErrors: 0,
+  modelToolErrors: 0,
+  transportFailures: 0,
+  toolFailureCodes: {},
+  researchCalls: 0,
+  researchCallsByName: { web_search: 0, web_fetch: 0 },
+  firstWriteIndex: -1,
+  inspectionsBeforeFirstWrite: 0,
   approvalsAsked: 0,
   humanInterventions: 0,
 }
@@ -465,6 +526,41 @@ function gitValue(args) {
   }
 }
 
+/**
+ * The version token in a command's output, or null. The `dsh` shim is a
+ * Windows command script, so spawning it wraps the arguments in a second quoting
+ * layer and cmd.exe answers with its own "is not recognized" text on stderr; a
+ * bare "first non-empty line" would record that error text as the baseline's
+ * harness version. Only a version triple is accepted, and only the triple is
+ * returned, so a program prefix cannot make two identical installs compare
+ * unequal in the report's baseline identity.
+ */
+export function versionLine(text) {
+  const match = String(text ?? '').match(/\bv?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/)
+  return match === null ? null : match[0]
+}
+
+/**
+ * The version of the CLI package the `dsh` command on PATH belongs to. It is
+ * the fallback that keeps a baseline honest on hosts where spawning the shim
+ * cannot answer, and the same resolution walk `officialMinimalPresetPatch`
+ * uses: realpath first, because createRequire derives module paths from the
+ * literal filename and the PATH shim sits outside the install tree.
+ */
+function shimPackageVersion() {
+  for (const shim of dshCommands()) {
+    try {
+      const fromShim = createRequire(realpathSync(shim))
+      const manifest = readFileSync(fromShim.resolve('@deepseek-ai/dsh/package.json'), 'utf8')
+      const version = JSON.parse(manifest).version
+      if (typeof version === 'string' && version !== '') return version
+    } catch {
+      // A stale PATH entry must not hide a resolvable install further down.
+    }
+  }
+  return null
+}
+
 /** The installed CLI version, read without touching the running DSH service. */
 async function dshVersion() {
   const spec = process.platform === 'win32'
@@ -472,11 +568,12 @@ async function dshVersion() {
     : { command: 'dsh', args: ['--version'] }
   try {
     const result = await spawnCaptured(spec.command, spec.args, {}, 15000)
-    const line = `${result.stdout}\n${result.stderr}`.split(/\r?\n/).map((entry) => entry.trim()).find((entry) => entry !== '')
-    return line ?? null
+    const line = versionLine(result.stdout) ?? versionLine(result.stderr)
+    if (line !== null) return line
   } catch {
-    return null
+    // Fall through to the package the shim resolves to.
   }
+  return shimPackageVersion()
 }
 
 /**
@@ -555,10 +652,24 @@ function isRate(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
+/** The key a price table is read by for one route. */
+export function routePriceKey(route) {
+  return route.provider + '/' + route.model
+}
+
+/**
+ * The route-keyed rate table a price book carries: either the book's `prices`
+ * object, or the book itself when a caller passes a table directly.
+ */
+export function resolvePriceTable(book) {
+  if (book === null || book === undefined) return undefined
+  return typeof book === 'object' && typeof book.prices === 'object' && book.prices !== null ? book.prices : book
+}
+
 /** The price entry a route resolves to, keyed "provider/model" or by bare model. */
 export function routePrices(prices, route) {
   if (prices === null || prices === undefined) return undefined
-  return prices[route.provider + '/' + route.model] ?? prices[route.model]
+  return prices[routePriceKey(route)] ?? prices[route.model]
 }
 
 /**
@@ -578,11 +689,15 @@ export function assertPriceEntry(entry, routeKey) {
   }
 }
 
-/** Estimated USD for one run's usage under an optional per-million price table. */
+/**
+ * Estimated cost, in the price book's own currency, for one run's usage under an
+ * optional per-million rate table. Cache writes bill at the cache-miss rate when
+ * the book names none, which is how the published DeepSeek rows read.
+ */
 export function priceRun(usage, prices, route) {
   const entry = routePrices(prices, route)
   if (entry === undefined) return null
-  assertPriceEntry(entry, route.provider + '/' + route.model)
+  assertPriceEntry(entry, routePriceKey(route))
   const cost = (tokens, perMillion) => ((countOf(tokens) ?? 0) / 1_000_000) * perMillion
   return cost(usage.uncachedInputTokens, entry.input)
     + cost(usage.outputTokens, entry.output)
@@ -780,20 +895,20 @@ export async function runLiveSuite(options) {
   const corpus = options.tasks
   const repeat = options.repeat ?? 3
   const maxSessions = options.maxSessions ?? Number.POSITIVE_INFINITY
-  const budgetUsd = options.budgetUsd ?? Number.POSITIVE_INFINITY
+  const budget = options.budgetCny ?? Number.POSITIVE_INFINITY
   const timeoutMs = options.timeoutMs ?? 300000
-  const prices = options.prices ?? null
+  const prices = resolvePriceTable(options.prices) ?? null
 
-  const routeKey = FIXED_ROUTE.provider + '/' + FIXED_ROUTE.model
+  const routeKey = routePriceKey(FIXED_ROUTE)
   const routePrice = routePrices(prices, FIXED_ROUTE)
   // A budget gate that cannot price a run would silently never trigger, which is
   // exactly the unbounded spend the plan forbids; validate instead of pretending.
   if (routePrice !== undefined) assertPriceEntry(routePrice, routeKey)
-  if (Number.isFinite(budgetUsd) && routePrice === undefined) {
-    throw new Error('benchmark: --budget-usd needs a price entry for ' + routeKey + '; pass --prices <file>')
+  if (Number.isFinite(budget) && routePrice === undefined) {
+    throw new Error('benchmark: --budget-cny needs a price entry for ' + routeKey + '; pass --prices <file>')
   }
-  if (!Number.isFinite(maxSessions) && !Number.isFinite(budgetUsd)) {
-    process.stderr.write('benchmark: no --max-sessions or --budget-usd bound was given; the matrix will run to the end of the corpus\n')
+  if (!Number.isFinite(maxSessions) && !Number.isFinite(budget)) {
+    process.stderr.write('benchmark: no --max-sessions or --budget-cny bound was given; the matrix will run to the end of the corpus\n')
   }
 
   const baseline = await collectBaseline()
@@ -802,13 +917,13 @@ export async function runLiveSuite(options) {
     groups,
     repeat,
     maxSessions: Number.isFinite(maxSessions) ? maxSessions : null,
-    budgetUsd: Number.isFinite(budgetUsd) ? budgetUsd : null,
+    budgetCny: Number.isFinite(budget) ? budget : null,
     priced: routePrice !== undefined,
   }
 
   const runs = []
   let sessions = 0
-  let estimatedCostUsd = 0
+  let estimatedCostCny = 0
   let stopReason = 'completed'
 
   for (const group of groups) {
@@ -820,7 +935,7 @@ export async function runLiveSuite(options) {
     const task = step.task
     const repetition = step.repetition
     if (sessions >= maxSessions) { stopReason = 'session-limit'; break outer }
-    if (estimatedCostUsd >= budgetUsd) { stopReason = 'budget-limit'; break outer }
+    if (estimatedCostCny >= budget) { stopReason = 'budget-limit'; break outer }
     const run = await runLiveCase({
       variant: group,
       task,
@@ -830,20 +945,21 @@ export async function runLiveSuite(options) {
       keep: options.keep === true,
     })
     sessions += 1
-    const costUsd = priceRun(run.usage, prices, FIXED_ROUTE)
-    if (costUsd !== null) estimatedCostUsd += costUsd
-    const record = { baseline, costUsd, ...run }
+    const costCny = priceRun(run.usage, prices, FIXED_ROUTE)
+    if (costCny !== null) estimatedCostCny += costCny
+    const record = { baseline, costCny, ...run }
     const file = join(outDir, 'live-' + group + '-' + task.id + '-r' + repetition + '.json')
     writeFileSync(file, JSON.stringify(record, null, 2))
-    runs.push({ file, group, taskId: task.id, repetition, passed: run.passed, costUsd })
-    process.stdout.write(group + ' ' + task.id + ' r' + repetition + ': ' + (run.passed === true ? 'pass' : run.passed === false ? 'fail' : 'n/a') + ' in ' + run.durationMs + 'ms' + (costUsd === null ? '' : ' $' + costUsd.toFixed(4)) + '\n')
+    runs.push({ file, group, taskId: task.id, repetition, passed: run.passed, costCny })
+    process.stdout.write(group + ' ' + task.id + ' r' + repetition + ': ' + (run.passed === true ? 'pass' : run.passed === false ? 'fail' : 'n/a') + ' in ' + run.durationMs + 'ms' + (costCny === null ? '' : ' CNY ' + costCny.toFixed(4)) + '\n')
   }
 
   const suite = {
     baseline,
     stopReason,
     sessions,
-    estimatedCostUsd: prices === null ? null : estimatedCostUsd,
+    // Cost is recorded in the price book's currency; the book is CNY.
+    estimatedCostCny: prices === null ? null : estimatedCostCny,
     runs,
   }
   writeFileSync(join(outDir, 'suite.json'), JSON.stringify(suite, null, 2))
@@ -870,7 +986,7 @@ if (isMain) {
       groups: read('--groups', undefined)?.split(',').map((entry) => entry.trim()).filter(Boolean),
       repeat: Number(read('--repeat', '3')),
       maxSessions: Number(read('--max-sessions', '0')) > 0 ? Number(read('--max-sessions', '0')) : Number.POSITIVE_INFINITY,
-      budgetUsd: Number(read('--budget-usd', '0')) > 0 ? Number(read('--budget-usd', '0')) : Number.POSITIVE_INFINITY,
+      budgetCny: Number(read('--budget-cny', '0')) > 0 ? Number(read('--budget-cny', '0')) : Number.POSITIVE_INFINITY,
       timeoutMs,
       prices: pricesPath === undefined ? null : JSON.parse(readFileSync(pricesPath, 'utf8')),
       keep: args.includes('--keep'),
