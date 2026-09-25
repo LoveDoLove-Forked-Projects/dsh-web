@@ -35,7 +35,7 @@ export type LanBindHost = '0.0.0.0' | '127.0.0.1'
 
 /**
  * The absolute path of the profile patch file this toggle manages. The value
- * is config-controlled (and the DSH_PROFILE env fallback bypasses schema
+ * is config-controlled (and the runtime/environment fallbacks bypass schema
  * validation entirely), so the path is guarded twice: the profile must be a
  * single safe path segment, and the resolved file must stay under the
  * profiles directory.
