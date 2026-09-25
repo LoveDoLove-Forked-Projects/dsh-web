@@ -24,7 +24,7 @@ Status: implemented
 
 ## Consequences
 
-- 桌面宽栏下「设置」触发器不再独占一行，更新与远程触发器与之并列；栏轨不受影响。
+- 桌面宽栏下「设置」触发器不再独占一行，脚部动作占用者（远程触发器与 dsh-update 触发器）与之并列；栏轨不受影响。
 - 布局依赖官方后缀类 `footArea` / `settingsArea` / `footerActions` 与框架上的 `data-sidebar-collapsed` 标记——与竖屏层相同的存活契约，每轮官方 GUI 升级都要重新视觉 QA。
 - 任何向脚部追加块的插件都自动获得一整行；想让自己的块加入共享行的插件需要接受同样的 order/basis 契约。
 - 栏轨下该座位把占据者纵向堆叠在图标列内，不再横向溢出。

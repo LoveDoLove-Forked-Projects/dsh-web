@@ -52,6 +52,13 @@
       config:
         plugin: '@linxin666/dsh-remote-web-ui'
 
+# from ../dsh-update
+- insert:
+    - id: web-ui-update
+      name: '@linxin666/dsh-web-all/update'
+      config:
+        plugin: '@linxin666/dsh-update'
+
 # from ../dsh-ssh
 - insert:
     - id: web-ui-ssh

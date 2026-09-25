@@ -421,16 +421,6 @@
       "given-when-then": 23,
       "call-count-only-assertion": 1
     },
-    "packages/dsh-remote-web-ui/tests/update-entry.spec.tsx": {
-      "no-ad-hoc-mock": 1,
-      "bdd-title": 11,
-      "given-when-then": 11,
-      "tautological-assertion": 21
-    },
-    "packages/dsh-remote-web-ui/tests/update.spec.ts": {
-      "bdd-title": 58,
-      "given-when-then": 57
-    },
     "packages/dsh-remote-web-ui/tests/uuid-polyfill.spec.ts": {
       "bdd-title": 4,
       "given-when-then": 4,
@@ -832,6 +822,16 @@
     "packages/dsh-task-board/tests/tasks.spec.ts": {
       "bdd-title": 21,
       "given-when-then": 21
+    },
+    "packages/dsh-update/tests/update-entry.spec.tsx": {
+      "no-ad-hoc-mock": 1,
+      "bdd-title": 11,
+      "given-when-then": 11,
+      "tautological-assertion": 21
+    },
+    "packages/dsh-update/tests/update.spec.ts": {
+      "bdd-title": 58,
+      "given-when-then": 57
     },
     "packages/dsh-usage/tests/adapters.spec.ts": {
       "bdd-title": 22,

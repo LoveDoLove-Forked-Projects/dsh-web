@@ -8,7 +8,6 @@
  * phone-side pair/accept + deep-link flow.
  */
 
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { setInterval as nodeSetInterval, setTimeout as nodeSetTimeout } from 'node:timers'
 import type { IncomingMessage } from 'node:http'
@@ -34,23 +33,11 @@ import { ensureFirewallRule, firewallSummary, removeFirewallRule } from './firew
 import { lanBindState, writeLanBind } from './lan-bind.ts'
 import { isHttpUrl, tunnelPlanOf } from './tunnel-plan.ts'
 import { loadRelayIdentity, RelayRegistrar, type RelayState } from './relay-registry.ts'
-import { desiredBindHost, desiredBindPort, firewallActionNeeded, pendingRestartOf, type AppliedFirewallState, type StartupFacts } from './lan-bind-plan.ts'
+import { desiredBindHost, desiredBindPort, firewallActionNeeded, pendingRestartOf, resolveManagedProfile, type AppliedFirewallState, type StartupFacts } from './lan-bind-plan.ts'
 import { createInnerAuth } from './inner-auth.ts'
 import { withIdentityEncoding } from './http.ts'
 import { TunnelManager, type TunnelInfo } from './tunnel.ts'
 import { PublicBaseKeeper } from './public-base.ts'
-import {
-  checkUpdates,
-  fetchGitHubReleaseNotes,
-  fetchLatestVersion,
-  RELEASE_NOTES_CACHE_TTL_MS,
-  resolveAnchorManifest,
-  resolveUpdateTarget,
-  runUpdateVerified,
-  type UpdateReleaseNotes,
-  type UpdateRunResult,
-} from './update.ts'
-import { makeUpdateRoutes } from './update-routes.ts'
 import { mountOnce } from './mount-once.ts'
 import { REMOTE_CHANNEL_BOOT_SCRIPT } from './remote-channel-boot.ts'
 import { UUID_POLYFILL_SCRIPT } from './uuid-polyfill.ts'
@@ -199,10 +186,13 @@ export interface Config {
    */
   lanBind?: boolean
   /**
-   * The profile whose cordis.patch.yml the LAN bind toggle manages.
-   * Defaults to the DSH_PROFILE environment variable, then "web". Must be
-   * a single safe path segment (the DSH_PROFILE env fallback bypasses this
-   * schema, so the path builder asserts containment independently).
+   * The profile whose cordis.patch.yml the LAN bind toggle manages. Defaults
+   * to the profile the Host booted (its `profileContext`), then to the
+   * DSH_PROFILE environment variable, then "web" — the Desktop client boots
+   * "desktop" without exporting DSH_PROFILE, so the environment alone names
+   * the wrong profile there. Must be a single safe path segment (the runtime
+   * and environment fallbacks bypass this schema, so the path builder asserts
+   * containment independently).
    */
   profile?: string
   /** Master switch for the plugin (browser half + host pairing surfaces). */
@@ -229,13 +219,6 @@ export const Config: z<Config> = z.object({
 
 /** Presence sweep cadence (a stale device flips to disconnected within two sweeps). */
 const SWEEP_INTERVAL_MS = 10_000
-
-/**
- * How long one update-status probe answer is reused. The probe fans out one
- * registry GET per family package plus a GitHub call, and the sidebar update
- * entry asks for the status on every GUI page load.
- */
-const UPDATE_STATUS_TTL_MS = 60_000
 
 /**
  * Fully resolved config: every field non-optional except `publicBaseUrl`,
@@ -291,8 +274,22 @@ const DEFAULTS: ResolvedConfig = {
   tunnelToken: undefined,
   relay: true,
   lanBind: undefined,
-  profile: process.env.DSH_PROFILE ?? 'web',
+  profile: resolveManagedProfile(undefined, undefined, process.env.DSH_PROFILE),
   enabled: true,
+}
+
+/**
+ * The launched profile the Host publishes on its `profileContext` service
+ * (`{ name, dir, patchPath, … }`). The Desktop client boots the "desktop"
+ * profile without exporting DSH_PROFILE, so the environment alone resolves
+ * the wrong profile there and the LAN bind toggle would edit a profile that
+ * is not running.
+ * @param ctx - host plugin context.
+ * @returns the profile name when the Host publishes one; undefined otherwise.
+ */
+function launchedProfileName(ctx: Context): string | undefined {
+  const fact = ctx.get('profileContext') as { name?: unknown } | undefined
+  return typeof fact?.name === 'string' && fact.name.length > 0 ? fact.name : undefined
 }
 
 /**
@@ -318,7 +315,7 @@ function applyImpl(ctx: Context, config?: Config): void {
     tunnelToken: config?.tunnelToken,
     relay: config?.relay ?? DEFAULTS.relay,
     lanBind: config?.lanBind,
-    profile: config?.profile ?? process.env.DSH_PROFILE ?? DEFAULTS.profile,
+    profile: resolveManagedProfile(config?.profile, launchedProfileName(ctx), process.env.DSH_PROFILE),
     enabled: config?.enabled ?? DEFAULTS.enabled,
   }
   // The effective configuration this activation runs on: under the 0.1.7
@@ -450,89 +447,6 @@ function applyImpl(ctx: Context, config?: Config): void {
   // request) instead of opening the fence.
   let disposeRoutes: (() => void) | undefined
   let disposeSweep: (() => void) | undefined
-  // ── remote update ────────────────────────────────────────────────────────
-  // The dsh-web self-update surface: probe the npm registry for family
-  // releases and run `pnpm update --latest` in the owning profile. Resolutions
-  // anchor on the host process's own module graph, so the update always
-  // targets the profile the running web GUI was booted from. The anchor path
-  // is re-resolved per operation: pnpm removes the old version's .pnpm
-  // directory on update, so a boot-time captured path would fail to read
-  // after a successful update; versions are re-read from disk per check.
-  const requireFromHost = createRequire(import.meta.url)
-  /** Host-process resolve that degrades to "not installed" (undefined) instead of throwing. */
-  const hostResolve = (specifier: string): string | undefined => {
-    try {
-      return requireFromHost.resolve(specifier)
-    } catch {
-      return undefined
-    }
-  }
-  const resolveAnchorPath = (): string | undefined => resolveAnchorManifest(hostResolve)
-
-  const releaseNotesCache = new Map<string, { at: number; notes?: UpdateReleaseNotes }>()
-  const fetchReleaseNotesCached = async (version: string): Promise<UpdateReleaseNotes | undefined> => {
-    const cached = releaseNotesCache.get(version)
-    if (cached !== undefined && Date.now() - cached.at < RELEASE_NOTES_CACHE_TTL_MS) return cached.notes
-    const notes = await fetchGitHubReleaseNotes(version, fetch)
-    releaseNotesCache.set(version, { at: Date.now(), notes })
-    return notes
-  }
-  // The status probe fans out one registry GET per family package (plus a
-  // GitHub release-notes call), and the sidebar update entry asks for it on
-  // every GUI page load — so the answer is memoized briefly and concurrent
-  // callers share one probe. A completed update invalidates it.
-  let updateStatusCache: { at: number; value: Awaited<ReturnType<typeof checkUpdates>> } | undefined
-  let updateStatusInFlight: Promise<Awaited<ReturnType<typeof checkUpdates>>> | undefined
-  const checkStatusCached = (): Promise<Awaited<ReturnType<typeof checkUpdates>>> => {
-    const cached = updateStatusCache
-    if (cached !== undefined && Date.now() - cached.at < UPDATE_STATUS_TTL_MS) return Promise.resolve(cached.value)
-    if (updateStatusInFlight !== undefined) return updateStatusInFlight
-    updateStatusInFlight = checkUpdates({
-      anchorManifestPath: resolveAnchorPath(),
-      resolve: hostResolve,
-      fetchLatest: name => fetchLatestVersion(name, fetch),
-      fetchReleaseNotes: fetchReleaseNotesCached,
-    }).then((value) => {
-      updateStatusCache = { at: Date.now(), value }
-      return value
-    }).finally(() => { updateStatusInFlight = undefined })
-    return updateStatusInFlight
-  }
-  const updateRoutes = makeUpdateRoutes({
-    // Control endpoints are host-surface only: a LAN/phone origin must never
-    // trigger a real install on this machine.
-    fence: request => isTrustedApiRequest(request, []),
-    check: () => checkStatusCached(),
-    run: async (): Promise<UpdateRunResult> => {
-      const target = resolveUpdateTarget({ anchorManifestPath: resolveAnchorPath() })
-      if ('error' in target) {
-        const code = target.error
-        return {
-          ok: false,
-          exitCode: null,
-          output: '',
-          error: code === 'not-found' ? 'dsh-web aggregate not installed' : 'local link install — update unavailable',
-          errorCode: code,
-        }
-      }
-      // Verify the versions actually moved after a green pnpm exit: the pnpm
-      // 11 minimumReleaseAge gate can silently keep the installed versions
-      // (same-day releases), which a plain exit-0 check would report as
-      // success — the user then restarts and nothing changed.
-      const result = await runUpdateVerified({
-        run: { profileDir: target.profileDir, packages: target.packages },
-        check: {
-          anchorManifestPath: resolveAnchorPath(),
-          resolve: hostResolve,
-          fetchLatest: name => fetchLatestVersion(name, fetch),
-          fetchReleaseNotes: fetchReleaseNotesCached,
-        },
-      })
-      // The install moved (or failed) the versions the cached status reported.
-      updateStatusCache = undefined
-      return result
-    },
-  })
   // LAN-bind facts for the settings card, re-read per request so a hot
   // rebind (the patch watcher recomposes the process) and a fresh toggle
   // round are both reflected without a restart.
@@ -653,7 +567,6 @@ function applyImpl(ctx: Context, config?: Config): void {
       port: ctx.webServer.port,
       auth: innerAuth,
     }),
-    ...updateRoutes,
   ]
   const upgrades = makeRemoteApiUpgradeRoutes({
     service,

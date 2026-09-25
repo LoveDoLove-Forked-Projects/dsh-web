@@ -30,6 +30,11 @@
     "source": "packages/dsh-remote-web-ui/src/client/index.ts"
   },
   {
+    "name": "@linxin666/dsh-update",
+    "specifier": "@linxin666/dsh-update/client",
+    "source": "packages/dsh-update/src/client/index.ts"
+  },
+  {
     "name": "@linxin666/dsh-ssh",
     "specifier": "@linxin666/dsh-ssh/client",
     "source": "packages/dsh-ssh/src/client/index.ts"

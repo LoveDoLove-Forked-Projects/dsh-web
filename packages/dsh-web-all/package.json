@@ -30,7 +30,8 @@
     "./ssh": "./lib/shells/shell.js",
     "./task-board": "./lib/shells/shell.js",
     "./usage": "./lib/shells/shell.js",
-    "./skin-center": "./lib/shells/shell.js"
+    "./skin-center": "./lib/shells/shell.js",
+    "./update": "./lib/shells/shell.js"
   },
   "dsh": {
     "engines": {
@@ -92,6 +93,7 @@
     "@linxin666/dsh-client-ui-task-board": "workspace:*",
     "@linxin666/dsh-client-ui-git-graph": "workspace:*",
     "@linxin666/dsh-remote-web-ui": "workspace:*",
+    "@linxin666/dsh-update": "workspace:*",
     "@linxin666/dsh-ssh": "workspace:*",
     "@linxin666/dsh-liangshen": "workspace:*",
     "@linxin666/dsh-client-ui-skill-explorer": "workspace:*",

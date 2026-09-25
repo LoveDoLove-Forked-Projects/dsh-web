@@ -7,7 +7,7 @@
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconCloseOutlineRegular, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UpdateReleaseNotes, UpdateRunResult, UpdateStatus } from '../update.ts'
-import css from "./remote.module.css"
+import css from "./update.module.css"
 
 /** The panel view state, owned by the entry component. */
 export type UpdateView =
@@ -19,7 +19,7 @@ export type UpdateView =
 
 /** Full panel props: copy + view state + actions. */
 export interface UpdatePanelProps {
-  t: TranslateNS<'remote'>
+  t: TranslateNS<'update'>
   view: UpdateView
   onClose(): void
   /** Re-run the check from a terminal state. */
@@ -48,7 +48,7 @@ export function UpdatePanel({ t, view, onClose, onRecheck, onStartUpdate }: Upda
   const title = view.kind === "done" && view.result.ok ? t("update.done") : t("update.title")
   const subtitle = subtitleOf(t, view)
   return (
-    <div className={css.panel} role="dialog" aria-modal="true" aria-label={title}>
+    <div className={css.panel} role="dialog" aria-modal="true" aria-label={title} data-dsh-plugin="update" data-dsh-part="panel">
       <div className={css.header}>
         <div className={css.heading}>
           <h2 className={css.title}>{title}</h2>
@@ -95,7 +95,7 @@ export function UpdatePanel({ t, view, onClose, onRecheck, onStartUpdate }: Upda
 }
 
 /** The subtitle copy per view state (absent on plain results). */
-function subtitleOf(t: TranslateNS<"remote">, view: UpdateView): string | undefined {
+function subtitleOf(t: TranslateNS<"update">, view: UpdateView): string | undefined {
   switch (view.kind) {
     case "checking":
       return t("update.checking")
@@ -112,7 +112,7 @@ function subtitleOf(t: TranslateNS<"remote">, view: UpdateView): string | undefi
 }
 
 /** The checked result body: mode banner + version list. */
-function ResultBody({ t, status }: { t: TranslateNS<"remote">; status: UpdateStatus }) {
+function ResultBody({ t, status }: { t: TranslateNS<"update">; status: UpdateStatus }) {
   const anchor = anchorName(status)
   const latest = anchorLatest(status)
   if (status.mode === "link") {
@@ -163,7 +163,7 @@ function ResultBody({ t, status }: { t: TranslateNS<"remote">; status: UpdateSta
 }
 
 /** Release-note summary when available; otherwise fall back to the package list. */
-function PackageSummary({ t, status }: { t: TranslateNS<'remote'>; status: UpdateStatus }) {
+function PackageSummary({ t, status }: { t: TranslateNS<'update'>; status: UpdateStatus }) {
   if (status.notes === undefined) return <PackageList status={status} />
   return (
     <div>
@@ -177,7 +177,7 @@ function PackageSummary({ t, status }: { t: TranslateNS<'remote'>; status: Updat
 }
 
 /** Render GitHub Release sections as a compact three-group list. */
-function ReleaseNotes({ t, notes }: { t: TranslateNS<'remote'>; notes: UpdateReleaseNotes }) {
+function ReleaseNotes({ t, notes }: { t: TranslateNS<'update'>; notes: UpdateReleaseNotes }) {
   const sections = [
     { key: 'features', title: t("update.releaseFeatures"), items: notes.features },
     { key: 'fixes', title: t("update.releaseFixes"), items: notes.fixes },
@@ -222,7 +222,7 @@ function PackageList({ status }: { status: UpdateStatus }) {
 }
 
 /** The outcome body: success + restart hint, or the translated failure. */
-function DoneBody({ t, result }: { t: TranslateNS<"remote">; result: UpdateRunResult }) {
+function DoneBody({ t, result }: { t: TranslateNS<"update">; result: UpdateRunResult }) {
   if (result.ok) {
     // The title already reads "Update complete"; the body carries the details.
     return (
@@ -242,7 +242,7 @@ function DoneBody({ t, result }: { t: TranslateNS<"remote">; result: UpdateRunRe
 }
 
 /** Translate a structured failure code; fall back to the raw message. */
-function errorMessageOf(t: TranslateNS<"remote">, result: UpdateRunResult): string {
+function errorMessageOf(t: TranslateNS<"update">, result: UpdateRunResult): string {
   switch (result.errorCode) {
     case "pnpm-missing": return t("update.error.pnpmMissing")
     case "timeout": return t("update.error.timeout")

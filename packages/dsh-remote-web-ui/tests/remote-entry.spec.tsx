@@ -49,9 +49,6 @@ function mockFetch(issue: MockIssue | MockIssue[]) {
   const issues = Array.isArray(issue) ? [...issue] : [issue]
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (url === 'api/update/status') {
-      return new Response(JSON.stringify({ mode: 'npm', packages: [], outdated: false }), { status: 200, headers: { 'content-type': 'application/json' } })
-    }
     const current = issues.length > 1 ? issues.shift()! : issues[0]
     const status = init?.method === 'POST' && url === 'api/pair/issue' && !current.ok ? (current.status ?? 409) : 200
     const body = url === 'api/pair/issue' && current.ok
@@ -206,13 +203,7 @@ describe('RemoteEntry', () => {
 
   it('does not leak an EventSource when the panel is closed during the issue fetch', async () => {
     let resolveIssue: ((r: Response) => void) | undefined
-    const fetch = vi.fn((input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === 'api/update/status') {
-        return Promise.resolve(new Response(JSON.stringify({ mode: 'npm', packages: [], outdated: false }), { status: 200, headers: { 'content-type': 'application/json' } }))
-      }
-      return new Promise<Response>((resolve) => { resolveIssue = resolve })
-    })
+    const fetch = vi.fn((_input: RequestInfo | URL) => new Promise<Response>((resolve) => { resolveIssue = resolve }))
     vi.stubGlobal('fetch', fetch)
     vi.stubGlobal('EventSource', FakeEventSource)
     render(

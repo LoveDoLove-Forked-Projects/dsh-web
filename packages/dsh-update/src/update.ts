@@ -1,8 +1,11 @@
 /**
- * Remote update support for the dsh-web family — host half. Detects the
- * installed aggregate package (@linxin666/dsh-web-all), or the directly
- * installed family packages when the aggregate is absent, probes npm for newer
- * releases, and runs `pnpm update --latest` inside the owning dsh profile.
+ * Family self-update support (dsh-update) — host half. Detects the installed
+ * aggregate package (@linxin666/dsh-web-all), or the directly installed family
+ * packages when the aggregate is absent, probes npm for newer releases, and
+ * runs `pnpm update --latest` inside the owning dsh profile.
+ *
+ * Split out of dsh-remote-web-ui: the update surface is its own plugin row, so
+ * disabling remote access never takes the update trigger away.
  *
  * Pure logic with injected seams (manifest reading, registry fetches, process
  * spawning) so the whole surface is unit-testable without touching disk,
@@ -25,7 +28,7 @@ export const FAMILY_SCOPE = '@linxin666/'
 export const AGGREGATE_PACKAGE = '@linxin666/dsh-web-all'
 
 /** Fallback anchor: this plugin's own package when the aggregate is absent. */
-export const SELF_PACKAGE = '@linxin666/dsh-remote-web-ui'
+export const SELF_PACKAGE = '@linxin666/dsh-update'
 
 /** GitHub repository used to surface human-readable release notes. */
 export const UPDATE_RELEASE_REPO = 'zhu1090093659/dsh-web'

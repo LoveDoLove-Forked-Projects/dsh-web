@@ -24,7 +24,7 @@ The official sidebar foot stacks two rows: `sidebar.footer.action` (the update a
 
 ## Consequences
 
-- The Settings trigger no longer occupies a full row on the desktop; the update and remote triggers sit beside it. In the rail the seat now stacks its occupants inside the icon column instead of overflowing it.
+- The Settings trigger no longer occupies a full row on the desktop; the footer-action occupants (the remote trigger, the dsh-update trigger) sit beside it. In the rail the seat now stacks its occupants inside the icon column instead of overflowing it.
 - The layout depends on the official suffix classes `footArea` / `settingsArea` / `footerActions` and the frame's `data-sidebar-collapsed` marker — the same survival contract as the portrait layer, re-verified on every GUI QA round.
 - Any plugin that appends a block to the foot gets a full row for free; a plugin that wants to join the shared line has to opt into the same order/basis contract.
 

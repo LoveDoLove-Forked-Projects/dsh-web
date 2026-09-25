@@ -27,7 +27,7 @@ market 的 host 半区自行抓取 `https://dsh-market.com/manifest/skins.json` 
 return await fetchImpl(url, withIdentityEncoding({ signal: AbortSignal.timeout(timeoutMs) }))
 ```
 
-其余所有会解析远端响应的宿主 fetch 也采用同一 helper：plugin-manager 的 npm registry 探测（`packages/dsh-plugin-manager/src/host/routes.ts`）、remote-web-ui 的 registry 与 GitHub 探测以及 `/pair-app` 内环 app-shell 抓取（`packages/dsh-remote-web-ui/src/update.ts`、`packages/dsh-remote-web-ui/src/index.ts`）、usage 的 provider 探测（`packages/dsh-usage/src/host/usage-service.ts`）。这些包本就带有 `scripts/sync-shared.mjs` 生成的 `http.ts` 副本，因此没有新增共享模块或消费者接线。
+其余所有会解析远端响应的宿主 fetch 也采用同一 helper：plugin-manager 的 npm registry 探测（`packages/dsh-plugin-manager/src/host/routes.ts`）、dsh-update 的 registry 与 GitHub 探测（`packages/dsh-update/src/update.ts`）以及 remote-web-ui 的 `/pair-app` 内环 app-shell 抓取（`packages/dsh-remote-web-ui/src/index.ts`）、usage 的 provider 探测（`packages/dsh-usage/src/host/usage-service.ts`）。这些包本就带有 `scripts/sync-shared.mjs` 生成的 `http.ts` 副本，因此没有新增共享模块或消费者接线。
 
 源站遵守该请求：manifest 以 92 901 字节未压缩、无 `content-encoding` 抵达，因此 `JSON.parse` 与资源落盘都不再依赖宿主 fetch 是否解压。`packages/dsh-market/src/core/installer.test.ts` 新增回归用例复刻故障宿主——除非请求要求 identity，其 mock 一律返回裸 brotli——并断言整次皮肤安装成功且文件字节正确。
 
@@ -45,7 +45,7 @@ return await fetchImpl(url, withIdentityEncoding({ signal: AbortSignal.timeout(t
 
 manifest 与资源始终不压缩传输（皮肤 manifest 约 93 KB，而非 brotli 约 20 KB）——为字节正确付出一点带宽。
 
-宿主侧读取压缩响应的消费者如今都通过 `withIdentityEncoding` 共用同一契约：plugin-manager 的 npm registry 探测、remote-web-ui 的 registry/GitHub 探测与内环 app-shell 抓取、usage 的 provider 探测。新增的宿主 fetch 若解析远端响应却不带该 helper，就是对既定保证的偏离，而不再是开放问题。
+宿主侧读取压缩响应的消费者如今都通过 `withIdentityEncoding` 共用同一契约：plugin-manager 的 npm registry 探测、dsh-update 的 registry/GitHub 探测与 remote-web-ui 的内环 app-shell 抓取、usage 的 provider 探测。新增的宿主 fetch 若解析远端响应却不带该 helper，就是对既定保证的偏离，而不再是开放问题。
 
 运行中的 `dsh web` 进程仍持有修复前的模块，因此宿主重启前 Workshop 安装依旧失败；host 半区只随服务重启而重载。
 

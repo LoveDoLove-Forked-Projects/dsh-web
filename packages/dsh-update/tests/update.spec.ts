@@ -178,7 +178,7 @@ describe("resolveAnchorManifest", () => {
   })
   it("falls back to the self package", () => {
     const resolve = (specifier: string) => {
-      if (specifier.includes("dsh-remote-web-ui")) return "/pkg/self/package.json"
+      if (specifier.includes("dsh-update")) return "/pkg/self/package.json"
       throw new Error("missing")
     }
     expect(resolveAnchorManifest(resolve)).toBe("/pkg/self/package.json")
@@ -191,7 +191,7 @@ describe("resolveAnchorManifest", () => {
     // throwing; both must move on to the next candidate.
     const resolve = (specifier: string) => {
       if (specifier.startsWith(AGGREGATE_PACKAGE)) return undefined
-      if (specifier.includes("dsh-remote-web-ui")) return "/pkg/self/package.json"
+      if (specifier.includes("dsh-update")) return "/pkg/self/package.json"
       return undefined
     }
     expect(resolveAnchorManifest(resolve)).toBe("/pkg/self/package.json")
@@ -1017,7 +1017,7 @@ describe('fetchLatestVersion', () => {
       ok: true,
       json: async () => ({ version: '1.2.3' }),
     }))
-    const version = await fetchLatestVersion('@linxin666/dsh-remote-web-ui', fetchImpl)
+    const version = await fetchLatestVersion(SELF_PACKAGE, fetchImpl)
     expect(version).toBe('1.2.3')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit | undefined]
@@ -1030,7 +1030,7 @@ describe('fetchLatestVersion', () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('network down')
     })
-    await expect(fetchLatestVersion('@linxin666/dsh-remote-web-ui', fetchImpl)).resolves.toBeUndefined()
+    await expect(fetchLatestVersion(SELF_PACKAGE, fetchImpl)).resolves.toBeUndefined()
   })
 })
 

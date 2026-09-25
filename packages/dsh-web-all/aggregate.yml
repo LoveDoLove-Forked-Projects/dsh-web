@@ -19,6 +19,9 @@ patchFrom:
   - ../dsh-task-board
   - ../dsh-git-graph
   - ../dsh-remote-web-ui
+  # dsh-update 紧邻 remote-web-ui：两者共用侧栏 footer action 席位，
+  # 自更新行跟在远程访问行之后，观感顺序稳定。
+  - ../dsh-update
   - ../dsh-ssh
   - ../dsh-liangshen
   - ../dsh-skill-explorer
@@ -36,6 +39,7 @@ deps:
   - ../dsh-task-board
   - ../dsh-git-graph
   - ../dsh-remote-web-ui
+  - ../dsh-update
   - ../dsh-ssh
   - ../dsh-liangshen
   - ../dsh-skill-explorer

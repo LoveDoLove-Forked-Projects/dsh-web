@@ -27,7 +27,7 @@ The rule lives once in `shared/host/http.ts` as `withIdentityEncoding(init)`: it
 return await fetchImpl(url, withIdentityEncoding({ signal: AbortSignal.timeout(timeoutMs) }))
 ```
 
-Every other host fetch that parses a remote body adopts the same helper: the plugin-manager npm-registry probe (`packages/dsh-plugin-manager/src/host/routes.ts`), the remote-web-ui registry and GitHub probes plus the `/pair-app` inner app-shell fetch (`packages/dsh-remote-web-ui/src/update.ts`, `packages/dsh-remote-web-ui/src/index.ts`), and the usage provider probes (`packages/dsh-usage/src/host/usage-service.ts`). Each package already carried the generated `http.ts` copy from `scripts/sync-shared.mjs`, so no new shared module or consumer wiring was added.
+Every other host fetch that parses a remote body adopts the same helper: the plugin-manager npm-registry probe (`packages/dsh-plugin-manager/src/host/routes.ts`), the dsh-update registry and GitHub probes (`packages/dsh-update/src/update.ts`) plus the remote-web-ui `/pair-app` inner app-shell fetch (`packages/dsh-remote-web-ui/src/index.ts`), and the usage provider probes (`packages/dsh-usage/src/host/usage-service.ts`). Each package already carried the generated `http.ts` copy from `scripts/sync-shared.mjs`, so no new shared module or consumer wiring was added.
 
 The origin honors it: the manifest arrives as 92 901 uncompressed bytes with no `content-encoding`, so `JSON.parse` and the asset writes never depend on the host fetch decoding a body. A regression test in `packages/dsh-market/src/core/installer.test.ts` mirrors the broken host — its mock returns raw brotli unless the request asked for identity — and asserts the full skin install succeeds with correct file bytes.
 
@@ -45,7 +45,7 @@ The durable fix belongs upstream: the host should not let npm undici overwrite t
 
 Manifests and assets always transfer uncompressed (the skin manifest is ~93 KB instead of ~20 KB brotli) — a small bandwidth cost for correct bytes.
 
-Host-side consumers of compressed remote bodies now share one contract through `withIdentityEncoding`: the plugin-manager npm-registry probe, the remote-web-ui registry/GitHub probes and inner app-shell fetch, and the usage provider probes. A new host fetch that parses a remote body without the helper is a deviation from a stated guarantee rather than an open question.
+Host-side consumers of compressed remote bodies now share one contract through `withIdentityEncoding`: the plugin-manager npm-registry probe, the dsh-update registry/GitHub probes and the remote-web-ui inner app-shell fetch, and the usage provider probes. A new host fetch that parses a remote body without the helper is a deviation from a stated guarantee rather than an open question.
 
 The running `dsh web` process keeps the pre-fix module in memory, so the Workshop install stays broken until the host restarts; the host half reloads only with the service.
 

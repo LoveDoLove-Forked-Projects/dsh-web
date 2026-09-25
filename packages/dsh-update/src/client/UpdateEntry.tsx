@@ -1,9 +1,12 @@
 /**
- * The sidebar update seat: the download trigger beside the remote-control
- * trigger plus the update panel modal. Owns the flow — probe the registry
- * on open, show the result, and let the user start the update from the
- * result view (#507), then report the outcome (restart hint on success,
- * translated failure on error).
+ * The sidebar update seat: the download trigger plus the update panel modal.
+ * Owns the flow — probe the registry on open, show the result, and let the
+ * user start the update from the result view (#507), then report the outcome
+ * (restart hint on success, translated failure on error).
+ *
+ * The seat is registered by this package's own plugin row, so it stays mounted
+ * whether or not the remote-access plugin is enabled (issue: the update
+ * trigger used to ride dsh-remote-web-ui and vanished with it).
  * Component-local state per the client stack rules.
  */
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -13,13 +16,13 @@ import { IconDownloadOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitive
 import type { UpdateStatus } from '../update.ts'
 import { fetchUpdateStatus, runUpdate, UpdateStatusError } from "./update-api.ts"
 import { UpdatePanel, type UpdateView } from "./UpdatePanel.tsx"
-import css from "./remote.module.css"
+import css from "./update.module.css"
 
 /** Entry props: the sidebar column state + the standard locale seat. */
 export interface UpdateEntryProps {
   /** Whether the sidebar renders wide content (false = 56px rail). */
   wide: boolean
-  t: TranslateNS<'remote'>
+  t: TranslateNS<'update'>
 }
 
 /**
@@ -121,7 +124,10 @@ export function UpdateEntry({ wide, t }: UpdateEntryProps) {
       <button
         type="button"
         className={css.trigger}
+        data-dsh-plugin="update"
+        data-dsh-part="entry"
         data-wide={wide ? (updateAvailable ? "wide" : undefined) : "rail"}
+        data-rail={wide ? undefined : "rail"}
         data-update-available={updateAvailable ? "true" : undefined}
         aria-label={updateLabel}
         aria-expanded={open}
@@ -134,7 +140,7 @@ export function UpdateEntry({ wide, t }: UpdateEntryProps) {
         )}
       </button>
       {open && createPortal((
-        <div className={css.overlay} role="presentation">
+        <div className={css.overlay} role="presentation" data-dsh-plugin="update" data-dsh-part="panel">
           <div className={css.mask} aria-hidden="true" onClick={closePanel} />
           <UpdatePanel t={t} view={view} onClose={closePanel} onRecheck={() => { void check() }} onStartUpdate={(status) => { void startUpdate(status) }} />
         </div>

@@ -80,9 +80,10 @@ function familyPackages() {
 
 /**
  * The satellite packages: satellites/<repo>/ that publish under the family
- * scope. They are not part of this repository's release — family-packages.mjs
- * deliberately sees sixteen packages — but they are rows in the aggregate, so
- * a built local checkout has to be linked here like the in-repo family.
+ * scope. They are not part of this repository's release —
+ * family-packages.mjs only walks packages/ — but they are rows in the
+ * aggregate, so a built local checkout has to be linked here like the
+ * in-repo family.
  */
 export function satellitePackages(root = REPO_ROOT) {
   const base = join(root, 'satellites')
