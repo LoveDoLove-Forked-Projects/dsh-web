@@ -250,6 +250,12 @@ function applyImpl(ctx: Context, config?: Config): void {
   let closed = false
   /** Serializes declaration work, so a settings write cannot interleave with an in-flight activation. */
   let queue: Promise<void> = Promise.resolve()
+  /**
+   * True when the last declaration attempt found no registry. It is the ONLY
+   * state the late-registry recovery below acts on, so a registry that was
+   * already present at activation is never re-declared.
+   */
+  let registryMissing = false
 
   const warn = (message: string): void => { ctx.logger?.warn?.(`dsh-liangshen: ${message}`) }
 
@@ -277,14 +283,19 @@ function applyImpl(ctx: Context, config?: Config): void {
       if (closed || target !== generation) return
       await undeclare()
       const values = resolveConfig(config)
-      if (!values.enabled) return
+      if (!values.enabled) {
+        registryMissing = false
+        return
+      }
       const registry = registryOf()
       if (registry === undefined) {
+        registryMissing = true
         warn('the agent-preset registry is unavailable; the preset is not declared')
         return
       }
       try {
         release = await registry.register(declaration(values))
+        registryMissing = false
         ctx.logger?.info?.(`liangshen: preset ${LIANGSHEN_PRESET_ID} declared`)
       } catch (error) {
         warn(`declaring the preset failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -318,6 +329,35 @@ function applyImpl(ctx: Context, config?: Config): void {
   }
 
   ctx.on('loader/volatile-update', () => { rearm() })
+
+  /**
+   * Recover the declaration when the agent-preset registry appears.
+   *
+   * The registry is deliberately NOT a hard inject: a deployment may compose no
+   * preset registry at all, and waiting on it would then pend this row forever
+   * -- which under the host's boot gate fails the entire web boot, not just this
+   * plugin (issue #1712). But the registry's own publication is decided by its
+   * dependency chain (the official registry injects `loader` and
+   * `sessionProjections`, and reaches `settings` through `ctx.inject`), so this
+   * row's single activation can land BEFORE the service exists. Without this
+   * edge the one declaration attempt was simply lost until an unrelated settings
+   * write happened to re-arm -- exactly the "toggle any switch and the preset
+   * appears, and only then" report (issue #1721).
+   *
+   * `registryMissing` is the gate rather than a plain `rearm()`: the registry is
+   * normally already present at activation, and this callback fires
+   * asynchronously even then, so re-arming unconditionally would release and
+   * re-declare the preset the activation had just registered (and swap the
+   * announcement section for nothing). The callback only repairs the missed
+   * case -- the one where the earlier attempt warned and gave up -- and `declare`
+   * is idempotent (it undeclares first and carries a generation guard), so a
+   * recovery racing an in-flight declaration still settles on one live
+   * registration. The fiber's `closed` flag keeps a late arrival from declaring
+   * after this row unloads.
+   */
+  ctx.inject(['agentPresets'], () => {
+    if (registryMissing) rearm()
+  })
 
   ctx.effect(() => {
     rearm()

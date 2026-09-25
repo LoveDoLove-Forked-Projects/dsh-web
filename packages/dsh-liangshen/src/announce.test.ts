@@ -35,15 +35,24 @@ interface FakeHost {
   unload(): Promise<void>
   /** Dispatch `loader/volatile-update` to this fiber's listeners. */
   commit(): void
+  /** Publish the registry service late and run the waiting `ctx.inject` callbacks. */
+  publishRegistry(): void
 }
 
 /** Build a fake host context; `withRegistry: false` models a deployment without one. */
-function makeHost(options: { withRegistry?: boolean } = {}): FakeHost {
+function makeHost(options: { withRegistry?: boolean, deferRegistry?: boolean } = {}): FakeHost {
   const sections: FakeHost['sections'] = []
   const declarations: FakeRegistration[] = []
   const warnings: string[] = []
   const effects: unknown[] = []
   const listeners = new Map<string, ((...args: unknown[]) => void)[]>()
+  /**
+   * Pending `ctx.inject` callbacks, keyed by dependency. `deferRegistry` models
+   * the cold-start race (issue #1721): the registry service is published AFTER
+   * this row's activation, so the activation's own declaration attempt misses it
+   * and only a later publication can recover the preset.
+   */
+  const injectCallbacks = new Map<string, (() => void)[]>()
   const registry = options.withRegistry === false ? undefined : {
     register: async (definition: PresetDefinition) => {
       const record: FakeRegistration = { definition, released: false }
@@ -51,6 +60,7 @@ function makeHost(options: { withRegistry?: boolean } = {}): FakeHost {
       return async () => { record.released = true }
     },
   }
+  const published = { registry: options.deferRegistry === true ? undefined : registry }
   const ctx = {
     systemPrompt: {
       section: (spec: { name: string, order: number, text: string }) => {
@@ -69,7 +79,14 @@ function makeHost(options: { withRegistry?: boolean } = {}): FakeHost {
       listeners.set(event, list)
       return () => { listeners.set(event, (listeners.get(event) ?? []).filter(entry => entry !== listener)) }
     },
-    get: (name: string) => (name === 'agentPresets' ? registry : undefined),
+    inject: (deps: string[], callback: () => void) => {
+      for (const dep of deps) {
+        const list = injectCallbacks.get(dep) ?? []
+        list.push(callback)
+        injectCallbacks.set(dep, list)
+      }
+    },
+    get: (name: string) => (name === 'agentPresets' ? published.registry : undefined),
     logger: { warn: (message: string) => { warnings.push(message) }, info: () => {} },
   }
   return {
@@ -84,6 +101,14 @@ function makeHost(options: { withRegistry?: boolean } = {}): FakeHost {
     },
     commit() {
       for (const listener of listeners.get('loader/volatile-update') ?? []) listener([])
+    },
+    /**
+     * Publish the registry service and run the pending `ctx.inject` callbacks,
+     * the way cordis does when the dependency's fiber activates.
+     */
+    publishRegistry() {
+      published.registry = registry
+      for (const callback of injectCallbacks.get('agentPresets') ?? []) callback()
     },
   }
 }
@@ -110,7 +135,7 @@ afterEach(async () => {
 /** One loaded module plus the host it was applied to. */
 async function mount(
   config?: Record<string, unknown>,
-  options: { withRegistry?: boolean } = {},
+  options: { withRegistry?: boolean, deferRegistry?: boolean } = {},
 ): Promise<{ mod: typeof import('../src/index.ts'), host: FakeHost }> {
   vi.resetModules()
   const mod = await import('../src/index.ts')
@@ -248,6 +273,55 @@ describe('dsh-liangshen preset declaration', () => {
     const { host } = await mount(undefined, { withRegistry: false })
     expect(host.declarations.length).toBe(0)
     expect(host.warnings.join('\n')).toContain('agent-preset registry is unavailable')
+  })
+
+  // #1721: the registry's publication is decided by its own dependency chain, so
+  // a cold start can activate this row BEFORE the service exists. The single
+  // declaration attempt then warned and gave up, and the preset stayed missing
+  // until an unrelated settings write re-armed the row -- the report's "toggle
+  // any switch and it appears". A hard `inject` would fix the ordering but pend
+  // the row forever on a registry-less deployment, which the host's boot gate
+  // turns into a failed web boot (#1712), so the row waits through `ctx.inject`
+  // and recovers when the service arrives.
+  it('operator gets the preset declared when the registry appears after activation', async () => {
+    // Given a cold start where the registry is not published yet at activation
+    const { host } = await mount(undefined, { deferRegistry: true })
+    // When the plugin activates before the service exists
+    // Then nothing is declared yet, and the operator is told why
+    expect(host.declarations.length).toBe(0)
+    expect(host.warnings.join('\n')).toContain('agent-preset registry is unavailable')
+
+    // And when the registry's own fiber activates and publishes the service
+    host.publishRegistry()
+    await settle()
+    // Then the preset is declared without any user interaction
+    const live = host.declarations.filter(record => !record.released)
+    expect(live.length).toBe(1)
+  })
+
+  it('operator keeps running when the registry never appears', async () => {
+    // Given a deployment that composes no registry at all, When the late-arrival
+    // edge never fires, Then the plugin stays mounted and declares nothing --
+    // it must not pend the row (which the host's boot gate fails the whole boot on).
+    const { host } = await mount(undefined, { withRegistry: false })
+    host.publishRegistry()
+    await settle()
+    expect(host.declarations.length).toBe(0)
+    expect(host.sections.length).toBe(0)
+  })
+
+  it('operator does not get a redundant re-declaration when the registry was already up', async () => {
+    // Given a warm start where the registry is already present at activation
+    const { host } = await mount(undefined)
+    expect(host.declarations.length).toBe(1)
+    // When the inject edge fires (it does so asynchronously even for an
+    // already-present service)
+    host.publishRegistry()
+    await settle()
+    // Then the live declaration is the same one: the recovery edge acts only on
+    // the missed case, so it must not release and re-declare for nothing
+    expect(host.declarations.length).toBe(1)
+    expect(host.declarations.filter(record => !record.released).length).toBe(1)
   })
 
   it('operator gets no declaration when a write lands while the row unloads', async () => {
