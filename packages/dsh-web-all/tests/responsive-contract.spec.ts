@@ -216,6 +216,54 @@ describe('aggregate responsive compat contract', () => {
     cleanup?.()
   })
 
+  // #1716: a workspace group row and its row-actions menu are not selections.
+  // The group row toggles aria-expanded in place, so folding the drawer on that
+  // click reads as "the group will not open"; the same click on the row's
+  // ellipsis discarded the menu before it could be used.
+  it('keeps the mobile drawer open for a group row and its actions menu', () => {
+    document.body.innerHTML = `<main data-dsh-frame><aside data-pane="sidebar"><div data-slot="sidebar"><div><div><button data-dsh-responsive-part="sidebar-toggle">toggle</button></div></div>
+      <div class="hash_projectRow" role="treeitem" aria-expanded="true"><span>workspace</span>
+        <span class="hash_rowActions"><button aria-label="actions">dots</button><button aria-label="new session">plus</button></span>
+        <button class="hash_sessionRow" role="treeitem"><span>session inside</span></button>
+      </div>
+      <button class="hash_sessionRow" role="treeitem">session</button>
+    </div></aside><section data-pane="conversation"></section></main>`
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    const frame = document.querySelector<HTMLElement>('[data-dsh-frame]')!
+    const toggle = document.querySelector<HTMLButtonElement>('[data-dsh-responsive-part="sidebar-toggle"]')!
+    toggle.addEventListener('click', () => { frame.setAttribute('data-sidebar-collapsed', '') })
+    let cleanup: (() => void) | undefined
+    apply({ effect: (effect: () => (() => void) | void) => { cleanup = effect() ?? undefined } } as never)
+
+    // When the operator taps the group row to expand it
+    document.querySelector<HTMLElement>('[class*="projectRow"] > span')!.click()
+    // Then the drawer stays open for the rows the expansion just revealed
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
+
+    // When the operator taps the row-actions menu trigger
+    document.querySelector<HTMLElement>('[class*="rowActions"] button')!.click()
+    // Then the drawer stays open so the menu can be used
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
+
+    // When the operator taps the group's new-session button
+    document.querySelectorAll<HTMLElement>('[class*="rowActions"] button')[1]!.click()
+    // Then the drawer folds, because that tap leaves this list for a new session
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    frame.removeAttribute('data-sidebar-collapsed')
+
+    // When the operator taps a session row inside the group, the selection still folds
+    document.querySelector<HTMLElement>('[class*="projectRow"] [class*="sessionRow"]')!.click()
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+
+    // When the operator taps a top-level session row, the selection still folds
+    frame.removeAttribute('data-sidebar-collapsed')
+    document.querySelector<HTMLElement>('[class*="projectRow"] + [class*="sessionRow"]')!.click()
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    cleanup?.()
+  })
+
   it('captures an outside drawer click without activating the underlay', () => {
     document.body.innerHTML = `<main data-dsh-frame><aside data-pane="sidebar"><div data-slot="sidebar"><div><div><button data-dsh-responsive-part="sidebar-toggle">toggle</button></div></div></div></aside><section data-pane="conversation"><button id="underlay">underlay</button></section></main>`
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })

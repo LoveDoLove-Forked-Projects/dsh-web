@@ -342,7 +342,7 @@ function installMobileSidebarDismiss(frame: HTMLElement): () => void {
     if (!(target instanceof Element)) return
     if (typeof window.matchMedia !== 'function' || !window.matchMedia('(max-width: 768px)').matches) return
     const sidebar = frame.querySelector<HTMLElement>('[data-pane="sidebar"]')
-  const toggle = frame.querySelector<HTMLElement>('[data-dsh-responsive-part="sidebar-toggle"]')
+    const toggle = frame.querySelector<HTMLElement>('[data-dsh-responsive-part="sidebar-toggle"]')
     if (!frame.hasAttribute('data-sidebar-collapsed') && sidebar !== null && !sidebar.contains(target)) {
       event.preventDefault()
       event.stopPropagation()
@@ -350,7 +350,19 @@ function installMobileSidebarDismiss(frame: HTMLElement): () => void {
       return
     }
     if (target.closest('[data-dsh-responsive-part="sidebar-toggle"]') !== null) return
-    if (target.closest('[data-dsh-part="sidebar-entry"], [role="treeitem"]') === null) return
+    // A group row toggles its own aria-expanded in place, so folding the drawer
+    // on that tap hides the rows it just revealed; its menu trigger opens a
+    // menu the fold would discard (issue #1716). The group row's trailing
+    // new-session button navigates away and keeps the fold, matching the
+    // remote package's own workspace-row rule.
+    const sessionRow = target.closest('[class*="sessionRow"]')
+    if (sessionRow === null && target.closest('[class*="projectRow"]') !== null) {
+      const actions = target.closest('[class*="rowActions"]')
+      if (actions === null) return
+      const buttons = actions.querySelectorAll('button')
+      if (target.closest('button') !== buttons[buttons.length - 1]) return
+    }
+    if (sessionRow === null && target.closest('[data-dsh-part="sidebar-entry"]') === null && target.closest('[role="treeitem"]') === null) return
     if (raf !== 0) cancelAnimationFrame(raf)
     raf = requestAnimationFrame(() => {
       raf = 0
