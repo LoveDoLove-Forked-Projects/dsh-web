@@ -26,9 +26,9 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // buckets below split the same set by target location, and what neither
   // bucket holds is the package-root test setup (5 today) plus the per-package
   // http.ts and console-output.ts copies.
-  assert.equal(entries.length, 101)
+  assert.equal(entries.length, 102)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 41)
+  assert.equal(clientTrio.length, 42)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')
