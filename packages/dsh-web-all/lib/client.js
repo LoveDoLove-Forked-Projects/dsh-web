@@ -45895,7 +45895,14 @@ html[data-platform="darwin"] body > :is(
 					return;
 				}
 				if (target.closest("[data-dsh-responsive-part=\"sidebar-toggle\"]") !== null) return;
-				if (target.closest("[data-dsh-part=\"sidebar-entry\"], [role=\"treeitem\"]") === null) return;
+				const sessionRow = target.closest("[class*=\"sessionRow\"]");
+				if (sessionRow === null && target.closest("[class*=\"projectRow\"]") !== null) {
+					const actions = target.closest("[class*=\"rowActions\"]");
+					if (actions === null) return;
+					const buttons = actions.querySelectorAll("button");
+					if (target.closest("button") !== buttons[buttons.length - 1]) return;
+				}
+				if (sessionRow === null && target.closest("[data-dsh-part=\"sidebar-entry\"]") === null && target.closest("[role=\"treeitem\"]") === null) return;
 				if (raf !== 0) cancelAnimationFrame(raf);
 				raf = requestAnimationFrame(() => {
 					raf = 0;
