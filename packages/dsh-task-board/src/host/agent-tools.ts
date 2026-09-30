@@ -526,7 +526,7 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
       description: { type: 'string', description: 'Longer human description shown in the detail view.' },
       prompt: { type: 'string', description: 'The instruction sent to the execution agent; the title is used when blank.' },
       parentId: { type: 'string', description: 'Parent task id, making this a subtask. Omit for a root task.' },
-      workspaceId: { type: 'string', description: 'Workspace id the execution must run in; omit to inherit the parent value or use the most recent workspace.' },
+      workspaceId: { type: 'string', description: 'Workspace id the execution must run in; omit to inherit the workspace this session is in (root task) or the parent value (subtask).' },
       mode: { type: 'string', description: 'Agent preset id the execution session is composed from; omit for the deployment default or the parent value.' },
       permission: { type: 'string', enum: [...TASK_PERMISSIONS], description: 'Permission preset for the execution session. Omit to inherit the parent binding; a value above the session default needs a human confirmation in the board UI before the card can run.' },
       model: { type: 'string', description: 'Pinned model as provider/model (or a model id); omit for the host default or the parent value.' },

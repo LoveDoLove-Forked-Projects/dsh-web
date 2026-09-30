@@ -3,9 +3,13 @@ import type { SessionAddress, SessionHistoryRecord, SessionListValue, SessionPag
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
 import { teammateName } from './core/subtask.ts'
+import { mostRecentWorkspaceId } from './core/workspace-target.ts'
 import type { TaskPermission, TaskRecord } from './core/tasks.ts'
 
-/** Host services needed to validate a task's workspace before creating a session. */
+/**
+ * Host services needed to validate a task's workspace before creating a
+ * session, and to resolve the workspace an unpinned card runs in.
+ */
 export interface TaskBoardWorkspaceRegistry {
   list(): readonly Workspace[]
 }
@@ -331,6 +335,18 @@ export class HostExecutionRunner {
   }
 
   /**
+   * The workspace an unpinned run lands in: the deployment's most recently used
+   * one. Undefined when the deployment serves no workspace registry or has
+   * registered none yet; the launch then keeps the "let the Host decide" shape,
+   * which is the only remaining path to the Host's own working directory.
+   * @returns the workspace id to create the session in, when one is known.
+   */
+  private recentWorkspaceId(): string | undefined {
+    if (this.workspaceRegistry === undefined) return undefined
+    return mostRecentWorkspaceId(this.workspaceRegistry.list())
+  }
+
+  /**
    * Launch one execution. Without `options.reuseSessionId` a fresh session is
    * created, renamed, pinned, and prompted (the historical contract). With it,
    * the run continues in that existing session (issue #1419): the conversation
@@ -342,8 +358,12 @@ export class HostExecutionRunner {
    */
   async launch(task: TaskRecord, options: { reuseSessionId?: string; promptContext?: PromptContext; onSession?: (sessionId: string) => void; onGoalArmed?: (armed: boolean) => void } = {}): Promise<string> {
     // A handover bundle overrides the legacy pin fields: the bundle is the
-    // authoritative execution triplet for a continuation card (issue #5).
-    const workspaceId = task.handover?.workspaceId ?? task.workspaceId
+    // authoritative execution triplet for a continuation card (issue #5). A
+    // card that pins nothing is resolved to the deployment's most recently used
+    // workspace instead of being left to `session.create`, whose own fallback is
+    // the Host process working directory (the desktop app's profile directory) —
+    // never the project the user was in when the card was written.
+    const workspaceId = task.handover?.workspaceId ?? task.workspaceId ?? this.recentWorkspaceId()
     const mode = task.handover?.mode ?? task.mode
     const permission = task.handover?.permission ?? task.permission
 

@@ -677,3 +677,60 @@ describe('HostExecutionRunner', () => {
     expect(result).toEqual({ outcome: 'failed', error: 'agent turn ended without completing: unknown' })
   })
 })
+
+describe('HostExecutionRunner workspace default', () => {
+  function registryListing(items: readonly { id: string; updatedAt: string }[]): { list(): readonly Workspace[] } {
+    return { list: () => items } as unknown as { list(): readonly Workspace[] }
+  }
+
+  it('operator sees an unpinned card run in the most recently used workspace', async () => {
+    // Given a deployment whose newest workspace record is workspace-new
+    const created: unknown[] = []
+    const gateway = {
+      stream: fakeStream(async () => ({ async *[Symbol.asyncIterator]() {} })),
+      invoke: fakeInvoke(async (request: GatewayRequest) => {
+        if (request.method === 'create') {
+          created.push(request.args.request)
+          return { sessionId: 'session-a' }
+        }
+        if (request.method === 'rename') return { title: 'Run me', seq: 1 }
+        if (request.method === 'prompt') return { accepted: true }
+        throw new Error('unexpected gateway call')
+      }),
+    }
+    const task = createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a')
+
+    // When the runner launches a card that pins no workspace
+    await new HostExecutionRunner(gateway, undefined, registryListing([
+      { id: 'workspace-old', updatedAt: '2026-09-29T10:00:00.000Z' },
+      { id: 'workspace-new', updatedAt: '2026-09-30T10:00:00.000Z' },
+    ])).launch(task)
+
+    // Then the session is created in that workspace, never in the Host's own directory
+    expect(created).toEqual([{ workspaceId: 'workspace-new' }])
+  })
+
+  it('operator sees the Host decide when the deployment knows no workspace', async () => {
+    // Given a deployment that has registered no workspace at all
+    const created: unknown[] = []
+    const gateway = {
+      stream: fakeStream(async () => ({ async *[Symbol.asyncIterator]() {} })),
+      invoke: fakeInvoke(async (request: GatewayRequest) => {
+        if (request.method === 'create') {
+          created.push(request.args.request)
+          return { sessionId: 'session-a' }
+        }
+        if (request.method === 'rename') return { title: 'Run me', seq: 1 }
+        if (request.method === 'prompt') return { accepted: true }
+        throw new Error('unexpected gateway call')
+      }),
+    }
+    const task = createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a')
+
+    // When the runner launches the card
+    await new HostExecutionRunner(gateway, undefined, workspaceRegistry([])).launch(task)
+
+    // Then the create request carries no workspace and the Host's own default decides
+    expect(created).toEqual([{}])
+  })
+})

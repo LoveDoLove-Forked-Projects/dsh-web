@@ -383,7 +383,7 @@ export interface NewTaskInput {
    * inherits the parent's unset execution targets.
    */
   parentId?: string
-  /** Workspace the execution must run in; empty/absent = the recent workspace. */
+  /** Workspace the execution must run in; empty/absent = the creating session's workspace for a root task, else the recent workspace at execution time. */
   workspaceId?: string
   /** Agent preset the execution session must be composed from; empty/absent = deployment default. */
   mode?: string

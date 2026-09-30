@@ -5,6 +5,7 @@ import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HostTaskLedger } from '../src/host-ledger.ts'
 import { TaskBoardHostService, installStreamErrorGuards, safeConsoleError, type TeamSpawnInput } from '../src/host-service.ts'
+import type { TaskBoardWorkspaceRegistry } from '../src/host-runner.ts'
 import { PowerInhibitor } from '../src/power-inhibitor.ts'
 import { createTask, EXECUTION_HISTORY_LIMIT, startExecution, withSchedule } from '../src/core/tasks.ts'
 
@@ -711,5 +712,66 @@ describe('TaskBoardHostService poll heartbeat', () => {
       safeConsoleError('test message', new Error('sample'))
     }).not.toThrow()
     errorSpy.mockRestore()
+  })
+})
+
+describe('workspace inheritance on creation', () => {
+  function registryFace(items: readonly { id: string; updatedAt: string; sessionIds: readonly string[] }[]): TaskBoardWorkspaceRegistry {
+    return { list: () => items } as unknown as TaskBoardWorkspaceRegistry
+  }
+
+  const deployments: readonly { id: string; updatedAt: string; sessionIds: readonly string[] }[] = [
+    // The other workspace is the more recent one, so a passing test cannot be
+    // riding on the recency fallback.
+    { id: 'ws-other', updatedAt: '2026-09-30T09:00:00.000Z', sessionIds: ['session-other'] },
+    { id: 'ws-mine', updatedAt: '2026-09-30T08:00:00.000Z', sessionIds: ['session-mine'] },
+  ]
+
+  function serviceFor(ledger: HostTaskLedger): TaskBoardHostService {
+    const { gateway } = makeGateway(() => { throw new Error('creation must not call the gateway') })
+    return new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      now: () => NOW,
+      workspaceRegistry: registryFace(deployments),
+    })
+  }
+
+  it('operator sees a root card created from a session inherit that session workspace', () => {
+    // Given a deployment where session-mine lives in the older workspace
+    const ledger = new HostTaskLedger(root(), () => NOW)
+    const service = serviceFor(ledger)
+
+    // When a root card is created from that session
+    service.apply('create-1', {
+      kind: 'create', id: 'card', input: { title: 'Card', description: '', prompt: 'work' },
+    }, 'session-mine')
+
+    // Then it carries the creating session's workspace, not the recent one
+    expect(ledger.state().tasks.find(task => task.id === 'card')?.workspaceId).toBe('ws-mine')
+    service.dispose()
+  })
+
+  it('operator sees an explicit pin win and a subtask inherit its lineage', () => {
+    // Given the same deployment and a parent card created without a workspace
+    const ledger = new HostTaskLedger(root(), () => NOW)
+    const service = serviceFor(ledger)
+    service.apply('create-parent', {
+      kind: 'create', id: 'parent', input: { title: 'Parent', description: '', prompt: 'work' },
+    }, 'session-of-nobody')
+
+    // When a pinned root card and a subtask are created from session-mine
+    service.apply('create-pinned', {
+      kind: 'create', id: 'pinned', input: { title: 'Pinned', description: '', prompt: 'work', workspaceId: 'ws-explicit' },
+    }, 'session-mine')
+    service.apply('create-child', {
+      kind: 'create', id: 'child', input: { title: 'Child', description: '', prompt: 'work', parentId: 'parent' },
+    }, 'session-mine')
+
+    // Then the explicit pin is kept, and the subtask keeps inheriting its parent instead
+    const tasks = ledger.state().tasks
+    expect(tasks.find(task => task.id === 'pinned')?.workspaceId).toBe('ws-explicit')
+    expect(tasks.find(task => task.id === 'child')?.workspaceId).toBeUndefined()
+    service.dispose()
   })
 })

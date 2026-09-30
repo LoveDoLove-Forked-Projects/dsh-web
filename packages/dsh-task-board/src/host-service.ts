@@ -4,6 +4,7 @@ import { reusableSessionId } from './core/session-reuse.ts'
 import { HostTaskLedger, type OpenedRun, type OpenExecutionReference } from './host-ledger.ts'
 import { HostExecutionRunner, SessionLaunchError, promptText, type SessionCommandDispatcher, type SessionSummary, type TaskBoardWorkspaceRegistry } from './host-runner.ts'
 import { teammateName } from './core/subtask.ts'
+import { workspaceOwningSession } from './core/workspace-target.ts'
 import { PowerInhibitor } from './power-inhibitor.ts'
 import { TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardEventPayload, type TaskBoardSnapshot } from './protocol.ts'
 import { TaskBoardExtensionRegistry } from './host/extension-registry.ts'
@@ -139,6 +140,8 @@ export class TaskBoardHostService {
   private readonly timers: HostTimerFace
   private lastPowerJson = ''
   private readonly now: () => number
+  /** The deployment's workspaces, consulted to resolve a card that pins none. */
+  private readonly workspaceRegistry: TaskBoardWorkspaceRegistry | undefined
   /**
    * External provider extensions. The board owns task lifecycle and execution;
    * a provider observes them through the registry's capability face and never
@@ -174,6 +177,7 @@ export class TaskBoardHostService {
       maxSubtaskDepth: options.maxSubtaskDepth,
     })
     this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry)
+    this.workspaceRegistry = options.workspaceRegistry
     this.team = options.team
     this.timers = options.timers ?? PROCESS_TIMERS
     this.power = options.power ?? new PowerInhibitor()
@@ -300,6 +304,34 @@ export class TaskBoardHostService {
     return () => { this.listeners.delete(listener) }
   }
 
+  /**
+   * Give a root card created without a workspace pin the workspace its creator
+   * is in.
+   *
+   * An agent's `task_board_create` arrives with the calling session, and the
+   * GUI submits the session the main view shows, so the card lands where the
+   * work was asked for instead of where the Host process happens to run. A card
+   * that names a workspace keeps it, and a subtask keeps inheriting its lineage
+   * (the runner walks the ancestor chain for that).
+   *
+   * The initiator is client-asserted, so it only chooses among workspaces the
+   * deployment already knows: it can neither register one nor reach outside the
+   * list the user sees.
+   * @param action - the action about to be applied.
+   * @param initiator - the session that issued the action, when one was asserted.
+   * @returns the action, with an inherited workspace on a root creation.
+   */
+  private withInheritedWorkspace(action: TaskBoardAction, initiator?: string): TaskBoardAction {
+    if (action.kind !== 'create' || initiator === undefined || initiator === '') return action
+    const input = action.input
+    // A subtask inherits its lineage instead, and an explicit pin is the user's.
+    if ((input.parentId ?? '').trim() !== '') return action
+    if ((input.workspaceId ?? '').trim() !== '') return action
+    const workspaceId = workspaceOwningSession(this.workspaceRegistry?.list() ?? [], initiator)
+    if (workspaceId === undefined) return action
+    return { ...action, input: { ...input, workspaceId } }
+  }
+
   apply(requestId: string, action: Extract<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): Promise<TaskBoardSnapshot>
   apply(requestId: string, action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): TaskBoardSnapshot
   apply(requestId: string, action: TaskBoardAction, initiator?: string): TaskBoardSnapshot | Promise<TaskBoardSnapshot>
@@ -328,7 +360,7 @@ export class TaskBoardHostService {
       const task = this.ledger.state().tasks.find(item => item.id === action.taskId)
       if (task?.teamRun === true) throw new Error('Agent Teams is unavailable in this deployment')
     }
-    const result = this.ledger.applyRequest(requestId, action, initiator)
+    const result = this.ledger.applyRequest(requestId, this.withInheritedWorkspace(action, initiator), initiator)
     if (result.runs !== undefined) this.dispatchRuns(result.runs)
     // A committed schedule write (create / update / toggle / delete) moves the
     // nearest trigger; re-arm on every action so a newly enabled schedule fires
