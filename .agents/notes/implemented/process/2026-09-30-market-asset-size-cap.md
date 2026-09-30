@@ -31,10 +31,11 @@ market deploy on that branch, because the path filter watches the same pins.
 The landing was reverted rather than patched over. The revert moved the pin back
 to `0fd62f6` and restored `market/dist`, the deploy lane went green again
 (run 36717073370), and the contributor was asked on dsh-skins#16 to re-bake the
-loop so the zip stays under 25 MiB. The round's other four merges stay in the
-satellite's main and re-land in one commit when the re-bake arrives; the store
-keeps serving its previous content until then, exactly as it did while the
-deploy was failing.
+loop so the zip stays under 25 MiB. The re-bake arrived as dsh-skins#28 (the same
+2026-09-29 master at CRF 24: 16,974,454 bytes, SSIM 0.9870 against 0.9917, its
+README/README.zh/skin.json numbers carried along), the round re-landed the pin at
+`493f81c7` and the lane went green on commit `122b3b46` (run 36718315143).
+Nothing under `market/dist` exceeds 26,214,399 bytes.
 
 ## Alternatives considered
 
@@ -53,9 +54,9 @@ deploy was failing.
 
 ## Consequences
 
-- The store content is unchanged: the four other merges of the round (meridian,
-  rainy-night's siblings and the desktop frame fixes) are published only after
-  the re-bake lands here, and re-landing is one commit.
+- The round's seven merges reach the store in one commit after the re-bake, and
+  a revert followed by a re-land is cheap here because the pin and `market/dist`
+  are the only things the landing touches.
 - A content landing is not complete until the deploy lane is green, so a skin
   carrying large media has to clear the lane's per-asset ceiling as part of the
   merge gate rather than after it. The size of the shipped zip, not the size of
