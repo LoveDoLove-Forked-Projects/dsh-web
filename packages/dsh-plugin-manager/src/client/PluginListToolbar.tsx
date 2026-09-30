@@ -294,11 +294,11 @@ export function PluginListToolbar(props: PluginListToolbarProps) {
             {plan !== 'manual' && (
               <button
                 type="button"
-                className={plan === 'shell' ? css.button : `${css.button} ${css.primary}`}
+                className={`${css.button} ${css.primary}`}
                 data-restart-confirm
                 onClick={onRestart}
               >
-                {plan === 'shell' ? t('restartViaShell') : t('restartConfirm')}
+                {t('restartConfirm')}
               </button>
             )}
           </div>

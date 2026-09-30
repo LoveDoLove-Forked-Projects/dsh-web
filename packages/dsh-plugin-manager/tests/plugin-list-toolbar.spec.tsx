@@ -232,7 +232,7 @@ describe('restarting to apply the updates', () => {
     expect(document.querySelector('[data-update-restart]')?.textContent).toBe(t('restarting'))
   })
 
-  it('user on a packaged Desktop host is offered the manual restart first', async () => {
+  it('user on a packaged Desktop host is told the system dialog does the restart', async () => {
     // Given the host reports that the Desktop shell owns the process tree
     const restart = vi.fn(async () => 'shell' as const)
     renderToolbar(face({ restartPlan: vi.fn(async () => 'shell' as const), restart }))
@@ -240,16 +240,16 @@ describe('restarting to apply the updates', () => {
     // When the user asks to restart
     fireEvent.click(screen.getByRole('button', { name: t('restartNow') }))
 
-    // Then the confirmation leads with the manual path and warns about the dialog
+    // Then the confirmation names the system dialog, its crash report and the manual way out
     await waitFor(() => {
       expect(document.querySelector('[data-restart-plan-hint]')?.textContent).toBe(t('restartPlanShell'))
     })
     expect(document.querySelector('[data-restart-plan]')?.getAttribute('data-restart-plan')).toBe('shell')
     expect(document.querySelector('[data-update-restart-panel]')?.textContent).toContain(t('restartShellWarning'))
-    expect(document.querySelector('[data-restart-confirm]')?.textContent).toBe(t('restartViaShell'))
+    expect(document.querySelector('[data-restart-confirm]')?.textContent).toBe(t('restartConfirm'))
     expect(restart.mock.calls).toHaveLength(0)
 
-    // When the user chooses the system-dialog route
+    // When the user confirms
     fireEvent.click(document.querySelector('[data-restart-confirm]') as HTMLElement)
 
     // Then the host is asked once and the hint points at its own dialog
