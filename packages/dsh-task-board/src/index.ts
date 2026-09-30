@@ -27,6 +27,9 @@ import { makeTaskBoardRoutes } from './host-routes.ts'
 import type { GitHubRepoConfig } from './core/github/types.ts'
 import { GitHubApiClient } from './host/github/client.ts'
 import { mountOnce } from './mount-once.ts'
+import { createGoalVerificationGate, type GoalFace } from './host/verification-gate.ts'
+import { normalizeCatalog, type ModelCatalogView, type VerificationSettings } from './core/verification.ts'
+import { probeWorkspaceChanges } from './host/workspace-evidence.ts'
 
 /** Order of the announcement section within the tool-guidance band. */
 const SECTION_ORDER = 200
@@ -95,6 +98,31 @@ export interface Config {
   githubTokenEnv?: string
   /** Repositories configured for GitHub issue synchronization. */
   githubRepositories?: GitHubRepoConfig[]
+  /**
+   * Goal acceptance for executions this board starts (default ON). When on,
+   * update_goal(action: complete) inside a task execution is refused until an
+   * acceptance pass is recorded for that execution: the three coding criteria,
+   * a 0.65 threshold, two rounds per criterion with the A/B slots swapped, and
+   * at most two acceptances per execution — the first failure returns its
+   * findings to the fixing agent, the second ends the cycle. The switch only
+   * affects goal-form executions of the board; plain chat and a task pinned to
+   * goalRun: false are untouched. When a separate third-party verifier also
+   * runs its own automatic acceptance, both judges score independently: this
+   * one gates completion, the other only steers, and no public interface lets
+   * the two share a verdict.
+   */
+  goalVerification?: Volatile<boolean>
+  /**
+   * Judge model for goal acceptance as provider/model. Blank inherits the HOST's
+   * own model catalog default — never the card's pinned execution model.
+   */
+  goalVerificationModel?: Volatile<string>
+  /**
+   * Reasoning effort for the judge. Blank inherits the host default level; an
+   * effort the resolved model does not declare is dropped instead of being
+   * sent, and the fallback to the model's own default is reported.
+   */
+  goalVerificationReasoningEffort?: Volatile<string>
 }
 
 /**
@@ -134,6 +162,12 @@ export interface ConfigInput {
   githubTokenEnv?: string
   /** Repositories configured for GitHub issue synchronization. */
   githubRepositories?: GitHubRepoConfig[]
+  /** Goal acceptance switch. */
+  goalVerification?: boolean
+  /** Judge model route for goal acceptance; blank inherits the host default. */
+  goalVerificationModel?: string
+  /** Judge reasoning effort; blank inherits the host default. */
+  goalVerificationReasoningEffort?: string
 }
 
 /** One configured GitHub repository, as the profile patch declares it. */
@@ -168,7 +202,13 @@ export const Config: z<ConfigInput, Config> = z.object({
   teamProvider: z.string().min(1).default(DEFAULT_TEAM_PROVIDER),
   githubTokenEnv: z.string().default('GITHUB_TOKEN'),
   githubRepositories: z.array(GitHubRepoConfigSchema).default([]),
+  goalVerification: z.boolean().default(true).volatile(),
+  goalVerificationModel: z.string().default('').volatile(),
+  goalVerificationReasoningEffort: z.string().default('').volatile(),
 })
+
+/** Schema default for the goal-acceptance switch, re-read for hand-built contexts. */
+export const DEFAULT_GOAL_VERIFICATION = true
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -413,10 +453,25 @@ function applyImpl(ctx: Context, config?: Config): void {
   const sessionDefaultPermission = (): TaskPermission =>
     config?.sessionDefaultPermission ?? resolveHostDefaultPermission(ctx) ?? DEFAULT_SESSION_PERMISSION
 
+  /** Live acceptance settings the contract of each new execution freezes. */
+  const verificationSettings = (): VerificationSettings => ({
+    enabled: readConfigField(config?.goalVerification, DEFAULT_GOAL_VERIFICATION),
+    model: readConfigField(config?.goalVerificationModel, ''),
+    reasoningEffort: readConfigField(config?.goalVerificationReasoningEffort, ''),
+  })
+  // The catalog reader needs the service, and the service needs the reader;
+  // the reader only runs after start(), so a late holder is enough.
+  let hostForCatalog: TaskBoardHostService | undefined
+  const verificationCatalog = async (): Promise<ModelCatalogView | undefined> => {
+    const runner = hostForCatalog?.runner
+    return runner === undefined ? undefined : normalizeCatalog(await runner.modelCatalog())
+  }
   const host = new TaskBoardHostService(ctx.typertGateway, {
     workspaceRegistry: ctx.workspaceRegistry,
     sessionDefaultPermission,
     maxSubtaskDepth: maxSubtaskDepth(),
+    verificationSettings,
+    verificationCatalog,
     timers: resolveHostTimers(ctx),
     team: buildTeamDispatcher(ctx, config?.teamProvider ?? DEFAULT_TEAM_PROVIDER),
     githubRepositories: config?.githubRepositories,
@@ -429,6 +484,7 @@ function applyImpl(ctx: Context, config?: Config): void {
       },
     },
   })
+  hostForCatalog = host
   // Configuration before start(): a disabled row must not take the first
   // scheduler tick, which would roll schedules the board is not running.
   host.setConfiguration(enabled(), preventIdleSleep())
@@ -475,6 +531,42 @@ function applyImpl(ctx: Context, config?: Config): void {
   ctx.effect(() => {
     const disposers: Array<() => void> = []
     try {
+      // The goal acceptance gate: the OFFICIAL tool pre-execution lifecycle,
+      // installed before the tool body runs, so a completion claim cannot take
+      // effect without a matching acceptance pass record.
+      const gate = createGoalVerificationGate({
+        ledger: host.ledger,
+        llm: () => resolveLlmRuntime(ctx),
+        goals: () => {
+          try {
+            return ctx.get('goals') as GoalFace | undefined
+          } catch {
+            return undefined
+          }
+        },
+        // The host's own observation of what a turn changed on disk, when this
+        // deployment records it; the acceptance degrades to the trajectory alone
+        // when it does not.
+        workspaceChanges: () => probeWorkspaceChanges(ctx),
+        logger: {
+          warn: (message: string, ...rest: unknown[]) => {
+            const logger = (ctx as { logger?: { warn?: (...args: unknown[]) => void } }).logger
+            if (typeof logger?.warn === 'function') logger.warn(message, ...rest)
+            else console.warn(message, ...rest)
+          },
+        },
+      })
+      // A capture-only context may implement no listener registry (it returns
+      // no disposer), so the handle is pushed only when it really is one.
+      const offGate = ctx.on('tools/pre-execute', async (exec, next) => {
+        const decision = await gate({ name: exec.name, arguments: exec.arguments, agent: exec.agent, signal: exec.signal })
+        return decision ?? next()
+      })
+      if (typeof offGate === 'function') disposers.push(offGate)
+      else if (typeof (offGate as { dispose?: unknown } | undefined)?.dispose === 'function') {
+        const handle = offGate as { dispose(): void }
+        disposers.push(() => { handle.dispose() })
+      }
       const routes = makeTaskBoardRoutes(host, resolveProxyAccess(config), {
         parseTask: async (request, signal) => {
           const llm = resolveLlmRuntime(ctx)

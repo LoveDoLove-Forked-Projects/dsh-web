@@ -21,7 +21,8 @@ import { applyDeleteTask } from './core/use-cases/task-delete.ts'
 import { applySetSchedule, applyScheduleNextRun } from './core/use-cases/task-schedule.ts'
 import { applySetParent } from './core/use-cases/task-parent.ts'
 import { applyUpdateTask, canEditTaskContent, hasContentPatch } from './core/use-cases/task-update.ts'
-import { TASK_BOARD_LEGACY_SCHEMA_VERSION, TASK_BOARD_OLDER_SCHEMA_VERSION, TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts'
+import { TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS, TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts'
+import type { ExecutionVerification } from './core/verification.ts'
 import { DEFAULT_SESSION_PERMISSION, effectivePermission, permissionCarriedBy, requiresPermissionConfirmation, type TaskPermission } from './core/handover.ts'
 import type { GitHubTaskMetadata } from './core/github/types.ts'
 
@@ -338,7 +339,17 @@ function mergeTask(a: TaskRecord, b: TaskRecord): TaskRecord {
     const previous = byId.get(entry.id)
     byId.set(entry.id, previous === undefined ? entry : betterExecution(previous, entry))
   }
-  const executions = [...byId.values()].sort((x, y) => x.startedAt - y.startedAt)
+  // Acceptance evidence is the one field "betterExecution" cannot choose: a
+  // browser half that also wrote this execution carries no attempts, and taking
+  // its copy would erase the Host's verdict. The copy with the most recorded
+  // attempts wins, and one execution's verdict is never copied onto another.
+  const executions = [...byId.values()].sort((x, y) => x.startedAt - y.startedAt).map(entry => {
+    if (entry.verification !== undefined) return entry
+    const richer = [...a.executions, ...b.executions]
+      .filter(other => other.id === entry.id && other.verification !== undefined)
+      .sort((x, y) => (y.verification?.attempts.length ?? 0) - (x.verification?.attempts.length ?? 0))[0]
+    return richer?.verification === undefined ? entry : { ...entry, verification: richer.verification }
+  })
   return { ...newer, executions: retainRecentExecutions(executions) }
 }
 
@@ -1238,7 +1249,7 @@ export class HostTaskLedger {
   }
 
   /**
-   * Field-preserving migration of a pre-v4 document. It first proves every task
+   * Field-preserving migration of an older document. It first proves every task
    * row is structurally valid, so a document that would silently drop or coerce
    * rows fails loudly instead (no quarantined-empty restart), and then reuses
    * the current normalization.
@@ -1249,6 +1260,11 @@ export class HostTaskLedger {
    * (the stored `nextRunAt` already encodes the old zone), but the rule stops
    * following a later `TZ` change, which is what made an existing schedule
    * silently move when the Host's zone changed.
+   *
+   * v5 adds the per-execution acceptance block. The migration deliberately does
+   * NOT stamp one: an execution opened before v5 keeps no contract, so it
+   * settles on its own historical verdict and no in-flight run is retroactively
+   * judged by a gate that was never armed for it.
    */
   private migrateLegacyDocument(parsed: ParsedLedgerDocument): LedgerDocument {
     if (!Array.isArray(parsed.tasks) || !parsed.tasks.every(row => isTaskRecord(row))) {
@@ -1266,6 +1282,54 @@ export class HostTaskLedger {
     return this.normalizeDocument({ ...parsed, tasks: rows as TaskRecord[] })
   }
 
+  /**
+   * Find the still-open execution that ran in one session, with its task.
+   *
+   * The completion gate keys on the session id its tool call arrives from: the
+   * execution record is the only object binding a session to a card, and an
+   * already-settled execution is deliberately not returned (a session the board
+   * no longer owns must not be gated).
+   * @param sessionId - the DSH session the tool call runs in.
+   * @returns the open execution and its task, or undefined.
+   */
+  findOpenExecutionBySession(sessionId: string): { task: TaskRecord; execution: ExecutionRecord } | undefined {
+    if (sessionId === '') return undefined
+    for (const task of this.document.tasks) {
+      for (const execution of task.executions) {
+        if (execution.endedAt !== undefined) continue
+        if (execution.sessionId === sessionId) return { task, execution }
+      }
+    }
+    return undefined
+  }
+
+  /**
+   * Replace one execution's acceptance block (creating it when absent).
+   *
+   * A no-op when the serialized value is unchanged, so a coarse caller that
+   * re-writes the same state never bumps the ledger revision. A settled
+   * execution keeps its record: the report of a finished cycle must survive,
+   * and only the board's own settlement moves the card.
+   * @param taskId - the task owning the execution.
+   * @param executionId - the execution to update.
+   * @param verification - the new block.
+   * @returns true when the ledger changed.
+   */
+  setVerification(taskId: string, executionId: string, verification: ExecutionVerification): boolean {
+    const now = this.now()
+    const task = this.document.tasks.find(item => item.id === taskId)
+    const execution = task?.executions.find(entry => entry.id === executionId)
+    if (task === undefined || execution === undefined) return false
+    if (JSON.stringify(execution.verification ?? null) === JSON.stringify(verification)) return false
+    this.document.tasks = this.document.tasks.map(item => item.id !== taskId ? item : {
+      ...item,
+      updatedAt: now,
+      executions: item.executions.map(entry => entry.id === executionId ? { ...entry, verification } : entry),
+    })
+    this.commit()
+    return true
+  }
+
   private load(dir: string): LedgerDocument {
     const existed = existsSync(this.file)
     // schemaVersion stays unknown-typed here: on-disk documents may be v2 or
@@ -1276,8 +1340,8 @@ export class HostTaskLedger {
     } catch (error) {
       return this.recoverCorrupt(dir, existed, error)
     }
-    if (parsed.schemaVersion === TASK_BOARD_LEGACY_SCHEMA_VERSION
-      || parsed.schemaVersion === TASK_BOARD_OLDER_SCHEMA_VERSION) {
+    if (typeof parsed.schemaVersion === 'number'
+      && TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS.includes(parsed.schemaVersion)) {
       try {
         return this.migrateLegacyDocument(parsed)
       } catch (error) {

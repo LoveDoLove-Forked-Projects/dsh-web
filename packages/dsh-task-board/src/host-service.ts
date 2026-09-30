@@ -10,6 +10,7 @@ import { GitHubSyncService } from './host/github/service.ts'
 import { GitHubApiClient } from './host/github/client.ts'
 import type { GitHubRepoConfig } from './core/github/types.ts'
 import type { ExecutionOutcome } from './core/tasks.ts'
+import { passedAttempt, resolveContract, verificationRequired, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 import type { TaskPermission } from './core/handover.ts'
 
 /** One teammate the Host asks the Agent Teams service to spawn for a team run. */
@@ -133,6 +134,8 @@ export class TaskBoardHostService {
    */
   private readonly unreadablePolls = new Map<string, number>()
   private preventIdleSleep = false
+  private readonly verificationSettings: () => VerificationSettings
+  private readonly verificationCatalog: () => Promise<ModelCatalogView | undefined>
   private readonly team: TaskBoardTeamDispatcher | undefined
   private readonly timers: HostTimerFace
   private lastPowerJson = ''
@@ -156,6 +159,14 @@ export class TaskBoardHostService {
     github?: GitHubSyncService
     githubClient?: GitHubApiClient
     githubRepositories?: GitHubRepoConfig[]
+    /**
+     * Live acceptance settings (volatile config reads). Absent keeps goal
+     * acceptance OFF for every execution this service opens, which is what a
+     * programmatic mount without the settings domain gets.
+     */
+    verificationSettings?: () => VerificationSettings
+    /** The host model catalog the acceptance contract resolves its route from. */
+    verificationCatalog?: () => Promise<ModelCatalogView | undefined>
   } = {}) {
     this.ledger = options.ledger ?? new HostTaskLedger(undefined, undefined, {
       sessionDefaultPermission: options.sessionDefaultPermission,
@@ -166,6 +177,8 @@ export class TaskBoardHostService {
     this.timers = options.timers ?? PROCESS_TIMERS
     this.power = options.power ?? new PowerInhibitor()
     this.now = options.now ?? Date.now
+    this.verificationSettings = options.verificationSettings ?? (() => ({ enabled: false, model: '', reasoningEffort: '' }))
+    this.verificationCatalog = options.verificationCatalog ?? (async () => undefined)
     if (options.github !== undefined) {
       this.github = options.github
     } else if (options.githubRepositories !== undefined || options.githubClient !== undefined) {
@@ -244,6 +257,29 @@ export class TaskBoardHostService {
       maxSubtaskDepth: this.ledger.maxSubtaskDepth,
       teamRunAvailable: this.team !== undefined,
       ...(this.github === undefined ? {} : { github: this.github.snapshotSummary() }),
+    }
+  }
+
+  /**
+   * The acceptance configuration the settings card displays: the live settings,
+   * the contract they resolve to, and the host catalog the choices come from.
+   *
+   * The card shows the RESOLVED route, not the raw configuration, so "inherit
+   * host" reads as the concrete model and reasoning level the next execution
+   * will actually freeze, including any recorded effort fallback.
+   * @returns the resolved acceptance options.
+   */
+  async verificationOptions(): Promise<{
+    settings: VerificationSettings
+    contract: VerificationContract
+    catalog: ModelCatalogView
+  }> {
+    const settings = this.verificationSettings()
+    const catalog = await this.verificationCatalog()
+    return {
+      settings,
+      contract: resolveContract(settings, catalog),
+      catalog: catalog ?? { groups: [] },
     }
   }
 
@@ -331,11 +367,33 @@ export class TaskBoardHostService {
         ...(team ? { team: true } : {}),
         ...(schedule === undefined ? {} : { schedule }),
       }
+      // Freeze this execution's acceptance contract BEFORE the session is
+      // prompted: a settings change made while the run is in flight must not
+      // retrofit the rule that will judge it.
+      const contract = resolveContract(this.verificationSettings(), await this.verificationCatalog())
+      const initial: ExecutionVerification = {
+        contract,
+        attempts: [],
+        applicability: team ? 'team-member' : contract.enabled ? 'goal-unavailable' : 'disabled',
+      }
+      this.ledger.setVerification(opened.task.id, opened.execution.id, initial)
+      let attached: string | undefined
       const sessionId = await this.runner.launch(opened.task, {
         ...(reuseSessionId === undefined ? {} : { reuseSessionId }),
         ...(promptContext === undefined ? {} : { promptContext }),
+        // Bind the session to the execution before the prompt is queued, so the
+        // completion gate can never observe the agent without its binding.
+        onSession: (id) => {
+          attached = id
+          this.ledger.attachSession(opened.task.id, opened.execution.id, id)
+        },
+        onGoalArmed: (armed) => {
+          this.setApplicability(opened.task.id, opened.execution.id, team
+            ? 'team-member'
+            : !contract.enabled ? 'disabled' : armed ? 'enforced' : 'goal-unavailable')
+        },
       })
-      this.ledger.attachSession(opened.task.id, opened.execution.id, sessionId)
+      if (attached === undefined) this.ledger.attachSession(opened.task.id, opened.execution.id, sessionId)
       if (team) for (const teammate of others) this.scheduleTeammate(teammate, sessionId)
     } catch (error) {
       if (error instanceof SessionLaunchError) {
@@ -420,6 +478,16 @@ export class TaskBoardHostService {
   ): Promise<void> {
     for (const execution of executions) {
       if (execution.sessionId === undefined) continue
+      const record = this.ledger.getTask(execution.taskId)?.executions.find(entry => entry.id === execution.executionId)
+      const verification = record?.verification
+      // A cycle the gate already closed is decided here, without another
+      // inspection: the goal may still be active (or un-blockable) exactly
+      // because the acceptance failed, and the card must not stay in the
+      // running column waiting for a verdict that is already recorded.
+      if (verification?.failedReason !== undefined) {
+        this.settleAndNotify(execution.taskId, execution.executionId, 'failed', verification.failedReason)
+        continue
+      }
       try {
         // A team member's turn is read even while the roster calls its session
         // running: a durable teammate never goes idle for good.
@@ -432,6 +500,19 @@ export class TaskBoardHostService {
           continue
         }
         this.unreadablePolls.delete(execution.executionId)
+        // Forced acceptance: the old fallback paths — a completed turn, a
+        // paused goal, an unreadable projection, a manual settle — must never
+        // be mistaken for a verified success. Only a matching pass record
+        // settles this execution as succeeded.
+        if (result.outcome === 'succeeded' && verificationRequired(verification) && passedAttempt(verification) === undefined) {
+          this.settleAndNotify(
+            execution.taskId,
+            execution.executionId,
+            'failed',
+            'goal 验收：本次执行没有匹配的验收通过记录（验收未运行、未通过或报告来自其他执行），按未验收判失败。',
+          )
+          continue
+        }
         this.settleAndNotify(execution.taskId, execution.executionId, result.outcome, 'error' in result ? result.error : undefined)
       } catch {
         // A transient inspection failure never settles a running execution.
@@ -602,6 +683,16 @@ export class TaskBoardHostService {
     for (const run of others) {
       if (run.dispatch !== 'teammate') this.scheduleLaunch(run, [], schedule)
     }
+  }
+
+  /**
+   * Move one execution's applicability without touching its frozen contract or
+   * its recorded attempts (used when the run's goal form becomes known).
+   */
+  private setApplicability(taskId: string, executionId: string, applicability: ExecutionVerification['applicability']): void {
+    const verification = this.ledger.getTask(taskId)?.executions.find(entry => entry.id === executionId)?.verification
+    if (verification === undefined || verification.applicability === applicability) return
+    this.ledger.setVerification(taskId, executionId, { ...verification, applicability })
   }
 
   private scheduleLaunch(opened: OpenedRun, others: readonly OpenedRun[] = [], schedule?: ScheduledRunContext): void {

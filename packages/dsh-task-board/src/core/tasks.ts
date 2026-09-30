@@ -5,6 +5,7 @@
  * unit-testable in isolation.
  */
 import type { FreezeSnapshot } from './freeze-snapshot.ts'
+import type { ExecutionVerification } from './verification.ts'
 import type { TaskHandover, TaskHandoverInput } from './handover.ts'
 import { normalizeIntegrations, type TaskIntegrations } from './github/types.ts'
 
@@ -56,6 +57,14 @@ export interface ExecutionRecord {
   ownResult?: ExecutionOutcome
   /** Human failure text that arrived with {@link ownResult}. */
   ownError?: string
+  /**
+   * Goal acceptance state of this execution (task-board goal verification).
+   * Fixed when the execution starts and never rewritten from later settings:
+   * the contract is frozen here, the attempts accrue here, and the settlement
+   * rule reads the pass record here. Absent on an execution that started
+   * before the feature existed, which keeps it on the historical verdict.
+   */
+  verification?: ExecutionVerification
 }
 
 /**

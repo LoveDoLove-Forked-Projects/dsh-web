@@ -161,7 +161,7 @@ describe('HostTaskLedger', () => {
     const recoveredId = ledger.state().scheduler.ledgerId
     expect(ledger.state().tasks).toEqual([])
     expect(ledger.state().scheduler.error).toContain('quarantined')
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ schemaVersion: 4, tasks: [] })
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ schemaVersion: 5, tasks: [] })
     const quarantined = readdirSync(root).find(name => name.startsWith('ledger-v2.json.corrupt-'))
     expect(quarantined).toBeDefined()
     expect(readFileSync(join(root, quarantined!), 'utf8')).toBe('{not json')
@@ -717,7 +717,7 @@ describe('ledger schema v4 migration', () => {
     expect(state.scheduler.lastTickAt).toBe(NOW - 1_000)
     // The migration is written back immediately as v4, keeping every field.
     const onDisk = JSON.parse(readFileSync(join(root, 'ledger-v2.json'), 'utf8'))
-    expect(onDisk.schemaVersion).toBe(4)
+    expect(onDisk.schemaVersion).toBe(5)
     expect(onDisk.revision).toBe(41)
     expect(onDisk.tasks).toEqual(state.tasks)
     expect(onDisk.scheduler.ledgerId).toBe('ledger-legacy')
@@ -785,12 +785,12 @@ describe('ledger schema v4 migration', () => {
     const ledger = new HostTaskLedger(fresh, () => NOW)
     expect(ledger.state().tasks).toEqual([])
     expect(ledger.state().revision).toBe(0)
-    expect(JSON.parse(readFileSync(join(fresh, 'ledger-v2.json'), 'utf8')).schemaVersion).toBe(4)
+    expect(JSON.parse(readFileSync(join(fresh, 'ledger-v2.json'), 'utf8')).schemaVersion).toBe(5)
     ledger.dispose()
 
     const existing = tempRoot()
     writeFileSync(join(existing, 'ledger-v2.json'), JSON.stringify({
-      schemaVersion: 4, revision: 0, tasks: [], scheduler: { timeZone: 'UTC', ledgerId: 'ledger-empty' }, recentRequests: [],
+      schemaVersion: 5, revision: 0, tasks: [], scheduler: { timeZone: 'UTC', ledgerId: 'ledger-empty' }, recentRequests: [],
     }), 'utf8')
     const reloaded = new HostTaskLedger(existing, () => NOW)
     expect(reloaded.state().tasks).toEqual([])
@@ -841,7 +841,7 @@ describe('ledger schema v4 migration', () => {
     expect(after.revision).toBe(before.revision)
     expect(after.tasks).toEqual(before.tasks)
     expect(after.scheduler.ledgerId).toBe(before.scheduler.ledgerId)
-    expect(JSON.parse(readFileSync(join(root, 'ledger-v2.json'), 'utf8')).schemaVersion).toBe(4)
+    expect(JSON.parse(readFileSync(join(root, 'ledger-v2.json'), 'utf8')).schemaVersion).toBe(5)
     reloaded.dispose()
   })
 })

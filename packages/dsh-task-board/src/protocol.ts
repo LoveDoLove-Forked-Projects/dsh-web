@@ -5,15 +5,29 @@ import { isValidTimeZone } from './core/schedule.ts'
 import { sanitizeFreezeSnapshot, type FreezeSnapshot } from './core/freeze-snapshot.ts'
 import { sanitizeHandover, type TaskHandoverInput } from './core/handover.ts'
 import { normalizeIntegrations } from './core/github/types.ts'
+import { normalizeVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 
 /** Freeze payload carried by create/update actions after the gate (redacted in place). */
 type FreezePayload = FreezeSnapshot & { redacted?: boolean; frozenBy?: string }
 
-export const TASK_BOARD_SCHEMA_VERSION = 4 as const
-/** Ledger documents written before v4; loaded once and migrated on startup. */
-export const TASK_BOARD_LEGACY_SCHEMA_VERSION = 3 as const
-/** Ledger documents written before v3; migrated through the v3 normalization too. */
-export const TASK_BOARD_OLDER_SCHEMA_VERSION = 2 as const
+export const TASK_BOARD_SCHEMA_VERSION = 5 as const
+/** Ledger documents written before v5; loaded once and migrated on startup. */
+export const TASK_BOARD_LEGACY_SCHEMA_VERSION = 4 as const
+/** Ledger documents written before v4; migrated through the v4 normalization too. */
+export const TASK_BOARD_OLDER_SCHEMA_VERSION = 3 as const
+/** Ledger documents written before v3; migrated through every later normalization too. */
+export const TASK_BOARD_OLDEST_SCHEMA_VERSION = 2 as const
+/**
+ * Every older generation the loader migrates in place. v5 only ADDS the
+ * per-execution acceptance block, so the migration is the normalization pass
+ * that re-validates each row; a document from any listed generation upgrades
+ * losslessly.
+ */
+export const TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS: readonly number[] = [
+  TASK_BOARD_LEGACY_SCHEMA_VERSION,
+  TASK_BOARD_OLDER_SCHEMA_VERSION,
+  TASK_BOARD_OLDEST_SCHEMA_VERSION,
+]
 export const TASK_BOARD_API_PREFIX = '/api/task-board'
 
 export type PowerPhase = 'disabled' | 'idle' | 'acquiring' | 'active' | 'error' | 'unsupported'
@@ -66,6 +80,20 @@ export interface TaskBoardSnapshot {
     }>
     hasCredential: boolean
   }
+}
+
+/**
+ * Body of `GET {TASK_BOARD_API_PREFIX}/verification`: the acceptance settings the
+ * card edits, the contract they resolve to right now, and the host model catalog
+ * the model and reasoning choices come from. Served through the same loopback /
+ * authenticated-proxy guard as the rest of the board API, and it carries no
+ * credential material — model routes and level ids only.
+ */
+export interface TaskBoardVerificationOptions {
+  settings: VerificationSettings
+  /** The RESOLVED contract, so the card can show what the next execution freezes. */
+  contract: VerificationContract
+  catalog: ModelCatalogView
 }
 
 /** SSE event frame: revision/scheduler/power only, never the task list. */
@@ -189,6 +217,10 @@ function validImportedKnownFields(value: Record<string, unknown>): boolean {
       if (execution.initiatedBy !== undefined && typeof execution.initiatedBy !== 'string') return false
       if (execution.frozenBy !== undefined && typeof execution.frozenBy !== 'string') return false
       if (execution.frozenAt !== undefined && typeof execution.frozenAt !== 'number') return false
+      // A well-formed acceptance block may be imported for inspection, but the
+      // import path DROPS it (see importedTask): a fabricated pass record must
+      // never let an imported execution settle as verified.
+      if (execution.verification !== undefined && normalizeVerification(execution.verification) === undefined) return false
     }
   }
   return true
@@ -217,6 +249,8 @@ function importedTask(value: unknown): TaskRecord | undefined {
       ...(execution.initiatedBy === undefined ? {} : { initiatedBy: execution.initiatedBy }),
       ...(execution.frozenAt === undefined ? {} : { frozenAt: execution.frozenAt }),
       ...(execution.frozenBy === undefined ? {} : { frozenBy: execution.frozenBy }),
+      // 安全门（对抗场景 d）：验收报告是 Host 的判定，不接受 import 携带——
+      // 一条伪造的通过记录会让导入的执行被当成已验收。
     })),
     ...(task.schedule === undefined ? {} : {
       schedule: {

@@ -22,6 +22,7 @@ import { NewTaskModal } from './NewTaskModal.tsx'
 import { inheritPresetLabel, presetLabel } from './preset-label.ts'
 import { formatHostTimestamp, formatTime } from './TaskCard.tsx'
 import { STATUS_KEY } from './status-key.ts'
+import { VerificationReport } from './VerificationReport.tsx'
 
 /** Execution outcome → locale key. */
 const RESULT_KEY: Record<NonNullable<ExecutionRecord['result']>, TaskBoardKey> = {
@@ -47,6 +48,7 @@ function ExecutionRow({ execution, timeZone, onOpen }: { execution: ExecutionRec
           {t('detail.execution.initiator', { session: execution.initiatedBy })}
         </span>
       )}
+      {execution.verification !== undefined && <VerificationReport verification={execution.verification} />}
       {execution.sessionId !== undefined && (
         <button
           type="button"

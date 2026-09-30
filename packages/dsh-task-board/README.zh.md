@@ -25,6 +25,7 @@
 - **有界执行历史**：每个任务只保留最近 20 条执行记录；新运行开始时截掉最旧的记录，使账本大小与每次写入成本不随任务历史无限增长。
 - **真实执行**：手动运行和定时运行共用 Host runner，默认新建独立会话、重命名、应用 agent 预设和 `/permission <id>`，再以 queue 模式发送任务 Prompt。
 - **目标驱动执行（默认开启）**：除非卡片在详情页取消勾选（新建任务对话框默认勾选），runner 会先入队任务 Prompt，再以同一份组合 Prompt 作为目标武装 dsh 内置的 `/goal`。dsh 的目标轮次驱动器会在同一会话中不断开启续跑轮次，直到 agent 标记目标完成；看板则让该执行一直保持 `running`，直到目标离开 active 阶段：目标正常完成判为成功，被阻塞则以目标自身的原因判为失败。该选项按任务设置（`goalRun`，缺席即开启），`task_board_create`/`task_board_update` 同样可用。
+- **任务验收（默认开启）**：以 goal 形式执行的任务必须先通过一次验收，`update_goal(action: complete)` 才会生效——看板在官方「工具执行前」生命周期上拦截这次调用，而不是相信 agent 的自述。验收沿用已安装 dsh-llm-verifier（MIT）的默认最终验收：三项 coding 判据（Specification Adherence、Output Match、Error Signal Detection）、总分与每项判据都必须达到 0.65 阈值、每项两轮并交换 A/B 位置后取平均、以任务真实轨迹（工具调用及其输出、assistant 文本）对比空工作基线，实际工作必须胜过该基线；部署记录工作区变更时，还会附上宿主自身对「本次运行改了磁盘上什么」的记录（文件清单与增删行数、有界的逐文件对比）作为提示词的参考上下文，使「只在自述里写过的补丁」无法通过。同一 execution 最多验收两次：第一次不通过把总分、逐项分数与可定位问题交回修复的 agent，第二次仍不通过即判该 execution 失败。额度记录在 execution 记录上，因此重复完成调用、跨入下一 goal 轮次、插件重载与宿主重启都复用同一周期；重跑或一次定时触发则是新的 execution、重新计数。验收异常（超时、鉴权失败、裁判回答无法解析、裁判路由不可解析）与质量判定分开记录，不消耗质量额度，并有界收敛，既不活锁也不会静默通过。运行列显示「执行中 / 验收中 / 验收未通过修复中」，每条 execution 记录展示判定、裁判模型与强度、次数、各项分数与阈值、问题反馈、证据范围与 token 用量。强制验收还堵住了旧回退路径：暂停的 goal、读取失败的 projection、已完成的回合与人工强制结算，都不能在没有匹配通过记录的情况下把 goal 执行结算为成功。
 - **可选会话复用**：任务可选择在上一执行会话中继续（issue #1419）。仅当该会话空闲且仍在运行时会话名册中才复用——Host 会重新应用钉住的权限与模型再以 queue 模式发送 Prompt，会话标题与历史保持不变；否则照旧新建会话，因此名册未知或会话正忙都不会阻塞定时运行。
 - **钉子失败即关闭**：工作区缺失、预设缺失或损坏、权限命令被拒绝时，任务 Prompt 不会发送。
 - **Host 调度器**：5 段 cron 支持 `*`、`*/n`、范围、逗号列表和周日 `0/7`。每条规则携带自己的 IANA 时区（默认跟随 Host 时区），日期/星期遵循 Vixie 语义：两个字段都受限时为 OR，其余组合为 AND。夏令时切换处的墙上时间空洞会被跳过，重复出现的歧义时刻只触发一次并取更早者。
@@ -90,6 +91,9 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board
 | `proxyTokenEnv` | `DSH_TASK_BOARD_PROXY_TOKEN` | 保存反向代理 token 的环境变量名；token 本身不会写入插件配置。 |
 | `sessionDefaultPermission` | 跟随宿主 | 权限确认门的显式基线。未设置时跟随宿主自己的默认权限预设（DSH 新会话的起始权限），部署不提供权限目录时回退 `read-only`。卡片有效权限（交接包或钉住字段）高于该基线时，运行前必须经人工确认；cron 拒绝调度待确认卡片。 |
 | `maxSubtaskDepth` | `1` | 子任务深度上限，1 到 3。取 1 时一个任务只能有一层子任务，子任务不能再创建或关联子任务；每多一层，执行根任务一次开启的会话数就会成倍增加。 |
+| `goalVerification` | `true` | 本插件所开执行的 goal 验收。开启后，任务执行内的 `update_goal(action: complete)` 在该执行取得验收通过记录前一律被拒绝。只影响以 goal 形式执行的运行：普通聊天与钉住 `goalRun: false` 的任务不受影响。 |
+| `goalVerificationModel` | `''`（继承） | 裁判模型路由，形如 `provider/model`。留空继承宿主模型目录的默认路由，绝不是任务卡钉住的执行模型。 |
+| `goalVerificationReasoningEffort` | `''`（继承） | 裁判推理强度。留空继承宿主默认档位；目标模型未声明的档位绝不传参，回退到该模型自身默认档位并记录、展示。 |
 | `teamProvider` | `spawn` | Agent Teams 服务用来组成 teammate 的 continuable-subagent provider。仅团队执行模式使用，与 Agent Teams 工具插件的 `freshProvider` 默认值一致。 |
 
 浏览器直接访问仍限制为 DSH loopback origin。若使用同机认证反向代理，应让 DSH Web 绑定 loopback，配置 `trustedProxyHosts`，在 `proxyTokenEnv` 指定的环境变量中放置高熵 token，并让代理在完成认证后替换（不能透传客户端提供的）`X-Dsh-Task-Board-Proxy-Token`。代理 Host 必须在白名单内，浏览器 `Origin` 必须与其 authority 相同。修改这些 composition 级代理设置后需重启 Host。
@@ -98,7 +102,8 @@ macOS 后端启动 `/usr/bin/caffeinate -i -w <host-pid>`，绝不请求 `-d`。
 
 ## 数据存储与迁移
 
-- 权威账本文件固定为 `$DSH_HOME/task-board/ledger-v2.json`（文件名为历史沿用）；当前文档 schema 为 v3，v2 文档会在下一次 Host 启动时逐字段无损迁移为 v3 并原地写回。POSIX 新文件权限为 `0600`；Windows 继承用户目录 ACL。
+- 权威账本文件固定为 `$DSH_HOME/task-board/ledger-v2.json`（文件名为历史沿用）；当前文档 schema 为 v5，更旧的文档（v2/v3/v4）会在下一次 Host 启动时逐字段无损迁移并原地写回。POSIX 新文件权限为 `0600`；Windows 继承用户目录 ACL。
+- v5 增加每 execution 的验收块（`verification`）。迁移刻意不补写该块：v5 之前开启的 execution 仍按历史判定结算，不会因为一个从未为它武装的完成门而被追溯验收。无法解析的验收块会被丢弃（该 execution 视为未验收，fail closed）；import 带入的 execution 记录一律剥离该块，否则伪造的通过记录会让导入的工作看起来已验收。
 - v2 到 v3 迁移失败（任务行结构非法）时失败关闭并报出明确错误，原文件保持不动；绝不静默以空账本重启。损坏或未知 schema 的文件会移动到防碰撞的 `ledger-v2.json.corrupt-*` 名称，Host 以空账本和可见 scheduler 错误启动，不覆盖损坏字节。
 - 每个 origin 首次加载新版页面时，按稳定 source id 和 request id 导入 `dsh.taskBoard.v1`。任务按 id 合并，浏览器端严格较新的顶层字段优先，时间戳相同时保留 Host 字段，执行记录按 execution id 合并。
 - 最近 256 个 request id 与动作的 SHA-256 指纹会随账本持久化，因此 Host 重启后的变更重试仍保持幂等，且不会复制完整动作载荷。
@@ -158,6 +163,13 @@ pnpm --filter @linxin666/dsh-client-ui-task-board build
 - Agent 工具调用由模型驱动：从对话发起的执行或定时级联同样消耗 API 额度，且 agent 可以启用一个持续触发的计划，直到被关闭或看板被关掉。
 - 目标执行会按目标需要不断续跑：每一轮都消耗 API 额度，会话会一直忙碌，直到目标完成或被 dsh 阻塞（轮次上限、回合被拒或入队失败），后者在看板上记为执行失败。
 - 目标模式依赖运行时的 `/goal` 命令与命令派发器。两者都不提供的部署仍会把每张卡片当单回合执行，并在宿主日志中记录目标模式不可用，而不是让执行失败。
+
+- 每次验收都会消耗模型请求：一次验收是 3 项判据 × 2 轮（6 次裁判请求），而同一 execution 最多验收两次，因此一个需要修复一次的 goal 周期最多在任务本身之外多花 12 次请求。
+- 验收不估费用：本部署无法为目标裁判路由提供可靠的分 token 价格来源，报告只列出 token 用量。
+- 宿主观察的工作区变更块只在部署确实记录变更且读取成功时出现；服务不可用或对比读取失败时，证据降级为只判轨迹，而不是让验收失败。
+- 验收只在能生效的地方强制执行：没有成为 goal 执行的运行（`/goal` 被拒绝或不可用）与团队执行的 teammate 成员不受门禁，记录会明确说明，而不是暗示它们已被验收。宿主不提供模型目录时无法解析裁判路由，完成声明按 fail closed 拒绝并记为验收异常。
+- 第一版一律使用 coding 判据：没有自动 rubric 选择，非工程任务也按工程判据评判（设置界面已说明）。
+- 若第三方验收插件（例如已安装的 `dsh-llm-verifier`）也开启了自己的自动验收，两个裁判会各自对同一会话评分：本看板的验收决定能否完成，另一个只做提示，公开 SDK 接口无法让二者共享同一判定。要避免为两次判定付费，只能关闭对方的自动模式。
 
 ## 数据遥测
 

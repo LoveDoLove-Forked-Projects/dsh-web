@@ -4,7 +4,7 @@ import { HostApiError, HttpTaskBoardHostTransport, type HostApiFailure } from '.
 import type { TaskBoardEventPayload, TaskBoardSnapshot } from '../src/protocol.ts'
 
 const snapshot: TaskBoardSnapshot = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   revision: 1,
   tasks: [],
   scheduler: { timeZone: 'UTC', ledgerId: 'ledger-a' },

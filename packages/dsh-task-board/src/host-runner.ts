@@ -298,6 +298,8 @@ function nonCompletedTurnEnd(data: unknown): string | undefined {
  */
 function invokeWireArgs(namespace: string, method: string, request: Record<string, unknown>): Record<string, unknown> {
   if (namespace === 'agentPresets' && method === 'list') return {}
+  // session/modelCatalog declares zero parameters, so its args must be {}.
+  if (namespace === 'session' && method === 'modelCatalog') return {}
   if (namespace === 'session' && method === 'list') return { _request: request }
   return { request }
 }
@@ -338,7 +340,7 @@ export class HostExecutionRunner {
    * @param options - optional session to continue in.
    * @returns the session id the execution runs in.
    */
-  async launch(task: TaskRecord, options: { reuseSessionId?: string; promptContext?: PromptContext } = {}): Promise<string> {
+  async launch(task: TaskRecord, options: { reuseSessionId?: string; promptContext?: PromptContext; onSession?: (sessionId: string) => void; onGoalArmed?: (armed: boolean) => void } = {}): Promise<string> {
     // A handover bundle overrides the legacy pin fields: the bundle is the
     // authoritative execution triplet for a continuation card (issue #5).
     const workspaceId = task.handover?.workspaceId ?? task.workspaceId
@@ -369,8 +371,12 @@ export class HostExecutionRunner {
         // whose session was composed from a different preset now fails closed
         // instead of silently running under the wrong composition, matching
         // the fresh branch's `agentPreset` assertion (issue #1708).
+        // Report the session before anything is queued into it, so the board
+        // can bind the execution first and a completion claim can never arrive
+        // at the gate without its binding.
+        options.onSession?.(reused)
         await this.assertReusedPreset(reused, mode)
-        await this.pinAndPrompt(reused, task, permission, options.promptContext)
+        await this.pinAndPrompt(reused, task, permission, options.promptContext, options.onGoalArmed)
       } catch (error) {
         throw new SessionLaunchError(reused, error)
       }
@@ -381,9 +387,10 @@ export class HostExecutionRunner {
       ...(mode === undefined ? {} : { agentPreset: mode }),
     }) as { sessionId: ExecutionSessionId }
     const sessionId = created.sessionId
+    options.onSession?.(sessionId)
     try {
       await this.invoke('session', 'rename', { sessionId, title: task.title })
-      await this.pinAndPrompt(sessionId, task, permission, options.promptContext)
+      await this.pinAndPrompt(sessionId, task, permission, options.promptContext, options.onGoalArmed)
     } catch (error) {
       throw new SessionLaunchError(sessionId, error)
     }
@@ -428,6 +435,7 @@ export class HostExecutionRunner {
     task: TaskRecord,
     permission: TaskPermission | undefined,
     context: PromptContext = {},
+    onGoalArmed?: (armed: boolean) => void,
   ): Promise<void> {
     if (permission !== undefined) {
       if (this.commands === undefined) throw new Error('permission command dispatcher is unavailable')
@@ -456,7 +464,25 @@ export class HostExecutionRunner {
       mode: 'queue' as const,
       content: [{ type: 'text' as const, text: promptText(task, context) }],
     })
-    await this.armGoal(sessionId, task, context)
+    const armed = await this.armGoal(sessionId, task, context)
+    onGoalArmed?.(armed)
+  }
+
+  /**
+   * Read the host's model catalog: the default route an unconfigured session
+   * starts at, and each provider's models with the reasoning metadata its
+   * adapter exposes. The acceptance settings card and the frozen contract both
+   * resolve against it, so "inherit host" means the host's own configuration
+   * rather than a session's or a card's pinned model.
+   * @returns the raw catalog value, or undefined when this cohort serves none.
+   */
+  async modelCatalog(): Promise<unknown> {
+    try {
+      return await this.invoke('session', 'modelCatalog', {})
+    } catch (error) {
+      console.warn('[dsh-task-board] session/modelCatalog failed; the acceptance settings fall back to the configured route', error)
+      return undefined
+    }
   }
 
   /**
@@ -472,11 +498,11 @@ export class HostExecutionRunner {
    * plain turn: the task was asked to run, and a missing goal mode must not
    * lose the work.
    */
-  private async armGoal(sessionId: ExecutionSessionId, task: TaskRecord, context: PromptContext): Promise<void> {
-    if (task.goalRun === false) return
+  private async armGoal(sessionId: ExecutionSessionId, task: TaskRecord, context: PromptContext): Promise<boolean> {
+    if (task.goalRun === false) return false
     if (this.commands === undefined) {
       console.warn('[dsh-task-board] no command dispatcher is available; task ' + task.id + ' runs without /goal')
-      return
+      return false
     }
     try {
       const command = await this.commands.execute(
@@ -486,13 +512,16 @@ export class HostExecutionRunner {
       )
       if (command === undefined) {
         console.warn('[dsh-task-board] /goal was not acknowledged for session ' + sessionId + '; the run continues as a plain turn')
-        return
+        return false
       }
       if (command.kind !== 'success') {
         console.warn('[dsh-task-board] /goal was refused for session ' + sessionId + ': ' + (command.text ?? 'no reason reported') + '; the run continues as a plain turn')
+        return false
       }
+      return true
     } catch (error) {
       console.warn('[dsh-task-board] could not arm /goal on session ' + sessionId + '; the run continues as a plain turn', error)
+      return false
     }
   }
 

@@ -25,6 +25,8 @@ dsh 已把缺失的机制作为内置 `/goal` 命令提供（持久目标 + 目�
 - 没有这道门，第一个完成的 `turn/end` 就会在会话仍在工作时把卡片结算为 `done`，而定时的卡片会回到 `todo` 并为同一目标再开一个并发会话。
 - 该读取只发生在结算判定处，不进入每轮轮询。读取失败（例如网关撤回了 `session/projections` 定义的平台）会告警并回退到回合判定，避免一次读失败把所有执行永久挂住。
 
+- 任务验收（见 [Task-board goal acceptance](2026-09-30-task-board-goal-acceptance.zh.md)）为这个闭环的「结束」加上门禁：`update_goal(action: complete)` 在该 execution 取得看板验收通过记录前一律被拒绝，因此目标完成只有在「工作」被判定后才会结算卡片。该 Note 拥有验收规则、按 execution 的额度与结算守卫；本 Note 仍拥有武装 goal、命令被拒的回退，以及结算时读取目标阶段。
+
 ### 协议、账本、工具与界面
 
 - `create` 输入与 `update` 补丁接受该布尔值；更新补丁是三态的（true 或 null 让卡片回到默认，false 钉住单回合）。`parseLedger` 保留 `false`，并把多写的 `true` 归一为缺席，因为缺席才是开启状态的规范写法。无需 schema 升级：字段是可选且增量式的。

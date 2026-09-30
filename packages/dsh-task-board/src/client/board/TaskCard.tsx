@@ -11,6 +11,7 @@ import { memo } from 'react'
 import type { TaskRecord } from '../../core/tasks.ts'
 import { executionLabel, hasOpenExecution, tagTone } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
+import { verificationRunningKey } from './status-key.ts'
 import css from '../board.module.css'
 
 /**
@@ -89,6 +90,8 @@ function TaskCardInner({
   // by hand stays draggable, and an executing card never is.
   const busy = hasOpenExecution(task)
   const isDraggable = !archived && !busy && !pending
+  // Forced acceptance owns the running label.
+  const runningKey = verificationRunningKey(latest?.verification)
 
   return (
     <button
@@ -174,7 +177,9 @@ function TaskCardInner({
       {!archived && pending && <span className={css.cardRunningLabel}>{t('board.pending')}…</span>}
       {!archived && latest !== undefined && executionLabel(latest) === 'running' && (
         <span className={css.cardRunningLabel}>
-          {latest.ownResult === undefined ? t('detail.result.running') : t('detail.subtasks.waiting')}…
+          {runningKey !== undefined
+            ? t(runningKey)
+            : latest.ownResult === undefined ? t('detail.result.running') : t('detail.subtasks.waiting')}…
         </span>
       )}
     </button>

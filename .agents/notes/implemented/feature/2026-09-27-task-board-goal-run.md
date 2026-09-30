@@ -25,6 +25,8 @@ A task row carries an optional `goalRun?: boolean`, edited by the "start the run
 - Without that gate the first completed `turn/end` would settle the card as `done` while the session kept working, and a scheduled card would return to `todo` and fire a second, concurrent session for the same objective.
 - The projection read happens only at the settle decision, not on every poll. An unreadable projection (a cohort whose gateway withdrew `session/projections`) falls back to the turn verdict with a warning, so a missing read cannot hang every execution.
 
+- Goal acceptance (see [Task-board goal acceptance](2026-09-30-task-board-goal-acceptance.md)) gates the END of this loop: `update_goal(action: complete)` is refused until the board's acceptance records a pass for that execution, so a completed goal settles the card only when the WORK was judged. That note owns the acceptance rule, its per-execution budget and the settlement guard; this one still owns arming the goal, the refusal fallback, and reading the goal's phase at settle time.
+
 ### Wire, ledger, tools, UI
 
 - `create` input and `update` patch accept the boolean; the update patch is tri-state (true or null returns the card to the default, false pins a plain turn). `parseLedger` keeps `false` and normalizes a stray `true` back to absent, because absent is the canonical on-state. No schema bump: the field is additive and optional.
