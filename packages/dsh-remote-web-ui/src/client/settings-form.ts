@@ -316,13 +316,13 @@ export class CardForm<T> {
    * Run one save, and re-run it once if another was asked for while this one
    * was still in flight.
    *
-   * A save is a Host round trip that also triggers the profile reconcile, so
-   * two overlapping saves race the Host's exclusive settings transaction: the
-   * second is refused with "HMR transactions cannot be nested" and, worse, was
-   * previously dropped outright, leaving the user's edit unsaved with no
-   * explanation. Serializing instead of refusing means a save pressed while
-   * another is still settling runs against the settled state, which is what
-   * the operator meant by pressing it again (#1754).
+   * A save is a Host round trip that also drives the profile reconcile, and
+   * the Host runs that write inside one exclusive transaction. Answering a
+   * press that arrives mid-flight by returning immediately dropped the edit
+   * with no explanation, which is the "the save button stops working after a
+   * few rounds" report (#1754). Serializing instead means a save pressed while
+   * another is still settling runs against the settled state - which is what
+   * the operator meant by pressing it again.
    * @returns settlement after the mutation and the read-back.
    */
   async requestSave(): Promise<void> {

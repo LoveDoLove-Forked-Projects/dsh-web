@@ -3,20 +3,18 @@
  * "HMR transactions cannot be nested".
  *
  * The Host runs settings/mutate inside hmr.runExclusive. Committing a volatile
- * field announces loader/volatile-update, which drove sync() synchronously on
- * that same async context, and sync() wrote cordis.patch.yml - the file the HMR
- * config watcher refreshes from. The watcher's refresh then re-entered
- * runExclusive and rejected, which surfaced as the user's save failing.
+ * field announces loader/volatile-update, which drove sync() on that same async
+ * context, and sync() wrote cordis.patch.yml - the file the HMR config watcher
+ * refreshes from. The watcher's refresh then re-entered runExclusive and
+ * rejected, which surfaced as the user's save failing.
  *
  * The first fix deferred the write with setImmediate on the belief that a fresh
- * callback starts a fresh AsyncLocalStorage store. That belief is wrong:
- * AsyncLocalStorage is propagated into setImmediate, into node:timers, and
- * into AsyncResource scopes. What actually keeps the file and the save apart
- * is that the write only happens when the desired block differs from the
- * committed one, so the coalesced follow-up sync() finds nothing to write.
- *
- * The regression is therefore a placement AND idempotence rule, and the test
- * asserts both directly.
+ * callback starts a fresh AsyncLocalStorage store. That belief is false and is
+ * refuted in detached-work.spec.ts; the deferral now runs through the
+ * module-scope AsyncResource in src/detached-work.ts, which really does start
+ * clean. This file asserts the two placement rules that keep the write off the
+ * save path at all: only the deferred worker touches the patch file and the
+ * firewall, and the write sits behind the current-vs-desired guard.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -61,8 +59,8 @@ describe('remote-web-ui LAN bind vs. the HMR transaction (issues #1751 and #1754
   })
 
   it('operator writes the block only when the committed one differs from the desired one', () => {
-    // Given the deferred worker, the one thing that actually keeps the patch file
-    // out of a second save is that a settled profile produces no write at all
+    // Given the deferred worker, the one thing that keeps the patch file out of
+    // a second save is that a settled profile produces no write at all
     // When the current-vs-desired comparison that guards the write is read
     // Then the write sits behind that comparison, and re-reading the same block
     // therefore cannot touch the file a second time
@@ -74,14 +72,21 @@ describe('remote-web-ui LAN bind vs. the HMR transaction (issues #1751 and #1754
     expect(write).toBeGreaterThan(guard)
   })
 
-  it('operator sees the deferral settle on the last committed value', () => {
-    // Given the same source
-    // When the scheduler that defers the work is read
-    // Then the deferred value is re-read at run time, so two toggles inside one
-    // tick settle on the last committed value rather than the first
+  it('operator sees the deferred write leave the settings transaction', () => {
+    // Given the scheduler that defers the work
+    // When it is read
+    // Then it schedules through runDetached - the AsyncResource that starts
+    // clean - rather than a bare setImmediate that inherits the save's
+    // AsyncLocalStorage store and would land the write inside the transaction
+    // the watcher then tries to re-enter
     const schedule = bodyOf('scheduleLanBindWork')
+    expect(schedule).toContain('runDetached(')
     expect(schedule).toContain('setImmediate(')
     expect(schedule).toContain('applyLanBindWork(resolve())')
+    // The detachment must wrap the scheduling, not sit inside the deferred
+    // callback: by the time the callback runs, the timer has already captured
+    // the caller's context.
+    expect(schedule.indexOf('runDetached(')).toBeLessThan(schedule.indexOf('setImmediate('))
   })
 
   it('operator sees a failed assertion swallowed instead of rejecting the save', () => {
