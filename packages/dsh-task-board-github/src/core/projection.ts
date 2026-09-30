@@ -4,15 +4,22 @@
  * Implements:
  * - Controlled label write-back (only DSH-managed labels modified).
  * - Projection into existing kanban columns without a secondary state machine.
- * - Execution immutability: remote edits refresh prompt only before first run.
  * - Stable identity reconciliation and deactivation handling.
  *
- * @module dsh-task-board/core/github/projection
+ * Content immutability is NOT decided here any more: reconciliation always
+ * proposes the remote title/body, and the board's own content gate refuses the
+ * patch when the card has started executing. The provider therefore has no
+ * second opinion about which cards are frozen.
+ *
+ * @module dsh-task-board-github/core/projection
  */
 
-import type { TaskRecord, TaskStatus } from '../tasks.ts'
-import { canEditTaskContent } from '../use-cases/task-update.ts'
-import type { GitHubIssuePayload, ResolvedGitHubRepoConfig } from './types.ts'
+import type { TaskRecord, TaskStatus } from './task-record.ts'
+import {
+  readTaskGitHubMetadata,
+  type GitHubIssuePayload,
+  type ResolvedGitHubRepoConfig,
+} from './types.ts'
 
 /** Check if a GitHub label is owned and managed by the DSH task board integration. */
 export function isDshManagedLabel(labelName: string, config: ResolvedGitHubRepoConfig): boolean {
@@ -108,18 +115,6 @@ export function resolveStatusFromLabels(
 }
 
 /**
- * Whether a task's content (title/description/prompt) may be refreshed from remote.
- * Execution immutability: once a task has ever started executing (even if
- * failed/cancelled) the historical execution prompt must never be rewritten,
- * and an archived card is read-only too. This defers to the board's own
- * content authority ({@link canEditTaskContent}) so the provider and the board
- * can never disagree about which cards are frozen.
- */
-export function shouldRefreshContent(task: TaskRecord): boolean {
-  return canEditTaskContent(task)
-}
-
-/**
  * Extract label name strings from a GitHub API issue payload.
  */
 export function extractLabelNames(issue: GitHubIssuePayload): string[] {
@@ -132,8 +127,8 @@ export function extractLabelNames(issue: GitHubIssuePayload): string[] {
  * - Updates remote metadata (remoteTitle, remoteBody, remoteLabels, remoteState, sync stamps).
  * - If inclusion label was removed, deactivates the item without deleting it or its executions.
  * - If inclusion label was re-added, restores the item through the same identity.
- * - If the task has never executed, updates local title/description/prompt.
- * - If the task has executed, preserves local title/description/prompt unchanged.
+ * - Proposes the remote title/description/prompt; the board's content gate keeps
+ *   the recorded content of a card that has already executed.
  */
 export function reconcileIssueWithTask(
   existing: TaskRecord,
@@ -143,22 +138,17 @@ export function reconcileIssueWithTask(
 ): TaskRecord {
   const remoteLabels = extractLabelNames(issue)
   const hasInclusion = remoteLabels.includes(config.inclusionLabel)
-  const refreshContent = shouldRefreshContent(existing)
 
   const remoteTitle = issue.title.trim()
   const remoteBody = issue.body != null ? issue.body.trim() : ''
-
-  const nextTitle = refreshContent ? remoteTitle : existing.title
-  const nextDescription = refreshContent ? remoteBody : existing.description
-  const nextPrompt = refreshContent ? (remoteBody !== '' ? remoteBody : remoteTitle) : existing.prompt
 
   const remoteUpdatedAt = Date.parse(issue.updated_at)
 
   return {
     ...existing,
-    title: nextTitle,
-    description: nextDescription,
-    prompt: nextPrompt,
+    title: remoteTitle,
+    description: remoteBody,
+    prompt: remoteBody !== '' ? remoteBody : remoteTitle,
     updatedAt: now,
     integrations: {
       ...existing.integrations,
@@ -176,7 +166,7 @@ export function reconcileIssueWithTask(
         lastSyncedAt: now,
         lastRemoteUpdatedAt: Number.isFinite(remoteUpdatedAt) ? remoteUpdatedAt : undefined,
         lastSyncError: undefined,
-        pullRequest: existing.integrations?.github?.pullRequest,
+        pullRequest: readTaskGitHubMetadata(existing)?.pullRequest,
         deactivated: hasInclusion ? undefined : true,
       },
     },

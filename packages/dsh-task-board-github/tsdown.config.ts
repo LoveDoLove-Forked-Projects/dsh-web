@@ -16,5 +16,9 @@ export default clientBundle('@linxin666/dsh-client-ui-task-board-github', ['src/
     '@deepseek-ai/dsh-client-store',
     '@deepseek-ai/dsh-client-ui-settings',
     '@deepseek-ai/dsh-client-ui-slots',
+    // Wire layers the host runtime provides: the provider registers model
+    // tools and renders tool results through them.
+    '@deepseek-ai/dsh-tools',
+    '@deepseek-ai/dsh-llm',
   ],
 })

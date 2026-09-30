@@ -2,19 +2,24 @@
  * Host half of the task-board GitHub provider extension.
  *
  * This package is an EXTERNAL PROVIDER EXTENSION for the task board
- * (`@linxin666/dsh-client-ui-task-board`): it owns the GitHub Issues
- * configuration and, from the migration stage on, the synchronization service
- * that feeds GitHub items into the board's provider contract. This stage
- * carries the package skeleton: the configuration schema with its documented
- * defaults, and the lifecycle seam the provider registration will fill.
+ * (`@linxin666/dsh-client-ui-task-board`). It owns the GitHub Issues
+ * configuration and the synchronization service, and it reaches the board
+ * exclusively through the board's provider service: it imports no board
+ * module, and every capability it uses is the same-shape contract restated in
+ * `src/core/contract.ts`.
  *
- * It deliberately imports no task-board internals. Cross-package collaboration
- * goes through the board's provider service (the contract owned by
- * packages/dsh-task-board), so the extension stays a standalone bundle that can
- * be built, published and loaded on its own.
+ * The master switch is volatile and read at use time: turning it off in the
+ * settings card releases the provider (polling stops, the event subscriptions
+ * go, the tools unregister and the published summary clears) without a remount
+ * or a restart.
  */
 import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import {
+  resolveTaskBoardHostFace,
+  type TaskBoardHostFace,
+} from './core/contract.ts'
+import { createGitHubExtension } from './host/extension.ts'
 import { mountOnce } from './mount-once.ts'
 
 /**
@@ -32,6 +37,15 @@ export const DRAFT_PR_POLICIES = ['draft', 'ready'] as const
 
 /** Draft policy for pull requests this provider opens. */
 export type DraftPrPolicy = (typeof DRAFT_PR_POLICIES)[number]
+
+/** Order of this extension's announcement section, just after the board's. */
+const SECTION_ORDER = 210
+
+/**
+ * Model-facing announcement: what the extension does, what it never does with
+ * remote text, and the words that name it.
+ */
+export const GITHUB_GUIDANCE = '本机已安装 dsh-task-board-github 扩展（DSH Web GUI 任务看板的 GitHub Issues 提供方）：把带包含标签的 GitHub issue 同步为看板卡片，并把卡片的列变化写回 issue 上由本扩展管理的标签；另注册 task_board_github_* agent 工具（list/get/refresh/create_pr/link_pr），随看板总开关与本扩展开关一起收放。GitHub 凭据只在宿主进程从环境变量读取，绝不进入浏览器、设置卡或模型可见载荷；远端 issue 文本只作为卡片内容，绝不进入 promptPrefix、权限或工作区身份。用户提到「GitHub 任务 / GitHub issue / 同步 GitHub / 关联 PR / 创建 PR」时即指本扩展，请据此协作。'
 
 /** GitHub labels one repository maps onto the board columns. */
 export interface GitHubStateLabels {
@@ -85,11 +99,7 @@ export interface GitHubRepoConfig {
 export interface Config {
   /** Master switch for the extension. */
   enabled?: Volatile<boolean>
-  /**
-   * Whether this extension announces itself in every agent system prompt. Off
-   * by default so prompts stay clean; the settings card exposes the switch and
-   * the announcement lands with the provider registration.
-   */
+  /** Whether this extension announces itself in every agent system prompt. */
   announceToAgent?: Volatile<boolean>
   /** Environment variable holding the GitHub API token; never exposed to the browser or an agent. */
   tokenEnv?: string
@@ -100,8 +110,7 @@ export interface Config {
 /**
  * Profile-patch shape of {@link Config}: what the Host validates the row's
  * config against, before the schema turns volatile fields into live references
- * and applies defaults. Declared separately because the two sides no longer
- * share one shape, so the schema is annotated `z<ConfigInput, Config>`.
+ * and applies defaults.
  */
 export interface ConfigInput {
   /** Master switch for the extension. */
@@ -172,6 +181,9 @@ export const Config: z<ConfigInput, Config> = z.object({
   repositories: z.array(GitHubRepoConfigSchema).default([]),
 })
 
+/** Schema default of the announcement switch, re-read for hand-built contexts. */
+export const DEFAULT_ANNOUNCE_TO_AGENT = false
+
 /** The effective settings of one mount, with schema defaults applied. */
 export interface GitHubProviderSettings {
   /** Master switch. */
@@ -206,14 +218,51 @@ export function readConfigField<T>(field: Volatile<T> | T | undefined, fallback:
 /**
  * Resolve the effective settings of one mount from its config.
  * @param config - the row's config as the Host handed it.
- * @returns the settings a provider registration would consume.
+ * @returns the settings the provider registration consumes.
  */
 export function resolveProviderSettings(config?: Config): GitHubProviderSettings {
   return {
     enabled: readConfigField(config?.enabled, true),
-    announceToAgent: readConfigField(config?.announceToAgent, false),
+    announceToAgent: readConfigField(config?.announceToAgent, DEFAULT_ANNOUNCE_TO_AGENT),
     tokenEnv: config?.tokenEnv ?? DEFAULT_TOKEN_ENV,
     repositories: config?.repositories ?? [],
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Volatile config values were committed into the running fiber without a
+     * remount; dispatched to the owning fiber only. Spelled here because the
+     * Loader package is not a dependency of this plugin, with the Loader's own
+     * shape so the two declarations merge when a Host program carries both.
+     * @param paths - changed config paths as key arrays; every value is committed before dispatch.
+     * @mode emit
+     */
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void
+  }
+}
+
+/** The slice of the system-prompt service this extension announces through. */
+interface SystemPromptFace {
+  section(spec: { name: string; order: number; text: string }): () => void
+}
+
+/**
+ * Resolve the optional system-prompt service without declaring it a required
+ * inject: a deployment that serves none still gets the provider, just without
+ * the announcement.
+ * @param ctx - host context.
+ * @returns the service, or undefined.
+ */
+function resolveSystemPrompt(ctx: Context): SystemPromptFace | undefined {
+  try {
+    const get = (ctx as { get?: (name: string) => unknown }).get
+    if (typeof get !== 'function') return undefined
+    const face = get.call(ctx, 'systemPrompt') as SystemPromptFace | undefined
+    return face !== undefined && typeof (face as { section?: unknown }).section === 'function' ? face : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -222,19 +271,87 @@ export const apply = mountOnce(PACKAGE_NAME, applyImpl)
 /**
  * Activate the extension's host half.
  *
- * This stage resolves the row's configuration and holds the lifecycle seam; it
- * registers nothing yet. A disabled row takes no lifecycle at all, so turning
- * the switch off in the settings card releases the provider without a remount.
+ * The provider is admitted through the board's own registration service, so it
+ * follows the board's master switch as well as this extension's: the board
+ * starts it only while both are on. The two fields the settings card edits are
+ * volatile, so `sync` reads them at use time and follows
+ * `loader/volatile-update`; a switch flip re-registers (or releases) the
+ * provider immediately, without a remount.
  * @param ctx - the plugin context.
  * @param config - resolved plugin config (schema defaults applied by the loader).
  */
 function applyImpl(ctx: Context, config?: Config): void {
   /** Current settings, read live so a volatile switch edit is followed. */
   const settings = (): GitHubProviderSettings => resolveProviderSettings(config)
-  if (!settings().enabled) return
-  // TODO(M3): register the GitHub Issues provider through the task board's
-  // external-provider contract and release it from this effect's disposer.
-  // The board owns the registration surface; this package must not import
-  // task-board internals.
-  ctx.effect(() => () => {}, 'task-board-github: provider lifecycle placeholder')
+
+  let disposeRegistration: (() => void) | undefined
+  let disposeSection: (() => void) | undefined
+  let appliedEnabled: boolean | undefined
+  let appliedAnnounce: boolean | undefined
+  let warnedMissingBoard = false
+
+  const releaseProvider = (): void => {
+    const dispose = disposeRegistration
+    disposeRegistration = undefined
+    try { dispose?.() } catch { /* the board owns its own teardown */ }
+  }
+
+  const registerProvider = (face: TaskBoardHostFace): void => {
+    disposeRegistration = face.registerExtension(createGitHubExtension({
+      repositories: config?.repositories,
+      tokenEnv: config?.tokenEnv,
+      enabled: () => settings().enabled,
+    }))
+  }
+
+  const sync = (): void => {
+    const next = settings()
+    if (appliedEnabled !== next.enabled) {
+      appliedEnabled = next.enabled
+      releaseProvider()
+      if (next.enabled) {
+        const face = resolveTaskBoardHostFace(ctx)
+        if (face === undefined) {
+          if (!warnedMissingBoard) {
+            warnedMissingBoard = true
+            console.warn('[dsh-task-board-github] the task board provider service is not served; the GitHub provider stays idle until the board is installed')
+          }
+        } else {
+          registerProvider(face)
+        }
+      }
+    }
+    if (appliedAnnounce !== next.announceToAgent) {
+      appliedAnnounce = next.announceToAgent
+      try { disposeSection?.() } catch { /* best-effort */ }
+      disposeSection = undefined
+      if (next.enabled && next.announceToAgent) {
+        const systemPrompt = resolveSystemPrompt(ctx)
+        if (systemPrompt !== undefined) {
+          try {
+            disposeSection = systemPrompt.section({
+              name: 'plugin:task-board-github',
+              order: SECTION_ORDER,
+              text: GITHUB_GUIDANCE,
+            })
+          } catch {
+            // A refused section costs the announcement only.
+          }
+        }
+      }
+    }
+  }
+
+  // A settings edit of a volatile field is committed into the references this
+  // fiber already holds, with no remount and no second call to apply.
+  ctx.on('loader/volatile-update', () => { sync() })
+
+  ctx.effect(() => {
+    sync()
+    return () => {
+      releaseProvider()
+      try { disposeSection?.() } catch { /* best-effort */ }
+      disposeSection = undefined
+    }
+  }, 'task-board-github: provider lifecycle')
 }

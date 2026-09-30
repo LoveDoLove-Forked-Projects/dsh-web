@@ -6,12 +6,12 @@
  * capability face, so they follow the same board-enabled x extension-enabled
  * gate as every other provider surface.
  *
- * @module dsh-task-board/host/github/tools
+ * @module dsh-task-board-github/host/tools
  */
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { readTaskGitHubMetadata } from '../../core/github/types.ts'
-import type { TaskRecord } from '../../core/tasks.ts'
+import { readTaskGitHubMetadata } from '../core/types.ts'
+import type { TaskRecord } from '../core/task-record.ts'
 import type { GitHubSyncService } from './service.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }

@@ -1,9 +1,21 @@
 /**
  * Pure domain types and validation for the GitHub task-board integration.
- * Shared across host and client (framework-free, no runtime SDK imports).
  *
- * @module dsh-task-board/core/github/types
+ * Framework-free and shared by both halves of this bundle: the host half reads
+ * and writes the payload the board stores opaquely under this extension's id,
+ * and the browser half renders the same shape. Nothing here imports a board
+ * module — the identity of a card is this provider's own data, carried inside
+ * the board's opaque `integrations` container under the key `github`.
+ *
+ * @module dsh-task-board-github/core/types
  */
+
+/**
+ * Stable extension id. It is the key this provider's payload is stored under in
+ * the board's integrations container, the id its browser half dispatches under,
+ * and the id both halves share without importing the other's half.
+ */
+export const GITHUB_EXTENSION_ID = 'github'
 
 /** First-class pull request metadata stored on a task. */
 export interface GitHubPullRequestMetadata {
@@ -60,11 +72,6 @@ export interface GitHubTaskMetadata {
    * hides the card from active board columns without deleting history.
    */
   deactivated?: boolean
-}
-
-/** Task integrations container; additive and optional on TaskRecord. */
-export interface TaskIntegrations {
-  github?: GitHubTaskMetadata
 }
 
 /** Configured state labels for projecting task status into GitHub labels. */
@@ -171,27 +178,20 @@ export function isGitHubTaskMetadata(value: unknown): value is GitHubTaskMetadat
 }
 
 /**
- * Read a task's GitHub metadata from the opaque integrations container.
+ * Validate and repair this provider's own payload.
  *
- * The board stores integrations opaquely, so a provider reads its own entry
- * back through its own validator; an entry that does not match the provider's
- * shape is treated as absent rather than crashing the provider.
- * @param task - the task to read.
- * @returns the validated metadata, or undefined.
+ * The board stores the payload opaquely, so it may come back from an older
+ * write, a hand-edited ledger, or a future version that added a field. A value
+ * that does not match this provider's shape is treated as absent rather than
+ * crashing the provider; a matching value is rebuilt field by field so unknown
+ * keys and non-finite stamps never reach the caller.
+ * @param value - candidate payload.
+ * @returns the repaired metadata, or undefined when it is not this shape.
  */
-export function readTaskGitHubMetadata(task: { integrations?: Record<string, unknown> } | undefined): GitHubTaskMetadata | undefined {
-  const value = task?.integrations?.github
-  return isGitHubTaskMetadata(value) ? value : undefined
-}
+export function normalizeGitHubMetadata(value: unknown): GitHubTaskMetadata | undefined {
+  if (!isGitHubTaskMetadata(value)) return undefined
+  const gh = value as GitHubTaskMetadata & Record<string, unknown>
 
-/** Normalize and repair an integrations container from the ledger or wire. */
-export function normalizeIntegrations(value: unknown): TaskIntegrations | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  const container = value as Record<string, unknown>
-  if (container.github === undefined) return undefined
-  if (!isGitHubTaskMetadata(container.github)) return undefined
-
-  const gh = container.github
   let pullRequest: GitHubPullRequestMetadata | undefined
   if (gh.pullRequest !== undefined) {
     pullRequest = {
@@ -205,7 +205,7 @@ export function normalizeIntegrations(value: unknown): TaskIntegrations | undefi
     }
   }
 
-  const github: GitHubTaskMetadata = {
+  return {
     provider: 'github',
     owner: gh.owner.trim(),
     repository: gh.repository.trim(),
@@ -222,8 +222,17 @@ export function normalizeIntegrations(value: unknown): TaskIntegrations | undefi
     ...(pullRequest !== undefined ? { pullRequest } : {}),
     ...(gh.deactivated === true ? { deactivated: true } : {}),
   }
+}
 
-  return { github }
+/**
+ * Read a task's GitHub metadata out of the board's opaque integrations container.
+ * @param task - the task to read.
+ * @returns the repaired metadata, or undefined when the task carries none.
+ */
+export function readTaskGitHubMetadata(
+  task: { integrations?: Record<string, unknown> } | undefined,
+): GitHubTaskMetadata | undefined {
+  return normalizeGitHubMetadata(task?.integrations?.github)
 }
 
 /** Wire payload for a GitHub issue returned by the GitHub REST API. */

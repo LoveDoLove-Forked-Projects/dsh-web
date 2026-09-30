@@ -55,6 +55,23 @@ describe('GitHub provider settings card', () => {
     controller.dispose()
   })
 
+  it('operator turning the announcement on stages the boolean the Host schema expects', async () => {
+    // Given a card bound to a form whose announcement switch is off
+    const { scope, ops } = form({ enabled: true })
+    const controller = new GithubSettingsCardController(scope as never)
+    const face = controller.inject()
+
+    // When the operator turns the announcement on and saves
+    face.edit('announceToAgent', 'true')
+    await (face.save() as unknown as Promise<void>)
+
+    // Then the Host receives one boolean write for the announcement field,
+    // which is the switch the system-prompt section follows
+    expect(ops).toEqual([{ op: 'set', path: ['announceToAgent'], value: true }])
+    expect(face.hooks.githubSettingsCard.getSnapshot().announceToAgent).toEqual({ text: 'true', overridden: true, invalid: false })
+    controller.dispose()
+  })
+
   it('operator saving without touching the switch writes nothing', async () => {
     // Given a card whose switch already matches the stored value
     const { scope, ops } = form({ enabled: true })

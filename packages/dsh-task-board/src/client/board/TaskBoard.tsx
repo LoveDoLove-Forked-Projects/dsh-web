@@ -39,10 +39,18 @@ function collectSearchLeaves(value: unknown, out: string[]): void {
   }
 }
 
-/** Case-insensitive title/description/tag/freeze-snapshot/provider-payload match. */
+/**
+ * Case-insensitive title/description/tag/freeze-snapshot/provider-payload match.
+ *
+ * A leading `#` is dropped from the needle. Providers render their own
+ * identifiers with that prefix (`#1758`) and the board attaches no meaning to
+ * it: stripping it keeps the identifier searchable exactly as it is written on
+ * screen, without the board learning any provider's vocabulary.
+ */
 export function matchesFilter(task: TaskRecord, filter: string): boolean {
-  if (filter.trim() === '') return true
-  const needle = filter.trim().toLowerCase()
+  const query = filter.trim().toLowerCase()
+  if (query === '') return true
+  const needle = query.startsWith('#') ? query.slice(1) : query
   const haystacks = [task.title, task.description, ...(task.tags ?? []).map(tag => tag.name)]
   if (task.freeze !== undefined) haystacks.push(task.freeze.goal, task.freeze.progress, task.freeze.next)
   if (task.integrations !== undefined) {

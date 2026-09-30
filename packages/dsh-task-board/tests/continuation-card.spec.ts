@@ -190,6 +190,28 @@ describe('board filter covers frozen snapshot text', () => {
   })
 })
 
+describe('board filter and provider identifiers', () => {
+  it('user searching a provider identifier finds the card with or without its leading hash', () => {
+    // Given a card whose local text says nothing about the identifier it
+    // carries, which lives only in an opaque provider payload leaf
+    const task = createTask({ title: 'Local title', description: 'Local desc', prompt: 'p' }, NOW, 'gf-1')
+    const withPayload: TaskRecord = {
+      ...task,
+      integrations: { provider: { issueNumber: 1758, repository: 'dsh-web' } },
+    }
+
+    // When the board filter is applied with the identifier written either way
+    const written = matchesFilter(withPayload, '#1758')
+    const bare = matchesFilter(withPayload, '1758')
+
+    // Then both forms reach the same leaf, and an unrelated term still does not
+    expect(written).toBe(true)
+    expect(bare).toBe(true)
+    expect(matchesFilter(withPayload, '#dsh-web')).toBe(true)
+    expect(matchesFilter(withPayload, '#unrelated')).toBe(false)
+  })
+})
+
 describe('continuation card: import keeps the freeze snapshot', () => {
   it('round-trips a frozen task through the import action whitelist', () => {
     const parsed = envelope({

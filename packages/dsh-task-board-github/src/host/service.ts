@@ -1,30 +1,37 @@
 /**
  * GitHub synchronization engine for the task board's GitHub extension.
  *
- * The engine no longer touches the Host ledger: it reads and writes every task
- * through the extension capability face ({@link TaskBoardExtensionHost}), so the
- * board stays the single authority and this provider owns only its own
- * payload, its identity index, and its outbound HTTP.
+ * The engine never touches the Host ledger: it reads and writes every card
+ * through the extension capability face the board hands it, so the board stays
+ * the single authority and this provider owns only its own payload, its
+ * identity index, and its outbound HTTP.
  *
- * @module dsh-task-board/host/github/service
+ * The identity index is the provider's own structure: it is built from the
+ * board's cards at start(), kept current as cards are materialized, and pruned
+ * when the board reports a deletion. A lookup that misses rebuilds the index
+ * from the board rather than trusting the cache blindly, so a card that
+ * arrived out of band (a legacy ledger import, for instance) is still found.
+ *
+ * @module dsh-task-board-github/host/service
  */
-import type { HostTimerFace } from '../../host-service.ts'
-import type { TaskBoardExtensionHost } from '../../core/extension.ts'
-import type { ExecutionRecord, TaskRecord, TaskStatus } from '../../core/tasks.ts'
+import type { HostTimerFace } from '../core/timers.ts'
+import type { ExecutionRecord, TaskRecord, TaskStatus } from '../core/task-record.ts'
+import type { TaskBoardExtensionHost } from '../core/contract.ts'
 import {
+  normalizeGitHubMetadata,
   readTaskGitHubMetadata,
   type GitHubPullRequestMetadata,
   type GitHubRepoConfig,
   type GitHubTaskMetadata,
   type ResolvedGitHubRepoConfig,
   resolveRepoConfig,
-} from '../../core/github/types.ts'
+} from '../core/types.ts'
 import {
   computeLabelWriteBack,
   extractLabelNames,
   materializeTaskFromIssue,
   reconcileIssueWithTask,
-} from '../../core/github/projection.ts'
+} from '../core/projection.ts'
 import { GitHubApiClient } from './client.ts'
 
 export interface GitHubSyncServiceOptions {
@@ -47,6 +54,11 @@ const DEFAULT_TIMERS: HostTimerFace = {
   },
 }
 
+/** Stable key of one remote issue identity. */
+function identityKey(owner: string, repository: string, issueNumber: number): string {
+  return `${owner.toLowerCase()}/${repository.toLowerCase()}#${String(issueNumber)}`
+}
+
 export class GitHubSyncService {
   readonly host: TaskBoardExtensionHost
   readonly client: GitHubApiClient
@@ -56,6 +68,8 @@ export class GitHubSyncService {
   private pollTimer: (() => void) | undefined
   private stopped = false
   private syncing = false
+  /** Immutable remote identity -> local card id, owned by this provider. */
+  private readonly identityIndex = new Map<string, string>()
 
   constructor(options: GitHubSyncServiceOptions) {
     this.host = options.host
@@ -75,6 +89,7 @@ export class GitHubSyncService {
   /** Start background polling across configured repositories. */
   start(): void {
     if (this.stopped || this.pollTimer !== undefined) return
+    this.reindex()
     const intervals = this.repositories
       .map(r => r.pollingIntervalMs)
       .filter(ms => ms > 0)
@@ -100,6 +115,37 @@ export class GitHubSyncService {
   dispose(): void {
     this.stopped = true
     this.stop()
+    this.identityIndex.clear()
+  }
+
+  /**
+   * Rebuild the identity index from the cards the board holds for this
+   * extension. Called when the provider starts and whenever a lookup misses.
+   */
+  reindex(): void {
+    this.identityIndex.clear()
+    for (const { task, payload } of this.host.tasks.linked()) {
+      const metadata = normalizeGitHubMetadata(payload)
+      if (metadata === undefined) continue
+      this.identityIndex.set(identityKey(metadata.owner, metadata.repository, metadata.issueNumber), task.id)
+    }
+  }
+
+  /** Record one card's identity in the index. */
+  private remember(taskId: string, metadata: GitHubTaskMetadata | undefined): void {
+    if (metadata === undefined) return
+    this.identityIndex.set(identityKey(metadata.owner, metadata.repository, metadata.issueNumber), taskId)
+  }
+
+  /**
+   * Drop one deleted card from the index. The board's own events drive this, so
+   * a deleted card is never resurrected by a stale identity.
+   * @param taskId - the card the board removed.
+   */
+  handleTaskDeleted(taskId: string): void {
+    for (const [key, value] of [...this.identityIndex]) {
+      if (value === taskId) this.identityIndex.delete(key)
+    }
   }
 
   /** GitHub metadata on one task, through the provider's own validator. */
@@ -109,14 +155,24 @@ export class GitHubSyncService {
 
   /** Find a local task by the provider's immutable issue identity. */
   private findByGitHubIdentity(owner: string, repository: string, issueNumber: number): TaskRecord | undefined {
-    const o = owner.toLowerCase()
-    const r = repository.toLowerCase()
-    for (const { task, payload } of this.host.tasks.linked()) {
-      const gh = payload as unknown as GitHubTaskMetadata
-      if (typeof gh.owner !== 'string' || typeof gh.repository !== 'string') continue
-      if (gh.owner.toLowerCase() === o && gh.repository.toLowerCase() === r && gh.issueNumber === issueNumber) return task
+    const key = identityKey(owner, repository, issueNumber)
+    const known = this.identityIndex.get(key)
+    if (known !== undefined) {
+      const task = this.host.tasks.get(known)
+      if (task !== undefined) return task
+      this.identityIndex.delete(key)
     }
-    return undefined
+    // The index is a cache over the board's own store; a miss rebuilds it once
+    // rather than losing an identity the board still holds.
+    this.reindex()
+    const found = this.identityIndex.get(key)
+    return found === undefined ? undefined : this.host.tasks.get(found)
+  }
+
+  /** The raw payload a reconciled record carries, undefineds included. */
+  private payloadOf(next: TaskRecord): Record<string, unknown> | undefined {
+    const value = next.integrations?.github
+    return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined
   }
 
   /**
@@ -125,9 +181,13 @@ export class GitHubSyncService {
    * the provider payload back.
    */
   private applyRecord(next: TaskRecord, previous: TaskRecord | undefined): void {
-    const payload = next.integrations?.github
+    // The raw payload is what carries the explicit undefineds a merge needs to
+    // clear a field (deactivated, lastSyncError); a normalized copy would drop
+    // the key altogether and leave the stale value in place.
+    const payload = this.payloadOf(next)
+    const metadata = readTaskGitHubMetadata(next)
     if (previous === undefined) {
-      this.host.tasks.create(
+      const created = this.host.tasks.create(
         {
           title: next.title,
           description: next.description,
@@ -140,6 +200,7 @@ export class GitHubSyncService {
           ...(next.hidden === true ? { hidden: true } : {}),
         },
       )
+      this.remember(created.id, metadata)
       return
     }
     const contentChanged = next.title !== previous.title
@@ -147,7 +208,7 @@ export class GitHubSyncService {
       || next.prompt !== previous.prompt
     if (contentChanged) {
       try {
-        // The board's canEditTaskContent gate is the authority: a card that has
+        // The board's own content gate is the authority: a card that has
         // started executing (or was archived) keeps its recorded content, and
         // the refusal is exactly the immutability contract, not an error.
         this.host.tasks.patchContent(next.id, {
@@ -160,6 +221,7 @@ export class GitHubSyncService {
       }
     }
     if (payload !== undefined) this.host.integration.write(next.id, payload)
+    this.remember(next.id, metadata)
   }
 
   /** Merge a provider payload patch into one task's GitHub entry. */
@@ -380,8 +442,8 @@ export class GitHubSyncService {
     if (execution.result === 'succeeded' && config.prCreationEnabled && gh.pullRequest === undefined) {
       // Look for candidate remote branch
       const candidates = [
-        `issue-${gh.issueNumber}`,
-        `dsh/issue-${gh.issueNumber}`,
+        `issue-${String(gh.issueNumber)}`,
+        `dsh/issue-${String(gh.issueNumber)}`,
         `task-${task.id.slice(0, 8)}`,
       ]
       let matchedBranch: string | undefined
@@ -447,7 +509,7 @@ export class GitHubSyncService {
     }
 
     const title = (input.title ?? task.title).trim()
-    const fixesClause = `Fixes #${gh.issueNumber}`
+    const fixesClause = `Fixes #${String(gh.issueNumber)}`
     const body = input.body !== undefined
       ? input.body
       : `${fixesClause}\n\n${task.description}`.trim()

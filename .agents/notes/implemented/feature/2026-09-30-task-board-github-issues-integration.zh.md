@@ -8,7 +8,7 @@ Status: implemented
 
 ## Decision
 
-在 DSH 任务看板中实现基于 Host 端的 GitHub Issue 同步机制，作为可选的增量扩展元数据（`TaskRecord.integrations.github`）：
+在 DSH 任务看板中实现基于 Host 端的 GitHub Issue 同步机制，作为可选的外部提供方扩展（`packages/dsh-task-board-github`），数据载于看板不透明的 `TaskRecord.integrations` 容器中扩展自持的 `github` 键下：
 
 - **入站发现**：拉取带有配置包含标签（默认 `dsh`）的 Issues，物化为本地任务卡片，或通过不可变身份三元组 `{ owner, repository, issueNumber }` 与既有卡片对齐。
 - **本地权威状态机**：既有的五列看板状态机保持唯一权威。`running`（进行中）状态始终为 Host 本地状态。GitHub 状态标签（`dsh:state:*`）是对外状态投影，而非第二状态机。
@@ -18,11 +18,11 @@ Status: implemented
 - **Host 端凭据与出站 HTTPS**：所有 GitHub API 请求均在 Host 端通过出站 HTTPS 发起（`api.github.com`）。Token 从 Host 环境变量或 profile patch 解析，绝不暴露给浏览器或智能体。
 - **PR 完整生命周期与安全关闭**：自动创建 PR（默认关闭）或手动创建（`task_board_github_create_pr`）会先校验远程分支存在，再创建 PR、记录 PR 元数据并打上 `dsh:phase:pr` 标签。PR 合并后更新状态为 merged、清除 phase 标签、打上 done 标签，并在配置允许时关闭 Issue；未合入关闭的 PR 绝不关闭 Issue。
 - **故障隔离**：GitHub 网络或接口错误仅在任务元数据中记录 `lastSyncError`，绝不中断或使本地正在执行的任务失败。
-- **智能体工具与界面**：暴露五个受限工具（`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`），在任务详情中渲染专属的 `data-dsh-part="github-integration"` 区域，并在看板设置卡中添加专用 GitHub 配置摘要区域。
+- **智能体工具与界面**：扩展经看板的 `registerTool` 能力提供五个受限工具（`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`），因此随「看板总开关 × 扩展 enabled」一起收放。其浏览器半区遵循同一门禁：在任务详情中渲染 `data-dsh-part="github-integration"` 区域，在任务看板设置卡中渲染仓库与凭据摘要，并渲染紧凑的 `#<issueNumber>` 卡片徽章，三者分别注册进看板声明的子席位（`task-board.detail.section`、`task-board.settings.section`、`task-board.card.decoration`）。
 
 ## Architecture and Host-Side Security
 
-所有 GitHub API 交互集中在 host 半区的 `GitHubApiClient` 与 `GitHubSyncService`（`src/host/github/`）。凭据直接从 Host 环境变量（`GITHUB_TOKEN` 或 `tokenEnv`）读取，绝不进入前端可观测的存储，也不跨越 WebSocket/SSE 边界传输。不可信的 Issue 内容隔离在只读字符串元数据字段中，绝不隐式变更权限、工作区、交接包或 promptPrefix。
+所有 GitHub API 交互集中在扩展包 host 半区的 `GitHubApiClient` 与 `GitHubSyncService`（`packages/dsh-task-board-github/src/host/`）。扩展不 import 看板的任何模块：它在自己的 `src/core/contract.ts` 中同形重述提供方契约，并在运行时解析看板的 `taskBoard` 服务。凭据直接从 Host 环境变量（`GITHUB_TOKEN` 或该行的 `tokenEnv`）读取，绝不进入前端可观测的存储，也不跨越 WebSocket/SSE 边界传输。远端不可变身份由扩展自己索引——启动时从看板已有卡片建立、并随看板上报的删除而清理；所有任务读写都经能力面（`tasks.*`、`integration.*`），只读发布状态随看板快照的 `extensions` 映射下发，看板始终是内容、列与事件的唯一权威。扩展行自己持有配置（`tokenEnv`、`repositories`）与两个 volatile 开关（`enabled`、`announceToAgent`）。不可信的 Issue 内容隔离在只读字符串元数据字段中，绝不隐式变更权限、工作区、交接包或 promptPrefix。
 
 后台轮询使用独立的受限定时器（`HostTimerFace`），与现有的 5 秒会话名册心跳解耦，避免 API 配额耗尽并隔离外部网络抖动。
 

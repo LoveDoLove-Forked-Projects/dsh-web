@@ -36,7 +36,6 @@ import { reportDailyHeartbeat } from './telemetry.ts'
 import { installBoardCard } from './board-card-seat.ts'
 import { createServedEntryForm } from './settings-entry-form.ts'
 import { TaskBoardClientService } from './service.ts'
-import { installBoardClientExtensions } from './extensions.ts'
 import {
   TASK_BOARD_SERVICE_NAME,
   type TaskBoardCardDecorationProps,
@@ -237,9 +236,6 @@ export function apply(ctx: ClientContext): void {
     ;(ctx.provide as unknown as (name: string, value: unknown) => void)(TASK_BOARD_SERVICE_NAME, clientService as unknown as TaskBoardHostFace)
   }
   ctx.effect(() => () => { clientService.detach() }, 'task-board: extension service')
-  // Provider browser halves: assembled here while the one bundled provider
-  // still lives in this package; each installs into the seats the board declares.
-  ctx.effect(() => installBoardClientExtensions(ctx, clientService), 'task-board: provider browser halves')
 
   const settingsCard = new TaskBoardSettingsCardController(settingsForm, request => clientService.dispatch(request))
   installBoardCard(ctx, {

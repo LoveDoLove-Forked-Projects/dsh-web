@@ -6,10 +6,10 @@
  * - Outbound-only HTTPS to api.github.com.
  * - Credentials resolved from Host environment / profile patch; never sent to browser or agent.
  *
- * @module dsh-task-board/host/github/client
+ * @module dsh-task-board-github/host/client
  */
 
-import type { GitHubIssuePayload, GitHubPullRequestPayload } from '../../core/github/types.ts'
+import type { GitHubIssuePayload, GitHubPullRequestPayload } from '../core/types.ts'
 
 export class GitHubApiError extends Error {
   constructor(

@@ -2,26 +2,25 @@
  * The task board's GitHub provider, assembled as one extension.
  *
  * Everything GitHub-specific lives behind this factory: the board admits it
- * through the cordis `taskBoard` service (or, transitionally, the host entry
- * registers it directly), hands it the capability face, and never learns what
- * the provider does with it.
+ * through the cordis `taskBoard` service, hands it the capability face, and
+ * never learns what the provider does with it. This module imports no board
+ * internals — only the same-shape contract in `../core/contract.ts`.
  *
- * @module dsh-task-board/host/github/extension
+ * @module dsh-task-board-github/host/extension
  */
-import type { HostTimerFace } from '../../host-service.ts'
 import {
   TASK_BOARD_API_VERSION,
   type TaskBoardExtension,
   type TaskBoardExtensionActionRequest,
   type TaskBoardExtensionHost,
-} from '../../core/extension.ts'
-import type { GitHubRepoConfig } from '../../core/github/types.ts'
+} from '../core/contract.ts'
+import type { HostTimerFace } from '../core/timers.ts'
+import { GITHUB_EXTENSION_ID, type GitHubRepoConfig } from '../core/types.ts'
 import { GitHubApiClient } from './client.ts'
 import { GitHubSyncService } from './service.ts'
 import { buildGitHubTools } from './tools.ts'
 
-/** Extension id; also the key of this provider's integration payload. */
-export const GITHUB_EXTENSION_ID = 'github'
+export { GITHUB_EXTENSION_ID }
 
 export interface GitHubExtensionOptions {
   repositories?: GitHubRepoConfig[]
@@ -30,6 +29,11 @@ export interface GitHubExtensionOptions {
   tokenEnv?: string
   timers?: HostTimerFace
   now?: () => number
+  /**
+   * Volatile master switch, read at use time by the board's registry. Absent
+   * means enabled, which is the schema default.
+   */
+  enabled?: () => boolean
 }
 
 /** One provider action the GitHub browser half dispatches. */
@@ -74,6 +78,7 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
   return {
     id: GITHUB_EXTENSION_ID,
     apiVersion: TASK_BOARD_API_VERSION,
+    enabled: () => options.enabled?.() ?? true,
     start(host) {
       const sync = settings(host)
       disposers.push(host.events.onExecutionSettled(event => {
@@ -85,7 +90,22 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
       disposers.push(host.events.onStatusChanged(event => {
         void sync.writeBackTaskStatus(event.taskId, event.status).catch(() => {})
       }))
-      for (const tool of buildGitHubTools(sync)) disposers.push(host.registerTool(tool))
+      // The identity index is the provider's own structure; a deleted card must
+      // leave it, or a later sync would address a card that no longer exists.
+      disposers.push(host.events.onTaskDeleted(event => {
+        try {
+          sync.handleTaskDeleted(event.taskId)
+        } catch {
+          // A provider-side bookkeeping failure must not disturb the board.
+        }
+      }))
+      for (const tool of buildGitHubTools(sync)) {
+        try {
+          disposers.push(host.registerTool(tool))
+        } catch {
+          // A missing tool registry costs the tool surface only.
+        }
+      }
       try {
         host.publish(sync.snapshotSummary())
       } catch {
@@ -122,11 +142,14 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
           const taskId = requireTaskId(request)
           const headBranch = stringField(request, 'headBranch')
           if (headBranch === undefined || headBranch.trim() === '') throw new Error('headBranch is required')
+          const baseBranch = stringField(request, 'baseBranch')
+          const title = stringField(request, 'title')
+          const body = stringField(request, 'body')
           const pullRequest = await service.createPullRequest(taskId, {
             headBranch,
-            ...(stringField(request, 'baseBranch') === undefined ? {} : { baseBranch: stringField(request, 'baseBranch') }),
-            ...(stringField(request, 'title') === undefined ? {} : { title: stringField(request, 'title') }),
-            ...(stringField(request, 'body') === undefined ? {} : { body: stringField(request, 'body') }),
+            ...(baseBranch === undefined ? {} : { baseBranch }),
+            ...(title === undefined ? {} : { title }),
+            ...(body === undefined ? {} : { body }),
             ...(request.payload?.draft === undefined ? {} : { draft: request.payload.draft === true }),
           })
           return { ok: true, pullRequest }

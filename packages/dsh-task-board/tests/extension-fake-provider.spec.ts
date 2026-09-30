@@ -1,7 +1,7 @@
 /**
  * A fake external provider that consumes every capability of the extension
- * contract, end to end. Nothing here is GitHub-shaped: the point is that the
- * board serves an arbitrary provider through the contract alone.
+ * contract, end to end. Nothing here is provider-specific: the point is that
+ * the board serves an arbitrary provider through the contract alone.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -175,6 +175,59 @@ describe('fake external provider against the task board contract', () => {
     expect(provider.statusChanges).toEqual([{ taskId: task.id, status: 'done', previous: 'todo' }])
     expect(provider.settlements).toEqual([{ taskId: task.id, executionId: 'exec-1', outcome: 'succeeded' }])
     expect(provider.deletions).toEqual([{ taskId: task.id }])
+    host.dispose()
+  })
+
+  it('operator switching a provider off in its own configuration leaves the board without its surface', () => {
+    // Given a board with a tool registry double and a provider that reports itself disabled
+    const host = new TaskBoardHostService(fakeGateway())
+    const tools: string[] = []
+    host.extensions.setToolRegistry(() => ({
+      register: (definition) => {
+        tools.push(definition.name)
+        return () => { tools.splice(tools.indexOf(definition.name), 1) }
+      },
+    }))
+    const started: string[] = []
+
+    // When the board admits it
+    host.registerExtension({
+      id: 'self-disabled',
+      apiVersion: TASK_BOARD_API_VERSION,
+      enabled: () => false,
+      start: () => { started.push('started') },
+    })
+
+    // Then nothing of the provider runs: it is not active, its start() never
+    // ran, its tool never registered and it published nothing
+    expect(host.extensions.isActive('self-disabled')).toBe(false)
+    expect(started).toEqual([])
+    expect(tools).toEqual([])
+    expect(host.snapshot().extensions?.['self-disabled']).toBeUndefined()
+    host.dispose()
+  })
+
+  it('operator switching the board master switch off stops a running provider and releases its tool', () => {
+    // Given a running provider whose tool the board registered
+    const host = new TaskBoardHostService(fakeGateway())
+    const tools: string[] = []
+    host.extensions.setToolRegistry(() => ({
+      register: (definition) => {
+        tools.push(definition.name)
+        return () => { tools.splice(tools.indexOf(definition.name), 1) }
+      },
+    }))
+    admitFakeProvider(host)
+    expect(host.extensions.isActive('fake')).toBe(true)
+    expect(tools).toEqual(['fake_tool'])
+
+    // When the board's own master switch goes off
+    host.extensions.setEnabled(false)
+
+    // Then the provider stopped, its tool was released and its summary cleared
+    expect(host.extensions.isActive('fake')).toBe(false)
+    expect(tools).toEqual([])
+    expect(host.snapshot().extensions?.['fake']).toBeUndefined()
     host.dispose()
   })
 

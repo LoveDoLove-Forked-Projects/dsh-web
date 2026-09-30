@@ -2,10 +2,9 @@
  * GitHub provider settings card.
  *
  * One staged form over this extension's settings namespace, contributed to the
- * plugin-card seat this host renders. This stage renders the master switch and
- * states what the extension does; the repository list, the token environment
- * variable and the live synchronization status arrive with the provider
- * registration.
+ * plugin-card seat this host renders. It renders the two volatile switches the
+ * extension owns (the master switch and the system-prompt announcement) plus
+ * the repository/credential summary the host half publishes.
  *
  * Presentation only: the card stages drafts and the shared CardForm writes
  * them, so what is on screen is exactly what a save stores.
@@ -16,18 +15,24 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BooleanField, PluginSettingsCard } from './PluginSettingsCard.tsx'
 import { CardForm, booleanField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
+import { GitHubSummaryBlock } from './github/sections.tsx'
+import { useGitHubSummary } from './github/summary.ts'
 import css from './settings-card.module.css'
 
 /** The extension fields this card edits (the namespace's schema). */
 export interface GitHubSettings {
   /** Master switch for the extension. */
   enabled?: boolean
+  /** Whether the extension announces itself in agent system prompts. */
+  announceToAgent?: boolean
 }
 
 /** What the GitHub card renders. */
 export interface GitHubSettingsCardState extends CardShell {
   /** The master switch as the card renders it. */
   enabled: CardFieldState
+  /** The system-prompt announcement switch as the card renders it. */
+  announceToAgent: CardFieldState
 }
 
 /** The registration-side face the card's slot entry injects. */
@@ -45,7 +50,7 @@ export class GithubSettingsCardController {
 
   /** @param scope - the bound configuration form of the entry that owns this namespace. */
   constructor(scope: ConfigForm<GitHubSettings>) {
-    this.form = new CardForm(scope, [booleanField('enabled')])
+    this.form = new CardForm(scope, [booleanField('enabled'), booleanField('announceToAgent')])
     this.store = this.form.bind(() => this.projection())
   }
 
@@ -53,6 +58,7 @@ export class GithubSettingsCardController {
     return {
       ...this.form.shell(),
       enabled: this.form.field('enabled'),
+      announceToAgent: this.form.field('announceToAgent'),
     }
   }
 
@@ -84,6 +90,7 @@ export type GithubSettingsCardProps =
 export function GithubSettingsCard(props: GithubSettingsCardProps) {
   const { t } = props
   const state = props.useGithubSettingsCard((snapshot: GitHubSettingsCardState) => snapshot)
+  const summary = useGitHubSummary()
   return (
     <PluginSettingsCard
       t={t}
@@ -108,7 +115,24 @@ export function GithubSettingsCard(props: GithubSettingsCardProps) {
         onEdit={(text) => { props.edit('enabled', text) }}
         onReset={() => { props.resetField('enabled') }}
       />
-      <p className={css.hint}>{t('settings.placeholder')}</p>
+      <BooleanField
+        id="settings-task-board-github-announce"
+        label={t('settings.announce')}
+        hint={t('settings.announceHint')}
+        onLabel={t('settings.on')}
+        offLabel={t('settings.off')}
+        inheritLabel={t('settings.inherit')}
+        overriddenLabel={t('settings.overridden')}
+        resetLabel={t('settings.reset')}
+        invalidLabel={t('settings.invalidValue')}
+        disabled={!state.writable}
+        {...state.announceToAgent}
+        onEdit={(text) => { props.edit('announceToAgent', text) }}
+        onReset={() => { props.resetField('announceToAgent') }}
+      />
+      <div className={css.hint}>
+        <GitHubSummaryBlock summary={summary} />
+      </div>
     </PluginSettingsCard>
   )
 }
