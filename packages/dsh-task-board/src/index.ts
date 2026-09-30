@@ -24,6 +24,8 @@ import { DEFAULT_SUBTASK_DEPTH, SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from './c
 import { DEFAULT_SESSION_PERMISSION } from './core/handover.ts'
 import { buildTaskBoardTools } from './host/agent-tools.ts'
 import { makeTaskBoardRoutes } from './host-routes.ts'
+import type { GitHubRepoConfig } from './core/github/types.ts'
+import { GitHubApiClient } from './host/github/client.ts'
 import { mountOnce } from './mount-once.ts'
 
 /** Order of the announcement section within the tool-guidance band. */
@@ -35,7 +37,7 @@ export const DEFAULT_PROXY_TOKEN_ENV = 'DSH_TASK_BOARD_PROXY_TOKEN'
 export const inject = ['systemPrompt', 'typertGateway', 'workspaceRegistry', 'webServer', 'agents', 'commands']
 
 /** Model-facing announcement: plugin presence, capabilities, and limits. */
-export const TASK_BOARD_GUIDANCE = '本机已安装 dsh-task-board 插件（DSH Web GUI 的任务看板）：侧边栏「任务看板」入口；在 dsh-web 插件全家桶仓库（packages/dsh-task-board）统一维护，经聚合包 web-ui-all 一键安装。能力：多列看板管理任务；Host 权威账本；关闭浏览器后仍由 Host 执行和结算；任务可钉住工作区、agent 预设和权限；任务可建子任务（深度上限可配 1..3，默认 1 层，子任务不能再带子任务），执行父任务会并发执行其子任务树，子任务可单独覆盖权限与模型；另注册 task_board_* agent 工具（list/get/create/update/set_parent/run/manage/schedule），任何会话都可直接读写看板、子任务与定时计划，但运行任务会真实执行并消耗额度，高于会话默认权限的绑定仍必须由用户在 GUI 人工确认（工具刻意不提供确认能力）；支持 Host 本地时区的 5 段 cron，错过的触发点不补跑；可选且默认关闭的空闲系统睡眠保护允许屏幕熄灭，但不承诺拦截合盖、手动睡眠、休眠、关机或唤醒已睡眠机器。执行消耗 API 额度。用户提到「任务看板 / 看板 / 定时任务」时即指本插件，请据此协作。若你同时用 todo_write 维护会话顶部的可见计划列表，最终回复前必须再次调用 todo_write 收尾：没有剩余工作时不要保留 in_progress，已完成的最后一步要标为 completed。'
+export const TASK_BOARD_GUIDANCE = '本机已安装 dsh-task-board 插件（DSH Web GUI 的任务看板）：侧边栏「任务看板」入口；在 dsh-web 插件全家桶仓库（packages/dsh-task-board）统一维护，经聚合包 web-ui-all 一键安装。能力：多列看板管理任务；Host 权威账本；关闭浏览器后仍由 Host 执行和结算；任务可钉住工作区、agent 预设和权限；任务可建子任务（深度上限可配 1..3，默认 1 层，子任务不能再带子任务），执行父任务会并发执行其子任务树，子任务可单独覆盖权限与模型；另注册 task_board_* agent 工具（list/get/create/update/set_parent/run/manage/schedule + github_list/github_get/github_refresh/github_create_pr/github_link_pr），任何会话都可直接读写看板、子任务与定时计划，但运行任务会真实执行并消耗额度，高于会话默认权限的绑定仍必须由用户在 GUI 人工确认（工具刻意不提供确认能力）；支持 Host 本地时区的 5 段 cron，错过的触发点不补跑；可选且默认关闭的空闲系统睡眠保护允许屏幕熄灭，但不承诺拦截合盖、手动睡眠、休眠、关机或唤醒已睡眠机器。执行消耗 API 额度。用户提到「任务看板 / 看板 / 定时任务」时即指本插件，请据此协作。若你同时用 todo_write 维护会话顶部的可见计划列表，最终回复前必须再次调用 todo_write 收尾：没有剩余工作时不要保留 in_progress，已完成的最后一步要标为 completed。'
 
 /**
  * Plugin config, validated by the same-named schemastery schema.
@@ -86,6 +88,10 @@ export interface Config {
    * only team-mode runs use it.
    */
   teamProvider?: string
+  /** Environment variable holding GitHub API token; never exposed to browser or agent. */
+  githubTokenEnv?: string
+  /** Repositories configured for GitHub issue synchronization. */
+  githubRepositories?: GitHubRepoConfig[]
 }
 
 /**
@@ -95,12 +101,60 @@ export interface Config {
 export const DEFAULT_TEAM_PROVIDER = 'spawn'
 
 /**
- * The schema is left to inference rather than annotated with `z<Config>`: a
- * volatile field's parsed output is a `Volatile` reference while its accepted
- * input stays the plain value, so the two sides no longer share one shape and
- * the annotation would reject the schema the Host must be given.
+ * Profile-patch shape of {@link Config}: what the Host validates the row's
+ * config against, before the schema turns volatile fields into live references
+ * and applies defaults. Declared separately because the two sides no longer
+ * share one shape, so the schema is annotated `z<ConfigInput, Config>` — the
+ * same split `dsh-git-graph` uses. The annotation is also what keeps the
+ * emitted declaration portable: an unannotated schema holding a nested object
+ * array infers a type that cannot be named without reaching into a transitive
+ * dependency's own types.
  */
-export const Config = z.object({
+export interface ConfigInput {
+  /** Announce the board in the system prompt. */
+  announceToAgent?: boolean
+  /** Master switch for the plugin. */
+  enabled?: boolean
+  /** Prevent idle system sleep while sessions run or schedules are armed. */
+  preventIdleSleep?: boolean
+  /** Canonical reverse-proxy Host authorities. */
+  trustedProxyHosts?: string[]
+  /** Environment variable whose value the authenticated proxy injects. */
+  proxyTokenEnv?: string
+  /** The deployment's session-default permission. */
+  sessionDefaultPermission?: TaskPermission
+  /** Subtask depth limit, 1..3. */
+  maxSubtaskDepth?: number
+  /** Continuable-subagent provider the Agent Teams service composes a teammate from. */
+  teamProvider?: string
+  /** Environment variable holding the GitHub API token. */
+  githubTokenEnv?: string
+  /** Repositories configured for GitHub issue synchronization. */
+  githubRepositories?: GitHubRepoConfig[]
+}
+
+/** One configured GitHub repository, as the profile patch declares it. */
+const GitHubRepoConfigSchema = z.object({
+  owner: z.string(),
+  repository: z.string(),
+  inclusionLabel: z.string().default('dsh'),
+  managedLabelPrefix: z.string().default('dsh:'),
+  stateLabels: z.object({
+    backlog: z.string().default('dsh:state:backlog'),
+    todo: z.string().default('dsh:state:todo'),
+    running: z.string().default('dsh:state:running'),
+    done: z.string().default('dsh:state:done'),
+    failed: z.string().default('dsh:state:failed'),
+  }),
+  prPhaseLabel: z.string().default('dsh:phase:pr'),
+  pollingIntervalMs: z.number().default(300_000),
+  prCreationEnabled: z.boolean().default(false),
+  draftPrPolicy: z.union(['draft', 'ready'] as const).default('draft'),
+  closeIssueOnMerge: z.boolean().default(true),
+  baseBranch: z.string().default('main'),
+})
+
+export const Config: z<ConfigInput, Config> = z.object({
   announceToAgent: z.boolean().default(false).volatile(),
   enabled: z.boolean().default(true).volatile(),
   preventIdleSleep: z.boolean().default(false).volatile(),
@@ -109,6 +163,8 @@ export const Config = z.object({
   sessionDefaultPermission: z.union(TASK_PERMISSIONS).default(DEFAULT_SESSION_PERMISSION),
   maxSubtaskDepth: z.number().min(SUBTASK_DEPTH_MIN).max(SUBTASK_DEPTH_MAX).default(DEFAULT_SUBTASK_DEPTH).volatile(),
   teamProvider: z.string().min(1).default(DEFAULT_TEAM_PROVIDER),
+  githubTokenEnv: z.string().default('GITHUB_TOKEN'),
+  githubRepositories: z.array(GitHubRepoConfigSchema).default([]),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -324,6 +380,8 @@ function applyImpl(ctx: Context, config?: Config): void {
     maxSubtaskDepth: maxSubtaskDepth(),
     timers: resolveHostTimers(ctx),
     team: buildTeamDispatcher(ctx, config?.teamProvider ?? DEFAULT_TEAM_PROVIDER),
+    githubRepositories: config?.githubRepositories,
+    githubClient: new GitHubApiClient({ tokenEnv: config?.githubTokenEnv }),
     commandDispatcher: {
       async execute(sessionId, line, signal) {
         const agent = ctx.agents.get(sessionId)

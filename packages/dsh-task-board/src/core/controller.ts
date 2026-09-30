@@ -507,6 +507,29 @@ export class BoardController {
     return true
   }
 
+  // --- github integration ------------------------------------------------------
+
+  /** Trigger synchronization between GitHub and the task board. */
+  async refreshGitHub(taskId?: string, owner?: string, repository?: string): Promise<boolean> {
+    if (this.deps.transport === undefined) return false
+    return await this.commitRemote({ kind: 'github-refresh', taskId, owner, repository }, taskId)
+  }
+
+  /** Create a GitHub Pull Request for a task. */
+  async createGitHubPr(
+    taskId: string,
+    input: { headBranch: string; baseBranch?: string; title?: string; body?: string; draft?: boolean },
+  ): Promise<boolean> {
+    if (this.deps.transport === undefined) return false
+    return await this.commitRemote({ kind: 'github-create-pr', taskId, ...input }, taskId)
+  }
+
+  /** Link an existing GitHub Pull Request to a task. */
+  async linkGitHubPr(taskId: string, pullRequestNumber: number): Promise<boolean> {
+    if (this.deps.transport === undefined) return false
+    return await this.commitRemote({ kind: 'github-link-pr', taskId, pullRequestNumber }, taskId)
+  }
+
   // --- scheduling ---------------------------------------------------------------
 
   /**

@@ -1,0 +1,44 @@
+# Agent Note: GitHub Issues as Task Board work items with controlled write-back
+
+Status: implemented
+
+## Problem
+
+External development teams track epics and deliverables on GitHub Issues, but executing them with local DSH agents previously required manual copy-pasting of prompt text and status reconciliation across browser tabs. Direct bidirectional synchronization between GitHub and an autonomous agent creates substantial security and stability risks: untrusted external issue text could attempt prompt injection or escalate session permissions, API rate limits or network outages could halt ongoing local agent work, and uncontrolled label synchronization could overwrite user labels or trigger unintended issue closures.
+
+## Decision
+
+Implement Host-side GitHub Issue synchronization for the DSH Task Board as an additive external provider integration (`TaskRecord.integrations.github`):
+
+- **Inbound discovery**: Issues carrying a configured inclusion label (default `dsh`) are discovered and materialized as local Task Board cards or reconciled with existing cards by their immutable identity `{ owner, repository, issueNumber }`.
+- **Authoritative local state machine**: The existing 5-column kanban state machine remains authoritative. The `running` column remains Host-local. GitHub state labels (`dsh:state:*`) are an external projection rather than a secondary state machine.
+- **Controlled write-back**: Write-back operations strictly add or remove DSH-owned state and phase labels (`dsh:state:*`, `dsh:phase:pr`). Unrelated user labels (such as `bug`, `security`, `priority:high`, and the inclusion label itself) are never modified or deleted.
+- **Execution immutability**: Remote issue title and body refresh the card's prompt and description only before the first execution opens. Once an execution attempt has started, remote updates are stored as updated provider metadata (`remoteTitle`, `remoteBody`), leaving the historical execution prompt unchanged.
+- **Deactivation without loss**: Removing the inclusion label marks the local task deactivated, hiding it from the active board while retaining all execution history. Re-adding the label restores the card via the same identity.
+- **Host-side credentials & outbound HTTPS**: All GitHub API calls occur on the Host via outbound HTTPS (`api.github.com`). Tokens are resolved from Host environment variables or profile patches and never exposed to the browser or the agent.
+- **PR lifecycle & safe closure**: Auto PR creation (default off) or manual creation (`task_board_github_create_pr`) verifies the remote branch exists, creates the PR, records PR metadata, and applies `dsh:phase:pr`. Merging the PR marks the PR merged, clears `dsh:phase:pr`, sets `dsh:state:done`, and conditionally closes the issue if configured. PR closed without merge never closes the issue.
+- **Fault isolation**: GitHub network or API errors record `lastSyncError` on the task metadata and never disrupt or fail ongoing local executions.
+- **Agent tools & UI**: Exposes five scoped agent tools (`task_board_github_list`, `task_board_github_get`, `task_board_github_refresh`, `task_board_github_create_pr`, `task_board_github_link_pr`), renders a dedicated `data-dsh-part="github-integration"` section in the Task Detail view, and adds a dedicated GitHub section in the Task Board settings card.
+
+## Architecture and Host-Side Security
+
+All GitHub API communication is centralized in `GitHubApiClient` and `GitHubSyncService` in the host half (`src/host/github/`). Credentials are read directly from Host environment variables (`GITHUB_TOKEN` or `tokenEnv`) and never stored in client-visible stores or sent across websocket/SSE boundaries. Untrusted issue content is isolated into string metadata fields (`remoteTitle`, `remoteBody`, `remoteLabels`) and never injected into permissions, workspace identity, handover bundles, or promptPrefixes.
+
+Background polling operates on its own configurable timer (`HostTimerFace`) independent of the 5-second session roster poll, preventing API rate limit starvation and decoupling external network latency from local heartbeat loops.
+
+## Alternatives considered
+
+Direct two-way mirror between GitHub Issue state and Task Board columns was considered, where changing an issue state on GitHub would immediately drive local card movement and vice-versa. This was rejected because local task execution in DSH represents concrete agent runtime sessions: an external label change must not arbitrarily trigger or abort active local processes, and external GitHub status cannot represent transient local execution states like session launching or teammate spawning.
+
+Storing GitHub labels as native `TaskTag` objects on the card was considered. This was rejected because `TaskTag` has an 8-tag limit and optionally prepends instructions to agent execution prompts (`promptPrefix`). Treating untrusted remote labels as prompt prefixes would allow remote label additions on GitHub to alter agent execution instructions, and large label sets would violate the 8-tag capacity gate.
+
+Client-side GitHub API access using user-provided personal access tokens in the browser was considered. This was rejected because exposing GitHub tokens to browser memory and client bundles creates credential leakage risks and would prevent background synchronization and scheduled task execution when the browser tab is closed.
+
+Closing the GitHub Issue immediately when local task execution succeeds was considered. This was rejected because successful code generation or local test passing does not mean the work is reviewed or deployed; the industry standard path is linking the issue to a Pull Request ("Fixes #123") and completing the issue upon PR merge.
+
+## Consequences
+
+- Teams can manage issue backlogs on GitHub while delegating implementation directly to DSH agents.
+- Task Board cards retain full backward compatibility with non-GitHub tasks without requiring ledger schema migrations.
+- GitHub API outages degrade gracefully to cached state and explicit retry indicators without interrupting active agent runs.
+- Token management remains server-side, requiring deployment configuration in environment variables or profile patches rather than browser inputs.

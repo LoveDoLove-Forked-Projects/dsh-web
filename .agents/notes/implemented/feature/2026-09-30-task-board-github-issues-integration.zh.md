@@ -1,0 +1,44 @@
+# Agent Note: GitHub Issues as Task Board work items with controlled write-back
+
+Status: implemented
+
+## Problem
+
+外部研发团队通常在 GitHub Issues 上追踪需求与可交付物，但此前使用本地 DSH 智能体执行这些任务需要在不同浏览器标签页间手动复制 Prompt 文本并同步状态。若在 GitHub 与自主智能体之间引入无约束的双向同步，将带来严重的安全与稳定性风险：不可信的外部 Issue 文本可能实施 Prompt 注入或提权会话权限，API 限流或网络故障可能导致正在运行的本地智能体执行中断，而不加控制的标签同步可能会覆盖用户的自有标签或导致意外关闭 Issue。
+
+## Decision
+
+在 DSH 任务看板中实现基于 Host 端的 GitHub Issue 同步机制，作为可选的增量扩展元数据（`TaskRecord.integrations.github`）：
+
+- **入站发现**：拉取带有配置包含标签（默认 `dsh`）的 Issues，物化为本地任务卡片，或通过不可变身份三元组 `{ owner, repository, issueNumber }` 与既有卡片对齐。
+- **本地权威状态机**：既有的五列看板状态机保持唯一权威。`running`（进行中）状态始终为 Host 本地状态。GitHub 状态标签（`dsh:state:*`）是对外状态投影，而非第二状态机。
+- **受控回写**：回写操作仅严格增删 DSH 所属的状态与阶段标签（`dsh:state:*`、`dsh:phase:pr`）。无关的用户标签（如 `bug`、`security`、`priority:high` 以及包含标签本身）绝对不修改或删除。
+- **执行不可变性**：远程 Issue 标题和正文仅在任务首次开启执行前刷新本地 Prompt 和描述。一旦执行尝试开始，远程变更仅作为只读元数据（`remoteTitle`、`remoteBody`）存储，不重写历史执行 Prompt。
+- **无损停用**：移除包含标签仅将本地任务标记为停用并在活动看板中隐藏，保留所有历史执行记录。重新添加标签后通过相同身份恢复。
+- **Host 端凭据与出站 HTTPS**：所有 GitHub API 请求均在 Host 端通过出站 HTTPS 发起（`api.github.com`）。Token 从 Host 环境变量或 profile patch 解析，绝不暴露给浏览器或智能体。
+- **PR 完整生命周期与安全关闭**：自动创建 PR（默认关闭）或手动创建（`task_board_github_create_pr`）会先校验远程分支存在，再创建 PR、记录 PR 元数据并打上 `dsh:phase:pr` 标签。PR 合并后更新状态为 merged、清除 phase 标签、打上 done 标签，并在配置允许时关闭 Issue；未合入关闭的 PR 绝不关闭 Issue。
+- **故障隔离**：GitHub 网络或接口错误仅在任务元数据中记录 `lastSyncError`，绝不中断或使本地正在执行的任务失败。
+- **智能体工具与界面**：暴露五个受限工具（`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`），在任务详情中渲染专属的 `data-dsh-part="github-integration"` 区域，并在看板设置卡中添加专用 GitHub 配置摘要区域。
+
+## Architecture and Host-Side Security
+
+所有 GitHub API 交互集中在 host 半区的 `GitHubApiClient` 与 `GitHubSyncService`（`src/host/github/`）。凭据直接从 Host 环境变量（`GITHUB_TOKEN` 或 `tokenEnv`）读取，绝不进入前端可观测的存储，也不跨越 WebSocket/SSE 边界传输。不可信的 Issue 内容隔离在只读字符串元数据字段中，绝不隐式变更权限、工作区、交接包或 promptPrefix。
+
+后台轮询使用独立的受限定时器（`HostTimerFace`），与现有的 5 秒会话名册心跳解耦，避免 API 配额耗尽并隔离外部网络抖动。
+
+## Alternatives considered
+
+曾考虑在 GitHub Issue 状态与任务看板列之间实现直接双向镜像（在 GitHub 变更状态直接驱动本地卡片移动，反之亦然）。该方案被否决，因为 DSH 本地任务执行对应真实的智能体运行时会话：外部标签变动不得随意中断或触发本地实际进程，且 GitHub 状态无法表达会话启动、队友生成等本地瞬态过程。
+
+曾考虑将 GitHub 标签直接存储为卡片上的原生 `TaskTag` 对象。该方案被否决，因为 `TaskTag` 具有 8 标签上限且可能向智能体注入执行指令（`promptPrefix`）。将不可信的远程标签当作 prompt prefix 会使外部人员可通过添加 GitHub 标签操纵智能体执行行为，且大型标签集会超出 8 标签上限门禁。
+
+曾考虑在浏览器前端使用用户提供的 Personal Access Token 直接调用 GitHub API。该方案被否决，因为在浏览器内存和前端包中暴露 Token 会造成安全泄漏隐患，且在关闭浏览器标签页时将无法执行后台轮询与定时任务联动。
+
+曾考虑在本地任务执行成功后立即关闭 GitHub Issue。该方案被否决，因为本地代码生成或单测通过并不代表改动已评审或上线；行业规范流程是通过 PR 关联（"Fixes #123"），在 PR 合入后由平台原生关系或受控流程闭环。
+
+## Consequences
+
+- 研发团队可在 GitHub 上统一管理需求，同时无缝指派 DSH 智能体执行具体任务。
+- 任务看板数据结构保持对非 GitHub 任务的完全向后兼容，无需账本 schema 迁移。
+- GitHub 接口故障平滑降级为保留缓存状态并展示重试标记，不干扰正在运行的本地智能体。
+- 凭据管理保持在服务端，需通过环境变量或 profile patch 部署，而非前端输入框。

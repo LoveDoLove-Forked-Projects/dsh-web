@@ -30,6 +30,7 @@ import {
 } from '../core/tasks.ts'
 import type { TaskUpdatePatch } from '../core/use-cases/task-update.ts'
 import type { TaskBoardAction, TaskBoardSnapshot } from '../protocol.ts'
+import type { GitHubSyncService } from './github/service.ts'
 
 /**
  * The narrow Host face the tools need. TaskBoardHostService satisfies it
@@ -39,7 +40,11 @@ export interface TaskBoardToolHost {
   /** Current board snapshot (tasks + scheduler + power + deployment constants). */
   snapshot(): TaskBoardSnapshot
   /** Submit one confirmed Host action; returns the resulting snapshot. */
-  apply(requestId: string, action: TaskBoardAction, initiator?: string): TaskBoardSnapshot
+  apply(requestId: string, action: Extract<TaskBoardAction, { kind: 'github-refresh' | 'github-create-pr' | 'github-link-pr' }>, initiator?: string): Promise<TaskBoardSnapshot>
+  apply(requestId: string, action: Exclude<TaskBoardAction, { kind: 'github-refresh' | 'github-create-pr' | 'github-link-pr' }>, initiator?: string): TaskBoardSnapshot
+  apply(requestId: string, action: TaskBoardAction, initiator?: string): TaskBoardSnapshot | Promise<TaskBoardSnapshot>
+  /** GitHub synchronization service instance, when configured. */
+  readonly github?: GitHubSyncService
 }
 
 /** Registered tool names, in registration order. */
@@ -52,6 +57,11 @@ export const TASK_BOARD_TOOL_NAMES = [
   'task_board_run',
   'task_board_manage',
   'task_board_schedule',
+  'task_board_github_list',
+  'task_board_github_get',
+  'task_board_github_refresh',
+  'task_board_github_create_pr',
+  'task_board_github_link_pr',
 ] as const
 
 /** Unconstrained JSON value the tools return (their output schema is the JSON node). */
@@ -249,6 +259,11 @@ export function buildTaskBoardTools(host: TaskBoardToolHost): ToolDefinition[] {
     buildRunTool(host),
     buildManageTool(host),
     buildScheduleTool(host),
+    buildGitHubListTool(host),
+    buildGitHubGetTool(host),
+    buildGitHubRefreshTool(host),
+    buildGitHubCreatePrTool(host),
+    buildGitHubLinkPrTool(host),
   ]
 }
 
@@ -269,7 +284,7 @@ function buildSetParentTool(host: TaskBoardToolHost): ToolDefinition {
     output: { schema: { type: 'json' }, render: renderJson },
     async execute(args, exec) {
       try {
-        const snapshot = host.apply(
+        const snapshot = await host.apply(
           crypto.randomUUID(),
           { kind: 'set-parent', taskId: args.taskId, parentId: args.parentId === '' ? null : args.parentId },
           callingSessionId(exec),
@@ -304,7 +319,7 @@ function buildRunTool(host: TaskBoardToolHost): ToolDefinition {
     async execute(args, exec) {
       const before = host.snapshot()
       try {
-        const snapshot = host.apply(
+        const snapshot = await host.apply(
           crypto.randomUUID(),
           { kind: args.rerun === true ? 'rerun' : 'run', taskId: args.taskId },
           callingSessionId(exec),
@@ -375,7 +390,7 @@ function buildManageTool(host: TaskBoardToolHost): ToolDefinition {
         return refused('task-not-found', 'no task with id ' + args.taskId)
       }
       try {
-        const snapshot = host.apply(crypto.randomUUID(), action, initiator)
+        const snapshot = await host.apply(crypto.randomUUID(), action, initiator)
         if (args.action === 'delete') return json({ ok: true, action: args.action, taskId: args.taskId })
         const task = snapshot.tasks.find(item => item.id === args.taskId)
         if (task === undefined) return refused('task-not-found', 'no task with id ' + args.taskId)
@@ -425,7 +440,7 @@ function buildScheduleTool(host: TaskBoardToolHost): ToolDefinition {
         ...(args.timeZone === undefined ? {} : { timeZone: args.timeZone === '' ? null : args.timeZone }),
       }
       try {
-        const snapshot = host.apply(crypto.randomUUID(), { kind: 'set-schedule', taskId: args.taskId, patch }, callingSessionId(exec))
+        const snapshot = await host.apply(crypto.randomUUID(), { kind: 'set-schedule', taskId: args.taskId, patch }, callingSessionId(exec))
         const task = snapshot.tasks.find(item => item.id === args.taskId)
         if (task === undefined) return refused('task-not-found', 'no task with id ' + args.taskId)
         return json({
@@ -579,7 +594,7 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
         ...(args.schedule === undefined ? {} : { schedule: { enabled: args.schedule.enabled, cron: args.schedule.cron } }),
       }
       try {
-        const snapshot = host.apply(crypto.randomUUID(), { kind: 'create', id, input }, callingSessionId(exec))
+        const snapshot = await host.apply(crypto.randomUUID(), { kind: 'create', id, input }, callingSessionId(exec))
         const task = snapshot.tasks.find(item => item.id === id)
         if (task === undefined) return refused('create-failed', 'the Host did not confirm the new task')
         return json({ ok: true, task: taskDetail(task, snapshot.tasks, snapshot.sessionDefaultPermission) })
@@ -666,7 +681,7 @@ function buildUpdateTool(host: TaskBoardToolHost): ToolDefinition {
       }
       if (Object.keys(patch).length === 0) return refused('nothing-to-change', 'pass at least one field to update')
       try {
-        const snapshot = host.apply(crypto.randomUUID(), { kind: 'update', taskId: args.taskId, patch }, callingSessionId(exec))
+        const snapshot = await host.apply(crypto.randomUUID(), { kind: 'update', taskId: args.taskId, patch }, callingSessionId(exec))
         const task = snapshot.tasks.find(item => item.id === args.taskId)
         if (task === undefined) return refused('task-not-found', 'no task with id ' + args.taskId)
         return json({ ok: true, task: taskDetail(task, snapshot.tasks, snapshot.sessionDefaultPermission) })
@@ -677,3 +692,211 @@ function buildUpdateTool(host: TaskBoardToolHost): ToolDefinition {
   })
 }
 
+
+function githubTaskSummary(task: TaskRecord): Record<string, unknown> {
+  const gh = task.integrations?.github
+  return {
+    taskId: task.id,
+    title: task.title,
+    status: task.status,
+    archived: task.archivedAt !== undefined,
+    github: gh === undefined ? undefined : {
+      owner: gh.owner,
+      repository: gh.repository,
+      issueNumber: gh.issueNumber,
+      issueUrl: gh.issueUrl,
+      remoteTitle: gh.remoteTitle,
+      remoteState: gh.remoteState,
+      remoteLabels: gh.remoteLabels,
+      lastSyncedAt: gh.lastSyncedAt,
+      lastSyncError: gh.lastSyncError,
+      deactivated: gh.deactivated,
+      pullRequest: gh.pullRequest,
+    },
+  }
+}
+
+function buildGitHubListTool(host: TaskBoardToolHost): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_list',
+    description: 'List task board cards associated with GitHub issues, with their remote issue state, remote labels, and pull request metadata. Triggers: github list, github tasks, 列出github任务, github issue列表.',
+    parameters: {
+      owner: { type: 'string', description: 'Filter by repository owner.' },
+      repository: { type: 'string', description: 'Filter by repository name.' },
+      state: { type: 'string', enum: ['open', 'closed', 'all'], description: 'Filter by remote issue state (open, closed, or all; default: all).' },
+      hasPr: { type: 'boolean', description: 'Filter by whether a pull request is linked.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      const allTasks = host.snapshot().tasks
+      const filtered = allTasks.filter(task => {
+        const gh = task.integrations?.github
+        if (gh === undefined) return false
+        if (typeof args.owner === 'string' && args.owner.trim() !== '') {
+          if (gh.owner.toLowerCase() !== args.owner.trim().toLowerCase()) return false
+        }
+        if (typeof args.repository === 'string' && args.repository.trim() !== '') {
+          if (gh.repository.toLowerCase() !== args.repository.trim().toLowerCase()) return false
+        }
+        if (args.state === 'open' || args.state === 'closed') {
+          if (gh.remoteState !== args.state) return false
+        }
+        if (args.hasPr === true && gh.pullRequest === undefined) return false
+        if (args.hasPr === false && gh.pullRequest !== undefined) return false
+        return true
+      })
+      return json({ tasks: filtered.map(t => githubTaskSummary(t)) })
+    },
+  })
+}
+
+function buildGitHubGetTool(host: TaskBoardToolHost): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_get',
+    description: 'Get full GitHub integration details for a task board card, including remote issue title, body, labels, pull request details, and synchronization state. Triggers: github get, github issue, 查看github任务, issue详情.',
+    parameters: {
+      taskId: { type: 'string', description: 'Task ID on the board.' },
+      owner: { type: 'string', description: 'Repository owner (used with repository and issueNumber).' },
+      repository: { type: 'string', description: 'Repository name (used with owner and issueNumber).' },
+      issueNumber: { type: 'number', description: 'GitHub issue number.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      let task: TaskRecord | undefined
+      if (typeof args.taskId === 'string' && args.taskId.trim() !== '') {
+        task = host.snapshot().tasks.find(t => t.id === args.taskId!.trim())
+      } else if (
+        typeof args.owner === 'string'
+        && typeof args.repository === 'string'
+        && typeof args.issueNumber === 'number'
+      ) {
+        const o = args.owner.toLowerCase()
+        const r = args.repository.toLowerCase()
+        task = host.snapshot().tasks.find(t => {
+          const gh = t.integrations?.github
+          return gh !== undefined
+            && gh.owner.toLowerCase() === o
+            && gh.repository.toLowerCase() === r
+            && gh.issueNumber === args.issueNumber
+        })
+      }
+      if (task === undefined || task.integrations?.github === undefined) {
+        return refused('not-found', 'task with GitHub integration not found')
+      }
+      return json({
+        ok: true,
+        task: {
+          taskId: task.id,
+          title: task.title,
+          description: task.description,
+          prompt: task.prompt,
+          status: task.status,
+          archived: task.archivedAt !== undefined,
+          github: task.integrations.github,
+        },
+      })
+    },
+  })
+}
+
+function buildGitHubRefreshTool(host: TaskBoardToolHost): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_refresh',
+    description: 'Trigger synchronization between GitHub issues/pull requests and the task board for a task, a repository, or all configured repositories. Triggers: github refresh, github sync, 刷新github, 同步github.',
+    parameters: {
+      taskId: { type: 'string', description: 'Specific task ID to refresh.' },
+      owner: { type: 'string', description: 'Repository owner to refresh.' },
+      repository: { type: 'string', description: 'Repository name to refresh.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      if (host.github === undefined) {
+        return refused('not-configured', 'GitHub integration is not configured')
+      }
+      try {
+        if (typeof args.taskId === 'string' && args.taskId.trim() !== '') {
+          const result = await host.github.syncTask(args.taskId.trim())
+          if (!result.ok) return refused('sync-failed', result.error ?? 'sync failed')
+          const updated = host.snapshot().tasks.find(t => t.id === args.taskId!.trim())
+          return json({ ok: true, synced: 1, task: updated ? githubTaskSummary(updated) : undefined })
+        } else if (typeof args.owner === 'string' && typeof args.repository === 'string') {
+          const result = await host.github.syncRepository(args.owner.trim(), args.repository.trim())
+          return json({ ok: true, synced: result.synced, errors: result.errors.length > 0 ? result.errors : undefined })
+        } else {
+          const result = await host.github.syncAll()
+          return json({ ok: true, synced: result.synced, errors: result.errors.length > 0 ? result.errors : undefined })
+        }
+      } catch (error) {
+        return refused('sync-error', error instanceof Error ? error.message : String(error))
+      }
+    },
+  })
+}
+
+function buildGitHubCreatePrTool(host: TaskBoardToolHost): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_create_pr',
+    description: 'Create a GitHub Pull Request for a task board card linked to a GitHub issue. Verifies that the head branch exists on remote, creates the PR, records PR metadata, and adds the PR phase label to the issue. Does not run shell commands. Triggers: github create pr, 创建PR, 开PR, pull request.',
+    parameters: {
+      taskId: { type: 'string', required: true, description: 'Task ID linked to a GitHub issue.' },
+      headBranch: { type: 'string', required: true, description: 'Remote head branch containing the changes (must already exist on remote).' },
+      baseBranch: { type: 'string', description: 'Target base branch (default: repository default, e.g. main).' },
+      title: { type: 'string', description: 'PR title (default: task title).' },
+      body: { type: 'string', description: 'PR body text (default includes "Fixes #<issue>" and task description).' },
+      draft: { type: 'boolean', description: 'Whether to create the PR as draft.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      if (host.github === undefined) {
+        return refused('not-configured', 'GitHub integration is not configured')
+      }
+      const task = host.snapshot().tasks.find(t => t.id === args.taskId)
+      if (task?.integrations?.github === undefined) {
+        return refused('not-github-task', 'task is not linked to a GitHub issue')
+      }
+      try {
+        const pr = await host.github.createPullRequest(args.taskId, {
+          headBranch: args.headBranch,
+          baseBranch: args.baseBranch,
+          title: args.title,
+          body: args.body,
+          draft: args.draft,
+        })
+        return json({ ok: true, pullRequest: pr })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (message.includes('does not exist on remote')) {
+          return refused('branch-not-found', message)
+        }
+        return refused('create-pr-failed', message)
+      }
+    },
+  })
+}
+
+function buildGitHubLinkPrTool(host: TaskBoardToolHost): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_link_pr',
+    description: 'Link an existing GitHub Pull Request to a task board card linked to a GitHub issue, updating PR metadata and managed phase labels. Triggers: github link pr, 关联PR, 绑定PR.',
+    parameters: {
+      taskId: { type: 'string', required: true, description: 'Task ID linked to a GitHub issue.' },
+      pullRequestNumber: { type: 'number', required: true, description: 'Pull request number on GitHub.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      if (host.github === undefined) {
+        return refused('not-configured', 'GitHub integration is not configured')
+      }
+      const task = host.snapshot().tasks.find(t => t.id === args.taskId)
+      if (task?.integrations?.github === undefined) {
+        return refused('not-github-task', 'task is not linked to a GitHub issue')
+      }
+      try {
+        const pr = await host.github.linkPullRequest(args.taskId, args.pullRequestNumber)
+        return json({ ok: true, pullRequest: pr })
+      } catch (error) {
+        return refused('link-pr-failed', error instanceof Error ? error.message : String(error))
+      }
+    },
+  })
+}
