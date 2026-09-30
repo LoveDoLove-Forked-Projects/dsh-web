@@ -513,8 +513,19 @@ export function makeGatewayRoutes(deps: GatewayRouteDeps): WebRoute[] {
    * process re-executes itself, 'shell' when the packaged Desktop shell owns
    * the process tree and runs its own restart, 'manual' when neither is safe.
    */
-  const restartHandler = async (_req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  const restartHandler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const plan = planRestart((deps.restartFacts ?? liveRestartFacts)())
+    // Reading the plan is side-effect free. The toolbar asks for it before it
+    // tells the user what a restart will do, and no GET-shaped request (a
+    // prefetch, a typed URL, a link scanner) may ever stop a running host.
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      writeJson(res, 200, { restart: { mode: plan.mode } })
+      return
+    }
+    if (req.method !== 'POST') {
+      writeJson(res, 405, { error: 'plugin-manager: restart needs GET (plan) or POST (execute)' })
+      return
+    }
     const mode = performRestart(plan, deps.restartRuntime ?? {})
     writeJson(res, 202, { restart: { mode } })
   }

@@ -22,12 +22,21 @@ packages/AGENTS.md 的全局/包级规则。
 - **批量更新策略放 core，不放 host**：`src/core/updates.ts` 是唯一策略源——只更新第三方
   （非 `@deepseek-ai/`）且 `compatible !== false` 的行；官方包随 DSH 本体升级，绝不批量改写。
   单页区块（`plugins.detail.section`）仍可对官方包做单包更新，那是用户逐条确认的动作。
-- **重启三态，禁止臆造命令行**：`POST /api/plugin-manager/restart` 由 `src/host/restart.ts`
-  判定并回传实际模式——`relaunch`（终端启动：detached helper 等旧进程退出后重放本进程
-  自身的 execPath + argv，剔除 `--inspect*`）、`shell`（打包桌面：只退出，由桌面外壳自己的
-  恢复对话框重启）、`manual`（无终端/无法判定：不退出，界面提示手动重启）。判定是纯函数
-  `planRestart`，执行是 `performRestart`（helper 起不来时降级为 `manual` 而不是让进程白白退出）。
-  新增重启路径前先确认宿主真的能重启，不要把「重启」做成静默失败。
+- **重启三态，禁止臆造命令行**：`src/host/restart.ts` 判定并回传实际模式——`relaunch`
+  （终端启动：detached helper 等旧进程退出后重放本进程自身的 execPath + argv，剔除
+  `--inspect*`）、`shell`（打包桌面：只退出，由桌面外壳自己的恢复对话框重启）、`manual`
+  （无终端/无法判定：不退出，界面提示手动重启）。判定是纯函数 `planRestart`，执行是
+  `performRestart`（helper 起不来时降级为 `manual` 而不是让进程白白退出）。新增重启路径前
+  先确认宿主真的能重启，不要把「重启」做成静默失败。
+- **重启路由必须按方法区分**：`GET /api/plugin-manager/restart` 只读方案（无副作用），
+  `POST` 才执行，其他方法 405。缺了这道守卫时，一个普通 GET（浏览器预取、直接输入 URL、
+  误探测）就能停掉正在运行的宿主并弹出桌面外壳的崩溃恢复对话框（2026-09-30 实证）。
+  界面必须先读方案再确认：确认面板写的后果必须与 `POST` 实际产生的后果一致。
+- **桌面端不以「退出宿主」为默认动作**：打包桌面没有给 Web GUI 任何重启通道（preload 只
+  暴露 `dshDesktop.updates.status/open/subscribe`，`app.relaunch()` 只能由外壳自己的对话框
+  触发），所以宿主退出必然产生一个错误样式的恢复对话框并写崩溃报告。桌面端的确认面板以
+  手动重启（退出应用后重新打开）为主，「用系统对话框重启」是写清后果的次级动作；
+  只有 `relaunch`（终端启动）才是默认主按钮。
 - **双通道纪律**：运行时探测官方 `/plugin-installer` 通道，存在（DSHCode / 1.0.4
   checkout web）则全部走官方 RPC（单一写入器 = 官方安装器）；不存在（npm 发布的官方
   web）则走本包 host 半区的 loopback HTTP 网关——安装/卸载 spawn 官方 `dsh plugin`

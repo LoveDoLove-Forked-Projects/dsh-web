@@ -1192,7 +1192,7 @@ window.__ModuleLoader__.load({
 		* list, and a restart tears this component down anyway.
 		*/
 		function PluginListToolbar(props) {
-			const { t, isLoopback, checkUpdates, update, restart } = props;
+			const { t, isLoopback, checkUpdates, update, restartPlan, restart } = props;
 			const [phase, setPhase] = (0, react.useState)("idle");
 			const [checked, setChecked] = (0, react.useState)(false);
 			/** Every third-party row the last check reported, including the applied ones. */
@@ -1202,6 +1202,8 @@ window.__ModuleLoader__.load({
 			const [cursor, setCursor] = (0, react.useState)(void 0);
 			const [error, setError] = (0, react.useState)(void 0);
 			const [panel, setPanel] = (0, react.useState)("none");
+			/** How the host says it would restart, read before the confirmation is shown. */
+			const [plan, setPlan] = (0, react.useState)(void 0);
 			const [restartMode, setRestartMode] = (0, react.useState)(void 0);
 			/** Synchronous in-flight mirror of the phase: a click and a keypress can land in one frame. */
 			const busyRef = (0, react.useRef)(false);
@@ -1269,12 +1271,28 @@ window.__ModuleLoader__.load({
 					setPhase("idle");
 				});
 			};
+			/** Ask the host how it would restart, then show the confirmation that matches. */
+			const onAskRestart = () => {
+				if (busyRef.current) return;
+				busyRef.current = true;
+				setError(void 0);
+				restartPlan().then((mode) => {
+					setPlan(mode);
+					setPanel("restart");
+				}).catch((reason) => {
+					setError(t("failed", { reason: messageOf$2(reason) }));
+					setPanel("list");
+				}).finally(() => {
+					busyRef.current = false;
+				});
+			};
 			const onRestart = () => {
 				if (busyRef.current) return;
 				busyRef.current = true;
 				setError(void 0);
 				restart().then((mode) => {
 					setRestartMode(mode);
+					setPlan(void 0);
 					setPanel("none");
 				}).catch((reason) => {
 					setError(t("failed", { reason: messageOf$2(reason) }));
@@ -1346,7 +1364,12 @@ window.__ModuleLoader__.load({
 						"data-restart-pending": applied.length,
 						disabled: busy || restartMode === "relaunch",
 						onClick: () => {
-							setPanel(panel === "restart" ? "none" : "restart");
+							if (panel === "restart") {
+								setPanel("none");
+								setPlan(void 0);
+								return;
+							}
+							onAskRestart();
 						},
 						children: restartMode === "relaunch" ? t("restarting") : t("restartNow")
 					}),
@@ -1412,9 +1435,7 @@ window.__ModuleLoader__.load({
 									className: `${plugin_manager_module_css_default.button} ${plugin_manager_module_css_default.primary}`,
 									"data-update-panel-restart": true,
 									disabled: busy,
-									onClick: () => {
-										setPanel("restart");
-									},
+									onClick: onAskRestart,
 									children: t("restartNow")
 								})]
 							}),
@@ -1427,13 +1448,19 @@ window.__ModuleLoader__.load({
 					panel === "restart" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: plugin_manager_module_css_default.panel,
 						"data-update-restart-panel": true,
+						"data-restart-plan": plan,
 						role: "group",
 						"aria-label": t("restartNow"),
 						children: [
 							errorLine,
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 								className: plugin_manager_module_css_default.hint,
-								children: t("restartConfirmBody")
+								"data-restart-plan-hint": plan,
+								children: plan === "shell" ? t("restartPlanShell") : plan === "manual" ? t("restartPlanManual") : t("restartPlanRelaunch")
+							}),
+							plan === "shell" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: plugin_manager_module_css_default.hint,
+								children: t("restartShellWarning")
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: plugin_manager_module_css_default.panelActions,
@@ -1443,14 +1470,15 @@ window.__ModuleLoader__.load({
 									"data-restart-cancel": true,
 									onClick: () => {
 										setPanel("none");
+										setPlan(void 0);
 									},
 									children: t("cancel")
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								}), plan !== "manual" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 									type: "button",
-									className: `${plugin_manager_module_css_default.button} ${plugin_manager_module_css_default.primary}`,
+									className: plan === "shell" ? plugin_manager_module_css_default.button : `${plugin_manager_module_css_default.button} ${plugin_manager_module_css_default.primary}`,
 									"data-restart-confirm": true,
 									onClick: onRestart,
-									children: t("restartConfirm")
+									children: plan === "shell" ? t("restartViaShell") : t("restartConfirm")
 								})]
 							})
 						]
@@ -1537,7 +1565,11 @@ window.__ModuleLoader__.load({
 			"restartNow": "立即重启",
 			"restarting": "正在重启…",
 			"restartConfirm": "确认重启",
-			"restartConfirmBody": "重启会中断正在运行的任务，插件更新在重启后生效。",
+			"restartPlanRelaunch": "会重启 DSH 服务，正在运行的任务会中断。",
+			"restartPlanShell": "桌面版没有应用内重启。推荐手动重启：退出 DeepSeek Harness（⌘Q）后重新打开，更新即生效。",
+			"restartPlanManual": "当前进程无法自动重启，请手动重启 DSH。",
+			"restartShellWarning": "用它重启会出现官方的错误提示对话框，并写一份崩溃报告。",
+			"restartViaShell": "改用系统对话框重启",
 			"restartDesktopHint": "请在随后出现的系统对话框中选择「重启」。",
 			"restartRelaunchHint": "已请求重启；服务恢复后刷新页面即可。",
 			"restartManualHint": "当前进程无法自动重启，请手动重启 DSH。",
@@ -1572,7 +1604,11 @@ window.__ModuleLoader__.load({
 			"restartNow": "Restart now",
 			"restarting": "Restarting…",
 			"restartConfirm": "Restart",
-			"restartConfirmBody": "Restarting interrupts running tasks; plugin updates take effect afterwards.",
+			"restartPlanRelaunch": "The DSH service restarts; running tasks are interrupted.",
+			"restartPlanShell": "The desktop app has no in-app restart. Prefer a manual restart: quit DeepSeek Harness (Cmd+Q) and open it again; the update applies on the next start.",
+			"restartPlanManual": "This process cannot restart itself; restart DSH yourself.",
+			"restartShellWarning": "Restarting through it shows the official error dialog and writes a crash report.",
+			"restartViaShell": "Restart via the system dialog",
 			"restartDesktopHint": "Choose Restart in the system dialog that follows.",
 			"restartRelaunchHint": "Restart requested; reload the page once the server is back.",
 			"restartManualHint": "This process cannot restart itself; restart DSH yourself.",
@@ -1946,6 +1982,7 @@ window.__ModuleLoader__.load({
 					stage: "fetch"
 				},
 				failures: async () => parseFailuresSnapshot(await gatewayJson(`${GATEWAY_PREFIX}/failures`)),
+				restartPlan: async () => parseRestartMode(await gatewayJson(`${GATEWAY_PREFIX}/${RESTART_ENDPOINT}`)),
 				restart: async () => parseRestartMode(await gatewayJson(`${GATEWAY_PREFIX}/${RESTART_ENDPOINT}`, { method: "POST" }))
 			};
 			let modePromise;
@@ -1996,6 +2033,7 @@ window.__ModuleLoader__.load({
 					return item;
 				},
 				checkUpdates: async () => await ensureMode() === "official" ? official.checkUpdates() : gateway.checkUpdates(),
+				restartPlan: () => gateway.restartPlan(),
 				restart: () => gateway.restart(),
 				status: async () => await ensureMode() === "official" ? official.status() : gateway.status(),
 				failures: async () => await ensureMode() === "official" ? official.failures() : gateway.failures(),
@@ -2031,6 +2069,7 @@ window.__ModuleLoader__.load({
 							isLoopback: face.isLoopback,
 							checkUpdates: face.checkUpdates,
 							update: face.update,
+							restartPlan: face.restartPlan,
 							restart: face.restart,
 							t: ctx.locale.bind(NS$10)
 						}),

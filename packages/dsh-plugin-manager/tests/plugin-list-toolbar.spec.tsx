@@ -35,6 +35,7 @@ function face(overrides: Partial<ComponentProps<typeof PluginListToolbar>> = {})
     isLoopback: true,
     checkUpdates: vi.fn(async (): Promise<PluginUpdateItem[]> => []),
     update: vi.fn(async () => undefined),
+    restartPlan: vi.fn(async () => 'relaunch' as const),
     restart: vi.fn(async () => 'relaunch' as const),
     ...overrides,
   }
@@ -205,13 +206,21 @@ describe('updating every third-party plugin', () => {
 })
 
 describe('restarting to apply the updates', () => {
-  it('user confirms before the host is asked to restart', async () => {
-    // Given a toolbar on a host that relaunches itself
+  it('user is told what the restart will do before anything happens', async () => {
+    // Given a host that relaunches itself in place
     const restart = vi.fn(async () => 'relaunch' as const)
     renderToolbar(face({ restart }))
 
-    // When the user asks to restart and confirms
+    // When the user asks to restart
     fireEvent.click(screen.getByRole('button', { name: t('restartNow') }))
+
+    // Then the confirmation names the consequence and nothing has run yet
+    await waitFor(() => {
+      expect(document.querySelector('[data-restart-plan-hint]')?.textContent).toBe(t('restartPlanRelaunch'))
+    })
+    expect(restart.mock.calls).toHaveLength(0)
+
+    // When the user confirms
     fireEvent.click(document.querySelector('[data-restart-confirm]') as HTMLElement)
 
     // Then the host was asked once and the relaunch hint is on screen
@@ -223,25 +232,57 @@ describe('restarting to apply the updates', () => {
     expect(document.querySelector('[data-update-restart]')?.textContent).toBe(t('restarting'))
   })
 
-  it('user on a packaged Desktop host is pointed at the native restart dialog', async () => {
-    // Given the host reports that the Desktop shell owns the restart
-    renderToolbar(face({ restart: vi.fn(async () => 'shell' as const) }))
+  it('user on a packaged Desktop host is offered the manual restart first', async () => {
+    // Given the host reports that the Desktop shell owns the process tree
+    const restart = vi.fn(async () => 'shell' as const)
+    renderToolbar(face({ restartPlan: vi.fn(async () => 'shell' as const), restart }))
 
-    // When the user confirms a restart
+    // When the user asks to restart
     fireEvent.click(screen.getByRole('button', { name: t('restartNow') }))
+
+    // Then the confirmation leads with the manual path and warns about the dialog
+    await waitFor(() => {
+      expect(document.querySelector('[data-restart-plan-hint]')?.textContent).toBe(t('restartPlanShell'))
+    })
+    expect(document.querySelector('[data-restart-plan]')?.getAttribute('data-restart-plan')).toBe('shell')
+    expect(document.querySelector('[data-update-restart-panel]')?.textContent).toContain(t('restartShellWarning'))
+    expect(document.querySelector('[data-restart-confirm]')?.textContent).toBe(t('restartViaShell'))
+    expect(restart.mock.calls).toHaveLength(0)
+
+    // When the user chooses the system-dialog route
     fireEvent.click(document.querySelector('[data-restart-confirm]') as HTMLElement)
 
-    // Then the hint points at the shell's own dialog
+    // Then the host is asked once and the hint points at its own dialog
     await waitFor(() => {
       expect(document.querySelector('[data-update-restart-hint]')?.textContent).toBe(t('restartDesktopHint'))
     })
+    expect(restart.mock.calls).toHaveLength(1)
   })
 
-  it('user can back out of the restart confirmation', () => {
+  it('user on a host that cannot restart itself gets instructions and no action', async () => {
+    // Given the host reports that it cannot be replaced
+    const restart = vi.fn(async () => 'manual' as const)
+    renderToolbar(face({ restartPlan: vi.fn(async () => 'manual' as const), restart }))
+
+    // When the user asks to restart
+    fireEvent.click(screen.getByRole('button', { name: t('restartNow') }))
+
+    // Then only the instruction is shown, with no confirm action to press
+    await waitFor(() => {
+      expect(document.querySelector('[data-restart-plan-hint]')?.textContent).toBe(t('restartPlanManual'))
+    })
+    expect(document.querySelector('[data-restart-confirm]')).toBeNull()
+    expect(restart.mock.calls).toHaveLength(0)
+  })
+
+  it('user can back out of the restart confirmation', async () => {
     // Given the confirmation is open
     const restart = vi.fn(async () => 'relaunch' as const)
     renderToolbar(face({ restart }))
     fireEvent.click(screen.getByRole('button', { name: t('restartNow') }))
+    await waitFor(() => {
+      expect(document.querySelector('[data-restart-confirm]')?.textContent).toBe(t('restartConfirm'))
+    })
 
     // When the user cancels
     fireEvent.click(document.querySelector('[data-restart-cancel]') as HTMLElement)
@@ -254,14 +295,31 @@ describe('restarting to apply the updates', () => {
   it('user sees a refused restart reported, not hidden', async () => {
     // Given the host rejects the restart request
     renderToolbar(face({ restart: vi.fn(async () => { throw new Error('forbidden: loopback-only') }) }))
+    fireEvent.click(screen.getByRole('button', { name: t('restartNow') }))
+    await waitFor(() => {
+      expect(document.querySelector('[data-restart-confirm]')?.textContent).toBe(t('restartConfirm'))
+    })
 
     // When the user confirms a restart
-    fireEvent.click(screen.getByRole('button', { name: t('restartNow') }))
     fireEvent.click(document.querySelector('[data-restart-confirm]') as HTMLElement)
 
     // Then the failure is visible
     await waitFor(() => {
       expect(document.querySelector('[data-update-error]')?.textContent).toContain('forbidden: loopback-only')
     })
+  })
+
+  it('user sees a failed restart-plan read reported', async () => {
+    // Given the host cannot answer how it would restart
+    renderToolbar(face({ restartPlan: vi.fn(async () => { throw new Error('plugin-manager: restart unavailable') }) }))
+
+    // When the user asks to restart
+    fireEvent.click(screen.getByRole('button', { name: t('restartNow') }))
+
+    // Then the failure is reported and no confirmation is offered
+    await waitFor(() => {
+      expect(document.querySelector('[data-update-error]')?.textContent).toContain('restart unavailable')
+    })
+    expect(document.querySelector('[data-update-restart-panel]')).toBeNull()
   })
 })

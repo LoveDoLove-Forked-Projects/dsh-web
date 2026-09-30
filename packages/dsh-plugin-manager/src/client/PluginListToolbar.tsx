@@ -31,6 +31,13 @@ export interface PluginListToolbarInjected {
   checkUpdates: () => Promise<PluginUpdateItem[]>
   /** Re-install one plugin from its recorded source. */
   update: (id: string) => Promise<unknown>
+  /**
+   * Read how a restart would be carried out, without carrying it out: the
+   * confirmation must name the same consequence the host will produce (an
+   * in-place relaunch, the packaged Desktop shell's own recovery dialog, or a
+   * manual restart), and a plan read has no side effects.
+   */
+  restartPlan: () => Promise<RestartMode>
   /** Restart the host so an applied update is loaded. */
   restart: () => Promise<RestartMode>
 }
@@ -60,7 +67,7 @@ type Panel = 'none' | 'list' | 'restart'
  * list, and a restart tears this component down anyway.
  */
 export function PluginListToolbar(props: PluginListToolbarProps) {
-  const { t, isLoopback, checkUpdates, update, restart } = props
+  const { t, isLoopback, checkUpdates, update, restartPlan, restart } = props
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [checked, setChecked] = useState(false)
@@ -71,6 +78,8 @@ export function PluginListToolbar(props: PluginListToolbarProps) {
   const [cursor, setCursor] = useState<{ name: string; index: number; total: number } | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [panel, setPanel] = useState<Panel>('none')
+  /** How the host says it would restart, read before the confirmation is shown. */
+  const [plan, setPlan] = useState<RestartMode | undefined>(undefined)
   const [restartMode, setRestartMode] = useState<RestartMode | undefined>(undefined)
   /** Synchronous in-flight mirror of the phase: a click and a keypress can land in one frame. */
   const busyRef = useRef(false)
@@ -139,12 +148,29 @@ export function PluginListToolbar(props: PluginListToolbarProps) {
     })
   }
 
+  /** Ask the host how it would restart, then show the confirmation that matches. */
+  const onAskRestart = (): void => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setError(undefined)
+    void restartPlan().then(mode => {
+      setPlan(mode)
+      setPanel('restart')
+    }).catch(reason => {
+      setError(t('failed', { reason: messageOf(reason) }))
+      setPanel('list')
+    }).finally(() => {
+      busyRef.current = false
+    })
+  }
+
   const onRestart = (): void => {
     if (busyRef.current) return
     busyRef.current = true
     setError(undefined)
     void restart().then(mode => {
       setRestartMode(mode)
+      setPlan(undefined)
       setPanel('none')
     }).catch(reason => {
       setError(t('failed', { reason: messageOf(reason) }))
@@ -209,7 +235,7 @@ export function PluginListToolbar(props: PluginListToolbarProps) {
         data-update-restart
         data-restart-pending={applied.length}
         disabled={busy || restartMode === 'relaunch'}
-        onClick={() => { setPanel(panel === 'restart' ? 'none' : 'restart') }}
+        onClick={() => { if (panel === 'restart') { setPanel('none'); setPlan(undefined); return } onAskRestart() }}
       >
         {restartMode === 'relaunch' ? t('restarting') : t('restartNow')}
       </button>
@@ -245,7 +271,7 @@ export function PluginListToolbar(props: PluginListToolbarProps) {
               </button>
             )}
             {applied.length > 0 && (
-              <button type="button" className={`${css.button} ${css.primary}`} data-update-panel-restart disabled={busy} onClick={() => { setPanel('restart') }}>
+              <button type="button" className={`${css.button} ${css.primary}`} data-update-panel-restart disabled={busy} onClick={onAskRestart}>
                 {t('restartNow')}
               </button>
             )}
@@ -255,16 +281,26 @@ export function PluginListToolbar(props: PluginListToolbarProps) {
       )}
 
       {panel === 'restart' && (
-        <div className={css.panel} data-update-restart-panel role="group" aria-label={t('restartNow')}>
+        <div className={css.panel} data-update-restart-panel data-restart-plan={plan} role="group" aria-label={t('restartNow')}>
           {errorLine}
-          <p className={css.hint}>{t('restartConfirmBody')}</p>
+          <p className={css.hint} data-restart-plan-hint={plan}>
+            {plan === 'shell' ? t('restartPlanShell') : plan === 'manual' ? t('restartPlanManual') : t('restartPlanRelaunch')}
+          </p>
+          {plan === 'shell' && <p className={css.hint}>{t('restartShellWarning')}</p>}
           <div className={css.panelActions}>
-            <button type="button" className={css.button} data-restart-cancel onClick={() => { setPanel('none') }}>
+            <button type="button" className={css.button} data-restart-cancel onClick={() => { setPanel('none'); setPlan(undefined) }}>
               {t('cancel')}
             </button>
-            <button type="button" className={`${css.button} ${css.primary}`} data-restart-confirm onClick={onRestart}>
-              {t('restartConfirm')}
-            </button>
+            {plan !== 'manual' && (
+              <button
+                type="button"
+                className={plan === 'shell' ? css.button : `${css.button} ${css.primary}`}
+                data-restart-confirm
+                onClick={onRestart}
+              >
+                {plan === 'shell' ? t('restartViaShell') : t('restartConfirm')}
+              </button>
+            )}
           </div>
         </div>
       )}

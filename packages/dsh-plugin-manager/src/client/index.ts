@@ -101,6 +101,13 @@ export type PluginManagerFace = PluginUpdatePatchInjected & PluginManagerService
    * packaged Desktop shell that owns the process tree). See host/restart.ts.
    */
   restart: () => Promise<RestartMode>
+  /**
+   * Read how a restart would be carried out without triggering it (the same
+   * route's plan read). The toolbar words its confirmation from this, so a
+   * packaged Desktop host can say what its system dialog will do instead of
+   * surprising the user with it.
+   */
+  restartPlan: () => Promise<RestartMode>
 }
 
 /**
@@ -227,7 +234,10 @@ export function createPluginManagerFace(ctx: ClientContext): PluginManagerFace {
     failures: async (): Promise<PluginFailuresSnapshot> =>
       parseFailuresSnapshot(await gatewayJson(`${GATEWAY_PREFIX}/failures`)),
     // Restart has no official-channel counterpart, so this route is the one
-    // call that is always the gateway's, whichever mode the face runs in.
+    // call that is always the gateway's, whichever mode the face runs in. The
+    // GET-shaped call is the plan read: no state changes, no process exits.
+    restartPlan: async (): Promise<RestartMode> =>
+      parseRestartMode(await gatewayJson(`${GATEWAY_PREFIX}/${RESTART_ENDPOINT}`)),
     restart: async (): Promise<RestartMode> =>
       parseRestartMode(await gatewayJson(`${GATEWAY_PREFIX}/${RESTART_ENDPOINT}`, { method: 'POST' })),
   }
@@ -303,6 +313,7 @@ export function createPluginManagerFace(ctx: ClientContext): PluginManagerFace {
       return item
     },
     checkUpdates: async () => (await ensureMode()) === 'official' ? official.checkUpdates() : gateway.checkUpdates(),
+    restartPlan: () => gateway.restartPlan(),
     restart: () => gateway.restart(),
     status: async () => (await ensureMode()) === 'official' ? official.status() : gateway.status(),
     failures: async () => (await ensureMode()) === 'official' ? official.failures() : gateway.failures(),
@@ -350,6 +361,7 @@ export function apply(ctx: ClientContext): void {
           isLoopback: face.isLoopback,
           checkUpdates: face.checkUpdates,
           update: face.update,
+          restartPlan: face.restartPlan,
           restart: face.restart,
           t: ctx.locale.bind(NS),
         }),

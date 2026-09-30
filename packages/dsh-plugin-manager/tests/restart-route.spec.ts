@@ -22,12 +22,12 @@ function facts(): ProfileFacts {
   }
 }
 
-/** A POST request from the given address. */
-function request(remoteAddress = '127.0.0.1'): IncomingMessage {
+/** A request from the given address and method. */
+function request(remoteAddress = '127.0.0.1', method = 'POST'): IncomingMessage {
   const stream = Readable.from([Buffer.from('{}')]) as unknown as IncomingMessage
   stream.socket = { remoteAddress } as IncomingMessage['socket']
   stream.headers = { host: '127.0.0.1:19387' }
-  stream.method = 'POST'
+  stream.method = method
   return stream
 }
 
@@ -69,6 +69,37 @@ function launch(overrides: Partial<RestartFacts> = {}): RestartFacts {
 }
 
 describe('gateway restart route', () => {
+  it('user reading the restart plan: the mode is answered and nothing is touched', async () => {
+    // Given a terminal-launched host with a working helper
+    const startHelper = vi.fn(() => true)
+    const exit = vi.fn()
+    const handler = restartRoute(launch(), { startHelper, exit })
+    const captured = response()
+
+    // When the plan is read with a GET
+    await handler(request('127.0.0.1', 'GET'), captured.res)
+
+    // Then the mode is reported without spawning anything or leaving the process
+    expect(captured.status()).toBe(200)
+    expect(captured.body()).toEqual({ restart: { mode: 'relaunch' } })
+    expect(startHelper.mock.calls).toHaveLength(0)
+    expect(exit.mock.calls).toHaveLength(0)
+  })
+
+  it('user sending another method: the route refuses it instead of restarting', async () => {
+    // Given a host that a GET would have restarted before the method guard
+    const startHelper = vi.fn(() => true)
+    const handler = restartRoute(launch(), { startHelper })
+    const captured = response()
+
+    // When the route is called with DELETE
+    await handler(request('127.0.0.1', 'DELETE'), captured.res)
+
+    // Then it is refused and no replacement was started
+    expect(captured.status()).toBe(405)
+    expect(startHelper.mock.calls).toHaveLength(0)
+  })
+
   it('user restarting a terminal-launched host: the route answers relaunch and a helper starts', async () => {
     // Given a terminal-launched host whose helper starts
     const startHelper = vi.fn(() => true)
