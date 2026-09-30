@@ -1,6 +1,7 @@
 /**
- * Styles for the GitHub provider surfaces rendered into the board's child
- * seats.
+ * Styles for the GitHub provider surfaces: the sections rendered into the
+ * board's child seats and the integration block of the extension's own
+ * settings card.
  *
  * The extension ships its own stylesheet: a provider bundle may not import the
  * board's CSS module, so the handful of board-family classes its sections use
@@ -278,6 +279,21 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 4px;
+}
+
+/* Integration block of the extension's settings card: the repository and
+   credential summary, separated from the switches above it the way the board
+   settings card used to separate the same block from its own fields. */
+.settingsSummary {
+  margin-top: 16px;
+  border-top: 1px solid var(--dsw-alias-border-subtle, #333);
+  padding-top: 12px;
+}
+
+.settingsSummaryTitle {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 @media (max-width: 720px) {

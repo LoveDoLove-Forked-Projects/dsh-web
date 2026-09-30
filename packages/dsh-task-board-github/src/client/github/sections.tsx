@@ -1,11 +1,12 @@
 /**
- * GitHub provider surfaces rendered into the board's child seats.
+ * GitHub provider surfaces: the sections rendered into the board's child
+ * seats, plus the summary block the extension's own settings card mounts.
  *
  * These components are the provider's browser half: they receive the board's
- * seat owner props ({ task, dispatch } / { dispatch }) and talk back only
- * through `dispatch`, never through a board internal or an HTTP surface of
- * their own. The published repository/credential summary arrives through the
- * board mirror (see ./summary.ts).
+ * seat owner props ({ task, dispatch }) and talk back only through `dispatch`,
+ * never through a board internal or an HTTP surface of their own. The
+ * repository/credential summary arrives through the board mirror (see
+ * ./summary.ts) rather than through a seat.
  *
  * @module dsh-task-board-github/client/github/sections
  */
@@ -13,13 +14,12 @@ import { useState } from 'react'
 import {
   type TaskBoardDetailSectionProps,
   type TaskBoardExtensionDispatch,
-  type TaskBoardSettingsSectionProps,
 } from '../../core/contract.ts'
 import type { TaskRecord } from '../../core/task-record.ts'
 import { GITHUB_EXTENSION_ID, readTaskGitHubMetadata, type GitHubTaskMetadata } from '../../core/types.ts'
 import { formatHostTimestamp } from '../format-host-time.ts'
 import { t, type TaskBoardGithubKey } from '../locales.ts'
-import { useGitHubSummary, type GitHubSummary } from './summary.ts'
+import type { GitHubSummary } from './summary.ts'
 import css from '../github.module.css'
 
 /** Report a dispatch failure the way the action channel phrased it. */
@@ -177,7 +177,7 @@ function LinkPrModal({ dispatch, task, onClose }: {
   )
 }
 
-/** The repository/credential summary block, shared by the settings seat and the card. */
+/** The repository/credential summary block the extension's settings card renders. */
 export function GitHubSummaryBlock({ summary }: { summary: GitHubSummary | undefined }) {
   if (summary === undefined) {
     return <p className={css.detailMeta} style={{ margin: '4px 0' }}>{t('summary.notRunning')}</p>
@@ -333,16 +333,5 @@ export function GitHubCardDecoration({ task }: { task: TaskRecord }) {
     >
       #{metadata.issueNumber}
     </span>
-  )
-}
-
-/** The settings seat: configured repositories and credential state. */
-export function GitHubSettingsSection(_props: TaskBoardSettingsSectionProps) {
-  const summary = useGitHubSummary()
-  return (
-    <div data-dsh-part="github-settings" style={{ marginTop: '16px', borderTop: '1px solid var(--dsw-alias-border-subtle, #333)', paddingTop: '12px' }}>
-      <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 600 }}>{t('summary.title')}</h4>
-      <GitHubSummaryBlock summary={summary} />
-    </div>
   )
 }

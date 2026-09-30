@@ -27,10 +27,9 @@ import {
   resolveTaskBoardClientFace,
   TASK_BOARD_CARD_DECORATION,
   TASK_BOARD_DETAIL_SECTION,
-  TASK_BOARD_SETTINGS_SECTION,
 } from '../../core/contract.ts'
 import { GITHUB_EXTENSION_ID } from '../../core/types.ts'
-import { GitHubCardDecoration, GitHubDetailSection, GitHubSettingsSection } from './sections.tsx'
+import { GitHubCardDecoration, GitHubDetailSection } from './sections.tsx'
 import { acceptPublishedSummaries, clearSummary } from './summary.ts'
 import { isGitHubTaskVisible } from './visibility.ts'
 
@@ -91,8 +90,10 @@ export function installGitHubClientHalf(ctx: ClientContext, source: ExtensionEna
 }
 
 /**
- * Register the three seats, the visibility predicate and the mirror
- * subscription, for as long as the board's own master switch is on.
+ * Register the two seats, the visibility predicate and the mirror
+ * subscription, for as long as the board's own master switch is on. The
+ * board's settings seat is deliberately unused: the repository/credential
+ * summary is part of this extension's own settings card.
  * @param ctx - client context.
  * @returns disposer releasing every contribution.
  */
@@ -118,7 +119,6 @@ function installSeats(ctx: ClientContext): () => void {
     registered = true
     try {
       seats.push(slots.register({ name: TASK_BOARD_DETAIL_SECTION, id: GITHUB_EXTENSION_ID, locale: LOCALE_NS }, GitHubDetailSection as never))
-      seats.push(slots.register({ name: TASK_BOARD_SETTINGS_SECTION, id: GITHUB_EXTENSION_ID, locale: LOCALE_NS }, GitHubSettingsSection as never))
       seats.push(slots.register({ name: TASK_BOARD_CARD_DECORATION, id: GITHUB_EXTENSION_ID }, GitHubCardDecoration as never))
     } catch (error) {
       console.error('[dsh-task-board-github] seat registration failed', error)

@@ -4,7 +4,10 @@
  * One staged form over this extension's settings namespace, contributed to the
  * plugin-card seat this host renders. It renders the two volatile switches the
  * extension owns (the master switch and the system-prompt announcement) plus
- * the repository/credential summary the host half publishes.
+ * the GitHub integration block (the repository and credential summary the host
+ * half publishes). That block used to be a section this extension contributed
+ * to the task board settings card; it lives here now, beside the switches that
+ * govern it, and the board's settings card carries no GitHub surface.
  *
  * Presentation only: the card stages drafts and the shared CardForm writes
  * them, so what is on screen is exactly what a save stores.
@@ -17,7 +20,7 @@ import { BooleanField, PluginSettingsCard } from './PluginSettingsCard.tsx'
 import { CardForm, booleanField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
 import { GitHubSummaryBlock } from './github/sections.tsx'
 import { useGitHubSummary } from './github/summary.ts'
-import css from './settings-card.module.css'
+import css from './github.module.css'
 
 /** The extension fields this card edits (the namespace's schema). */
 export interface GitHubSettings {
@@ -130,7 +133,8 @@ export function GithubSettingsCard(props: GithubSettingsCardProps) {
         onEdit={(text) => { props.edit('announceToAgent', text) }}
         onReset={() => { props.resetField('announceToAgent') }}
       />
-      <div className={css.hint}>
+      <div className={css.settingsSummary} data-dsh-part="github-settings">
+        <h4 className={css.settingsSummaryTitle}>{t('summary.title')}</h4>
         <GitHubSummaryBlock summary={summary} />
       </div>
     </PluginSettingsCard>

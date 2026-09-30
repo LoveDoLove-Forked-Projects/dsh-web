@@ -12,7 +12,7 @@ An external provider extension for the DSH Web GUI task board (`@linxin666/dsh-c
 - **Execution immutability**: remote title and body refresh a card's content only until the card starts executing. The board's own content gate settles that, and the extension keeps no second opinion about which cards are frozen.
 - **Deactivation without loss**: removing the inclusion label hides the card from the active board and keeps every execution; re-adding it restores the same card.
 - **Five model-visible tools**: `task_board_github_list`, `task_board_github_get`, `task_board_github_refresh`, `task_board_github_create_pr` and `task_board_github_link_pr`, contributed through the board's `registerTool` capability, so they follow the board's master switch AND this extension's switch.
-- **Three board seats**: a task-detail section for the issue, its labels and its pull request; a repository/credential summary in the board's settings card; and a compact `#<issueNumber>` card decoration.
+- **Two board seats**: a task-detail section for the issue, its labels and its pull request, and a compact `#<issueNumber>` card decoration. The repository and credential summary renders in this extension's own settings card, beside the switches that govern it.
 - **One switch gates both halves**: on by default. Turning it off stops polling, write-back, the event subscriptions and the tool registrations, clears the published summary and hides the seats — without remounting the row and without touching stored cards.
 - **Board-owned registration, independent of load order**: the extension registers into the task board's provider surface and imports no task-board internals, so it builds, publishes and loads as a package of its own. Both halves wait for the board's service through a cordis dependency scope, so the board may activate before or after this row: the seats and the provider registration appear as soon as the service is served, and are released when it is withdrawn.
 - **Host-side credential handling**: the GitHub token is read from the environment variable named by `tokenEnv` by the host half and never reaches the browser or an agent. Remote issue text is stored as card content and provider metadata only; it never reaches a permission, a workspace identity or a `promptPrefix`.
@@ -44,7 +44,7 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board-github
 | `tokenEnv` | `GITHUB_TOKEN` | Environment variable holding the GitHub API token. |
 | `repositories` | `[]` | Repositories to synchronize, each with `owner`, `repository`, `inclusionLabel`, `managedLabelPrefix`, `stateLabels`, `prPhaseLabel`, `pollingIntervalMs`, `prCreationEnabled`, `draftPrPolicy`, `closeIssueOnMerge` and `baseBranch`. |
 
-The settings card also shows how many repositories are configured and whether the host holds a usable credential. That summary is published by the running provider, so it appears only while the extension is on.
+This extension's settings card also shows how many repositories are configured and whether the host holds a usable credential. That summary is published by the running provider, so it appears only while the extension is on.
 
 ## Migrating from the task board row
 

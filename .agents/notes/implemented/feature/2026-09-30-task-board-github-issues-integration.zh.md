@@ -18,7 +18,7 @@ Status: implemented
 - **Host 端凭据与出站 HTTPS**：所有 GitHub API 请求均在 Host 端通过出站 HTTPS 发起（`api.github.com`）。Token 从 Host 环境变量或 profile patch 解析，绝不暴露给浏览器或智能体。
 - **PR 完整生命周期与安全关闭**：自动创建 PR（默认关闭）或手动创建（`task_board_github_create_pr`）会先校验远程分支存在，再创建 PR、记录 PR 元数据并打上 `dsh:phase:pr` 标签。PR 合并后更新状态为 merged、清除 phase 标签、打上 done 标签，并在配置允许时关闭 Issue；未合入关闭的 PR 绝不关闭 Issue。
 - **故障隔离**：GitHub 网络或接口错误仅在任务元数据中记录 `lastSyncError`，绝不中断或使本地正在执行的任务失败。
-- **智能体工具与界面**：扩展经看板的 `registerTool` 能力提供五个受限工具（`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`），因此随「看板总开关 × 扩展 enabled」一起收放。其浏览器半区遵循同一门禁：在任务详情中渲染 `data-dsh-part="github-integration"` 区域，在任务看板设置卡中渲染仓库与凭据摘要，并渲染紧凑的 `#<issueNumber>` 卡片徽章，三者分别注册进看板声明的子席位（`task-board.detail.section`、`task-board.settings.section`、`task-board.card.decoration`）。
+- **智能体工具与界面**：扩展经看板的 `registerTool` 能力提供五个受限工具（`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`），因此随「看板总开关 × 扩展 enabled」一起收放。其浏览器半区遵循同一门禁：在任务详情中渲染 `data-dsh-part="github-integration"` 区域并渲染紧凑的 `#<issueNumber>` 卡片徽章，二者分别注册进看板声明的两个子席位（`task-board.detail.section`、`task-board.card.decoration`）；仓库与凭据摘要（`data-dsh-part="github-settings"`）改在扩展自己的设置卡中渲染，紧邻决定其行为的开关，不再出现在看板设置卡里。
 
 ## Architecture and Host-Side Security
 

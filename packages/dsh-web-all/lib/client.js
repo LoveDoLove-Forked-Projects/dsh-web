@@ -4692,7 +4692,7 @@ window.__ModuleLoader__.load({
 		/** Child seat a provider registers its task-detail section into. */
 		const TASK_BOARD_DETAIL_SECTION$1 = "task-board.detail.section";
 		/** Child seat a provider registers its settings section into. */
-		const TASK_BOARD_SETTINGS_SECTION$1 = "task-board.settings.section";
+		const TASK_BOARD_SETTINGS_SECTION = "task-board.settings.section";
 		/** Child seat a provider registers its card decoration into. */
 		const TASK_BOARD_CARD_DECORATION$1 = "task-board.card.decoration";
 		/**
@@ -8408,7 +8408,7 @@ window.__ModuleLoader__.load({
 			if (renderSlot === void 0) return EMPTY_TASK_BOARD_SEATS;
 			return {
 				detailSection: (props) => renderSlot(TASK_BOARD_DETAIL_SECTION$1, props),
-				settingsSection: (props) => renderSlot(TASK_BOARD_SETTINGS_SECTION$1, props),
+				settingsSection: (props) => renderSlot(TASK_BOARD_SETTINGS_SECTION, props),
 				cardDecoration: (props) => renderSlot(TASK_BOARD_CARD_DECORATION$1, props)
 			};
 		}
@@ -14146,7 +14146,7 @@ window.__ModuleLoader__.load({
 			"settings.title": "GitHub Issues 同步",
 			"settings.description": "任务看板的外部提供方扩展：把 GitHub Issues 同步成看板卡片，并把列变化写回 issue 标签。默认开启，可在本卡关闭。",
 			"settings.enabled": "启用 GitHub Issues 同步",
-			"settings.enabledHint": "关闭后本扩展不向任务看板注册任何东西：停止轮询、停止写回、注销 agent 工具、清空同步状态，详情区与设置区席位随之消失；看板与已同步的卡片数据都不受影响。",
+			"settings.enabledHint": "关闭后本扩展不向任务看板注册任何东西：停止轮询、停止写回、注销 agent 工具、清空同步状态，详情区与卡片徽章随之消失；本设置卡保留并显示为未运行，随时可以重新开启。看板与已同步的卡片数据都不受影响。",
 			"settings.announce": "向 agent 播报本扩展",
 			"settings.announceHint": "开启后每条 agent 系统提示都会包含本扩展的说明与触发词；关闭则只在用户主动提及时生效。默认关闭，保持系统提示干净。",
 			"settings.on": "开",
@@ -14201,7 +14201,7 @@ window.__ModuleLoader__.load({
 			"settings.title": "GitHub Issues sync",
 			"settings.description": "External provider extension for the task board: it synchronizes GitHub Issues into board cards and writes column changes back to the issue labels. On by default and switchable off from this card.",
 			"settings.enabled": "Enable GitHub Issues sync",
-			"settings.enabledHint": "When off, this extension registers nothing with the board: polling stops, write-back stops, the agent tools unregister and the sync status clears, and its detail and settings seats disappear. The board and the cards already synchronized are unaffected.",
+			"settings.enabledHint": "When off, this extension registers nothing with the board: polling stops, write-back stops, the agent tools unregister and the sync status clears, and its detail section and card decoration disappear. This settings card stays reachable and reports that the extension is not running, so the switch can be turned back on. The board and the cards already synchronized are unaffected.",
 			"settings.announce": "Announce this extension to agents",
 			"settings.announceHint": "On: every agent system prompt carries a note about this extension and its trigger words. Off: agents learn about it only when you mention it. Off by default, so prompts stay clean.",
 			"settings.on": "On",
@@ -14283,83 +14283,8 @@ window.__ModuleLoader__.load({
 			return text;
 		}
 		//#endregion
-		//#region ../dsh-task-board-github/src/client/github/summary.ts
-		/**
-		* The published summary this extension's browser half renders.
-		*
-		* The host half publishes it through the board capability face, so it rides
-		* the board's own state channel and reaches the browser inside the board
-		* mirror's `extensions` map. This provider therefore opens no HTTP surface of
-		* its own. The store is a module singleton because one bundle instance serves
-		* one extension: the seat components receive only the contract's owner props
-		* (`{ task, dispatch }` / `{ dispatch }`), so the summary travels beside the
-		* seats rather than through them.
-		*
-		* @module dsh-task-board-github/client/github/summary
-		*/
-		/** Normalize whatever the board hands back; a foreign payload reads as absent. */
-		function decode(value) {
-			if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
-			const record = value;
-			const repositories = Array.isArray(record.repositories) ? record.repositories.flatMap((entry) => {
-				if (typeof entry !== "object" || entry === null) return [];
-				const repo = entry;
-				if (typeof repo.owner !== "string" || typeof repo.repository !== "string") return [];
-				return [{
-					owner: repo.owner,
-					repository: repo.repository,
-					inclusionLabel: typeof repo.inclusionLabel === "string" ? repo.inclusionLabel : "",
-					prCreationEnabled: repo.prCreationEnabled === true,
-					hasCredential: repo.hasCredential === true
-				}];
-			}) : void 0;
-			return {
-				...typeof record.enabled === "boolean" ? { enabled: record.enabled } : {},
-				...typeof record.hasCredential === "boolean" ? { hasCredential: record.hasCredential } : {},
-				...repositories === void 0 ? {} : { repositories }
-			};
-		}
-		let current;
-		const listeners = /* @__PURE__ */ new Set();
-		/**
-		* Read one published summary out of the board mirror and store it.
-		* @param published - the mirror's `extensions` map.
-		*/
-		function acceptPublishedSummaries(published) {
-			setSummary(decode(published[GITHUB_EXTENSION_ID]));
-		}
-		/** Replace the stored summary; an unchanged value notifies nobody. */
-		function setSummary(next) {
-			if (current === next) return;
-			current = next;
-			for (const listener of [...listeners]) try {
-				listener();
-			} catch {}
-		}
-		/** Drop the summary (the board reports the extension is not running). */
-		function clearSummary() {
-			setSummary(void 0);
-		}
-		/** The current summary, or undefined while the extension publishes none. */
-		function getSummary() {
-			return current;
-		}
-		function subscribe(listener) {
-			listeners.add(listener);
-			return () => {
-				listeners.delete(listener);
-			};
-		}
-		/**
-		* Observe the published summary from a React component.
-		* @returns the current summary, or undefined while none is published.
-		*/
-		function useGitHubSummary() {
-			return (0, react.useSyncExternalStore)(subscribe, getSummary, getSummary);
-		}
-		//#endregion
 		//#region \0dsh-css:packages/dsh-task-board-github/src/client/github.module.css.mjs
-		const css$11 = ".SUUxSG_detailSection{flex-direction:column;gap:6px;display:flex}.SUUxSG_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}.SUUxSG_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}.SUUxSG_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}.SUUxSG_cardTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}.SUUxSG_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:2px 6px;font-size:12px;line-height:1}.SUUxSG_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}.SUUxSG_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.SUUxSG_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.SUUxSG_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.SUUxSG_moveRow{flex-wrap:wrap;gap:8px;display:flex}.SUUxSG_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.SUUxSG_field{flex-direction:column;gap:5px;display:flex}.SUUxSG_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.SUUxSG_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.SUUxSG_input:focus{border-color:var(--dsw-alias-state-business-primary)}.SUUxSG_input::placeholder{color:var(--dsw-alias-label-tertiary)}.SUUxSG_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}.SUUxSG_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}.SUUxSG_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.SUUxSG_linkButton:hover{text-decoration:underline}.SUUxSG_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.SUUxSG_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.SUUxSG_primaryButton:disabled{opacity:.5;cursor:default}.SUUxSG_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.SUUxSG_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_ghostButton:disabled{opacity:.45;cursor:default}.SUUxSG_primaryButton:focus-visible,.SUUxSG_ghostButton:focus-visible,.SUUxSG_linkButton:focus-visible,.SUUxSG_input:focus-visible,.SUUxSG_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.SUUxSG_primaryButton,.SUUxSG_ghostButton,.SUUxSG_linkButton,.SUUxSG_input,.SUUxSG_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}.SUUxSG_primaryButton:active:not(:disabled),.SUUxSG_ghostButton:active:not(:disabled),.SUUxSG_linkButton:active:not(:disabled){transform:translateY(1px)}.SUUxSG_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.SUUxSG_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}.SUUxSG_modalTitle{margin:0;font-size:15px;font-weight:700}.SUUxSG_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}.SUUxSG_modalBody>*{flex:none}.SUUxSG_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}@media (width<=720px){.SUUxSG_input{box-sizing:border-box;font-size:16px}.SUUxSG_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}.SUUxSG_modal{box-sizing:border-box;width:100vw;height:100dvh;max-height:none;padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));border:0;border-radius:0}.SUUxSG_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}.SUUxSG_modalFooter>button{flex:120px}}";
+		const css$11 = ".SUUxSG_detailSection{flex-direction:column;gap:6px;display:flex}.SUUxSG_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}.SUUxSG_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}.SUUxSG_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}.SUUxSG_cardTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}.SUUxSG_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:2px 6px;font-size:12px;line-height:1}.SUUxSG_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}.SUUxSG_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.SUUxSG_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.SUUxSG_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.SUUxSG_moveRow{flex-wrap:wrap;gap:8px;display:flex}.SUUxSG_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.SUUxSG_field{flex-direction:column;gap:5px;display:flex}.SUUxSG_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.SUUxSG_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.SUUxSG_input:focus{border-color:var(--dsw-alias-state-business-primary)}.SUUxSG_input::placeholder{color:var(--dsw-alias-label-tertiary)}.SUUxSG_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}.SUUxSG_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}.SUUxSG_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.SUUxSG_linkButton:hover{text-decoration:underline}.SUUxSG_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.SUUxSG_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.SUUxSG_primaryButton:disabled{opacity:.5;cursor:default}.SUUxSG_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.SUUxSG_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_ghostButton:disabled{opacity:.45;cursor:default}.SUUxSG_primaryButton:focus-visible,.SUUxSG_ghostButton:focus-visible,.SUUxSG_linkButton:focus-visible,.SUUxSG_input:focus-visible,.SUUxSG_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.SUUxSG_primaryButton,.SUUxSG_ghostButton,.SUUxSG_linkButton,.SUUxSG_input,.SUUxSG_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}.SUUxSG_primaryButton:active:not(:disabled),.SUUxSG_ghostButton:active:not(:disabled),.SUUxSG_linkButton:active:not(:disabled){transform:translateY(1px)}.SUUxSG_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.SUUxSG_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}.SUUxSG_modalTitle{margin:0;font-size:15px;font-weight:700}.SUUxSG_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}.SUUxSG_modalBody>*{flex:none}.SUUxSG_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.SUUxSG_settingsSummary{border-top:1px solid var(--dsw-alias-border-subtle,#333);margin-top:16px;padding-top:12px}.SUUxSG_settingsSummaryTitle{margin:0 0 8px;font-size:13px;font-weight:600}@media (width<=720px){.SUUxSG_input{box-sizing:border-box;font-size:16px}.SUUxSG_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}.SUUxSG_modal{box-sizing:border-box;width:100vw;height:100dvh;max-height:none;padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));border:0;border-radius:0}.SUUxSG_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}.SUUxSG_modalFooter>button{flex:120px}}";
 		const tagId$11 = "@linxin666/dsh-web-all/packages/dsh-task-board-github/src/client/github.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
 			const tag = document.createElement("style");
@@ -14389,18 +14314,21 @@ window.__ModuleLoader__.load({
 			"moveRow": "SUUxSG_moveRow",
 			"primaryButton": "SUUxSG_primaryButton",
 			"scheduleToggle": "SUUxSG_scheduleToggle",
+			"settingsSummary": "SUUxSG_settingsSummary",
+			"settingsSummaryTitle": "SUUxSG_settingsSummaryTitle",
 			"statusBadge": "SUUxSG_statusBadge"
 		};
 		//#endregion
 		//#region ../dsh-task-board-github/src/client/github/sections.tsx
 		/**
-		* GitHub provider surfaces rendered into the board's child seats.
+		* GitHub provider surfaces: the sections rendered into the board's child
+		* seats, plus the summary block the extension's own settings card mounts.
 		*
 		* These components are the provider's browser half: they receive the board's
-		* seat owner props ({ task, dispatch } / { dispatch }) and talk back only
-		* through `dispatch`, never through a board internal or an HTTP surface of
-		* their own. The published repository/credential summary arrives through the
-		* board mirror (see ./summary.ts).
+		* seat owner props ({ task, dispatch }) and talk back only through `dispatch`,
+		* never through a board internal or an HTTP surface of their own. The
+		* repository/credential summary arrives through the board mirror (see
+		* ./summary.ts) rather than through a seat.
 		*
 		* @module dsh-task-board-github/client/github/sections
 		*/
@@ -14596,7 +14524,7 @@ window.__ModuleLoader__.load({
 				})
 			});
 		}
-		/** The repository/credential summary block, shared by the settings seat and the card. */
+		/** The repository/credential summary block the extension's settings card renders. */
 		function GitHubSummaryBlock({ summary }) {
 			if (summary === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 				className: github_module_css_default.detailMeta,
@@ -14818,25 +14746,80 @@ window.__ModuleLoader__.load({
 				children: ["#", metadata.issueNumber]
 			});
 		}
-		/** The settings seat: configured repositories and credential state. */
-		function GitHubSettingsSection(_props) {
-			const summary = useGitHubSummary();
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				"data-dsh-part": "github-settings",
-				style: {
-					marginTop: "16px",
-					borderTop: "1px solid var(--dsw-alias-border-subtle, #333)",
-					paddingTop: "12px"
-				},
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", {
-					style: {
-						margin: "0 0 8px 0",
-						fontSize: "13px",
-						fontWeight: 600
-					},
-					children: t$4("summary.title")
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GitHubSummaryBlock, { summary })]
-			});
+		//#endregion
+		//#region ../dsh-task-board-github/src/client/github/summary.ts
+		/**
+		* The published summary this extension's browser half renders.
+		*
+		* The host half publishes it through the board capability face, so it rides
+		* the board's own state channel and reaches the browser inside the board
+		* mirror's `extensions` map. This provider therefore opens no HTTP surface of
+		* its own. The store is a module singleton because one bundle instance serves
+		* one extension: the seat components receive only the contract's owner props
+		* (`{ task, dispatch }` / `{ dispatch }`), so the summary travels beside the
+		* seats rather than through them.
+		*
+		* @module dsh-task-board-github/client/github/summary
+		*/
+		/** Normalize whatever the board hands back; a foreign payload reads as absent. */
+		function decode(value) {
+			if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
+			const record = value;
+			const repositories = Array.isArray(record.repositories) ? record.repositories.flatMap((entry) => {
+				if (typeof entry !== "object" || entry === null) return [];
+				const repo = entry;
+				if (typeof repo.owner !== "string" || typeof repo.repository !== "string") return [];
+				return [{
+					owner: repo.owner,
+					repository: repo.repository,
+					inclusionLabel: typeof repo.inclusionLabel === "string" ? repo.inclusionLabel : "",
+					prCreationEnabled: repo.prCreationEnabled === true,
+					hasCredential: repo.hasCredential === true
+				}];
+			}) : void 0;
+			return {
+				...typeof record.enabled === "boolean" ? { enabled: record.enabled } : {},
+				...typeof record.hasCredential === "boolean" ? { hasCredential: record.hasCredential } : {},
+				...repositories === void 0 ? {} : { repositories }
+			};
+		}
+		let current;
+		const listeners = /* @__PURE__ */ new Set();
+		/**
+		* Read one published summary out of the board mirror and store it.
+		* @param published - the mirror's `extensions` map.
+		*/
+		function acceptPublishedSummaries(published) {
+			setSummary(decode(published[GITHUB_EXTENSION_ID]));
+		}
+		/** Replace the stored summary; an unchanged value notifies nobody. */
+		function setSummary(next) {
+			if (current === next) return;
+			current = next;
+			for (const listener of [...listeners]) try {
+				listener();
+			} catch {}
+		}
+		/** Drop the summary (the board reports the extension is not running). */
+		function clearSummary() {
+			setSummary(void 0);
+		}
+		/** The current summary, or undefined while the extension publishes none. */
+		function getSummary() {
+			return current;
+		}
+		function subscribe(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		}
+		/**
+		* Observe the published summary from a React component.
+		* @returns the current summary, or undefined while none is published.
+		*/
+		function useGitHubSummary() {
+			return (0, react.useSyncExternalStore)(subscribe, getSummary, getSummary);
 		}
 		//#endregion
 		//#region ../dsh-task-board-github/src/client/GithubSettingsCard.tsx
@@ -14926,9 +14909,13 @@ window.__ModuleLoader__.load({
 							props.resetField("announceToAgent");
 						}
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: settings_card_module_css_default$2.hint,
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GitHubSummaryBlock, { summary })
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: github_module_css_default.settingsSummary,
+						"data-dsh-part": "github-settings",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", {
+							className: github_module_css_default.settingsSummaryTitle,
+							children: t("summary.title")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GitHubSummaryBlock, { summary })]
 					})
 				]
 			});
@@ -14939,8 +14926,6 @@ window.__ModuleLoader__.load({
 		const TASK_BOARD_SERVICE_NAME = "taskBoard";
 		/** Child seat a provider registers its task-detail section into. */
 		const TASK_BOARD_DETAIL_SECTION = "task-board.detail.section";
-		/** Child seat a provider registers its settings section into. */
-		const TASK_BOARD_SETTINGS_SECTION = "task-board.settings.section";
 		/** Child seat a provider registers its card decoration into. */
 		const TASK_BOARD_CARD_DECORATION = "task-board.card.decoration";
 		/**
@@ -15000,8 +14985,10 @@ window.__ModuleLoader__.load({
 			};
 		}
 		/**
-		* Register the three seats, the visibility predicate and the mirror
-		* subscription, for as long as the board's own master switch is on.
+		* Register the two seats, the visibility predicate and the mirror
+		* subscription, for as long as the board's own master switch is on. The
+		* board's settings seat is deliberately unused: the repository/credential
+		* summary is part of this extension's own settings card.
 		* @param ctx - client context.
 		* @returns disposer releasing every contribution.
 		*/
@@ -15023,11 +15010,6 @@ window.__ModuleLoader__.load({
 						id: GITHUB_EXTENSION_ID,
 						locale: LOCALE_NS
 					}, GitHubDetailSection));
-					seats.push(slots.register({
-						name: TASK_BOARD_SETTINGS_SECTION,
-						id: GITHUB_EXTENSION_ID,
-						locale: LOCALE_NS
-					}, GitHubSettingsSection));
 					seats.push(slots.register({
 						name: TASK_BOARD_CARD_DECORATION,
 						id: GITHUB_EXTENSION_ID

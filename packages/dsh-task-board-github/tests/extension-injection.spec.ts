@@ -20,10 +20,13 @@ import { apply, Config } from '../src/index.ts'
 import { FakeBoard } from './support/fake-board.ts'
 import { mountPlugin, recordingClientFace, recordingSlots, settle } from './support/cordis-harness.ts'
 
-/** The three seats the extension contributes, in registration order. */
+/**
+ * The seats the extension contributes, in registration order. The board's
+ * settings seat is deliberately absent: the repository/credential summary is
+ * part of this extension's own settings card.
+ */
 const SEAT_NAMES = [
   'task-board.detail.section',
-  'task-board.settings.section',
   'task-board.card.decoration',
 ]
 
@@ -59,7 +62,7 @@ function switchboard(initial: boolean): Switchboard {
 }
 
 describe('GitHub client wiring against a late board service', () => {
-  it('operator gets all three provider seats once the board publishes its client service, and loses them when it goes away', async () => {
+  it('operator gets both provider seats once the board publishes its client service, and loses them when it goes away', async () => {
     // Given a page whose board has not published its client service yet
     const root = new Context()
     const slots = recordingSlots()

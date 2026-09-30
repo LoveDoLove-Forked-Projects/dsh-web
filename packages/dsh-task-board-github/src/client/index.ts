@@ -2,7 +2,7 @@
  * Browser half of the task-board GitHub provider extension.
  *
  * It registers the extension's copy, contributes one settings card to the
- * plugin-card seat the running host renders, and installs the provider's three
+ * plugin-card seat the running host renders, and installs the provider's two
  * child seats into the task board. Both halves of the extension's own switch
  * are followed live: the seats appear and disappear with the settings form's
  * `enabled` value, while the settings card itself stays reachable so the

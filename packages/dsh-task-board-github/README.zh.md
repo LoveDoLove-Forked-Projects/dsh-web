@@ -12,7 +12,7 @@ DSH Web GUI 任务看板（`@linxin666/dsh-client-ui-task-board`）的外部提�
 - **执行不可变**：远程标题与正文只在卡片开始执行之前刷新卡片内容。这一判定由看板自己的内容门禁裁定，扩展不再保留第二套“哪些卡片已冻结”的判定。
 - **无损停用**：移除纳入标签会把卡片从活动看板隐藏，并保留全部执行记录；重新添加后恢复同一张卡片。
 - **五个模型可见工具**：`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`，经看板的 `registerTool` 能力登记，因此随「看板总开关 × 本扩展开关」一起收放。
-- **三个看板席位**：任务详情中的 issue / 标签 / Pull Request 区域；看板设置卡中的仓库与凭据摘要；以及紧凑的 `#<issueNumber>` 卡片徽章。
+- **两个看板席位**：任务详情中的 issue / 标签 / Pull Request 区域，以及紧凑的 `#<issueNumber>` 卡片徽章。仓库与凭据摘要改在本扩展自己的设置卡中渲染，紧邻决定其行为的开关。
 - **一个开关门禁两侧**：默认开启。关闭后即停止轮询、停止回写、解除事件订阅与工具登记、清空已发布摘要并撤下全部席位——无需重挂载插件行，也不触碰已存储的卡片。
 - **登记面归看板所有，且与加载顺序无关**：扩展向看板的提供方席位登记，且不 import 看板内部实现，因此可作为独立包构建、发布与加载。两侧半区都经 cordis 依赖作用域等待看板的提供方服务，因此看板先于或后于本插件行激活都可以：服务一被提供，席位与 provider 登记就出现；服务撤走即自动释放。
 - **凭据只在 Host 侧处理**：GitHub 令牌由宿主半区从 `tokenEnv` 指定的环境变量读取，不会进入浏览器或 agent。远端 issue 文本只作为卡片内容与提供方元数据存储，绝不进入权限、工作区身份或 `promptPrefix`。
@@ -44,7 +44,7 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board-github
 | `tokenEnv` | `GITHUB_TOKEN` | 存放 GitHub API 令牌的环境变量名。 |
 | `repositories` | `[]` | 需要同步的仓库，每项含 `owner`、`repository`、`inclusionLabel`、`managedLabelPrefix`、`stateLabels`、`prPhaseLabel`、`pollingIntervalMs`、`prCreationEnabled`、`draftPrPolicy`、`closeIssueOnMerge` 与 `baseBranch`。 |
 
-设置卡还会显示已配置的仓库数量以及 Host 是否持有可用凭据。这份摘要由运行中的提供方发布，因此只在扩展开启时出现。
+本扩展的设置卡还会显示已配置的仓库数量以及 Host 是否持有可用凭据。这份摘要由运行中的提供方发布，因此只在扩展开启时出现。
 
 ## 从看板行迁移
 

@@ -1,17 +1,18 @@
 // @vitest-environment jsdom
 /**
  * The GitHub surfaces as an operator sees them: the task-detail seat, the card
- * decoration, the settings seat's repository summary, and the dispatch channel
- * the detail actions travel over. The board's own generic filter and its
- * visibility summation are covered by the board's suite; here the provider's
- * contribution to each is asserted directly.
+ * decoration, the repository/credential block of the extension's own settings
+ * card, and the dispatch channel the detail actions travel over. The board's
+ * own generic filter and its visibility summation are covered by the board's
+ * suite; here the provider's contribution to each is asserted directly.
  */
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { TaskBoardExtensionActionRequest } from '../src/core/contract.ts'
 import type { TaskRecord } from '../src/core/task-record.ts'
-import { GitHubCardDecoration, GitHubDetailSection, GitHubSettingsSection } from '../src/client/github/sections.tsx'
+import { GithubSettingsCard, type GithubSettingsCardProps, type GitHubSettingsCardState } from '../src/client/GithubSettingsCard.tsx'
+import { GitHubCardDecoration, GitHubDetailSection } from '../src/client/github/sections.tsx'
 import { setSummary, clearSummary } from '../src/client/github/summary.ts'
 import { isGitHubTaskVisible } from '../src/client/github/visibility.ts'
 import { zh } from '../src/client/locales.ts'
@@ -45,6 +46,35 @@ function fakeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
     executions: [],
     ...overrides,
   }
+}
+
+/** One complete, writable card snapshot whose two switches are untouched. */
+function cardState(): GitHubSettingsCardState {
+  const field = { text: '', overridden: false, invalid: false }
+  return {
+    available: true,
+    exposed: true,
+    writable: true,
+    dirty: false,
+    invalid: false,
+    saving: false,
+    failed: false,
+    enabled: field,
+    announceToAgent: field,
+  }
+}
+
+/** Render-ready props for the card: a fixed snapshot and inert form actions. */
+function cardProps(): GithubSettingsCardProps {
+  const state = cardState()
+  return {
+    t: (key: string) => (zh as Record<string, string>)[key] ?? key,
+    useGithubSettingsCard: (select: (snapshot: GitHubSettingsCardState) => unknown) => select(state),
+    edit: () => {},
+    resetField: () => {},
+    save: () => {},
+    discard: () => {},
+  } as unknown as GithubSettingsCardProps
 }
 
 /** A dispatch channel that records what the seats sent and accepts everything. */
@@ -221,7 +251,7 @@ describe('GitHub UI integration', () => {
     expect(badge?.getAttribute('title')).toBe('deepseek-ai/dsh-web#1758')
   })
 
-  it('operator sees the settings seat report the published repositories and credential state', () => {
+  it('operator sees the extension settings card report the published repositories and credential state', () => {
     // Given a published summary naming one repository and an available credential
     setSummary({
       enabled: true,
@@ -235,14 +265,14 @@ describe('GitHub UI integration', () => {
       }],
     })
 
-    // When the settings seat renders
-    const container = render(<GitHubSettingsSection dispatch={async () => true} />)
+    // When the extension's own settings card renders
+    const container = render(<GithubSettingsCard {...cardProps()} />)
 
-    // Then it names the repository, its inclusion label, the auto-PR policy and
-    // the credential state
-    const text = container.textContent ?? ''
+    // Then the integration block inside that card names itself, the repository,
+    // its inclusion label, the auto-PR policy and the credential state
+    const text = container.querySelector('[data-dsh-part="github-settings"]')?.textContent ?? ''
+    expect(text).toContain(zh['summary.title'])
     expect(text).toContain('deepseek-ai/dsh')
-    expect(text).toContain('dsh')
     expect(text).toContain(zh['summary.credentialReady'])
     expect(text).toContain(zh['summary.autoPr'])
   })
