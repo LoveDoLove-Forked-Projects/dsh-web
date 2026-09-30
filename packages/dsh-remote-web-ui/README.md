@@ -182,6 +182,7 @@ The public path is the same round trip through a tunnel (see "Remote access over
 - **Plain-HTTP LAN reopens need a re-scan**: the reopen service worker registers only on secure contexts (https tunnels, localhost); a phone paired over a plain-HTTP LAN URL that navigates back to `/` hits the harness 401 and must scan a fresh QR. Pairing again is cheap in-network and restores everything.
 - **The adaptation selectors track the official build**: the semantic-suffix strategy survives hash churn but not semantic renames; each official GUI update needs a visual QA pass (per the dsh-LAN reference, these suffixes have been stable across many official releases).
 - **Dev HMR**: `dsh web --dev` polls every roster bundle by path, so rebuilding this package (its own `tsdown --watch`) hot-reloads the client bundle; the host half needs a restart.
+- **A mounted `@deepseek-ai/dsh-hmr` row blocks every settings save**: the official config editor serializes its writes through `hmr.runExclusive` whenever the `hmr` service is mounted, and on this cohort such a write is rejected as a nested transaction - the Host answers `HMR transactions cannot be nested` and each family settings card (and the official settings pages) reports a failed save. The row is user-added (no bundle ships it); a Desktop profile carries it to hot-reload a local plugin's host half. Remove the `- id: hmr` row from the profile patch to restore saves, and re-add it only while iterating on that plugin. Observed on the Desktop client 0.2.0-rc.2 (2026-09-30).
 
 ## Dependency rationale
 

@@ -182,6 +182,7 @@ pnpm run build
 - **纯 HTTP 局域网的重开需要重扫**：重开 service worker 只在安全上下文（https 隧道、localhost）注册；经纯 HTTP 局域网 URL 配对的手机导航回 `/` 时会撞上 harness 401，需要重新扫码。局域网内重配对成本很低，配对后一切恢复。
 - **适配选择器跟随官方构建**：语义后缀策略可在 hash 变化中存活，但语义改名不行；每次官方 GUI 升级需要一轮视觉 QA（参考 dsh-LAN，这些后缀在多次官方发布中保持稳定）。
 - **开发 HMR**：`dsh web --dev` 按路径轮询每个 roster bundle，重建本包（自身 `tsdown --watch`）即热重载客户端 bundle；host 半区需要重启。
+- **profile 里挂了 `@deepseek-ai/dsh-hmr` 行会让所有设置保存失败**：只要 `hmr` 服务存在，官方配置编辑器就会把写入包进 `hmr.runExclusive`，而在本 cohort 上这种写入会被判为嵌套事务——Host 返回 `HMR transactions cannot be nested`，本插件的各设置卡片（以及官方设置页）都显示保存失败。该行由用户自行添加（没有任何 bundle 自带），桌面版 profile 用它为本地插件的 host 半区做热重载。从 profile 补丁里删掉 `- id: hmr` 这一行即可恢复保存；只在需要热重载该插件时再加回。观察于 2026-09-30，桌面版客户端 0.2.0-rc.2。
 
 ## 依赖说明
 
