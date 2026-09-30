@@ -31,8 +31,9 @@ flowchart TB
 
 ```text
 dsh-web/
-├── packages/            # 插件 monorepo：功能插件与聚合包 dsh-web-all（皮肤/宠物/社区索引已迁出）
+├── packages/            # 插件 monorepo：功能插件与聚合包 dsh-web-all（皮肤/宠物/社区索引/预设中心已迁出为卫星仓）
 │   └── <name>/          # 独立 cordis bundle 包（host + client 两半区）
+├── satellites/          # 4 个卫星仓库 git submodules（dsh-skins、dsh-pet、dsh-community-plugins、dsh-presets）
 ├── shared/              # 跨包事实源：构建预设、平台模块表、host 与 client 运行时模块
 ├── scripts/             # 仓库维护工具（aggregate、sync-shared、market-build、verify-docs 等）
 ├── market/              # dsh-market.com：src 静态站源、shell 试穿壳、dist 提交产物、worker 边缘 API
@@ -77,7 +78,7 @@ flowchart LR
 flowchart LR
     A["aggregate.yml：patchFrom、deps、rows、inactive"] -- "node scripts/aggregate.mjs 生成" --> B["dsh-web-all：cordis.patch.yml + package.json"]
     B -- "dsh plugin --profile web add link" --> C["web profile（hoisted 布局）"]
-    C -- "web-ui-* 行逐条挂载" --> D["14 个家族子包（alpha 分支不挂外部插件行）"]
+    C -- "web-ui-* 行逐条挂载" --> D["14 个仓内家族子包 + 4 个卫星仓外部行"]
     E["mount-once 防重：双源只注册一次"] -.-> D
     F["inactive：ssh、liangshen、skill-explorer 出厂默认关闭"] -.-> D
 ```
