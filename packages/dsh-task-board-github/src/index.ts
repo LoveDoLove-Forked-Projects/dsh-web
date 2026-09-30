@@ -145,6 +145,8 @@ export interface GitHubRepoConfigInput {
   repository: string
   /** Issue label that opts an issue into the board. */
   inclusionLabel?: string
+  /** Login whose assigned issues are included too; `@me` means this host's account. */
+  assignee?: string
   /** Prefix of the labels this extension manages itself. */
   managedLabelPrefix?: string
   /** GitHub labels mapped onto the board columns. */
@@ -168,6 +170,7 @@ const GitHubRepoConfigSchema = z.object({
   owner: z.string(),
   repository: z.string(),
   inclusionLabel: z.string().default('dsh'),
+  assignee: z.string().default(''),
   managedLabelPrefix: z.string().default('dsh:'),
   stateLabels: z.object({
     backlog: z.string().default('dsh:state:backlog'),

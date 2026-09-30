@@ -19,8 +19,8 @@ export function nameOf(labels: GitHubIssuePayload['labels']): string[] {
   return labels.map(label => (typeof label === 'string' ? label : label.name))
 }
 
-/** One open issue fixture carrying the given labels and body. */
-export function issueFixture(number: number, labels: string[], body = ''): GitHubIssuePayload {
+/** One open issue fixture carrying the given labels, body and assignees. */
+export function issueFixture(number: number, labels: string[], body = '', assignees: string[] = []): GitHubIssuePayload {
   return {
     number,
     title: `Issue ${String(number)}`,
@@ -28,6 +28,7 @@ export function issueFixture(number: number, labels: string[], body = ''): GitHu
     state: 'open',
     html_url: `https://github.com/deepseek-ai/dsh/issues/${String(number)}`,
     labels,
+    assignees: assignees.map(login => ({ login })),
     updated_at: '2026-09-02T10:00:00Z',
   }
 }
@@ -37,6 +38,8 @@ export class FakeGitHubBackend {
   issues: GitHubIssuePayload[] = []
   pulls: GitHubPullRequestPayload[] = []
   branches: string[] = []
+  /** Login the stand-in answers `GET /user` with. */
+  login = 'tester'
   networkFailure = false
   /** How many HTTP calls reached the stand-in. */
   requests = 0
@@ -48,6 +51,9 @@ export class FakeGitHubBackend {
     const method = init?.method ?? 'GET'
     const pathname = url.pathname
 
+    if (pathname === '/user' && method === 'GET') {
+      return json({ login: this.login })
+    }
     if (pathname.includes('/issues') && method === 'GET' && !pathname.match(/\/issues\/\d+$/)) {
       return json(this.issues)
     }

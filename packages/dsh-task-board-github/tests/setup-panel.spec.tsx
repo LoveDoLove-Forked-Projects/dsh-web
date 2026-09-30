@@ -147,6 +147,24 @@ describe('GitHub setup panel', () => {
     expect(input.value).toBe('')
   })
 
+  it('operator can hand a new repository the assignee channel from the same row', async () => {
+    // Given a rendered panel with no repository
+    const { api, list } = apiDouble()
+    const container = await renderPanel(api)
+
+    // When the operator types a repository plus an assignee and adds it
+    const input = container.querySelector('[data-dsh-part="github-repository-input"]') as HTMLInputElement
+    const assignee = container.querySelector('[data-dsh-part="github-repository-assignee-input"]') as HTMLInputElement
+    type(input, 'deepseek-ai/dsh-web')
+    type(assignee, '@me')
+    await act(async () => { button(container, zh['setup.repositoryAdd']).click() })
+
+    // Then the stored entry carries the channel and the row shows it
+    expect(list()).toEqual([{ owner: 'deepseek-ai', repository: 'dsh-web', assignee: '@me' }])
+    expect(container.querySelector('[data-dsh-part="github-repository-assignee"]')?.textContent)
+      .toBe(zh['setup.assigneeChip'].replace('{login}', '@me'))
+  })
+
   it('operator adding the same repository twice is told instead of silently getting one row', async () => {
     // Given a configuration that already carries the repository
     const { api, calls } = apiDouble([{ owner: 'deepseek-ai', repository: 'dsh-web' }])

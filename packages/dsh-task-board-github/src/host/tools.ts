@@ -125,11 +125,12 @@ function buildSetupTool(setup: GitHubSetup): ToolDefinition {
 function buildRepositoriesTool(setup: GitHubSetup): ToolDefinition {
   return defineTool({
     name: 'task_board_github_repositories',
-    description: 'Read and edit the repositories the GitHub Issues integration synchronizes with the task board. A repository is written to the plugin configuration as soon as the call returns, so no restart is needed. Triggers: github repositories, add github repo, 配置 github 仓库, 添加 github 仓库, github 同步仓库.',
+    description: 'Read and edit the repositories the GitHub Issues integration synchronizes with the task board. An issue is included when it carries the inclusion label or is assigned to the configured assignee. A repository is written to the plugin configuration as soon as the call returns, so no restart is needed. Triggers: github repositories, add github repo, 配置 github 仓库, 添加 github 仓库, github 同步仓库, 指派给我的 issue 上板.',
     parameters: {
       action: { type: 'string', required: true, enum: ['list', 'add', 'remove', 'update'], description: 'list reads the configured repositories; add, remove and update rewrite the list.' },
       repository: { type: 'string', description: 'Repository to act on: owner/repo, a GitHub URL, or an SSH remote. Required by add, remove and update.' },
       inclusionLabel: { type: 'string', description: 'Issue label that opts an issue into the board (default dsh).' },
+      assignee: { type: 'string', description: 'Login whose assigned issues are included too; use @me for the account the host is authenticated as, or an empty string to turn the channel off. Trivial filters such as "assigned to me" belong here.' },
       baseBranch: { type: 'string', description: 'Base branch pull requests target (default main).' },
       prCreationEnabled: { type: 'boolean', description: 'Whether the extension may open pull requests for completed cards.' },
       pollingIntervalMs: { type: 'number', description: 'Background polling interval in milliseconds (default 300000; 0 disables polling).' },
@@ -141,6 +142,9 @@ function buildRepositoriesTool(setup: GitHubSetup): ToolDefinition {
       const input = typeof args.repository === 'string' ? args.repository : ''
       const options: RepositoryOptions = {}
       if (typeof args.inclusionLabel === 'string' && args.inclusionLabel.trim() !== '') options.inclusionLabel = args.inclusionLabel.trim()
+      // An explicit empty string is meaningful here: it turns the assignee
+      // channel off without dropping the repository.
+      if (typeof args.assignee === 'string') options.assignee = args.assignee.trim()
       if (typeof args.baseBranch === 'string' && args.baseBranch.trim() !== '') options.baseBranch = args.baseBranch.trim()
       if (typeof args.prCreationEnabled === 'boolean') options.prCreationEnabled = args.prCreationEnabled
       if (typeof args.pollingIntervalMs === 'number' && Number.isFinite(args.pollingIntervalMs) && args.pollingIntervalMs >= 0) {

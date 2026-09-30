@@ -44,6 +44,24 @@ describe('GitHub repository input parsing', () => {
 })
 
 describe('GitHub repository list edits', () => {
+  it('operator can switch the assignee channel on when adding and back off when updating', () => {
+    // Given an empty list
+    // When a repository is added with the assignee channel
+    const added = addRepository([], 'deepseek-ai/dsh-web', { assignee: '@me' })
+
+    // Then the entry carries it
+    expect(added).toEqual({ ok: true, repositories: [{ owner: 'deepseek-ai', repository: 'dsh-web', assignee: '@me' }] })
+    if (!added.ok) throw new Error('the add was refused')
+
+    // When the channel is cleared with an explicit empty string
+    const cleared = updateRepository(added.repositories, 'deepseek-ai/dsh-web', { assignee: '' })
+
+    // Then the field is gone rather than stored empty, so the repository keeps
+    // its label channel and nothing else
+    expect(cleared.ok).toBe(true)
+    if (cleared.ok) expect(cleared.repositories[0]).toEqual({ owner: 'deepseek-ai', repository: 'dsh-web' })
+  })
+
   it('operator adding a repository gets the sanitized entry appended', () => {
     // Given an empty list
     // When one repository is added with an inclusion label

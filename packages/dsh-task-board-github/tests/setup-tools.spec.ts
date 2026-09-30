@@ -106,6 +106,20 @@ describe('GitHub setup tools', () => {
     expect(result).toMatchObject({ ok: false, code: 'repository-duplicate' })
   })
 
+  it("operator's agent can include the account's assigned issues in one add call", async () => {
+    // Given the repositories tool and an empty configuration
+    const { setup, list } = setupDouble()
+    const tool = toolOf(buildSetupTools(setup), 'task_board_github_repositories')
+
+    // When a repository is added with the assignee channel
+    const result = await run(tool, { action: 'add', repository: 'deepseek-ai/dsh-web', assignee: '@me' })
+
+    // Then the stored entry carries it, which is what makes assigned issues
+    // reach the board without any label
+    expect(result.ok).toBe(true)
+    expect(list()).toEqual([{ owner: 'deepseek-ai', repository: 'dsh-web', assignee: '@me' }])
+  })
+
   it('operator\'s agent removing a repository drops exactly that entry', async () => {
     // Given two configured repositories
     const { setup, list } = setupDouble([{ owner: 'deepseek-ai', repository: 'dsh-web' }, { owner: 'other', repository: 'thing' }])

@@ -10,7 +10,7 @@ Status: implemented
 
 在 DSH 任务看板中实现基于 Host 端的 GitHub Issue 同步机制，作为可选的外部提供方扩展（`packages/dsh-task-board-github`），数据载于看板不透明的 `TaskRecord.integrations` 容器中扩展自持的 `github` 键下：
 
-- **入站发现**：拉取带有配置包含标签（默认 `dsh`）的 Issues，物化为本地任务卡片，或通过不可变身份三元组 `{ owner, repository, issueNumber }` 与既有卡片对齐。
+- **入站发现**：两条通道任一命中即选中 issue——带配置的包含标签（默认 `dsh`），或被指派给该仓库配置的登录（`@me` 解析为宿主认证的账号）。选中的 issue 物化为本地任务卡片，或通过不可变身份三元组 `{ owner, repository, issueNumber }` 与既有卡片对齐；两条通道都不再命中时停用对应卡片。
 - **本地权威状态机**：既有的五列看板状态机保持唯一权威。`running`（进行中）状态始终为 Host 本地状态。GitHub 状态标签（`dsh:state:*`）是对外状态投影，而非第二状态机。
 - **受控回写**：回写操作仅严格增删 DSH 所属的状态与阶段标签（`dsh:state:*`、`dsh:phase:pr`）。无关的用户标签（如 `bug`、`security`、`priority:high` 以及包含标签本身）绝对不修改或删除。
 - **执行不可变性**：远程 Issue 标题和正文仅在任务首次开启执行前刷新本地 Prompt 和描述。一旦执行尝试开始，远程变更仅作为只读元数据（`remoteTitle`、`remoteBody`）存储，不重写历史执行 Prompt。

@@ -211,16 +211,16 @@ export class GitHubApiClient {
   }
 
   /**
-   * Count open issues carrying one label. GitHub caps a page at 100 entries
-   * and the caller only needs a usable answer, so a full page reports as
-   * "capped" rather than paginating through a large backlog.
+   * List one repository's open issues, pull requests filtered out.
+   *
+   * The connection test counts through this listing with the same inclusion
+   * rule the sync uses, so the number it reports is what the board would take,
+   * not what a label query alone would return.
    */
-  async countOpenIssues(owner: string, repo: string, label: string, cap = 100): Promise<{ count: number; capped: boolean }> {
+  async listOpenIssues(owner: string, repo: string, cap = 100): Promise<GitHubIssuePayload[]> {
     const params = new URLSearchParams({ state: 'open', per_page: String(cap) })
-    if (label !== '') params.set('labels', label)
     const endpoint = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?${params.toString()}`
     const raw = await this.request<GitHubIssuePayload[]>(endpoint)
-    const issues = raw.filter(item => item.pull_request === undefined)
-    return { count: issues.length, capped: raw.length >= cap }
+    return raw.filter(item => item.pull_request === undefined)
   }
 }

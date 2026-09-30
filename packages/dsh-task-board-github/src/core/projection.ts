@@ -122,11 +122,44 @@ export function extractLabelNames(issue: GitHubIssuePayload): string[] {
 }
 
 /**
+ * Extract the logins an issue is assigned to, lowercased. The REST listing
+ * returns user objects; a hand-built payload may carry plain strings.
+ */
+export function issueAssignees(issue: GitHubIssuePayload): string[] {
+  const assignees = issue.assignees ?? []
+  if (!Array.isArray(assignees)) return []
+  return assignees
+    .map(entry => (typeof entry === 'string' ? entry : entry?.login ?? ''))
+    .filter(login => login !== '')
+    .map(login => login.toLowerCase())
+}
+
+/**
+ * Whether one issue belongs on the board.
+ *
+ * Two channels feed the board and either one is enough: the issue carries the
+ * repository's inclusion label, or it is assigned to the login the repository
+ * configured. The host substitutes the authenticated login for
+ * {@link ME_ASSIGNEE} before syncing, so this predicate only ever compares
+ * concrete logins.
+ * @param issue - the remote issue.
+ * @param config - the repository configuration (its assignee already resolved).
+ * @returns true when the issue is included.
+ */
+export function isIssueIncluded(issue: GitHubIssuePayload, config: ResolvedGitHubRepoConfig): boolean {
+  if (extractLabelNames(issue).includes(config.inclusionLabel)) return true
+  const assignee = config.assignee
+  return assignee !== undefined && assignee !== '' && issueAssignees(issue).includes(assignee)
+}
+
+/**
  * Reconcile a remote GitHub issue with an existing local task record.
  *
  * - Updates remote metadata (remoteTitle, remoteBody, remoteLabels, remoteState, sync stamps).
- * - If inclusion label was removed, deactivates the item without deleting it or its executions.
- * - If inclusion label was re-added, restores the item through the same identity.
+ * - If the issue stops being included (its inclusion label went away and it is
+ *   no longer assigned to the configured login), deactivates the item without
+ *   deleting it or its executions.
+ * - If it becomes included again, restores the item through the same identity.
  * - Proposes the remote title/description/prompt; the board's content gate keeps
  *   the recorded content of a card that has already executed.
  */
@@ -137,7 +170,7 @@ export function reconcileIssueWithTask(
   config: ResolvedGitHubRepoConfig,
 ): TaskRecord {
   const remoteLabels = extractLabelNames(issue)
-  const hasInclusion = remoteLabels.includes(config.inclusionLabel)
+  const hasInclusion = isIssueIncluded(issue, config)
 
   const remoteTitle = issue.title.trim()
   const remoteBody = issue.body != null ? issue.body.trim() : ''

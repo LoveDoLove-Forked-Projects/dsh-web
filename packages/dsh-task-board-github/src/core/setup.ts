@@ -72,8 +72,10 @@ export interface GitHubRepositoryCheck {
   defaultBranch?: string
   /** Whether the repository is private to the authenticated account. */
   private?: boolean
-  /** Open issues carrying the inclusion label, when they could be counted. */
+  /** Open issues the board would take (inclusion label or assignment), when they could be counted. */
   openIssues?: number
+  /** Assignee login the check matched on, when the repository configures one. */
+  assignee?: string
 }
 
 /** Outcome of one live connection test. */
@@ -231,6 +233,11 @@ function sanitizeStateLabels(value: unknown): GitHubStateLabels | undefined {
 export interface RepositoryOptions {
   /** Issue label that opts an issue into the board. */
   inclusionLabel?: string
+  /**
+   * Login whose assigned issues are included too — `@me` for this host's own
+   * account. An empty string clears the channel.
+   */
+  assignee?: string
   /** Base branch pull requests target. */
   baseBranch?: string
   /** Whether the extension may open pull requests. */
@@ -253,6 +260,13 @@ function identityOf(repository: { owner: string; repository: string }): string {
 function withOptions(base: GitHubRepoConfig, options: RepositoryOptions): GitHubRepoConfig {
   const next: GitHubRepoConfig = { ...base }
   if (options.inclusionLabel !== undefined && options.inclusionLabel.trim() !== '') next.inclusionLabel = options.inclusionLabel.trim()
+  if (options.assignee !== undefined) {
+    // An explicit empty string turns the channel off, which is how a card row
+    // clears an assignee without dropping the repository.
+    const assignee = options.assignee.trim()
+    if (assignee === '') delete next.assignee
+    else next.assignee = assignee
+  }
   if (options.baseBranch !== undefined && options.baseBranch.trim() !== '') next.baseBranch = options.baseBranch.trim()
   if (options.prCreationEnabled !== undefined) next.prCreationEnabled = options.prCreationEnabled
   if (options.pollingIntervalMs !== undefined && Number.isFinite(options.pollingIntervalMs) && options.pollingIntervalMs >= 0) {

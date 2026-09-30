@@ -20,7 +20,8 @@ import {
   type GitHubSetupSummary,
 } from '../core/setup.ts'
 import type { GitHubRepoConfig } from '../core/types.ts'
-import { resolveRepoConfig } from '../core/types.ts'
+import { ME_ASSIGNEE, resolveRepoConfig } from '../core/types.ts'
+import { isIssueIncluded } from '../core/projection.ts'
 import { GitHubApiClient, GitHubApiError } from './client.ts'
 import { clearGitHubToken, describeGitHubCredential, resolveGitHubToken, setGitHubToken } from './credentials.ts'
 import { findGitHubSettingsEntry, resolveSettingsFace, writeConfiguredRepositories } from './configuration.ts'
@@ -142,7 +143,7 @@ export function createGitHubSetup(options: GitHubSetupOptions): GitHubSetup {
     const checks: GitHubRepositoryCheck[] = []
     for (const repository of targets) {
       if (repository.owner === '' || repository.repository === '') continue
-      checks.push(await checkRepository(client, repository.owner, repository.repository, repository.inclusionLabel))
+      checks.push(await checkRepository(client, repository))
     }
     return { ok: checks.every(check => check.ok), login, credential: status, checks }
   }
@@ -217,23 +218,43 @@ function repositoryMissing(configured: readonly GitHubRepoConfig[], target: GitH
   return !configured.some(config => config.owner.toLowerCase() === owner && config.repository.toLowerCase() === name)
 }
 
-/** Check one repository: identity, default branch, and the inclusion-label count. */
-async function checkRepository(client: GitHubApiClient, owner: string, repository: string, inclusionLabel: string | undefined): Promise<GitHubRepositoryCheck> {
+/**
+ * Check one repository: identity, default branch, and how many of its open
+ * issues the board would take.
+ *
+ * The count is computed by the same inclusion rule the sync applies — the
+ * inclusion label, or assignment to the configured login — so a repository
+ * whose board feed comes from assignees reports a number instead of a
+ * misleading zero.
+ */
+async function checkRepository(client: GitHubApiClient, repository: GitHubRepoConfig): Promise<GitHubRepositoryCheck> {
+  const owner = repository.owner
+  const name = repository.repository
+  const config = resolveRepoConfig(repository)
   try {
-    const found = await client.getRepository(owner, repository)
-    const label = (inclusionLabel ?? resolveRepoConfig({ owner, repository }).inclusionLabel)
-    const issues = await client.countOpenIssues(owner, repository, label)
+    const found = await client.getRepository(owner, name)
+    let assignee = config.assignee
+    if (assignee === ME_ASSIGNEE) {
+      const user = await client.getAuthenticatedUser()
+      assignee = user.login.trim().toLowerCase()
+    }
+    const effective = assignee === undefined ? config : { ...config, assignee }
+    const issues = await client.listOpenIssues(owner, name)
+    const included = issues.filter(issue => isIssueIncluded(issue, effective)).length
+    const channels = 'label "' + config.inclusionLabel + '"'
+      + (assignee === undefined ? '' : ' or assignment to ' + assignee)
     return {
       owner,
-      repository,
+      repository: name,
       ok: true,
-      message: (issues.capped ? 'more than ' : '') + String(issues.count) + ' open issues carry the "' + label + '" label',
+      message: String(included) + ' open issues are on the board (' + channels + ')',
       ...(typeof found.default_branch === 'string' ? { defaultBranch: found.default_branch } : {}),
       ...(typeof found.private === 'boolean' ? { private: found.private } : {}),
-      openIssues: issues.count,
+      ...(assignee === undefined ? {} : { assignee }),
+      openIssues: included,
     }
   } catch (error) {
-    return { owner, repository, ok: false, message: describeError(error) }
+    return { owner, repository: name, ok: false, message: describeError(error) }
   }
 }
 

@@ -48,6 +48,7 @@ export function GitHubSetupPanel({ t, api, disabled = false }: GitHubSetupPanelP
   const [repositoryBusy, setRepositoryBusy] = useState(false)
   const [newRepository, setNewRepository] = useState('')
   const [newLabel, setNewLabel] = useState('')
+  const [newAssignee, setNewAssignee] = useState('')
   const [token, setToken] = useState('')
   const [credentialError, setCredentialError] = useState<string | undefined>()
   const [credentialBusy, setCredentialBusy] = useState(false)
@@ -80,6 +81,7 @@ export function GitHubSetupPanel({ t, api, disabled = false }: GitHubSetupPanelP
       if (clearDraft) {
         setNewRepository('')
         setNewLabel('')
+        setNewAssignee('')
       }
     } catch (error) {
       setRepositoryError(messageOf(error))
@@ -89,7 +91,10 @@ export function GitHubSetupPanel({ t, api, disabled = false }: GitHubSetupPanelP
   }
 
   const add = (): void => {
-    const edit = addRepository(repositories, newRepository, newLabel.trim() === '' ? {} : { inclusionLabel: newLabel.trim() })
+    const edit = addRepository(repositories, newRepository, {
+      ...(newLabel.trim() === '' ? {} : { inclusionLabel: newLabel.trim() }),
+      ...(newAssignee.trim() === '' ? {} : { assignee: newAssignee.trim() }),
+    })
     if (!edit.ok) {
       setRepositoryError(edit.message)
       return
@@ -240,6 +245,11 @@ export function GitHubSetupPanel({ t, api, disabled = false }: GitHubSetupPanelP
             <span className={css.setupRepository}>
               {repository.owner}/{repository.repository}
               <span className={css.cardTag}>{repository.inclusionLabel ?? 'dsh'}</span>
+              {repository.assignee !== undefined && repository.assignee !== '' && (
+                <span className={css.cardTag} data-dsh-part="github-repository-assignee">
+                  {t('setup.assigneeChip', { login: repository.assignee })}
+                </span>
+              )}
             </span>
             <button
               type="button"
@@ -274,6 +284,18 @@ export function GitHubSetupPanel({ t, api, disabled = false }: GitHubSetupPanelP
             spellCheck={false}
             disabled={disabled || repositoryBusy}
             onChange={event => setNewLabel(event.target.value)}
+          />
+          <input
+            type="text"
+            className={css.input + ' ' + css.setupLabelInput}
+            data-dsh-part="github-repository-assignee-input"
+            aria-label={t('setup.assignee')}
+            placeholder={t('setup.assigneePlaceholder')}
+            value={newAssignee}
+            spellCheck={false}
+            disabled={disabled || repositoryBusy}
+            onChange={event => setNewAssignee(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Enter') add() }}
           />
           <button
             type="button"

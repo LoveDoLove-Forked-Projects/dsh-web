@@ -76,6 +76,46 @@ describe('GitHub sync service', () => {
     expect(cards(board)[0]?.id).toBe(task.id)
   })
 
+  it('operator assigning an issue to the authenticated account imports it with no inclusion label', async () => {
+    // Given a repository that also includes the account's assigned issues, a
+    // remote that answers who this credential is, and two issues of which only
+    // one is assigned to that account
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.login = 'zhu1090093659'
+    backend.issues = [
+      issueFixture(20, ['bug'], 'assigned to me', ['zhu1090093659']),
+      issueFixture(21, ['bug'], 'assigned to someone else', ['Aa728848']),
+    ]
+    const service = makeService(board, backend, { repositories: [{ ...REPO, assignee: '@me' }] })
+
+    // When the repository is synchronized
+    const result = await service.syncRepository('deepseek-ai', 'dsh')
+
+    // Then only the assigned issue became a card, so no label was needed
+    expect(result.errors).toEqual([])
+    expect(cards(board).map(card => readTaskGitHubMetadata(card)?.issueNumber)).toEqual([20])
+  })
+
+  it('operator unassigning the last channel deactivates the card without deleting it', async () => {
+    // Given a card imported through the assignee channel
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.login = 'zhu1090093659'
+    backend.issues = [issueFixture(30, ['bug'], '', ['zhu1090093659'])]
+    const service = makeService(board, backend, { repositories: [{ ...REPO, assignee: '@me' }] })
+    await service.syncRepository('deepseek-ai', 'dsh')
+    expect(readTaskGitHubMetadata(cards(board)[0]!)?.deactivated).toBeUndefined()
+
+    // When the issue is reassigned away and no label carries it either
+    backend.issues = [issueFixture(30, ['bug'], '', ['Aa728848'])]
+    await service.syncRepository('deepseek-ai', 'dsh')
+
+    // Then the card is deactivated but still on the board
+    expect(cards(board)).toHaveLength(1)
+    expect(readTaskGitHubMetadata(cards(board)[0]!)?.deactivated).toBe(true)
+  })
+
   it('operator restarting the extension re-adopts the cards the board already holds', async () => {
     // Given a board already carrying a synchronized card (an earlier session,
     // or a legacy ledger import) and a brand-new service

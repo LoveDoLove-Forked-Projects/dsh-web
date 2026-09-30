@@ -18,6 +18,7 @@ import type { HostTimerFace } from '../core/timers.ts'
 import type { ExecutionRecord, TaskRecord, TaskStatus } from '../core/task-record.ts'
 import type { TaskBoardExtensionHost } from '../core/contract.ts'
 import {
+  ME_ASSIGNEE,
   normalizeGitHubMetadata,
   readTaskGitHubMetadata,
   type GitHubPullRequestMetadata,
@@ -29,6 +30,7 @@ import {
 import {
   computeLabelWriteBack,
   extractLabelNames,
+  isIssueIncluded,
   materializeTaskFromIssue,
   reconcileIssueWithTask,
 } from '../core/projection.ts'
@@ -70,6 +72,8 @@ export class GitHubSyncService {
   private syncing = false
   /** Immutable remote identity -> local card id, owned by this provider. */
   private readonly identityIndex = new Map<string, string>()
+  /** Login this credential authenticates as, resolved once for an `@me` inclusion rule. */
+  private authenticatedLogin: string | undefined
 
   constructor(options: GitHubSyncServiceOptions) {
     this.host = options.host
@@ -77,6 +81,26 @@ export class GitHubSyncService {
     this.repositories = (options.repositories ?? []).map(resolveRepoConfig)
     this.timers = options.timers ?? DEFAULT_TIMERS
     this.now = options.now ?? Date.now
+  }
+
+  /**
+   * Resolve one repository's inclusion assignee to a concrete login.
+   *
+   * `@me` asks GitHub who this credential is; the answer is cached for the
+   * lifetime of the service, which the host remounts when the credential
+   * changes, so a rotated token is never answered from a stale login.
+   * @param config - the repository configuration.
+   * @returns the configuration with a concrete assignee (or none).
+   */
+  private async effectiveConfig(config: ResolvedGitHubRepoConfig): Promise<ResolvedGitHubRepoConfig> {
+    if (config.assignee !== ME_ASSIGNEE) return config
+    let login = this.authenticatedLogin
+    if (login === undefined) {
+      const user = await this.client.getAuthenticatedUser()
+      login = user.login.trim().toLowerCase()
+      this.authenticatedLogin = login
+    }
+    return { ...config, assignee: login }
   }
 
   /** Find configured repository matching owner and repo name (case-insensitive). */
@@ -272,38 +296,41 @@ export class GitHubSyncService {
     const now = this.now()
     const errors: string[] = []
     let synced = 0
+    // An `@me` inclusion rule is resolved once, before the loop, so every
+    // decision in this pass compares the same login.
+    const effective = await this.effectiveConfig(config)
 
     try {
       // List issues from GitHub (includes open and closed)
-      const issues = await this.client.listIssues(config.owner, config.repository)
+      const issues = await this.client.listIssues(effective.owner, effective.repository)
       const activeIssueNumbers = new Set<number>()
 
       for (const issue of issues) {
-        const labels = extractLabelNames(issue)
-        const hasInclusion = labels.includes(config.inclusionLabel)
-        const existing = this.findByGitHubIdentity(config.owner, config.repository, issue.number)
+        const hasInclusion = isIssueIncluded(issue, effective)
+        const existing = this.findByGitHubIdentity(effective.owner, effective.repository, issue.number)
 
         if (hasInclusion) {
           activeIssueNumbers.add(issue.number)
           if (existing !== undefined) {
-            let updated = reconcileIssueWithTask(existing, issue, now, config)
+            let updated = reconcileIssueWithTask(existing, issue, now, effective)
             // If task has a linked PR, check PR status as well
             if (this.metadataOf(updated)?.pullRequest !== undefined) {
-              updated = await this.checkPullRequestStatus(updated, config)
+              updated = await this.checkPullRequestStatus(updated, effective)
             }
             this.applyRecord(updated, existing)
             synced += 1
           } else {
             // Materialize a new task
-            const newTask = materializeTaskFromIssue(issue, crypto.randomUUID(), now, config)
+            const newTask = materializeTaskFromIssue(issue, crypto.randomUUID(), now, effective)
             this.applyRecord(newTask, undefined)
             synced += 1
           }
         } else if (existing !== undefined) {
-          // Issue lacks inclusion label; deactivate without deleting history
-          let updated = reconcileIssueWithTask(existing, issue, now, config)
+          // Neither inclusion channel holds any more; deactivate without
+          // deleting history.
+          let updated = reconcileIssueWithTask(existing, issue, now, effective)
           if (this.metadataOf(updated)?.pullRequest !== undefined) {
-            updated = await this.checkPullRequestStatus(updated, config)
+            updated = await this.checkPullRequestStatus(updated, effective)
           }
           this.applyRecord(updated, existing)
           synced += 1
@@ -322,10 +349,9 @@ export class GitHubSyncService {
         ) {
           // Verify with single issue fetch
           try {
-            const single = await this.client.getIssue(config.owner, config.repository, gh.issueNumber)
-            const labels = extractLabelNames(single)
-            if (!labels.includes(config.inclusionLabel)) {
-              this.applyRecord(reconcileIssueWithTask(task, single, now, config), task)
+            const single = await this.client.getIssue(effective.owner, effective.repository, gh.issueNumber)
+            if (!isIssueIncluded(single, effective)) {
+              this.applyRecord(reconcileIssueWithTask(task, single, now, effective), task)
             }
           } catch (error) {
             // A failed single-issue read proves nothing about the inclusion
@@ -373,11 +399,12 @@ export class GitHubSyncService {
     }
 
     const now = this.now()
+    const effective = await this.effectiveConfig(config)
     try {
-      const issue = await this.client.getIssue(config.owner, config.repository, metadata.issueNumber)
-      let updated = reconcileIssueWithTask(task, issue, now, config)
+      const issue = await this.client.getIssue(effective.owner, effective.repository, metadata.issueNumber)
+      let updated = reconcileIssueWithTask(task, issue, now, effective)
       if (this.metadataOf(updated)?.pullRequest !== undefined) {
-        updated = await this.checkPullRequestStatus(updated, config)
+        updated = await this.checkPullRequestStatus(updated, effective)
       }
       this.applyRecord(updated, task)
       return { ok: true, task: this.host.tasks.get(taskId) }

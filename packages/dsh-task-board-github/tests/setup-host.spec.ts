@@ -60,8 +60,21 @@ function hostContext(seams: { credentials?: unknown; settings?: unknown; webServ
   } as unknown as Context
 }
 
+/** One issue row the connection test counts through. */
+function issue(number: number, labels: string[], assignees: string[] = []): Record<string, unknown> {
+  return {
+    number,
+    title: 'issue ' + String(number),
+    state: 'open',
+    html_url: 'https://github.com/x/y/issues/' + String(number),
+    labels: labels.map(name => ({ name })),
+    assignees: assignees.map(login => ({ login })),
+    updated_at: new Date(0).toISOString(),
+  }
+}
+
 /** One API client double answering the three calls a connection test makes. */
-function apiClient(answer: { login?: string; missing?: string[]; throwOnUser?: GitHubApiError }) {
+function apiClient(answer: { login?: string; missing?: string[]; throwOnUser?: GitHubApiError; openIssues?: Array<Record<string, unknown>> }) {
   return {
     getAuthenticatedUser: async () => {
       if (answer.throwOnUser !== undefined) throw answer.throwOnUser
@@ -73,7 +86,7 @@ function apiClient(answer: { login?: string; missing?: string[]; throwOnUser?: G
       }
       return { full_name: owner + '/' + repository, default_branch: 'main', private: false }
     },
-    countOpenIssues: async () => ({ count: 3, capped: false }),
+    listOpenIssues: async () => answer.openIssues ?? [],
   } as unknown as GitHubApiClient
 }
 
@@ -234,23 +247,50 @@ describe('GitHub connection test', () => {
     expect(report.checks).toEqual([])
   })
 
-  it('operator testing a configured repository sees the account and the inclusion-label count', async () => {
-    // Given a stored credential and one configured repository
+  it('operator testing a configured repository sees the account and how many issues the board would take', async () => {
+    // Given a stored credential, one configured repository, and three open
+    // issues of which two carry the inclusion label
     const credentials = credentialStore({ GITHUB_TOKEN: 'ghp_stored' })
     const { setup } = setupOf({
       credentials,
       repositories: [{ owner: 'deepseek-ai', repository: 'dsh-web', inclusionLabel: 'board' }],
-      client: apiClient({ login: 'zhu1090093659' }),
+      client: apiClient({
+        login: 'zhu1090093659',
+        openIssues: [issue(1, ['board']), issue(2, ['bug']), issue(3, ['board', 'bug'])],
+      }),
     })
 
     // When the test runs
     const report = await setup.test()
 
-    // Then it names the authenticated account and reports the repository
+    // Then it names the authenticated account and counts through the same
+    // inclusion rule the sync uses
     expect(report.ok).toBe(true)
     expect(report.login).toBe('zhu1090093659')
     expect(report.checks).toHaveLength(1)
-    expect(report.checks[0]).toMatchObject({ owner: 'deepseek-ai', repository: 'dsh-web', ok: true, defaultBranch: 'main', openIssues: 3 })
+    expect(report.checks[0]).toMatchObject({ owner: 'deepseek-ai', repository: 'dsh-web', ok: true, defaultBranch: 'main', openIssues: 2 })
+    expect(report.checks[0]?.message).toContain('label "board"')
+  })
+
+  it('operator testing a repository that includes assigned issues counts them without needing the label', async () => {
+    // Given a repository whose inclusion comes from assignment as well
+    const credentials = credentialStore({ GITHUB_TOKEN: 'ghp_stored' })
+    const { setup } = setupOf({
+      credentials,
+      repositories: [{ owner: 'deepseek-ai', repository: 'dsh-web', assignee: '@me' }],
+      client: apiClient({
+        login: 'zhu1090093659',
+        openIssues: [issue(1, ['bug']), issue(2, ['bug'], ['zhu1090093659']), issue(3, ['dsh'])],
+      }),
+    })
+
+    // When the test runs
+    const report = await setup.test()
+
+    // Then the assigned issue and the labelled one are both counted, and the
+    // resolved login is reported instead of the `@me` placeholder
+    expect(report.checks[0]).toMatchObject({ ok: true, openIssues: 2, assignee: 'zhu1090093659' })
+    expect(report.checks[0]?.message).toContain('assignment to zhu1090093659')
   })
 
   it('operator testing a repository the credential cannot see gets the reason, not a crash', async () => {

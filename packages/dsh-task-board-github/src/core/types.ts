@@ -91,6 +91,12 @@ export interface GitHubRepoConfig {
   repository: string
   /** Label that designates an issue for import (default: 'dsh'). */
   inclusionLabel?: string
+  /**
+   * GitHub login whose assigned issues are included as well — {@link ME_ASSIGNEE}
+   * for the account the host is authenticated as. An issue is on the board when
+   * it carries the inclusion label OR is assigned to this login.
+   */
+  assignee?: string
   /** Prefix for DSH-owned labels (default: 'dsh:'). */
   managedLabelPrefix?: string
   /** Status-to-label mappings. */
@@ -114,6 +120,8 @@ export interface ResolvedGitHubRepoConfig {
   readonly owner: string
   readonly repository: string
   readonly inclusionLabel: string
+  /** Resolved inclusion assignee (lowercased login), or undefined when none is configured. */
+  readonly assignee?: string
   readonly managedLabelPrefix: string
   readonly stateLabels: Required<GitHubStateLabels>
   readonly prPhaseLabel: string
@@ -125,6 +133,9 @@ export interface ResolvedGitHubRepoConfig {
 }
 
 export const DEFAULT_INCLUSION_LABEL = 'dsh'
+
+/** Assignee value meaning "the account this host is authenticated as". */
+export const ME_ASSIGNEE = '@me'
 export const DEFAULT_MANAGED_LABEL_PREFIX = 'dsh:'
 export const DEFAULT_PR_PHASE_LABEL = 'dsh:phase:pr'
 export const DEFAULT_POLLING_INTERVAL_MS = 300_000
@@ -137,6 +148,7 @@ export function resolveRepoConfig(raw: GitHubRepoConfig): ResolvedGitHubRepoConf
     owner: raw.owner.trim(),
     repository: raw.repository.trim(),
     inclusionLabel: (raw.inclusionLabel ?? DEFAULT_INCLUSION_LABEL).trim(),
+    ...(assigneeOf(raw.assignee) === undefined ? {} : { assignee: assigneeOf(raw.assignee)! }),
     managedLabelPrefix: prefix,
     stateLabels: {
       backlog: raw.stateLabels?.backlog ?? `${prefix}state:backlog`,
@@ -154,6 +166,19 @@ export function resolveRepoConfig(raw: GitHubRepoConfig): ResolvedGitHubRepoConf
     closeIssueOnMerge: raw.closeIssueOnMerge !== false,
     baseBranch: (raw.baseBranch ?? DEFAULT_BASE_BRANCH).trim(),
   }
+}
+
+/**
+ * Resolve one configured assignee to the form the inclusion rule compares:
+ * trimmed and lowercased, with {@link ME_ASSIGNEE} kept as it is so the host
+ * can substitute the authenticated login before syncing. Absent or empty means
+ * "no assignee channel".
+ * @param value - the configured value.
+ * @returns the resolved value, or undefined when the channel is off.
+ */
+export function assigneeOf(value: string | undefined): string | undefined {
+  const trimmed = (value ?? '').trim()
+  return trimmed === '' ? undefined : trimmed.toLowerCase()
 }
 
 /** Validate whether a value is a structural GitHubTaskMetadata object. */
@@ -244,6 +269,8 @@ export interface GitHubIssuePayload {
   state: 'open' | 'closed'
   html_url: string
   labels: Array<{ name: string } | string>
+  /** Users the issue is assigned to, as the REST listing returns them. */
+  assignees?: Array<{ login?: string } | string> | null
   updated_at: string
   pull_request?: unknown
 }

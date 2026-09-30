@@ -15,6 +15,8 @@ import { describe, expect, it } from 'vitest'
 import {
   computeLabelWriteBack,
   isDshManagedLabel,
+  isIssueIncluded,
+  issueAssignees,
   materializeTaskFromIssue,
   reconcileIssueWithTask,
   resolveStatusFromLabels,
@@ -49,6 +51,52 @@ function remoteIssue(overrides: Partial<GitHubIssuePayload> = {}): GitHubIssuePa
     ...overrides,
   }
 }
+
+describe('GitHub issue inclusion', () => {
+  it('operator includes an issue by its label or by assignment, and only those two channels', () => {
+    // Given a repository configured for both channels, with the assignee
+    // already resolved to a concrete login
+    const config = resolveRepoConfig({ owner: 'deepseek-ai', repository: 'dsh', inclusionLabel: 'dsh', assignee: 'zhu1090093659' })
+
+    // When each shape of issue is tested
+    // Then label-only, assignee-only and both are in, and neither one is out
+    expect(isIssueIncluded(remoteIssue({ labels: ['dsh'] }), config)).toBe(true)
+    expect(isIssueIncluded(remoteIssue({ labels: ['bug'], assignees: [{ login: 'Zhu1090093659' }] }), config)).toBe(true)
+    expect(isIssueIncluded(remoteIssue({ labels: ['dsh'], assignees: [{ login: 'zhu1090093659' }] }), config)).toBe(true)
+    expect(isIssueIncluded(remoteIssue({ labels: ['bug'], assignees: [{ login: 'someone-else' }] }), config)).toBe(false)
+    expect(isIssueIncluded(remoteIssue({ labels: [], assignees: [] }), config)).toBe(false)
+  })
+
+  it('operator reading assignees from either payload shape gets lowercased logins', () => {
+    // Given payloads carrying user objects and bare strings
+    // When the assignees are read
+    // Then both shapes resolve and empty entries are dropped
+    expect(issueAssignees(remoteIssue({ assignees: [{ login: 'Zhu' }] }))).toEqual(['zhu'])
+    expect(issueAssignees(remoteIssue({ assignees: ['Aa728848', ''] }))).toEqual(['aa728848'])
+    expect(issueAssignees(remoteIssue({ assignees: null }))).toEqual([])
+  })
+
+  it('operator leaving @me unresolved imports nothing by assignment, because the host resolves it first', () => {
+    // Given a configuration still carrying the placeholder
+    const config = resolveRepoConfig({ owner: 'deepseek-ai', repository: 'dsh', assignee: '@me' })
+
+    // When an issue assigned to the account is tested
+    // Then the placeholder matches no login: only the host's substitution can
+    expect(isIssueIncluded(remoteIssue({ labels: [], assignees: [{ login: 'zhu1090093659' }] }), config)).toBe(false)
+  })
+
+  it('operator keeping an issue assigned to the configured login keeps its card active with no label', () => {
+    // Given a card whose issue carries no inclusion label but is assigned here
+    const config = resolveRepoConfig({ owner: 'deepseek-ai', repository: 'dsh', assignee: 'zhu1090093659' })
+    const issue = remoteIssue({ number: 5, labels: ['bug'], assignees: [{ login: 'zhu1090093659' }] })
+
+    // When it is reconciled
+    const task = reconcileIssueWithTask(plainTask('task-assigned'), issue, 200, config)
+
+    // Then the card is not deactivated
+    expect(readTaskGitHubMetadata(task)?.deactivated).toBeUndefined()
+  })
+})
 
 describe('GitHub projection and label management', () => {
   it('operator sees DSH-owned labels recognized and the inclusion label left alone', () => {
