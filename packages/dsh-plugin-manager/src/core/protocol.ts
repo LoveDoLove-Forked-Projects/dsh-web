@@ -43,6 +43,14 @@ export interface InstalledPluginItem {
   children?: InstalledPluginChild[]
 }
 
+/**
+ * How the host carried out (or refused) a restart request:
+ * `relaunch` — this host re-executes itself in place; `shell` — the packaged
+ * Desktop shell owns the process tree and runs its own restart; `manual` —
+ * neither is safe here, the user restarts DSH themselves.
+ */
+export type RestartMode = 'relaunch' | 'shell' | 'manual'
+
 /** Point-in-time install/update progress reported by the host. */
 export interface InstallProgressItem {
   kind: 'idle' | 'install' | 'update'
@@ -223,6 +231,20 @@ export function parseUpdateList(value: unknown): PluginUpdateItem[] {
     }
     return row
   })
+}
+
+/**
+ * Validate and normalize a `restart` response value.
+ * @param value - decoded but untrusted response value.
+ * @returns the mode the host actually used.
+ */
+export function parseRestartMode(value: unknown): RestartMode {
+  const restart = isRecord(value) ? value.restart : undefined
+  const mode = isRecord(restart) ? restart.mode : undefined
+  if (mode !== 'relaunch' && mode !== 'shell' && mode !== 'manual') {
+    throw new Error('plugin-manager: response must contain a restart mode')
+  }
+  return mode
 }
 
 /**

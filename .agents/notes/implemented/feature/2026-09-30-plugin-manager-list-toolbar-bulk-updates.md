@@ -1,0 +1,50 @@
+# Agent Note: Plugin-manager list toolbar: bulk third-party updates and an explicit restart
+
+Status: implemented
+
+## Problem
+
+The package's update check lived on one page per package: the official Plugins page renders `plugins.detail.section` on a bundle's page, so comparing the installed set against its registry sources meant opening each package's page and clicking Check for updates. The question a user actually opens the page with — "is anything of mine out of date, and can I just fix it" — had no answer on the list.
+
+Two facts about the official page shaped the design. It declares no seat beside its "Installed" heading (its extension points are `plugins.detail.actions` / `.badge` / `.section`, `plugins.item`, `plugins.bundle.config`, `plugins.row.config` and `plugins.bundle.activation`), and it says an installed plugin is upgraded by uninstalling and reinstalling it: every update this package applies is therefore only loaded at the next host start, and the page had no way to restart.
+
+## Decision
+
+The package contributes a second surface: a list-level update toolbar, mounted by `src/client/plugin-toolbar-mount.tsx` into the heading element of `[data-plugin-panel] [data-plugin-group="bundles"]` — the official page's own "Installed" heading. The container is a plain element carrying its own React root (`PluginListToolbar`), so it never joins the page's reconciliation; it re-seats itself through the family's shared body-mutation hub (`shared/client/body-mutations.ts`, a generated copy here) and is de-duplicated by `TOOLBAR_MOUNT_SELECTOR` when a second apply runs.
+
+One click checks every installed plugin through the same dual-channel face the per-page block uses (one `check-updates` call), and the panel lists the rows that have a newer release. **Update all** applies the eligible rows sequentially through `update(id)`, showing per-row progress and stopping at the first failure while leaving the remaining rows listed with their versions; a state attribute on each row carries the compatibility verdict the host reported.
+
+Two policies are decided in the browser half, in `src/core/updates.ts`, rather than in the host, so the same rows stay available to the per-page block: only third-party packages (not `@deepseek-ai/`) are updated in bulk — a DSH-shipped package's version belongs to the installation, and the official page itself tells the user to upgrade DSH — and a row whose manifest declares a DSH minimum this host does not satisfy is listed but never applied (the host would refuse it with 412 anyway).
+
+The toolbar then offers **Restart now**, which posts to a new loopback-fenced route, `POST /api/plugin-manager/restart`. The route answers the mode it actually used, and the modes are a pure decision (`planRestart` in `src/host/restart.ts`) over this process's launch facts:
+
+- **`shell`** — the packaged Desktop app owns this process tree (`facts.desktop`, or `ELECTRON_RUN_AS_NODE` in the environment). A plugin cannot relaunch Electron's application, and a detached respawn would fight the shell for the same port while the shell reported the host as crashed, so the host only stops: the shell's own recovery dialog offers the restart, which is the same `app.relaunch()` its update flow uses, and the plugin set is reloaded with it. The toolbar's hint points at that dialog.
+- **`relaunch`** — a terminal launch (an interactive stdio pair and no Electron in the environment) re-executes its own command line: a detached helper waits for the outgoing process to exit, then spawns the same `execPath` + argv (inspector flags dropped, since they re-bind fixed ports) and appends output to `$DSH_HOME/logs/plugin-manager-restart.log`.
+- **`manual`** — a launch with no terminal (a supervisor, an editor task) is neither restarted nor stopped; the toolbar says to restart manually.
+
+A relaunch whose helper cannot be started degrades to `manual` instead of exiting, so a process that cannot be replaced stays up.
+
+## Alternatives considered
+
+- **A fourth official slot.** There is none: the page declares no seat at the list level, and the seats it does declare are per object or configuration entries. Registering an empty `plugins.item` card in the Official group to host a button would have put the action in the wrong list and changed the page's own inventory rendering.
+- **Contributing the toolbar through `ctx.slots`.** Slots only render where the page declares them; a list-level action has to be inserted, which is why the container is a self-owned React root re-seated by the shared mutation hub instead of a slot entry (the same approach the sidebar foot card uses).
+- **Doing the restart in Electron from the client half.** `window.dshDesktop` exposes only `updates.status/open/subscribe` (protocol version 1), and the packaged shell's `app.relaunch()` is reachable only through its own dialogs. Calling the `updates` bridge would only have restarted the app when a DSH update happened to be downloaded, which is unrelated to a plugin update.
+- **Restarting the host from the plugin on every platform.** A detached respawn under the packaged Desktop app duplicates a server the shell believes it owns; the shell then reports the original host as crashed. Hence the desktop path stops and defers, and a launch without a terminal is not touched at all.
+- **Updating every row the registry check returns, official packages included.** A plugin-initiated reinstall of a `@deepseek-ai/` package can move a runtime dependency away from the version the running DSH was built and tested against, and the official page already tells the user those upgrade with DSH. The host still reports them (and the per-page block can still update one), so the policy is a browser-side decision, not a data loss.
+- **Exiting the host unconditionally on the desktop path.** The restart is a user click; making the app's shell show a crash-recovery dialog only after the user confirmed a restart is acceptable, but doing it silently (for example on update completion) would turn a normal update into an apparent crash.
+
+## Consequences
+
+- The official Plugins page's list view now carries Check for updates and Restart now beside the "Installed" heading, and a flyout listing the update rows. The per-page `plugins.detail.section` block is unchanged and still updates a single package, including an official one.
+- The toolbar disappears when the page is not on the list view and re-seats itself when the heading is rebuilt; it is not rendered at all on a non-loopback browser (the check button is disabled with the local-only explanation).
+- Restart is a real capability on the runtimes where the host can replace itself, a deferral on the packaged Desktop app, and a message elsewhere. Nothing claims a restart that did not happen: the route reports the mode it used, and the UI repeats that mode back.
+- On the desktop path the user sees the shell's recovery dialog (title "DeepSeek Harness is unavailable") and a crash report is written by the shell. That is the price of the shell's only restart entry point; it was chosen over a plugin that cannot make its update effective.
+- `src/host/restart.ts` is host code with a process-level effect and is covered by the loopback fence like every other gateway route; it never invents a command line. The toolbar's own copy lives in the `settings.pluginManager` namespace, mirrored into `dsh-i18n`'s ru dictionary.
+- `scripts/sync-shared.mjs` now also copies `shared/client/body-mutations.ts` into this package (`src/client/body-mutations.ts`, generated, never edited here).
+
+## Testing
+
+- `packages/dsh-plugin-manager/tests/plugin-list-toolbar.spec.tsx` (12 tests): the local-only degradation, the third-party filter in the summary and the panel, the up-to-date verdict, a failed check, a bulk run that touches exactly the applicable rows in order, a blocked row that is listed but never applied, a failed run that stops and keeps the rest listed, the summary counting down as rows are applied, the restart confirmation (confirm, cancel, desktop hint, refused restart).
+- `packages/dsh-plugin-manager/tests/plugin-toolbar-mount.spec.tsx` (6 tests): the seat in the Installed heading, inert duplicate mounts, the absent seat off the list view, re-seating after the heading is rebuilt, disposal, and a locale change re-rendering the mounted copy.
+- `packages/dsh-plugin-manager/tests/restart-plan.spec.ts` (10 tests) and `tests/restart-route.spec.ts` (4 tests): every mode decision, inspector-flag filtering, the degrade-to-manual path when the helper cannot start, the loopback fence, and that a manual verdict never schedules an exit.
+- `packages/dsh-plugin-manager/tests/host-apply-desktop.spec.ts` asserts the registered route set, which now includes `/api/plugin-manager/restart`.

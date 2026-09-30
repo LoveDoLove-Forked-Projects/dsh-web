@@ -18,6 +18,7 @@ import { readPatchText, readProfileManifest, type ProfileFacts } from './profile
 import { legacyMigrationFor, targetSpecForLegacy } from './legacy-migration.ts'
 import { setRowEnabled, writePatchAtomic } from './rows.ts'
 import { buildPluginRow, claimedEntryRowsOf, findRowOwner, LOCKED_ENTRY_IDS, snapshotGateway } from './state.ts'
+import { performRestart, planRestart, type RestartFacts, type RestartRuntime } from './restart.ts'
 import { createOutputCapture, type OutputCapture } from './console-output.ts'
 
 /** Route prefix the browser half mirrors. */
@@ -60,6 +61,10 @@ export interface GatewayRouteDeps {
   dshVersion?: () => Promise<string | undefined>
   /** Official-channel detection seam (test seam); defaults to the boot dump probe. */
   officialChannels?: () => Promise<boolean>
+  /** Launch-fact seam for the restart route (test seam); defaults to this process. */
+  restartFacts?: () => RestartFacts
+  /** Restart effect seam (test seam); defaults to the detached helper plus a real exit. */
+  restartRuntime?: RestartRuntime
 }
 
 /** Error text for a caught request or lifecycle failure. */
@@ -487,6 +492,33 @@ export function makeGatewayRoutes(deps: GatewayRouteDeps): WebRoute[] {
     writeJson(res, 200, { updates })
   }
 
+  /**
+   * The running process's own launch facts, read once per request: the desktop
+   * verdict comes from the profile facts (packaged Desktop launcher), the rest
+   * from this process.
+   */
+  const liveRestartFacts = (): RestartFacts => ({
+    desktop: facts.desktop,
+    env: process.env,
+    execPath: process.execPath,
+    argv: process.argv.slice(1),
+    execArgv: process.execArgv,
+    cwd: process.cwd(),
+    interactive: process.stdin.isTTY === true || process.stdout.isTTY === true,
+  })
+
+  /**
+   * Restart the host so an applied plugin update is loaded. The route answers
+   * with the mode it actually used (see host/restart.ts): 'relaunch' when this
+   * process re-executes itself, 'shell' when the packaged Desktop shell owns
+   * the process tree and runs its own restart, 'manual' when neither is safe.
+   */
+  const restartHandler = async (_req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const plan = planRestart((deps.restartFacts ?? liveRestartFacts)())
+    const mode = performRestart(plan, deps.restartRuntime ?? {})
+    writeJson(res, 202, { restart: { mode } })
+  }
+
   return [
     { kind: 'exact', path: `${GATEWAY_PREFIX}/list`, handler: guard(listHandler) },
     { kind: 'exact', path: `${GATEWAY_PREFIX}/install`, handler: guard(installHandler) },
@@ -497,6 +529,7 @@ export function makeGatewayRoutes(deps: GatewayRouteDeps): WebRoute[] {
     { kind: 'exact', path: `${GATEWAY_PREFIX}/failures`, handler: guard(failuresHandler) },
     { kind: 'exact', path: `${GATEWAY_PREFIX}/mode`, handler: guard(modeHandler) },
     { kind: 'exact', path: `${GATEWAY_PREFIX}/check-updates`, handler: guard(checkUpdatesHandler) },
+    { kind: 'exact', path: `${GATEWAY_PREFIX}/restart`, handler: guard(restartHandler) },
   ]
 }
 

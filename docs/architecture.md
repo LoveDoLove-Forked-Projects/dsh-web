@@ -174,7 +174,7 @@ flowchart LR
 | --- | --- |
 | dsh-web-all | 聚合载具包：一键装齐全家桶（含 compat 桥接层） |
 | dsh-web-settings | 设置页一级分区：家族插件启停开关与配置表单（`web-ui.plugin.item` 子槽） |
-| dsh-plugin-manager | 插件管理页：npm/git 安装、启停、冲突恢复 |
+| dsh-plugin-manager | 官方插件页的更新检查：单包区块、列表级检查/批量更新/重启工具条（安装、启停、卸载归官方页面） |
 | dsh-market | 创意工坊商店卡：浏览 dsh-market.com 并一键安装皮肤、宠物、插件、预设 |
 | dsh-preset-center | 社区预设：惰性库、启停、工坊 Presets 面板（独立仓，以已发布包消费；presets 目录按 submodule 钉扎进市场构建） |
 | dsh-community-plugins | community.json 社区插件索引数据源（独立仓，以已发布包消费；惰性 cordis 行） |

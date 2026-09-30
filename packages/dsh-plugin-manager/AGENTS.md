@@ -13,6 +13,21 @@ packages/AGENTS.md 的全局/包级规则。
   `declare module` 重新声明（跨包禁止 value import，与家族卡片复用
   `plugins.bundle.config` 的做法一致）。宿主交付的 `PluginPageSubject`（`bundle` / `row` /
   `item`）是契约观察，不是 import。
+- **列表级工具条只能插进官方页面的 chrome**：官方「插件」页不为「已安装」标题声明席位（它的
+  扩展点是 `plugins.detail.*`、`plugins.item`、`plugins.bundle.config`、`plugins.row.config`
+  与 `plugins.bundle.activation`），因此工具条由 `plugin-toolbar-mount.tsx` 直接插进
+  `[data-plugin-panel] [data-plugin-group="bundles"]` 的标题元素，并用共享的
+  `body-mutations.ts`（sync-shared 副本，勿手改）自查位；容器自持 React root，不做 DOM 改写。
+  页面重绘/切走时容器自动挪位或摘除，重复 apply 通过 `TOOLBAR_MOUNT_SELECTOR` 去重。
+- **批量更新策略放 core，不放 host**：`src/core/updates.ts` 是唯一策略源——只更新第三方
+  （非 `@deepseek-ai/`）且 `compatible !== false` 的行；官方包随 DSH 本体升级，绝不批量改写。
+  单页区块（`plugins.detail.section`）仍可对官方包做单包更新，那是用户逐条确认的动作。
+- **重启三态，禁止臆造命令行**：`POST /api/plugin-manager/restart` 由 `src/host/restart.ts`
+  判定并回传实际模式——`relaunch`（终端启动：detached helper 等旧进程退出后重放本进程
+  自身的 execPath + argv，剔除 `--inspect*`）、`shell`（打包桌面：只退出，由桌面外壳自己的
+  恢复对话框重启）、`manual`（无终端/无法判定：不退出，界面提示手动重启）。判定是纯函数
+  `planRestart`，执行是 `performRestart`（helper 起不来时降级为 `manual` 而不是让进程白白退出）。
+  新增重启路径前先确认宿主真的能重启，不要把「重启」做成静默失败。
 - **双通道纪律**：运行时探测官方 `/plugin-installer` 通道，存在（DSHCode / 1.0.4
   checkout web）则全部走官方 RPC（单一写入器 = 官方安装器）；不存在（npm 发布的官方
   web）则走本包 host 半区的 loopback HTTP 网关——安装/卸载 spawn 官方 `dsh plugin`
@@ -54,8 +69,8 @@ packages/AGENTS.md 的全局/包级规则。
 - 已随「插件管理」Tab 移除的能力（`src/core/repair.ts`、修复会话、安装冲突 UI、
   安全模式横幅、只读清单与子插件展开）不要再以 client UI 形式加回：host 侧的冲突 / notice
   台账（`GatewayJob.conflicts` / `notices`）保留为可观测事实，但没有渲染方。
-- 共享件副本：`src/mount-once.ts`、`src/host/loopback.ts`、`src/host/dsh-home.ts`
-  由 `scripts/sync-shared.mjs` 生成，禁止手改。
+- 共享件副本：`src/mount-once.ts`、`src/host/loopback.ts`、`src/host/dsh-home.ts`、
+  `src/client/body-mutations.ts` 由 `scripts/sync-shared.mjs` 生成，禁止手改。
 
 ## 提交前检查
 

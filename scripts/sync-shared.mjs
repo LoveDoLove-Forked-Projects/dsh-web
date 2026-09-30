@@ -216,6 +216,11 @@ const MANIFEST = [
     targets: [
       'packages/dsh-web-all/src/client/body-mutations.ts',
       'packages/dsh-usage/src/client/body-mutations.ts',
+      // The plugin-manager toolbar is injected beside the official Plugins
+      // page's "Installed" heading (the page declares no seat there), so it
+      // re-seats itself with the same page-wide invalidation hub the sidebar
+      // foot card uses instead of paying for a second body observer.
+      'packages/dsh-plugin-manager/src/client/body-mutations.ts',
     ],
   },
   {

@@ -2,8 +2,9 @@
  * Locale dictionaries for the plugin-manager's official-page patch. The zh
  * dictionary is the key source; the en dictionary mirrors the exact key set.
  *
- * The key set covers only what this package still renders: the
- * check-for-updates block on a bundle's page in the official Plugins panel.
+ * The key set covers only what this package renders: the check-for-updates
+ * block on a bundle's page in the official Plugins panel, and the list-level
+ * update toolbar mounted beside that panel's "Installed" heading.
  * The former tab's keys (inventory, conflicts, repair seeds, safe mode,
  * aggregate children) left with that tab.
  * @module @linxin666/dsh-client-ui-plugin-manager/client
@@ -21,6 +22,20 @@ const STATIC_ZH = {
   'updateRequiresDsh': '需要 DSH ≥ {min}',
   'updateBlockedDsh': '需要 DSH ≥ {min}，请先升级 DSH 再更新',
   'restartHint': '插件变更将在重启应用后生效。',
+  'updatesAvailable': '{count} 个可更新',
+  'updateAll': '全部更新（{count}）',
+  'updatingAll': '更新 {name}（{index}/{total}）',
+  'updateAllDone': '更新完成，重启后生效。',
+  'updatesPanelTitle': '插件更新',
+  'thirdPartyOnly': '只检查第三方插件；官方 @deepseek-ai/ 包随 DSH 本体升级。',
+  'restartNow': '立即重启',
+  'restarting': '正在重启…',
+  'restartConfirm': '确认重启',
+  'restartConfirmBody': '重启会中断正在运行的任务，插件更新在重启后生效。',
+  'restartDesktopHint': '请在随后出现的系统对话框中选择「重启」。',
+  'restartRelaunchHint': '已请求重启；服务恢复后刷新页面即可。',
+  'restartManualHint': '当前进程无法自动重启，请手动重启 DSH。',
+  'cancel': '取消',
   'failed': '操作失败：{reason}',
   'fetching': '正在获取插件信息…',
   'downloading': '正在下载…',
@@ -43,6 +58,20 @@ const STATIC_EN = {
   'updateRequiresDsh': 'Requires DSH >= {min}',
   'updateBlockedDsh': 'Requires DSH >= {min}; upgrade DSH before updating',
   'restartHint': 'Plugin changes take effect after restarting the application.',
+  'updatesAvailable': '{count} updates available',
+  'updateAll': 'Update all ({count})',
+  'updatingAll': 'Updating {name} ({index}/{total})',
+  'updateAllDone': 'Updated; restart to take effect.',
+  'updatesPanelTitle': 'Plugin updates',
+  'thirdPartyOnly': 'Third-party plugins only; @deepseek-ai/ packages upgrade with DSH itself.',
+  'restartNow': 'Restart now',
+  'restarting': 'Restarting…',
+  'restartConfirm': 'Restart',
+  'restartConfirmBody': 'Restarting interrupts running tasks; plugin updates take effect afterwards.',
+  'restartDesktopHint': 'Choose Restart in the system dialog that follows.',
+  'restartRelaunchHint': 'Restart requested; reload the page once the server is back.',
+  'restartManualHint': 'This process cannot restart itself; restart DSH yourself.',
+  'cancel': 'Cancel',
   'failed': 'Operation failed: {reason}',
   'fetching': 'Fetching plugin metadata…',
   'downloading': 'Downloading…',

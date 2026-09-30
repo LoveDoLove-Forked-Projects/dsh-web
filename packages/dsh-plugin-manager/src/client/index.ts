@@ -30,17 +30,20 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { PluginUpdatePatch, type PluginUpdatePatchInjected } from './PluginUpdatePatch.tsx'
+import { mountPluginListToolbar } from './plugin-toolbar-mount.tsx'
 import { en, zh, type PluginManagerKey } from './locales.ts'
 import {
   parseFailuresSnapshot,
   parseInstallStatus,
   parseInstalledPlugin,
   parsePluginList,
+  parseRestartMode,
   parseUpdateList,
   type InstalledPluginItem,
   type InstallProgressItem,
   type PluginFailuresSnapshot,
   type PluginUpdateItem,
+  type RestartMode,
 } from '../core/protocol.ts'
 import { PLUGIN_MANAGER_SERVICE, type PluginManagerService } from '../core/service.ts'
 import { reportDailyHeartbeat } from './telemetry.ts'
@@ -60,6 +63,7 @@ const UPDATE_ENDPOINT = 'update'
 const UNINSTALL_ENDPOINT = 'uninstall'
 const SET_ENABLED_ENDPOINT = 'set-enabled'
 const CHECK_UPDATES_ENDPOINT = 'check-updates'
+const RESTART_ENDPOINT = 'restart'
 const STATUS_ENDPOINT = 'status'
 const FAILURES_ENDPOINT = 'failures'
 
@@ -88,7 +92,16 @@ interface GatewayJobWire {
  * host still records install conflicts and boot failures; no client surface
  * consumes either since the tab left, so neither is on this face.
  */
-export type PluginManagerFace = PluginUpdatePatchInjected & PluginManagerService
+export type PluginManagerFace = PluginUpdatePatchInjected & PluginManagerService & {
+  /**
+   * Restart DSH so an applied plugin update is loaded. Always rides this
+   * package's own loopback route: neither official channel
+   * (`/plugin-installer`, `/plugin-control`) has a restart method, and the
+   * route answers how the restart was carried out (in-place relaunch, or a
+   * packaged Desktop shell that owns the process tree). See host/restart.ts.
+   */
+  restart: () => Promise<RestartMode>
+}
 
 /**
  * Build the dual-channel face once: official-channel and gateway-channel
@@ -213,6 +226,10 @@ export function createPluginManagerFace(ctx: ClientContext): PluginManagerFace {
       gatewayInflight ? { kind: 'install', stage: 'download' } : { kind: 'idle', stage: 'fetch' },
     failures: async (): Promise<PluginFailuresSnapshot> =>
       parseFailuresSnapshot(await gatewayJson(`${GATEWAY_PREFIX}/failures`)),
+    // Restart has no official-channel counterpart, so this route is the one
+    // call that is always the gateway's, whichever mode the face runs in.
+    restart: async (): Promise<RestartMode> =>
+      parseRestartMode(await gatewayJson(`${GATEWAY_PREFIX}/${RESTART_ENDPOINT}`, { method: 'POST' })),
   }
 
   // Mode selection.
@@ -286,6 +303,7 @@ export function createPluginManagerFace(ctx: ClientContext): PluginManagerFace {
       return item
     },
     checkUpdates: async () => (await ensureMode()) === 'official' ? official.checkUpdates() : gateway.checkUpdates(),
+    restart: () => gateway.restart(),
     status: async () => (await ensureMode()) === 'official' ? official.status() : gateway.status(),
     failures: async () => (await ensureMode()) === 'official' ? official.failures() : gateway.failures(),
     onChange: cb => {
@@ -319,6 +337,28 @@ export function apply(ctx: ClientContext): void {
   } catch {
     // ignore duplicate provide
   }
+
+  // The list-level toolbar rides the page's own "Installed" heading: the
+  // official page declares no seat beside it, so the entry is inserted into
+  // the heading element itself and tracks the page through the shared body
+  // mutation hub. Its translate function is rebuilt on every render so a
+  // language switch reaches copy that no slot outlet owns.
+  ctx.effect(() => {
+    try {
+      return mountPluginListToolbar({
+        props: () => ({
+          isLoopback: face.isLoopback,
+          checkUpdates: face.checkUpdates,
+          update: face.update,
+          restart: face.restart,
+          t: ctx.locale.bind(NS),
+        }),
+        subscribe: listener => ctx.locale.subscribe(listener),
+      })
+    } catch {
+      return () => {}
+    }
+  }, 'plugin-manager: update toolbar')
 
   // The official Plugins page declares this seat on its main-panel entry and
   // renders one section per contribution on each bundle / row / plugin page;
