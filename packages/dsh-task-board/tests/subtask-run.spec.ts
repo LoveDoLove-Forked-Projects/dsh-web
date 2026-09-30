@@ -343,6 +343,42 @@ describe('Agent Team runs', () => {
     expect(ledger.state().tasks.every(task => task.status === 'todo')).toBe(true)
   })
 
+  it('operator team run carries a subtask pin the confirmed Lead already covers', () => {
+    // Given a team-mode root confirmed at full access and a subtask that pins a
+    // narrower permission of its own, still above the session default
+    const ledger = new HostTaskLedger(tempRoot(), () => NOW, { sessionDefaultPermission: 'read-only' })
+    ledger.applyRequest('seed-root', {
+      kind: 'create', id: 'root', input: { title: 'root', description: '', prompt: 'root', teamRun: true, permission: 'danger-full-access' },
+    })
+    ledger.applyRequest('seed-a', {
+      kind: 'create', id: 'a', input: { title: 'a', description: '', prompt: 'a', parentId: 'root', permission: 'workspace-write' },
+    })
+    ledger.applyRequest('confirm', { kind: 'confirm-permission', taskId: 'root' })
+
+    // When the user runs it
+    const runs = ledger.applyRequest('run-1', { kind: 'run', taskId: 'root' }).runs ?? []
+
+    // Then the teammate is dispatched: the Lead session it inherits from is at
+    // least as wide as the pin, so nothing the card asked for is dropped
+    expect(runs.map(run => [run.task.id, run.dispatch ?? 'session'])).toEqual([['root', 'session'], ['a', 'teammate']])
+  })
+
+  it('operator team run refuses a confirmed subtask pin above the Lead session permission', () => {
+    // Given a team-mode root with no pin of its own and a subtask the human
+    // already confirmed above the session default
+    const ledger = new HostTaskLedger(tempRoot(), () => NOW, { sessionDefaultPermission: 'read-only' })
+    ledger.applyRequest('seed-root', { kind: 'create', id: 'root', input: { title: 'root', description: '', prompt: 'root', teamRun: true } })
+    ledger.applyRequest('seed-a', {
+      kind: 'create', id: 'a', input: { title: 'a', description: '', prompt: 'a', parentId: 'root', permission: 'danger-full-access' },
+    })
+    ledger.applyRequest('confirm', { kind: 'confirm-permission', taskId: 'a' })
+
+    // When the user runs it
+    // Then it is refused rather than run at the Lead's narrower permission
+    expect(() => ledger.applyRequest('run-1', { kind: 'run', taskId: 'root' })).toThrow(/team run cannot honor/)
+    expect(ledger.state().tasks.every(task => task.status === 'todo')).toBe(true)
+  })
+
   it('operator team run refuses an unconfirmed Lead binding like any other run', () => {
     // Given a team-mode root pinned above the session default without confirmation
     const ledger = new HostTaskLedger(tempRoot(), () => NOW, { sessionDefaultPermission: 'read-only' })

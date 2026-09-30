@@ -16,7 +16,7 @@ dsh Web GUI 的 Host 权威多列任务看板。任务通过真实 DSH 会话执
 ## Agent Team 执行（opt-in）
 
 - 任务级 `teamRun` 开关（默认关，详情页勾选；服务缺失时禁用）把一次执行从「每个成员各开一个会话」切换为「只开一个 Lead 会话 + 每个子任务一个 teammate」：Host 用 `ctx.agents.get(leadSessionId)` 取到 live Lead，调 `ctx.agentTeams.spawnTeammate(lead, { name, description, prompt, context: 'fresh', provider: teamProvider, signal })`，再把 teammate 会话 id 挂到该子任务的 execution 上。结算不再只等会话监视器：teammate 是 Team 的常驻成员，回合结束后会话仍存活，因此看板读取它已完成的第一个回合（名册仍报该会话 running 也照读）；团队执行由 Lead 的判定统辖，Lead 自身结果落定后仍未报结果的成员一并按该判定结算，避免某个 teammate 不报结果而把整条链永久留在运行列。`agentTeams` 按可选服务解析（不注入）：缺失时手动执行直接拒绝（而不是静默退回级联），cron 路径把成员标为失败并写明原因。
-- 子树在这个模式下被压平成一个 Team（只有 Lead 能派生），teammate 名字取「标题 slug + 成员任务 id 的 4 位稳定标签 + run group 前 8 位」，以保证同一 Team 内唯一且跨次执行不冲突（slug 本身不唯一：纯中文标题会全部退化成同一个通用前缀，共享首个英文词的两个标题也会相撞；Agent Teams 对重名直接拒绝，只靠 slug 加 run group 会让同一次执行里第一个之后的 teammate 全部派生失败）；团队执行永远新建 Lead 会话，不复用旧会话。子任务自己钉住的（高于 `sessionDefaultPermission` 的）权限会被拒绝：teammate 运行在 Lead 会话环境里，无法承载该钉住值；继承自 Lead 的绑定仍按 Lead 的确认门判定。
+- 子树在这个模式下被压平成一个 Team（只有 Lead 能派生），teammate 名字取「标题 slug + 成员任务 id 的 4 位稳定标签 + run group 前 8 位」，以保证同一 Team 内唯一且跨次执行不冲突（slug 本身不唯一：纯中文标题会全部退化成同一个通用前缀，共享首个英文词的两个标题也会相撞；Agent Teams 对重名直接拒绝，只靠 slug 加 run group 会让同一次执行里第一个之后的 teammate 全部派生失败）；团队执行永远新建 Lead 会话，不复用旧会话。子任务自己钉住的权限按 Lead 会话的实际权限判定：teammate 继承 Lead 会话的权限且无法被收窄，因此不高于该权限的钉住照常执行（该成员按 Lead 的权限运行，详情页已说明团队执行中子任务的权限钉住不适用），高于该权限的钉住会在启动前拒绝整次运行，而不是被静默丢弃；未自行钉住的成员继承 Lead 的绑定（连同其确认戳），仍按 Lead 的确认门判定。
 - 两种模式的 Prompt 都会说明本次运行的形态（哪些成员、各自名字/任务 id、可用工具），普通级联说「并发开启 N 个独立会话」，团队模式说「本会话是 Lead，以下成员是 teammate」。
 
 ## Agent 工具面

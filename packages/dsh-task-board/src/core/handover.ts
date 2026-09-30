@@ -106,6 +106,17 @@ export function exceedsSessionDefault(permission: TaskPermission | undefined, se
 }
 
 /**
+ * Whether a session running at `holder` already carries `permission`: the
+ * permission is absent, or its rank does not exceed the holder's. A teammate
+ * inherits the Lead session's permission and cannot be narrowed below it, so a
+ * subtask's own pin is carried by a team run exactly when this holds, and a pin
+ * it does not carry would be silently dropped instead.
+ */
+export function permissionCarriedBy(holder: TaskPermission, permission: TaskPermission | undefined): boolean {
+  return !exceedsSessionDefault(permission, holder)
+}
+
+/**
  * The confirmation-gate predicate: an elevated permission without a human
  * confirmation stamp. Manual run/rerun and cron must refuse such a card.
  */

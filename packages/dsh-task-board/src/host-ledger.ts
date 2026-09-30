@@ -22,7 +22,7 @@ import { applySetSchedule, applyScheduleNextRun } from './core/use-cases/task-sc
 import { applySetParent } from './core/use-cases/task-parent.ts'
 import { applyUpdateTask, canEditTaskContent, hasContentPatch } from './core/use-cases/task-update.ts'
 import { TASK_BOARD_LEGACY_SCHEMA_VERSION, TASK_BOARD_OLDER_SCHEMA_VERSION, TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts'
-import { DEFAULT_SESSION_PERMISSION, requiresPermissionConfirmation, type TaskPermission } from './core/handover.ts'
+import { DEFAULT_SESSION_PERMISSION, effectivePermission, permissionCarriedBy, requiresPermissionConfirmation, type TaskPermission } from './core/handover.ts'
 import type { GitHubTaskMetadata } from './core/github/types.ts'
 
 interface PersistedScheduler extends TaskBoardSchedulerSnapshot {
@@ -58,7 +58,7 @@ function bindingRefusalMessage(
   surface: 'run' | 'schedule',
 ): string {
   if (refusal.kind === 'subtask-pin') {
-    return `team run cannot honor the permission binding of subtask "${refusal.title}": a teammate runs inside the Lead session; clear that card's permission or run the tree without Agent Team`
+    return `team run cannot honor the permission binding of subtask "${refusal.title}": a teammate runs inside the Lead session and inherits its permission, which that pin exceeds; clear the card's permission or run the tree without Agent Team`
   }
   if (surface === 'schedule') return `task "${refusal.title}" has an unconfirmed above-default permission`
   if (refusal.kind === 'root') {
@@ -964,10 +964,12 @@ export class HostTaskLedger {
    *
    * A plain cascade launches one session per participant, so every participant
    * carries its own resolved binding and each one gates the run. A team run
-   * launches only the Lead session: the Lead's binding gates it, while a
-   * subtask's OWN above-default pin cannot be applied to a teammate and is
-   * refused instead of being silently dropped (an inherited binding is the
-   * Lead's own and stays allowed once the Lead is confirmed).
+   * launches only the Lead session: the Lead's binding gates it, and a
+   * teammate inherits that session's permission, so a subtask's OWN pin is
+   * refused exactly when the Lead session does not already carry it — the
+   * teammate could never be given that authority, and dropping the pin
+   * silently would misreport the work (an inherited binding is the Lead's own
+   * and stays allowed once the Lead is confirmed).
    * @param root - the task being run.
    * @returns the first refusal, or undefined when the run may start.
    */
@@ -978,12 +980,17 @@ export class HostTaskLedger {
       if (lead !== undefined && requiresPermissionConfirmation(lead, this.sessionDefaultPermission)) {
         return { kind: 'root', title: lead.title }
       }
-      // The raw record carries the subtask's OWN binding: the resolved
-      // participant above already folded the inherited one into its permission.
+      // The Lead session runs at the Lead's own binding, or at the deployment
+      // default when it pins none; a teammate inherits that permission and
+      // cannot be narrowed below it, so it carries a subtask pin when it is
+      // already at least as wide. The raw record carries the subtask's OWN
+      // binding: the resolved participant above already folded an inherited one
+      // into its permission.
+      const leadPermission = effectivePermission(lead ?? root) ?? this.sessionDefaultPermission
       const pinned = participants.find(participant => {
         if (participant.id === root.id) return false
         const raw = this.document.tasks.find(task => task.id === participant.id)
-        return raw !== undefined && requiresPermissionConfirmation(raw, this.sessionDefaultPermission)
+        return raw !== undefined && !permissionCarriedBy(leadPermission, effectivePermission(raw))
       })
       return pinned === undefined ? undefined : { kind: 'subtask-pin', title: pinned.title }
     }
