@@ -413,8 +413,18 @@ export class HostTaskLedger {
   /** Small sidecar for the 30 s scheduler heartbeat (lastTickAt only). */
   readonly schedulerFile: string
 
-  /** Session-default permission the confirmation gate compares against. */
-  readonly sessionDefaultPermission: TaskPermission
+  /** Resolves the baseline the confirmation gate compares a binding against. */
+  private readonly sessionDefault: () => TaskPermission
+
+  /**
+   * Session-default permission the confirmation gate compares against. Read
+   * through the resolver on every use, so a baseline that follows the Host's
+   * own default preset tracks a Settings change made while the board runs.
+   */
+  get sessionDefaultPermission(): TaskPermission {
+    return this.sessionDefault()
+  }
+
   /**
    * Deployment subtask depth limit (1..3): the lineage gate every write obeys.
    * The settings card edits it live, so {@link setMaxSubtaskDepth} mutates it
@@ -422,8 +432,10 @@ export class HostTaskLedger {
    */
   private depthLimit: number
 
-  constructor(dir: string = join(dshHome(), 'task-board'), private readonly now: () => number = Date.now, options: { sessionDefaultPermission?: TaskPermission; maxSubtaskDepth?: number } = {}) {
-    this.sessionDefaultPermission = options.sessionDefaultPermission ?? DEFAULT_SESSION_PERMISSION
+  constructor(dir: string = join(dshHome(), 'task-board'), private readonly now: () => number = Date.now, options: { sessionDefaultPermission?: TaskPermission | (() => TaskPermission); maxSubtaskDepth?: number } = {}) {
+    // Resolved before the load/repair passes below: they can evaluate the gate.
+    const baseline = options.sessionDefaultPermission
+    this.sessionDefault = typeof baseline === 'function' ? baseline : () => baseline ?? DEFAULT_SESSION_PERMISSION
     this.depthLimit = normalizeSubtaskDepth(options.maxSubtaskDepth ?? DEFAULT_SUBTASK_DEPTH)
     mkdirSync(dir, { recursive: true })
     this.file = join(dir, 'ledger-v2.json')

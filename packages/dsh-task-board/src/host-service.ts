@@ -145,7 +145,11 @@ export class TaskBoardHostService {
     now?: () => number
     commandDispatcher?: SessionCommandDispatcher
     workspaceRegistry?: TaskBoardWorkspaceRegistry
-    sessionDefaultPermission?: TaskPermission
+    /**
+     * Permission baseline of the confirmation gate: a fixed value, or a live
+     * resolver the board re-reads so a Host Settings change needs no remount.
+     */
+    sessionDefaultPermission?: TaskPermission | (() => TaskPermission)
     maxSubtaskDepth?: number
     team?: TaskBoardTeamDispatcher
     timers?: HostTimerFace

@@ -19,7 +19,7 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { TaskBoardHostService, type HostTimerFace, type TaskBoardTeamDispatcher } from './host-service.ts'
 import { parseTaskDraft, TaskParseError } from './host-ai.ts'
-import { TASK_PERMISSIONS, type TaskPermission } from './core/tasks.ts'
+import { TASK_PERMISSIONS, isTaskPermission, type TaskPermission } from './core/tasks.ts'
 import { DEFAULT_SUBTASK_DEPTH, SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from './core/subtask.ts'
 import { DEFAULT_SESSION_PERMISSION } from './core/handover.ts'
 import { buildTaskBoardTools } from './host/agent-tools.ts'
@@ -70,9 +70,12 @@ export interface Config {
   /** Environment variable whose value the authenticated proxy injects upstream. */
   proxyTokenEnv?: string
   /**
-   * The deployment's session-default permission. A card whose effective
-   * permission (handover bundle or pin) is above this value requires a human
-   * confirmation before it may run; cron refuses unconfirmed cards.
+   * An explicit baseline for the permission confirmation gate. Left unset, the
+   * board follows the Host's own default permission preset — the value new DSH
+   * sessions start at — and falls back to `read-only` when the deployment
+   * serves no permission catalog. A card whose effective permission (handover
+   * bundle or pin) is above the baseline requires a human confirmation before
+   * it may run; cron refuses unconfirmed cards.
    */
   sessionDefaultPermission?: TaskPermission
   /**
@@ -121,7 +124,7 @@ export interface ConfigInput {
   trustedProxyHosts?: string[]
   /** Environment variable whose value the authenticated proxy injects. */
   proxyTokenEnv?: string
-  /** The deployment's session-default permission. */
+  /** Explicit baseline for the permission confirmation gate; unset follows the Host default. */
   sessionDefaultPermission?: TaskPermission
   /** Subtask depth limit, 1..3. */
   maxSubtaskDepth?: number
@@ -160,7 +163,7 @@ export const Config: z<ConfigInput, Config> = z.object({
   preventIdleSleep: z.boolean().default(false).volatile(),
   trustedProxyHosts: z.array(z.string()).default([]),
   proxyTokenEnv: z.string().min(1).default(DEFAULT_PROXY_TOKEN_ENV),
-  sessionDefaultPermission: z.union(TASK_PERMISSIONS).default(DEFAULT_SESSION_PERMISSION),
+  sessionDefaultPermission: z.union(TASK_PERMISSIONS),
   maxSubtaskDepth: z.number().min(SUBTASK_DEPTH_MIN).max(SUBTASK_DEPTH_MAX).default(DEFAULT_SUBTASK_DEPTH).volatile(),
   teamProvider: z.string().min(1).default(DEFAULT_TEAM_PROVIDER),
   githubTokenEnv: z.string().default('GITHUB_TOKEN'),
@@ -258,6 +261,33 @@ export function resolveHostTimers(ctx: Context): HostTimerFace | undefined {
 
 /** Schema default, re-read for hand-built test contexts (the loader applies them normally). */
 const DEFAULT_ANNOUNCE = false
+
+/** The subset of the official permission-preset service the board reads. */
+interface PermissionPresetsFace {
+  catalog(): { defaultPreset?: unknown }
+}
+
+/**
+ * The Host's own default permission preset, mapped into the board's vocabulary.
+ *
+ * This is the value new DSH sessions start at (the deployment's `permission`
+ * settings row), so a board that follows it treats an ordinary card exactly as
+ * the Host would. Absent when the deployment serves no permission catalog, or
+ * its default is a current-session identity (`auto`) that names no fixed
+ * sandbox mode; the caller then keeps the fail-safe baseline.
+ * @param ctx - the plugin context.
+ * @returns the Host default as a board permission, or undefined when unreadable.
+ */
+export function resolveHostDefaultPermission(ctx: Context): TaskPermission | undefined {
+  try {
+    const presets = ctx.get('permissionPresets') as PermissionPresetsFace | undefined
+    if (presets === undefined || typeof presets.catalog !== 'function') return undefined
+    const preset = presets.catalog()?.defaultPreset
+    return isTaskPermission(preset) ? preset : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * How long one teammate may take to reach its durable active or failed edge.
@@ -373,10 +403,19 @@ function applyImpl(ctx: Context, config?: Config): void {
   const preventIdleSleep = (): boolean => readConfigField(config?.preventIdleSleep, false)
   /** Current subtask depth limit (read live: the settings card edits it in place). */
   const maxSubtaskDepth = (): number => readConfigField(config?.maxSubtaskDepth, DEFAULT_SUBTASK_DEPTH)
+  /**
+   * The baseline the permission confirmation gate judges against: the row's own
+   * `sessionDefaultPermission` when the deployment pins one, otherwise the Host's
+   * default preset. Read per call through the ledger, so a Host Settings change
+   * reaches the running board without remounting the row; the fail-safe default
+   * still applies when no catalog is available.
+   */
+  const sessionDefaultPermission = (): TaskPermission =>
+    config?.sessionDefaultPermission ?? resolveHostDefaultPermission(ctx) ?? DEFAULT_SESSION_PERMISSION
 
   const host = new TaskBoardHostService(ctx.typertGateway, {
     workspaceRegistry: ctx.workspaceRegistry,
-    sessionDefaultPermission: config?.sessionDefaultPermission ?? DEFAULT_SESSION_PERMISSION,
+    sessionDefaultPermission,
     maxSubtaskDepth: maxSubtaskDepth(),
     timers: resolveHostTimers(ctx),
     team: buildTeamDispatcher(ctx, config?.teamProvider ?? DEFAULT_TEAM_PROVIDER),

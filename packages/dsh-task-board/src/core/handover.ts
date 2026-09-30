@@ -40,7 +40,11 @@ export const HANDOVER_MAX_TOTAL_BYTES = 8 * 1024
 /** Per target-id (workspace/preset) byte cap. */
 export const HANDOVER_MAX_TARGET_BYTES = 256
 
-/** The board's notion of the deployment session-default permission (fail-safe default). */
+/**
+ * Fail-safe baseline for the confirmation gate: what it falls back to when the
+ * deployment pins no baseline of its own and the Host's default permission
+ * preset cannot be read. Every elevation above it stays gated.
+ */
 export const DEFAULT_SESSION_PERMISSION: TaskPermission = 'read-only'
 
 /** Permission elevation rank (higher = more authority). */
