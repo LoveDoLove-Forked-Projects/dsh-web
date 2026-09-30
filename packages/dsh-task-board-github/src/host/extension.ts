@@ -18,14 +18,23 @@ import type { HostTimerFace } from '../core/timers.ts'
 import { GITHUB_EXTENSION_ID, type GitHubRepoConfig } from '../core/types.ts'
 import { GitHubApiClient } from './client.ts'
 import { GitHubSyncService } from './service.ts'
-import { buildGitHubTools } from './tools.ts'
+import { buildGitHubTools, buildSetupTools } from './tools.ts'
+import type { GitHubSetup } from './setup.ts'
 
 export { GITHUB_EXTENSION_ID }
 
 export interface GitHubExtensionOptions {
   repositories?: GitHubRepoConfig[]
   client?: GitHubApiClient
-  /** Environment variable holding the API token; never exposed to browser or agent. */
+  /**
+   * Resolved credential the client authenticates with. The host half resolves
+   * it (credential store first, environment second) and remounts the provider
+   * when it changes; absent falls back to the client's own environment read.
+   */
+  token?: string
+  /**
+   * Credential reference the token is resolved under; a name, never a value.
+   */
   tokenEnv?: string
   timers?: HostTimerFace
   now?: () => number
@@ -34,6 +43,11 @@ export interface GitHubExtensionOptions {
    * means enabled, which is the schema default.
    */
   enabled?: () => boolean
+  /**
+   * The shared setup surface the configuration tools render. Absent (a bare
+   * programmatic mount) registers the synchronization tools only.
+   */
+  setup?: GitHubSetup
 }
 
 /** One provider action the GitHub browser half dispatches. */
@@ -67,7 +81,7 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
   const settings = (host: TaskBoardExtensionHost): GitHubSyncService => {
     service ??= new GitHubSyncService({
       host,
-      client: options.client ?? new GitHubApiClient({ tokenEnv: options.tokenEnv }),
+      client: options.client ?? new GitHubApiClient({ token: options.token, tokenEnv: options.tokenEnv }),
       repositories: options.repositories,
       timers: options.timers,
       now: options.now,
@@ -99,7 +113,7 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
           // A provider-side bookkeeping failure must not disturb the board.
         }
       }))
-      for (const tool of buildGitHubTools(sync)) {
+      for (const tool of [...buildGitHubTools(sync), ...buildSetupTools(options.setup)]) {
         try {
           disposers.push(host.registerTool(tool))
         } catch {

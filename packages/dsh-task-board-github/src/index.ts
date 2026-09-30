@@ -15,8 +15,14 @@
  */
 import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+// Type-only: pulls the host web server's Context merge (ctx.webServer) this
+// half registers its setup routes on.
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import { resolveTaskBoardHostFace } from './core/contract.ts'
 import { createGitHubExtension } from './host/extension.ts'
+import { resolveGitHubToken } from './host/credentials.ts'
+import { makeGitHubSetupRoutes } from './host/routes.ts'
+import { createGitHubSetup } from './host/setup.ts'
 import { mountOnce } from './mount-once.ts'
 
 /**
@@ -87,21 +93,28 @@ export interface GitHubRepoConfig {
 /**
  * Plugin config, validated by the same-named schemastery schema.
  *
- * The fields the browser card edits are marked volatile: the Loader commits an
- * edit into the running fiber's references without remounting the row, so
- * {@link resolveProviderSettings} reads them at use time. `tokenEnv` and
- * `repositories` stay ordinary fields — editing them reloads the row, which
- * re-runs the activation with the new synchronization targets.
+ * Every field is volatile, which is what makes it editable at all: the Host's
+ * settings surface serves forms for volatile fields only, and the browser
+ * card, the setup tools and the Host routes all write through that surface.
+ * The Loader commits an edit into the running fiber's references without
+ * remounting the row, so {@link resolveProviderSettings} reads them at use
+ * time and a repository or credential change reaches the next poll without a
+ * restart.
  */
 export interface Config {
   /** Master switch for the extension. */
   enabled?: Volatile<boolean>
   /** Whether this extension announces itself in every agent system prompt. */
   announceToAgent?: Volatile<boolean>
-  /** Environment variable holding the GitHub API token; never exposed to the browser or an agent. */
-  tokenEnv?: string
+  /**
+   * Credential reference the GitHub API token is resolved under — an
+   * environment variable name, or the name a token was stored under in the
+   * harness credential store. The value itself never reaches the browser or an
+   * agent.
+   */
+  tokenEnv?: Volatile<string>
   /** Repositories configured for GitHub Issues synchronization. */
-  repositories?: GitHubRepoConfig[]
+  repositories?: Volatile<GitHubRepoConfig[]>
 }
 
 /**
@@ -174,8 +187,8 @@ const GitHubRepoConfigSchema = z.object({
 export const Config: z<ConfigInput, Config> = z.object({
   enabled: z.boolean().default(true).volatile(),
   announceToAgent: z.boolean().default(false).volatile(),
-  tokenEnv: z.string().default(DEFAULT_TOKEN_ENV),
-  repositories: z.array(GitHubRepoConfigSchema).default([]),
+  tokenEnv: z.string().default(DEFAULT_TOKEN_ENV).volatile(),
+  repositories: z.array(GitHubRepoConfigSchema).default([]).volatile(),
 })
 
 /** Schema default of the announcement switch, re-read for hand-built contexts. */
@@ -221,8 +234,8 @@ export function resolveProviderSettings(config?: Config): GitHubProviderSettings
   return {
     enabled: readConfigField(config?.enabled, true),
     announceToAgent: readConfigField(config?.announceToAgent, DEFAULT_ANNOUNCE_TO_AGENT),
-    tokenEnv: config?.tokenEnv ?? DEFAULT_TOKEN_ENV,
-    repositories: config?.repositories ?? [],
+    tokenEnv: readConfigField(config?.tokenEnv, DEFAULT_TOKEN_ENV),
+    repositories: readConfigField<GitHubRepoConfig[]>(config?.repositories, []),
   }
 }
 
@@ -285,60 +298,56 @@ export const apply = mountOnce(PACKAGE_NAME, applyImpl)
  * @param config - resolved plugin config (schema defaults applied by the loader).
  */
 function applyImpl(ctx: Context, config?: Config): void {
-  /** Current settings, read live so a volatile switch edit is followed. */
+  /** Current settings, read live so every volatile edit is followed. */
   const settings = (): GitHubProviderSettings => resolveProviderSettings(config)
 
   /** The dependency-scoped fiber that owns the registration, while enabled. */
   let injection: ReturnType<Context['inject']> | undefined
+  /** The dependency-scoped fiber that owns the setup routes, when a web server is served. */
+  let routesInjection: ReturnType<Context['inject']> | undefined
+  /** Whether the board currently holds this provider. */
+  let providerLive = false
+  /** Signature of the mounted registration; a change remounts it. */
+  let mounted: string | undefined
+  /** The credential the mounted client authenticates with. */
+  let token: string | undefined
+  let disposed = false
   let disposeSection: (() => void) | undefined
-  let appliedEnabled: boolean | undefined
-  let appliedAnnounce: boolean | undefined
+  let announceLive = false
 
-  const releaseProvider = (): void => {
+  /** The configuration surface the settings card, the routes and the tools share. */
+  const setup = createGitHubSetup({
+    ctx,
+    repositories: () => settings().repositories,
+    tokenEnv: () => settings().tokenEnv,
+    running: () => providerLive,
+    // A credential write lands in the store, so the value this process already
+    // read is stale: re-resolve and remount before the next request.
+    reload: () => { requestSync() },
+  })
+
+  /** Drop the mounted registration; the next sync remounts it. */
+  const teardownProvider = (): void => {
     const current = injection
     injection = undefined
-    if (current === undefined) return
-    void current.dispose()
+    providerLive = false
+    mounted = undefined
+    if (current !== undefined) void current.dispose()
   }
 
-  const registerProvider = (): void => {
-    if (injection !== undefined) return
-    // Cordis runs this callback once the board serves `taskBoard` — whether
-    // that is already true when this row activates or becomes true later — and
-    // disposes the scope (unregistering the provider, its tools and its
-    // published summary) when the service is withdrawn or replaced.
-    injection = ctx.inject(['taskBoard'], (scope: Context) => {
-      scope.effect(() => {
-        const face = resolveTaskBoardHostFace(scope)
-        if (face === undefined) {
-          // Unreachable while the dependency scope holds, and not a dead end:
-          // cordis re-runs this effect when the implementation behind the name
-          // changes.
-          console.error('[dsh-task-board-github] the taskBoard service does not answer the registration contract')
-          return () => {}
-        }
-        const dispose = face.registerExtension(createGitHubExtension({
-          repositories: config?.repositories,
-          tokenEnv: config?.tokenEnv,
-          enabled: () => settings().enabled,
-        }))
-        return () => { dispose() }
-      }, 'task-board-github: provider registration')
-    })
-  }
-
-  const sync = (): void => {
+  /**
+   * Apply the live settings: register, remount or release the provider, and
+   * keep the announcement in step with its switch.
+   */
+  const sync = async (): Promise<void> => {
+    if (disposed) return
     const next = settings()
-    if (appliedEnabled !== next.enabled) {
-      appliedEnabled = next.enabled
-      if (next.enabled) registerProvider()
-      else releaseProvider()
-    }
-    if (appliedAnnounce !== next.announceToAgent) {
-      appliedAnnounce = next.announceToAgent
+    const wantAnnounce = next.enabled && next.announceToAgent
+    if (wantAnnounce !== announceLive) {
+      announceLive = wantAnnounce
       try { disposeSection?.() } catch { /* best-effort */ }
       disposeSection = undefined
-      if (next.enabled && next.announceToAgent) {
+      if (wantAnnounce) {
         const systemPrompt = resolveSystemPrompt(ctx)
         if (systemPrompt !== undefined) {
           try {
@@ -353,16 +362,86 @@ function applyImpl(ctx: Context, config?: Config): void {
         }
       }
     }
+    if (!next.enabled) {
+      teardownProvider()
+      return
+    }
+    // The credential is re-resolved on every sync: reading the store is cheap,
+    // and a token rotated behind this process (the Models page, a hand-edited
+    // store) must reach the next request instead of the copy read at activation.
+    const resolved = await resolveGitHubToken(ctx, next.tokenEnv)
+    if (disposed) return
+    const desired = JSON.stringify({ tokenEnv: next.tokenEnv, token: resolved ?? null, repositories: next.repositories })
+    if (desired === mounted) return
+    teardownProvider()
+    token = resolved
+    mounted = desired
+    // Cordis runs this callback once the board serves `taskBoard` — whether
+    // that is already true when this row activates or becomes true later — and
+    // disposes the scope (unregistering the provider, its tools and its
+    // published summary) when the service is withdrawn or replaced.
+    injection = ctx.inject(['taskBoard'], (scope: Context) => {
+      scope.effect(() => {
+        const face = resolveTaskBoardHostFace(scope)
+        if (face === undefined) {
+          // Unreachable while the dependency scope holds, and not a dead end:
+          // cordis re-runs this effect when the implementation behind the name
+          // changes.
+          console.error('[dsh-task-board-github] the taskBoard service does not answer the registration contract')
+          return () => {}
+        }
+        providerLive = true
+        const dispose = face.registerExtension(createGitHubExtension({
+          repositories: next.repositories.map(repository => ({ ...repository })),
+          token,
+          tokenEnv: next.tokenEnv,
+          enabled: () => settings().enabled,
+          setup,
+        }))
+        return () => { providerLive = false; dispose() }
+      }, 'task-board-github: provider registration')
+    })
+  }
+
+  /**
+   * Serialize sync requests: a configuration write, a credential write and a
+   * volatile commit can arrive together, and two overlapping syncs would both
+   * mount (leaking one registration fiber).
+   */
+  let chain: Promise<void> = Promise.resolve()
+  const requestSync = (): void => {
+    chain = chain.then(() => sync()).catch(error => { console.error('[dsh-task-board-github] sync failed', error) })
   }
 
   // A settings edit of a volatile field is committed into the references this
   // fiber already holds, with no remount and no second call to apply.
-  ctx.on('loader/volatile-update', () => { sync() })
+  ctx.on('loader/volatile-update', () => { requestSync() })
+  // A credential stored elsewhere — the settings card, a tool, the Models page
+  // or a hand-edited store — reaches the next request without a row reload.
+  ctx.on('credentials/reference-updated', () => { requestSync() })
+
+  // The setup routes need a web server. A deployment without one keeps the
+  // provider, its polling and its tools, and loses only the configuration API
+  // the browser card and a remote caller speak to.
+  routesInjection = ctx.inject(['webServer'], (scope: Context) => {
+    scope.effect(() => {
+      const disposers = makeGitHubSetupRoutes(setup).map(route => scope.webServer.register(route))
+      return () => {
+        for (const dispose of disposers) {
+          try { dispose() } catch { /* route fiber already gone during shutdown */ }
+        }
+      }
+    }, 'task-board-github: setup routes')
+  })
 
   ctx.effect(() => {
-    sync()
+    requestSync()
     return () => {
-      releaseProvider()
+      disposed = true
+      teardownProvider()
+      const routes = routesInjection
+      routesInjection = undefined
+      if (routes !== undefined) void routes.dispose()
       try { disposeSection?.() } catch { /* best-effort */ }
       disposeSection = undefined
     }

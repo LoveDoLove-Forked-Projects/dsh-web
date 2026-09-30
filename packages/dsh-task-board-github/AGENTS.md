@@ -23,25 +23,34 @@
   聚合包仍把本包的行排在 `../dsh-task-board` 之后（见
   `packages/dsh-web-all/aggregate.yml` 注释），但那是加载顺序的可读性偏好，
   不再是正确性的前提。禁止改回一次性 `ctx.get('taskBoard')` 解析。
-- GitHub 令牌只经 `tokenEnv` 指定的环境变量在宿主半区读取，不得进入浏览器、
-  设置卡或 agent 工具面。
+- GitHub 令牌只在宿主半区读写，解析顺序是 DSH 凭据库（`ctx.credentials`，
+  由设置卡或配置工具经宿主路由一次性写入）→ `tokenEnv` 指定的环境变量 →
+  `GH_TOKEN`。浏览器只在用户主动粘贴时单向发送一次，宿主永不回读：令牌不进
+  设置命名空间、不进看板快照/摘要、不进 agent 载荷，路由与工具响应只给「是否
+  已配置、来源、是否可写」。`/api/task-board-github/*` 只服务 loopback 请求
+  （复用 `src/loopback.ts` 的栅栏），不得放宽为局域网可达。
+- 配置写入只有一条路径：设置卡、宿主路由与 agent 工具都经 `src/host/setup.ts`
+  落到 `ctx.settings.mutate`（volatile 字段）与 `ctx.credentials`；不要为某个
+  调用方新增第二条写配置的代码路径。
 
 ## 半区分层
 
 - `src/index.ts`：host 入口（Config schema、提供方登记与 `announceToAgent`
   公告）。
 - `src/host/`：host 半区实现（GitHub REST 客户端、同步服务、提供方工厂、
-  五个模型可见工具）。
+  凭据解析（credentials.ts）、配置读写（configuration.ts）、共享配置面
+  （setup.ts）、宿主路由（routes.ts）与七个模型可见工具）。
 - `src/core/`：两侧共享的纯逻辑（契约同形声明、GitHub 领域类型与校验、
-  标签投影、定时器席位）。
-- `src/client/`：浏览器半区（locales、设置卡、两个席位与可见性谓词）。卡片
-  文案一律经 locales 字典，客户端源码不出现裸中文。
+  标签投影、定时器席位，以及配置面的线形与仓库文本解析/列表编辑（setup.ts））。
+- `src/client/`：浏览器半区（locales、设置卡、配置面板、两个席位与可见性
+  谓词）。卡片文案一律经 locales 字典，客户端源码不出现裸中文。
 - 开关语义：`enabled` 同时门禁 host（停轮询、停写回、注销工具、清空
   publish）与 client（撤下席位、停订阅）；看板总开关与本扩展开关叠加，
   两者都不改契约。
 
 ## 共享副本
 
-`src/mount-once.ts`、`src/client/{settings-form.ts,PluginSettingsCard.tsx,settings-card.module.css,settings-entry-form.ts,plugin-card-seat.ts}`
+`src/mount-once.ts`、`src/loopback.ts`、`src/host/http.ts`、
+`src/client/{settings-form.ts,PluginSettingsCard.tsx,settings-card.module.css,settings-entry-form.ts,plugin-card-seat.ts}`
 与 `vitest.setup.ts` 是 `scripts/sync-shared.mjs` 生成的同步副本（文件头有
 generated 注释），禁止手改；改动 shared/ 源后重跑 `node scripts/sync-shared.mjs`。

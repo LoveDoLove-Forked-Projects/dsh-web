@@ -281,10 +281,10 @@
   margin-top: 4px;
 }
 
-/* Integration block of the extension's settings card: the repository and
-   credential summary, separated from the switches above it the way the board
-   settings card used to separate the same block from its own fields. */
-.settingsSummary {
+/* Integration block of the extension's settings card: the credential, the
+   synchronized repositories and the connection test, separated from the
+   switches above it. */
+.setupPanel {
   margin-top: 16px;
   border-top: 1px solid var(--dsw-alias-border-subtle, #333);
   padding-top: 12px;
@@ -294,6 +294,52 @@
   margin: 0 0 8px 0;
   font-size: 13px;
   font-weight: 600;
+}
+
+.setupSection {
+  margin-top: 10px;
+}
+
+.setupLine {
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.setupHint {
+  margin: 4px 0;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.setupRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+
+.setupRow .input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.setupLabelInput {
+  flex: 0 1 140px;
+}
+
+.setupRepository {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.setupReport {
+  margin-top: 4px;
 }
 
 @media (max-width: 720px) {

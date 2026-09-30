@@ -4,13 +4,13 @@
  * One staged form over this extension's settings namespace, contributed to the
  * plugin-card seat this host renders. It renders the two volatile switches the
  * extension owns (the master switch and the system-prompt announcement) plus
- * the GitHub integration block (the repository and credential summary the host
- * half publishes). That block used to be a section this extension contributed
- * to the task board settings card; it lives here now, beside the switches that
- * govern it, and the board's settings card carries no GitHub surface.
+ * the GitHub integration block: the credential, the synchronized repositories
+ * and a live connection test, all served by this extension's own host routes.
  *
- * Presentation only: the card stages drafts and the shared CardForm writes
- * them, so what is on screen is exactly what a save stores.
+ * The switches are staged and written by the shared CardForm; the integration
+ * block writes immediately through the setup API, because adding a repository
+ * or storing a token is a discrete action whose result the user must see at
+ * once (and the same writes a model performs through the setup tools).
  */
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -18,9 +18,8 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BooleanField, PluginSettingsCard } from './PluginSettingsCard.tsx'
 import { CardForm, booleanField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
-import { GitHubSummaryBlock } from './github/sections.tsx'
-import { useGitHubSummary } from './github/summary.ts'
-import css from './github.module.css'
+import { GitHubSetupPanel } from './SetupPanel.tsx'
+import type { GitHubSetupApi } from './setup-api.ts'
 
 /** The extension fields this card edits (the namespace's schema). */
 export interface GitHubSettings {
@@ -44,6 +43,8 @@ export interface GitHubSettingsCardFace extends CardActions {
     /** Card snapshot bound by the renderer as useGithubSettingsCard. */
     githubSettingsCard: SnapshotStore<GitHubSettingsCardState>
   }
+  /** Same-origin setup API the integration block reads and writes through. */
+  setup: GitHubSetupApi
 }
 
 /** Bridges the extension's settings form onto the card's staged form. */
@@ -51,8 +52,11 @@ export class GithubSettingsCardController {
   private readonly form: CardForm<GitHubSettings>
   private readonly store: SnapshotStore<GitHubSettingsCardState>
 
-  /** @param scope - the bound configuration form of the entry that owns this namespace. */
-  constructor(scope: ConfigForm<GitHubSettings>) {
+  /**
+   * @param scope - the bound configuration form of the entry that owns this namespace.
+   * @param setup - the same-origin setup API the integration block uses.
+   */
+  constructor(scope: ConfigForm<GitHubSettings>, private readonly setup: GitHubSetupApi) {
     this.form = new CardForm(scope, [booleanField('enabled'), booleanField('announceToAgent')])
     this.store = this.form.bind(() => this.projection())
   }
@@ -70,7 +74,7 @@ export class GithubSettingsCardController {
    * @returns the card's snapshot store and its form actions.
    */
   inject(): GitHubSettingsCardFace {
-    return { hooks: { githubSettingsCard: this.store }, ...this.form.actions() }
+    return { hooks: { githubSettingsCard: this.store }, ...this.form.actions(), setup: this.setup }
   }
 
   /** Release the card's scope subscription and bound stores. */
@@ -93,7 +97,6 @@ export type GithubSettingsCardProps =
 export function GithubSettingsCard(props: GithubSettingsCardProps) {
   const { t } = props
   const state = props.useGithubSettingsCard((snapshot: GitHubSettingsCardState) => snapshot)
-  const summary = useGitHubSummary()
   return (
     <PluginSettingsCard
       t={t}
@@ -133,10 +136,7 @@ export function GithubSettingsCard(props: GithubSettingsCardProps) {
         onEdit={(text) => { props.edit('announceToAgent', text) }}
         onReset={() => { props.resetField('announceToAgent') }}
       />
-      <div className={css.settingsSummary} data-dsh-part="github-settings">
-        <h4 className={css.settingsSummaryTitle}>{t('summary.title')}</h4>
-        <GitHubSummaryBlock summary={summary} />
-      </div>
+      <GitHubSetupPanel t={t} api={props.setup} disabled={!state.writable} />
     </PluginSettingsCard>
   )
 }

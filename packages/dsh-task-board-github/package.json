@@ -55,6 +55,10 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-credentials": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-client-store": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.2",

@@ -10,9 +10,11 @@
  */
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { addRepository, removeRepository, updateRepository, type RepositoryOptions } from '../core/setup.ts'
 import { readTaskGitHubMetadata } from '../core/types.ts'
 import type { TaskRecord } from '../core/task-record.ts'
 import type { GitHubSyncService } from './service.ts'
+import { GitHubSetupError, type GitHubSetup } from './setup.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 
@@ -61,6 +63,115 @@ export function buildGitHubTools(service: GitHubSyncService): ToolDefinition[] {
     buildLinkPrTool(service),
   ]
 }
+
+/**
+ * The configuration tools: what lets a model set this extension up end to end
+ * — credential, repositories and a live connection test — without a user
+ * editing a profile patch by hand.
+ *
+ * They render the same setup surface the settings card and the host routes
+ * use, so a model and a person writing the same configuration produce the same
+ * stored value. The token is written once and never read back: no tool result
+ * and no summary carries its value, only whether one is configured, where it
+ * came from and whether it is writable.
+ * @param setup - the shared setup surface; absent registers no setup tool.
+ * @returns the setup tools, or none.
+ */
+export function buildSetupTools(setup: GitHubSetup | undefined): ToolDefinition[] {
+  if (setup === undefined) return []
+  return [buildSetupTool(setup), buildRepositoriesTool(setup)]
+}
+
+function buildSetupTool(setup: GitHubSetup): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_setup',
+    description: 'Configure the task board GitHub Issues integration: read the setup status, store or clear the GitHub token, and run a live connection test against GitHub. The token is stored host-side in the harness credential store and is never returned by any tool. Because a token passed as an argument becomes part of this conversation, prefer asking the user to paste it in the extension settings card when they can reach it. Triggers: setup github, configure github token, github 配置, 设置 github token, 测试 github 连接.',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['status', 'set-token', 'clear-token', 'test'], description: 'status reads the current configuration; set-token stores the token; clear-token removes it; test calls GitHub.' },
+      token: { type: 'string', description: 'GitHub token to store; required by set-token. It becomes part of this conversation.' },
+      owner: { type: 'string', description: 'Repository owner to test only that repository.' },
+      repository: { type: 'string', description: 'Repository name to test only that repository.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      try {
+        switch (args.action) {
+          case 'status':
+            return json({ ok: true, status: await setup.status() })
+          case 'set-token': {
+            if (typeof args.token !== 'string' || args.token.trim() === '') {
+              return refused('token-required', 'set-token needs the token to store')
+            }
+            return json({ ok: true, status: await setup.setCredential(args.token) })
+          }
+          case 'clear-token':
+            return json({ ok: true, status: await setup.clearCredential() })
+          case 'test': {
+            const target = typeof args.owner === 'string' && typeof args.repository === 'string'
+              ? { owner: args.owner, repository: args.repository }
+              : {}
+            return json({ ok: true, report: await setup.test(target) })
+          }
+          default:
+            return refused('unknown-action', 'action must be status, set-token, clear-token or test')
+        }
+      } catch (error) {
+        return refused(error instanceof GitHubSetupError ? error.code : 'setup-failed', describeSetupError(error))
+      }
+    },
+  })
+}
+
+function buildRepositoriesTool(setup: GitHubSetup): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_repositories',
+    description: 'Read and edit the repositories the GitHub Issues integration synchronizes with the task board. A repository is written to the plugin configuration as soon as the call returns, so no restart is needed. Triggers: github repositories, add github repo, 配置 github 仓库, 添加 github 仓库, github 同步仓库.',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['list', 'add', 'remove', 'update'], description: 'list reads the configured repositories; add, remove and update rewrite the list.' },
+      repository: { type: 'string', description: 'Repository to act on: owner/repo, a GitHub URL, or an SSH remote. Required by add, remove and update.' },
+      inclusionLabel: { type: 'string', description: 'Issue label that opts an issue into the board (default dsh).' },
+      baseBranch: { type: 'string', description: 'Base branch pull requests target (default main).' },
+      prCreationEnabled: { type: 'boolean', description: 'Whether the extension may open pull requests for completed cards.' },
+      pollingIntervalMs: { type: 'number', description: 'Background polling interval in milliseconds (default 300000; 0 disables polling).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      const current = setup.listRepositories()
+      if (args.action === 'list') return json({ ok: true, repositories: current })
+      const input = typeof args.repository === 'string' ? args.repository : ''
+      const options: RepositoryOptions = {}
+      if (typeof args.inclusionLabel === 'string' && args.inclusionLabel.trim() !== '') options.inclusionLabel = args.inclusionLabel.trim()
+      if (typeof args.baseBranch === 'string' && args.baseBranch.trim() !== '') options.baseBranch = args.baseBranch.trim()
+      if (typeof args.prCreationEnabled === 'boolean') options.prCreationEnabled = args.prCreationEnabled
+      if (typeof args.pollingIntervalMs === 'number' && Number.isFinite(args.pollingIntervalMs) && args.pollingIntervalMs >= 0) {
+        options.pollingIntervalMs = Math.floor(args.pollingIntervalMs)
+      }
+      // The same pure edits the settings card runs, so a model and a person
+      // adding "deepseek-ai/dsh" produce one stored value.
+      const edit = args.action === 'add'
+        ? addRepository(current, input, options)
+        : args.action === 'remove'
+          ? removeRepository(current, input)
+          : args.action === 'update'
+            ? updateRepository(current, input, options)
+            : undefined
+      if (edit === undefined) return refused('unknown-action', 'action must be list, add, remove or update')
+      if (!edit.ok) return refused(edit.code, edit.message)
+      try {
+        const repositories = await setup.writeRepositories(edit.repositories)
+        return json({ ok: true, repositories })
+      } catch (error) {
+        return refused(error instanceof GitHubSetupError ? error.code : 'write-failed', describeSetupError(error))
+      }
+    },
+  })
+}
+
+/** Phrase one setup failure for a model reading a tool result. */
+function describeSetupError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 
 function buildListTool(service: GitHubSyncService): ToolDefinition {
   return defineTool({

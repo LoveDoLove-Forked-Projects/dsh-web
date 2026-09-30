@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { GithubSettingsCard, GithubSettingsCardController, type GitHubSettings } from './GithubSettingsCard.tsx'
+import { createGitHubSetupApi } from './setup-api.ts'
 import { installGitHubClientHalf, type ExtensionEnabledSource } from './github/extension.ts'
 import { en, setRuntimeTranslate, zh, type TaskBoardGithubKey } from './locales.ts'
 import { installPluginCard } from './plugin-card-seat.ts'
@@ -187,9 +188,13 @@ export function apply(ctx: ClientContext): void {
   }
   ctx.effect(() => installGitHubClientHalf(ctx, enabledSource), 'task-board-github: provider seats')
 
+  // The integration block talks to the extension's own host routes; the card
+  // stays usable (and the switches stay editable) when that API is absent, but
+  // then the block reports that this page cannot reach the Host.
+  const setupApi = createGitHubSetupApi()
   let controller: GithubSettingsCardController
   try {
-    controller = new GithubSettingsCardController(scope)
+    controller = new GithubSettingsCardController(scope, setupApi)
   } catch {
     // A form that cannot be staged over: the extension keeps its seats and
     // loses only the card.

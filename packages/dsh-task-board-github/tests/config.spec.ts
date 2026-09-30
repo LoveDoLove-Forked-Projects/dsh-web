@@ -36,13 +36,15 @@ function context() {
 describe('task-board GitHub extension configuration', () => {
   it('operator leaving the extension unconfigured gets the documented defaults', () => {
     // Given a profile entry that declares no configuration at all
-    // When the schema applies its defaults
+    // When the schema applies its defaults and the plugin reads them
     const resolved = Config({})
-    // Then the extension is on, silent, and reads the standard token variable
+    const settings = resolveProviderSettings(resolved)
+    // Then the extension is on, silent, and reads the standard credential
+    // reference with no repository configured
     expect(readConfigField(resolved.enabled, false)).toBe(true)
     expect(readConfigField(resolved.announceToAgent, true)).toBe(false)
-    expect(resolved.tokenEnv).toBe(DEFAULT_TOKEN_ENV)
-    expect(resolved.repositories).toEqual([])
+    expect(settings.tokenEnv).toBe(DEFAULT_TOKEN_ENV)
+    expect(settings.repositories).toEqual([])
   })
 
   it('operator toggling the switch after activation is followed without a remount', () => {
@@ -72,13 +74,18 @@ describe('task-board GitHub extension configuration', () => {
     ])
   })
 
-  it('operator opening the settings page gets the switches served as live-editable', () => {
+  it('operator opening the settings page gets every field served as live-editable', () => {
     // Given the Config schema the Host serves as this entry's settings page
     const dict = (Config as unknown as { dict?: Record<string, { meta?: { volatile?: boolean } }> }).dict ?? {}
-    // When the two card fields' schema nodes are read
-    // Then both are volatile, which is what a settings write is fenced on
-    expect(dict.enabled?.meta?.volatile).toBe(true)
-    expect(dict.announceToAgent?.meta?.volatile).toBe(true)
+    // When every schema node is read
+    // Then all of them are volatile: the Host's settings surface serves
+    // volatile fields only, so a field without the marker cannot be written
+    // from the settings card, the setup routes or an agent tool at all, and a
+    // volatile write reaches the running provider without a row reload.
+    for (const [field, node] of Object.entries(dict)) {
+      expect(node.meta?.volatile, field).toBe(true)
+    }
+    expect(Object.keys(dict).sort()).toEqual(['announceToAgent', 'enabled', 'repositories', 'tokenEnv'])
   })
 
   it('operator reading the published package identity gets the bundle this patch names', () => {

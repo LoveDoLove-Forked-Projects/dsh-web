@@ -30,6 +30,12 @@ const SEAT_NAMES = [
   'task-board.card.decoration',
 ]
 
+/** The repository slugs the running provider publishes in its summary. */
+function summaryRepositories(board: FakeBoard): string[] {
+  const summary = board.published.github as { repositories?: Array<{ owner: string; repository: string }> } | undefined
+  return (summary?.repositories ?? []).map(entry => entry.owner + '/' + entry.repository)
+}
+
 /** A live switch of the kind the settings form owns. */
 interface Switchboard {
   source: ExtensionEnabledSource
@@ -123,7 +129,7 @@ describe('GitHub client wiring against a late board service', () => {
 })
 
 describe('GitHub host wiring against a late board service', () => {
-  it('operator gets the provider and its five tools once the board publishes its registration service, and loses them when it goes away', async () => {
+  it('operator gets the provider and its seven tools once the board publishes its registration service, and loses them when it goes away', async () => {
     // Given a host whose board has not published its registration service yet
     const root = new Context()
     const board = new FakeBoard()
@@ -139,9 +145,9 @@ describe('GitHub host wiring against a late board service', () => {
     const unprovide = root.provide('taskBoard', board.hostFace() as never)
     await settle()
 
-    // Then the provider is admitted with its five tools and its published summary
+    // Then the provider is admitted with its seven tools and its published summary
     expect(board.isActive('github')).toBe(true)
-    expect(board.toolNames).toHaveLength(5)
+    expect(board.toolNames).toHaveLength(7)
     expect(Object.keys(board.published)).toEqual(['github'])
 
     // When the board withdraws the service
@@ -167,7 +173,7 @@ describe('GitHub host wiring against a late board service', () => {
 
     // Then the provider is admitted without waiting for anything else
     expect(board.isActive('github')).toBe(true)
-    expect(board.toolNames).toHaveLength(5)
+    expect(board.toolNames).toHaveLength(7)
     await mounted.dispose()
   })
 
@@ -185,6 +191,29 @@ describe('GitHub host wiring against a late board service', () => {
     expect(board.isActive('github')).toBe(false)
     expect(board.toolNames).toEqual([])
     expect(Object.keys(board.published)).toEqual([])
+    await mounted.dispose()
+  })
+
+  it('operator adding a repository while the provider runs reaches it without a restart', async () => {
+    // Given a wired provider serving one repository, whose row the Loader
+    // commits volatile edits into in place
+    const root = new Context()
+    const board = new FakeBoard()
+    root.provide('taskBoard', board.hostFace() as never)
+    const live: Array<{ owner: string; repository: string }> = [{ owner: 'deepseek-ai', repository: 'dsh-web' }]
+    const config = { ...Config({}), repositories: { get: () => live } }
+    const mounted = await mountPlugin(root, ctx => { apply(ctx as never, config as never) })
+    await settle()
+    expect(summaryRepositories(board)).toEqual(['deepseek-ai/dsh-web'])
+
+    // When the settings surface stores a second repository and the Loader
+    // announces the committed change
+    live.push({ owner: 'other-org', repository: 'other-repo' })
+    await mounted.ctx.emit('loader/volatile-update', [['repositories']])
+    await settle()
+
+    // Then the running provider serves both, so the write needed no restart
+    expect(summaryRepositories(board)).toEqual(['deepseek-ai/dsh-web', 'other-org/other-repo'])
     await mounted.dispose()
   })
 

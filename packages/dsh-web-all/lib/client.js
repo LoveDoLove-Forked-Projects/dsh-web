@@ -882,9 +882,9 @@ window.__ModuleLoader__.load({
 		* @module @linxin666/dsh-client-ui-plugin-manager/client
 		*/
 		/** Error text for a caught request or lifecycle failure. */
-		function messageOf$4(error) {
+		function messageOf$5(error) {
 			if (error instanceof AggregateError) {
-				const details = error.errors.map(messageOf$4).join("; ");
+				const details = error.errors.map(messageOf$5).join("; ");
 				return details === "" ? error.message : `${error.message}: ${details}`;
 			}
 			return error instanceof Error ? error.message : String(error);
@@ -952,7 +952,7 @@ window.__ModuleLoader__.load({
 					setFound(items.find((item) => item.id === name));
 					setChecked(true);
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$4(reason) }));
+					setError(t("failed", { reason: messageOf$5(reason) }));
 				}).finally(() => {
 					busyRef.current = false;
 					setBusy(void 0);
@@ -968,7 +968,7 @@ window.__ModuleLoader__.load({
 					setChecked(false);
 					setDirty(true);
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$4(reason) }));
+					setError(t("failed", { reason: messageOf$5(reason) }));
 				}).finally(() => {
 					busyRef.current = false;
 					setBusy(void 0);
@@ -1180,9 +1180,9 @@ window.__ModuleLoader__.load({
 		* @module @linxin666/dsh-client-ui-plugin-manager/client
 		*/
 		/** Error text for a caught request or lifecycle failure. */
-		function messageOf$3(error) {
+		function messageOf$4(error) {
 			if (error instanceof AggregateError) {
-				const details = error.errors.map(messageOf$3).join("; ");
+				const details = error.errors.map(messageOf$4).join("; ");
 				return details === "" ? error.message : `${error.message}: ${details}`;
 			}
 			return error instanceof Error ? error.message : String(error);
@@ -1233,7 +1233,7 @@ window.__ModuleLoader__.load({
 					setChecked(true);
 					setPanel("list");
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$3(reason) }));
+					setError(t("failed", { reason: messageOf$4(reason) }));
 					setPanel("list");
 				}).finally(() => {
 					busyRef.current = false;
@@ -1258,7 +1258,7 @@ window.__ModuleLoader__.load({
 						try {
 							await update(row.id);
 						} catch (reason) {
-							setError(t("failed", { reason: messageOf$3(reason) }));
+							setError(t("failed", { reason: messageOf$4(reason) }));
 							break;
 						}
 						done.push(row.id);
@@ -1280,7 +1280,7 @@ window.__ModuleLoader__.load({
 					setPlan(mode);
 					setPanel("restart");
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$3(reason) }));
+					setError(t("failed", { reason: messageOf$4(reason) }));
 					setPanel("list");
 				}).finally(() => {
 					busyRef.current = false;
@@ -1295,7 +1295,7 @@ window.__ModuleLoader__.load({
 					setPlan(void 0);
 					setPanel("none");
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$3(reason) }));
+					setError(t("failed", { reason: messageOf$4(reason) }));
 				}).finally(() => {
 					busyRef.current = false;
 				});
@@ -3335,7 +3335,7 @@ window.__ModuleLoader__.load({
 			}
 			return fp;
 		}
-		function messageOf$2(reason) {
+		function messageOf$3(reason) {
 			return reason instanceof Error ? reason.message : String(reason);
 		}
 		async function fetchJson(url) {
@@ -3663,7 +3663,7 @@ window.__ModuleLoader__.load({
 						id,
 						dest: err.dest ?? id
 					});
-					else callout(id, t("installFailed", { reason: messageOf$2(err) }));
+					else callout(id, t("installFailed", { reason: messageOf$3(err) }));
 				} finally {
 					setInstalling(null);
 				}
@@ -3712,7 +3712,7 @@ window.__ModuleLoader__.load({
 				}).catch((reason) => {
 					setPluginErrors((prev) => ({
 						...prev,
-						[id]: t("installFailed", { reason: messageOf$2(reason) })
+						[id]: t("installFailed", { reason: messageOf$3(reason) })
 					}));
 				}).finally(() => setInstalling(null));
 			};
@@ -5844,7 +5844,7 @@ window.__ModuleLoader__.load({
 			const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 			return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 		}
-		function messageOf$1(error) {
+		function messageOf$2(error) {
 			return error instanceof Error ? error.message : String(error);
 		}
 		/**
@@ -6324,7 +6324,7 @@ window.__ModuleLoader__.load({
 				try {
 					return this.acceptRemote(await transport.action(action, initiator)) || await this.refreshRemote();
 				} catch (error) {
-					await this.refreshRemote(messageOf$1(error));
+					await this.refreshRemote(messageOf$2(error));
 					return false;
 				}
 			}
@@ -6351,7 +6351,7 @@ window.__ModuleLoader__.load({
 					}
 					return true;
 				} catch (error) {
-					this.transportError = messageOf$1(error);
+					this.transportError = messageOf$2(error);
 					this.notify();
 					return false;
 				}
@@ -6417,7 +6417,7 @@ window.__ModuleLoader__.load({
 					}
 					return true;
 				} catch (error) {
-					this.transportError = preserveError ?? messageOf$1(error);
+					this.transportError = preserveError ?? messageOf$2(error);
 					this.notify();
 					return false;
 				}
@@ -14002,6 +14002,132 @@ window.__ModuleLoader__.load({
 			}
 		};
 		//#endregion
+		//#region ../dsh-task-board-github/src/core/setup.ts
+		/**
+		* Same-origin route prefix of this extension's setup API. The browser calls it
+		* document-relative (the GUI is served under `<base href="./">`), so a
+		* sub-path deployment resolves it against its entry directory.
+		*/
+		const GITHUB_SETUP_API_PREFIX = "api/task-board-github";
+		/** Owner and repository names GitHub itself accepts. */
+		const SEGMENT = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/;
+		/**
+		* Parse the repository text a user or a model typed.
+		*
+		* Accepts a full HTTPS URL (deep links such as an issue URL keep their first
+		* two path segments), an SSH remote in scp syntax, and the bare
+		* `owner/repo` form with an optional `.git` suffix.
+		* @param input - the raw text.
+		* @returns the parsed owner and name, or undefined when the text names no repository.
+		*/
+		function parseRepositoryInput(input) {
+			let text = input.trim();
+			if (text === "") return void 0;
+			text = text.replace(/^git\+/, "");
+			let path;
+			const url = /^(?:https?:\/\/)?(?:[^/@\s]+@)?(?:[^/:\s]+)(?::\d+)?\/(.+)$/.exec(text);
+			const scp = /^(?:[^/@\s]+@)?[^/:\s]+:(.+)$/.exec(text);
+			if (text.includes("://") || text.startsWith("//")) {
+				const rest = text.replace(/^[a-z+]+:\/\//i, "");
+				const slash = rest.indexOf("/");
+				if (slash < 0) return void 0;
+				path = rest.slice(slash + 1);
+				const parts = path.split("/").filter((part) => part !== "");
+				if (parts.length < 2) return void 0;
+				return check(parts[0], parts[1]);
+			}
+			if (scp !== null) {
+				path = scp[1];
+				const parts = path.split("/").filter((part) => part !== "");
+				if (parts.length < 2) return void 0;
+				return check(parts[0], parts[1]);
+			}
+			if (url !== null && /^[^/\s]+\.[^/\s]+\//.test(text) && !text.startsWith("github.com/")) {
+				const parts = url[1].split("/").filter((part) => part !== "");
+				if (parts.length < 2) return void 0;
+				return check(parts[0], parts[1]);
+			}
+			const parts = text.split("/").filter((part) => part !== "");
+			if (parts.length !== 2) return void 0;
+			return check(parts[0], parts[1]);
+		}
+		/** Validate one parsed pair against GitHub's own name grammar. */
+		function check(owner, repository) {
+			const name = repository.replace(/\.git$/i, "");
+			if (!SEGMENT.test(owner) || !SEGMENT.test(name)) return void 0;
+			if (name === "." || name === "..") return void 0;
+			return {
+				owner,
+				repository: name
+			};
+		}
+		/** Owner-and-name label of one repository. */
+		function repositorySlug(repository) {
+			return `${repository.owner}/${repository.repository}`;
+		}
+		/** Case-insensitive identity of one repository inside a list. */
+		function identityOf(repository) {
+			return repository.owner.toLowerCase() + "/" + repository.repository.toLowerCase();
+		}
+		/** Copy the supplied options onto one repository configuration. */
+		function withOptions(base, options) {
+			const next = { ...base };
+			if (options.inclusionLabel !== void 0 && options.inclusionLabel.trim() !== "") next.inclusionLabel = options.inclusionLabel.trim();
+			if (options.baseBranch !== void 0 && options.baseBranch.trim() !== "") next.baseBranch = options.baseBranch.trim();
+			if (options.prCreationEnabled !== void 0) next.prCreationEnabled = options.prCreationEnabled;
+			if (options.pollingIntervalMs !== void 0 && Number.isFinite(options.pollingIntervalMs) && options.pollingIntervalMs >= 0) next.pollingIntervalMs = Math.floor(options.pollingIntervalMs);
+			return next;
+		}
+		/**
+		* Add one repository, typed as `owner/repo`, a GitHub URL, or an SSH remote.
+		* @param list - the current list.
+		* @param input - the repository text.
+		* @param options - optional fields to set on the new entry.
+		* @returns the new list, or the reason the entry was refused.
+		*/
+		function addRepository(list, input, options = {}) {
+			const parsed = parseRepositoryInput(input);
+			if (parsed === void 0) return {
+				ok: false,
+				code: "repository-invalid",
+				message: "\"" + input.trim() + "\" is not a GitHub repository; use owner/repo or paste its URL"
+			};
+			const key = identityOf(parsed);
+			if (list.some((entry) => identityOf(entry) === key)) return {
+				ok: false,
+				code: "repository-duplicate",
+				message: repositorySlug(parsed) + " is already configured"
+			};
+			return {
+				ok: true,
+				repositories: [...list.map((entry) => ({ ...entry })), withOptions({ ...parsed }, options)]
+			};
+		}
+		/**
+		* Remove one repository.
+		* @param list - the current list.
+		* @param input - the repository text.
+		* @returns the new list, or the reason nothing was removed.
+		*/
+		function removeRepository(list, input) {
+			const parsed = parseRepositoryInput(input);
+			if (parsed === void 0) return {
+				ok: false,
+				code: "repository-invalid",
+				message: "\"" + input.trim() + "\" is not a GitHub repository"
+			};
+			const key = identityOf(parsed);
+			if (!list.some((entry) => identityOf(entry) === key)) return {
+				ok: false,
+				code: "repository-absent",
+				message: repositorySlug(parsed) + " is not configured"
+			};
+			return {
+				ok: true,
+				repositories: list.filter((entry) => identityOf(entry) !== key).map((entry) => ({ ...entry }))
+			};
+		}
+		//#endregion
 		//#region ../dsh-task-board-github/src/core/types.ts
 		/**
 		* Pure domain types and validation for the GitHub task-board integration.
@@ -14164,6 +14290,32 @@ window.__ModuleLoader__.load({
 			"settings.discard": "放弃",
 			"settings.unsaved": "未保存",
 			"settings.saveFailed": "部署未接受这些值，已保留供你修改。",
+			"setup.apiUnavailable": "无法访问本机 Host 配置接口：{error}",
+			"setup.credentialConfigured": "Host 凭据：已配置（{name}，来源 {source}）",
+			"setup.credentialMissing": "Host 凭据：未配置（可直接在下方粘贴 GitHub Token，存到本机凭据库 {name}）",
+			"setup.credentialSourceUnknown": "未知",
+			"setup.inclusionLabel": "纳入标签",
+			"setup.inclusionLabelPlaceholder": "标签（默认 dsh）",
+			"setup.repositoriesCount": "已配置 {count} 个仓库：",
+			"setup.repositoriesEmpty": "还没有同步任何仓库。",
+			"setup.repositoriesHint": "只有带纳入标签的 issue 会同步成看板卡片；这里的修改立即生效，无需重启。状态标签映射、PR 草稿策略、轮询间隔等高级项仍可在 profile patch 里声明。",
+			"setup.repositoryAdd": "添加",
+			"setup.repositoryLabel": "仓库",
+			"setup.repositoryPlaceholder": "owner/repo，或粘贴 GitHub 链接",
+			"setup.repositoryRemove": "移除",
+			"setup.test": "测试连接",
+			"setup.testFailed": "测试失败：{error}",
+			"setup.testLogin": "已认证账号：{login}",
+			"setup.testNoCredential": "没有可用凭据，GitHub 未认证；先保存一个 Token 再测试。",
+			"setup.testing": "测试中…",
+			"setup.tokenClear": "清除凭据",
+			"setup.tokenEmpty": "请先粘贴 Token",
+			"setup.tokenHint": "Token 只发送给本机 Host 一次，存进 DSH 凭据库（与 Models 页存 API Key 是同一处），浏览器不会读回明文；只勾选 repo 权限的 fine-grained token 就够用。",
+			"setup.tokenLabel": "GitHub Token",
+			"setup.tokenPlaceholder": "粘贴 GitHub Token（ghp_… 或 github_pat_…）",
+			"setup.tokenSave": "保存凭据",
+			"setup.tokenSaved": "已保存，下一次同步即刻使用新凭据。",
+			"setup.tokenSaving": "保存中…",
 			"summary.title": "GitHub 集成",
 			"summary.repositories": "已配置仓库 ({count})",
 			"summary.label": "标签",
@@ -14219,6 +14371,32 @@ window.__ModuleLoader__.load({
 			"settings.discard": "Discard",
 			"settings.unsaved": "Unsaved",
 			"settings.saveFailed": "The deployment did not accept these values; they were left for you to correct.",
+			"setup.apiUnavailable": "Cannot reach the host configuration API: {error}",
+			"setup.credentialConfigured": "Host credential: configured ({name}, source {source})",
+			"setup.credentialMissing": "Host credential: not configured (paste a GitHub token below; it is stored in the local credential store as {name})",
+			"setup.credentialSourceUnknown": "unknown",
+			"setup.inclusionLabel": "Inclusion label",
+			"setup.inclusionLabelPlaceholder": "Label (default dsh)",
+			"setup.repositoriesCount": "{count} repositories configured:",
+			"setup.repositoriesEmpty": "No repository is synchronized yet.",
+			"setup.repositoriesHint": "Only issues carrying the inclusion label become board cards. Changes here apply immediately, with no restart. Advanced knobs (state-label mapping, draft-PR policy, polling interval, ...) stay declarable in the profile patch.",
+			"setup.repositoryAdd": "Add",
+			"setup.repositoryLabel": "Repository",
+			"setup.repositoryPlaceholder": "owner/repo, or paste a GitHub link",
+			"setup.repositoryRemove": "Remove",
+			"setup.test": "Test connection",
+			"setup.testFailed": "Test failed: {error}",
+			"setup.testLogin": "Authenticated as {login}",
+			"setup.testNoCredential": "No credential is available, so GitHub is unauthenticated; save a token first.",
+			"setup.testing": "Testing…",
+			"setup.tokenClear": "Clear credential",
+			"setup.tokenEmpty": "Paste a token first",
+			"setup.tokenHint": "The token is sent to the local host once and stored in the DSH credential store (the same store the Models page writes API keys into); the browser never reads it back. A fine-grained token with repo access only is enough.",
+			"setup.tokenLabel": "GitHub token",
+			"setup.tokenPlaceholder": "Paste a GitHub token (ghp_… or github_pat_…)",
+			"setup.tokenSave": "Save credential",
+			"setup.tokenSaved": "Saved. The next sync uses the new credential immediately.",
+			"setup.tokenSaving": "Saving…",
 			"summary.title": "GitHub Integration",
 			"summary.repositories": "Configured Repositories ({count})",
 			"summary.label": "label",
@@ -14284,7 +14462,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-task-board-github/src/client/github.module.css.mjs
-		const css$11 = ".SUUxSG_detailSection{flex-direction:column;gap:6px;display:flex}.SUUxSG_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}.SUUxSG_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}.SUUxSG_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}.SUUxSG_cardTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}.SUUxSG_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:2px 6px;font-size:12px;line-height:1}.SUUxSG_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}.SUUxSG_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.SUUxSG_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.SUUxSG_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.SUUxSG_moveRow{flex-wrap:wrap;gap:8px;display:flex}.SUUxSG_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.SUUxSG_field{flex-direction:column;gap:5px;display:flex}.SUUxSG_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.SUUxSG_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.SUUxSG_input:focus{border-color:var(--dsw-alias-state-business-primary)}.SUUxSG_input::placeholder{color:var(--dsw-alias-label-tertiary)}.SUUxSG_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}.SUUxSG_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}.SUUxSG_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.SUUxSG_linkButton:hover{text-decoration:underline}.SUUxSG_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.SUUxSG_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.SUUxSG_primaryButton:disabled{opacity:.5;cursor:default}.SUUxSG_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.SUUxSG_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_ghostButton:disabled{opacity:.45;cursor:default}.SUUxSG_primaryButton:focus-visible,.SUUxSG_ghostButton:focus-visible,.SUUxSG_linkButton:focus-visible,.SUUxSG_input:focus-visible,.SUUxSG_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.SUUxSG_primaryButton,.SUUxSG_ghostButton,.SUUxSG_linkButton,.SUUxSG_input,.SUUxSG_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}.SUUxSG_primaryButton:active:not(:disabled),.SUUxSG_ghostButton:active:not(:disabled),.SUUxSG_linkButton:active:not(:disabled){transform:translateY(1px)}.SUUxSG_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.SUUxSG_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}.SUUxSG_modalTitle{margin:0;font-size:15px;font-weight:700}.SUUxSG_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}.SUUxSG_modalBody>*{flex:none}.SUUxSG_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.SUUxSG_settingsSummary{border-top:1px solid var(--dsw-alias-border-subtle,#333);margin-top:16px;padding-top:12px}.SUUxSG_settingsSummaryTitle{margin:0 0 8px;font-size:13px;font-weight:600}@media (width<=720px){.SUUxSG_input{box-sizing:border-box;font-size:16px}.SUUxSG_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}.SUUxSG_modal{box-sizing:border-box;width:100vw;height:100dvh;max-height:none;padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));border:0;border-radius:0}.SUUxSG_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}.SUUxSG_modalFooter>button{flex:120px}}";
+		const css$11 = ".SUUxSG_detailSection{flex-direction:column;gap:6px;display:flex}.SUUxSG_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}.SUUxSG_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}.SUUxSG_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}.SUUxSG_cardTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}.SUUxSG_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:2px 6px;font-size:12px;line-height:1}.SUUxSG_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}.SUUxSG_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.SUUxSG_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.SUUxSG_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.SUUxSG_moveRow{flex-wrap:wrap;gap:8px;display:flex}.SUUxSG_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.SUUxSG_field{flex-direction:column;gap:5px;display:flex}.SUUxSG_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.SUUxSG_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.SUUxSG_input:focus{border-color:var(--dsw-alias-state-business-primary)}.SUUxSG_input::placeholder{color:var(--dsw-alias-label-tertiary)}.SUUxSG_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}.SUUxSG_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}.SUUxSG_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.SUUxSG_linkButton:hover{text-decoration:underline}.SUUxSG_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.SUUxSG_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.SUUxSG_primaryButton:disabled{opacity:.5;cursor:default}.SUUxSG_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.SUUxSG_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_ghostButton:disabled{opacity:.45;cursor:default}.SUUxSG_primaryButton:focus-visible,.SUUxSG_ghostButton:focus-visible,.SUUxSG_linkButton:focus-visible,.SUUxSG_input:focus-visible,.SUUxSG_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.SUUxSG_primaryButton,.SUUxSG_ghostButton,.SUUxSG_linkButton,.SUUxSG_input,.SUUxSG_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}.SUUxSG_primaryButton:active:not(:disabled),.SUUxSG_ghostButton:active:not(:disabled),.SUUxSG_linkButton:active:not(:disabled){transform:translateY(1px)}.SUUxSG_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.SUUxSG_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}.SUUxSG_modalTitle{margin:0;font-size:15px;font-weight:700}.SUUxSG_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}.SUUxSG_modalBody>*{flex:none}.SUUxSG_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.SUUxSG_setupPanel{border-top:1px solid var(--dsw-alias-border-subtle,#333);margin-top:16px;padding-top:12px}.SUUxSG_settingsSummaryTitle{margin:0 0 8px;font-size:13px;font-weight:600}.SUUxSG_setupSection{margin-top:10px}.SUUxSG_setupLine{margin:4px 0;font-size:12px}.SUUxSG_setupHint{opacity:.8;margin:4px 0;font-size:12px}.SUUxSG_setupRow{flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0;display:flex}.SUUxSG_setupRow .SUUxSG_input{flex:220px;min-width:0}.SUUxSG_setupLabelInput{flex:0 140px}.SUUxSG_setupRepository{overflow-wrap:anywhere;flex:220px;align-items:center;gap:6px;min-width:0;font-size:12px;display:inline-flex}.SUUxSG_setupReport{margin-top:4px}@media (width<=720px){.SUUxSG_input{box-sizing:border-box;font-size:16px}.SUUxSG_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}.SUUxSG_modal{box-sizing:border-box;width:100vw;height:100dvh;max-height:none;padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));border:0;border-radius:0}.SUUxSG_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}.SUUxSG_modalFooter>button{flex:120px}}";
 		const tagId$11 = "@linxin666/dsh-web-all/packages/dsh-task-board-github/src/client/github.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
 			const tag = document.createElement("style");
@@ -14314,8 +14492,15 @@ window.__ModuleLoader__.load({
 			"moveRow": "SUUxSG_moveRow",
 			"primaryButton": "SUUxSG_primaryButton",
 			"scheduleToggle": "SUUxSG_scheduleToggle",
-			"settingsSummary": "SUUxSG_settingsSummary",
 			"settingsSummaryTitle": "SUUxSG_settingsSummaryTitle",
+			"setupHint": "SUUxSG_setupHint",
+			"setupLabelInput": "SUUxSG_setupLabelInput",
+			"setupLine": "SUUxSG_setupLine",
+			"setupPanel": "SUUxSG_setupPanel",
+			"setupReport": "SUUxSG_setupReport",
+			"setupRepository": "SUUxSG_setupRepository",
+			"setupRow": "SUUxSG_setupRow",
+			"setupSection": "SUUxSG_setupSection",
 			"statusBadge": "SUUxSG_statusBadge"
 		};
 		//#endregion
@@ -14333,7 +14518,7 @@ window.__ModuleLoader__.load({
 		* @module dsh-task-board-github/client/github/sections
 		*/
 		/** Report a dispatch failure the way the action channel phrased it. */
-		function messageOf(error) {
+		function messageOf$1(error) {
 			return error instanceof Error ? error.message : String(error);
 		}
 		function CreatePrModal({ dispatch, metadata, task, onClose }) {
@@ -14359,7 +14544,7 @@ window.__ModuleLoader__.load({
 					});
 					onClose();
 				} catch (cause) {
-					setError(messageOf(cause));
+					setError(messageOf$1(cause));
 				} finally {
 					setLoading(false);
 				}
@@ -14463,7 +14648,7 @@ window.__ModuleLoader__.load({
 					});
 					onClose();
 				} catch (cause) {
-					setError(messageOf(cause));
+					setError(messageOf$1(cause));
 				} finally {
 					setLoading(false);
 				}
@@ -14590,7 +14775,7 @@ window.__ModuleLoader__.load({
 						taskId: task.id
 					});
 				} catch (cause) {
-					setError(messageOf(cause));
+					setError(messageOf$1(cause));
 				} finally {
 					setRefreshing(false);
 				}
@@ -14822,13 +15007,344 @@ window.__ModuleLoader__.load({
 			return (0, react.useSyncExternalStore)(subscribe, getSummary, getSummary);
 		}
 		//#endregion
+		//#region ../dsh-task-board-github/src/client/SetupPanel.tsx
+		/**
+		* The GitHub integration block of the settings card: the credential, the
+		* synchronized repositories, and a live connection test.
+		*
+		* This panel is what makes the integration configurable without editing a
+		* profile patch: a token is pasted once and stored host-side in the harness
+		* credential store, repositories are added by typing `owner/repo` (a pasted
+		* GitHub URL or an SSH remote work too), and the connection test reports the
+		* authenticated account and each repository's reachability before anything is
+		* trusted. Every write goes through the setup API, so the same edits a person
+		* makes here are the ones a model makes through the setup tools.
+		*
+		* @module dsh-task-board-github/client/SetupPanel
+		*/
+		/** Render the integration block. */
+		function GitHubSetupPanel({ t, api, disabled = false }) {
+			const mirror = useGitHubSummary();
+			const [status, setStatus] = (0, react.useState)();
+			const [statusError, setStatusError] = (0, react.useState)();
+			const [repositories, setRepositories] = (0, react.useState)([]);
+			const [repositoryError, setRepositoryError] = (0, react.useState)();
+			const [repositoryBusy, setRepositoryBusy] = (0, react.useState)(false);
+			const [newRepository, setNewRepository] = (0, react.useState)("");
+			const [newLabel, setNewLabel] = (0, react.useState)("");
+			const [token, setToken] = (0, react.useState)("");
+			const [credentialError, setCredentialError] = (0, react.useState)();
+			const [credentialBusy, setCredentialBusy] = (0, react.useState)(false);
+			const [credentialSaved, setCredentialSaved] = (0, react.useState)(false);
+			const [report, setReport] = (0, react.useState)();
+			const [testError, setTestError] = (0, react.useState)();
+			const [testing, setTesting] = (0, react.useState)(false);
+			const load = (0, react.useCallback)(async () => {
+				try {
+					const next = await api.status();
+					setStatus(next);
+					setRepositories(next.repositories);
+					setStatusError(void 0);
+				} catch (error) {
+					setStatus(void 0);
+					setStatusError(messageOf(error));
+				}
+			}, [api]);
+			(0, react.useEffect)(() => {
+				load();
+			}, [load]);
+			const write = async (next, clearDraft = false) => {
+				setRepositoryBusy(true);
+				setRepositoryError(void 0);
+				try {
+					setRepositories(await api.writeRepositories(next));
+					if (clearDraft) {
+						setNewRepository("");
+						setNewLabel("");
+					}
+				} catch (error) {
+					setRepositoryError(messageOf(error));
+				} finally {
+					setRepositoryBusy(false);
+				}
+			};
+			const add = () => {
+				const edit = addRepository(repositories, newRepository, newLabel.trim() === "" ? {} : { inclusionLabel: newLabel.trim() });
+				if (!edit.ok) {
+					setRepositoryError(edit.message);
+					return;
+				}
+				write(edit.repositories, true);
+			};
+			const remove = (repository) => {
+				const edit = removeRepository(repositories, repository.owner + "/" + repository.repository);
+				if (!edit.ok) {
+					setRepositoryError(edit.message);
+					return;
+				}
+				write(edit.repositories);
+			};
+			const saveToken = async () => {
+				if (token.trim() === "") {
+					setCredentialError(t("setup.tokenEmpty"));
+					return;
+				}
+				setCredentialBusy(true);
+				setCredentialError(void 0);
+				setCredentialSaved(false);
+				try {
+					const next = await api.setCredential(token);
+					setStatus(next);
+					setToken("");
+					setCredentialSaved(true);
+				} catch (error) {
+					setCredentialError(messageOf(error));
+				} finally {
+					setCredentialBusy(false);
+				}
+			};
+			const clearToken = async () => {
+				setCredentialBusy(true);
+				setCredentialError(void 0);
+				setCredentialSaved(false);
+				try {
+					setStatus(await api.clearCredential());
+				} catch (error) {
+					setCredentialError(messageOf(error));
+				} finally {
+					setCredentialBusy(false);
+				}
+			};
+			const runTest = async () => {
+				setTesting(true);
+				setTestError(void 0);
+				try {
+					setReport(await api.test());
+				} catch (error) {
+					setReport(void 0);
+					setTestError(messageOf(error));
+				} finally {
+					setTesting(false);
+				}
+			};
+			const credential = status?.credential ?? {
+				configured: mirror?.hasCredential === true,
+				writable: false,
+				envName: "GITHUB_TOKEN"
+			};
+			const controlsDisabled = disabled || credentialBusy;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				"data-dsh-part": "github-settings",
+				className: github_module_css_default.setupPanel,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", {
+						className: github_module_css_default.settingsSummaryTitle,
+						children: t("summary.title")
+					}),
+					statusError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.formError,
+						children: t("setup.apiUnavailable", { error: statusError })
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: github_module_css_default.setupSection,
+						"data-dsh-part": "github-credential",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.setupLine,
+								children: credential.configured ? t("setup.credentialConfigured", {
+									name: credential.envName,
+									source: credential.source ?? t("setup.credentialSourceUnknown")
+								}) : t("setup.credentialMissing", { name: credential.envName })
+							}),
+							credential.reason !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.setupHint,
+								children: credential.reason
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: github_module_css_default.setupRow,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										type: "password",
+										className: github_module_css_default.input,
+										"data-dsh-part": "github-token",
+										"aria-label": t("setup.tokenLabel"),
+										placeholder: t("setup.tokenPlaceholder"),
+										value: token,
+										autoComplete: "off",
+										spellCheck: false,
+										disabled: controlsDisabled,
+										onChange: (event) => setToken(event.target.value)
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: github_module_css_default.primaryButton,
+										"data-dsh-part": "github-token-save",
+										disabled: controlsDisabled || token.trim() === "",
+										onClick: () => {
+											saveToken();
+										},
+										children: credentialBusy ? t("setup.tokenSaving") : t("setup.tokenSave")
+									}),
+									credential.configured && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: github_module_css_default.ghostButton,
+										disabled: controlsDisabled,
+										onClick: () => {
+											clearToken();
+										},
+										children: t("setup.tokenClear")
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: github_module_css_default.ghostButton,
+										disabled: disabled || testing,
+										onClick: () => {
+											runTest();
+										},
+										children: testing ? t("setup.testing") : t("setup.test")
+									})
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.setupHint,
+								children: t("setup.tokenHint")
+							}),
+							credentialError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.formError,
+								children: credentialError
+							}),
+							credentialSaved && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.setupHint,
+								children: t("setup.tokenSaved")
+							}),
+							testError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.formError,
+								children: t("setup.testFailed", { error: testError })
+							}),
+							report !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: github_module_css_default.setupReport,
+								"data-dsh-part": "github-test-report",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: github_module_css_default.setupLine,
+									children: report.login === void 0 ? t("setup.testNoCredential") : t("setup.testLogin", { login: report.login })
+								}), report.checks.map((check) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+									className: check.ok ? github_module_css_default.setupHint : github_module_css_default.formError,
+									"data-dsh-part": "github-test-check",
+									children: [
+										check.owner,
+										"/",
+										check.repository,
+										" · ",
+										check.message
+									]
+								}, check.owner + "/" + check.repository))]
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: github_module_css_default.setupSection,
+						"data-dsh-part": "github-repositories",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.setupLine,
+								children: repositories.length === 0 ? t("setup.repositoriesEmpty") : t("setup.repositoriesCount", { count: String(repositories.length) })
+							}),
+							repositories.map((repository) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: github_module_css_default.setupRow,
+								"data-dsh-part": "github-repository",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: github_module_css_default.setupRepository,
+									children: [
+										repository.owner,
+										"/",
+										repository.repository,
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: github_module_css_default.cardTag,
+											children: repository.inclusionLabel ?? "dsh"
+										})
+									]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: github_module_css_default.ghostButton,
+									disabled: disabled || repositoryBusy,
+									onClick: () => {
+										remove(repository);
+									},
+									children: t("setup.repositoryRemove")
+								})]
+							}, repository.owner + "/" + repository.repository)),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: github_module_css_default.setupRow,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										type: "text",
+										className: github_module_css_default.input,
+										"data-dsh-part": "github-repository-input",
+										"aria-label": t("setup.repositoryLabel"),
+										placeholder: t("setup.repositoryPlaceholder"),
+										value: newRepository,
+										spellCheck: false,
+										disabled: disabled || repositoryBusy,
+										onChange: (event) => setNewRepository(event.target.value),
+										onKeyDown: (event) => {
+											if (event.key === "Enter") add();
+										}
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										type: "text",
+										className: github_module_css_default.input + " " + github_module_css_default.setupLabelInput,
+										"data-dsh-part": "github-repository-label-input",
+										"aria-label": t("setup.inclusionLabel"),
+										placeholder: t("setup.inclusionLabelPlaceholder"),
+										value: newLabel,
+										spellCheck: false,
+										disabled: disabled || repositoryBusy,
+										onChange: (event) => setNewLabel(event.target.value)
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: github_module_css_default.primaryButton,
+										"data-dsh-part": "github-repository-add",
+										disabled: disabled || repositoryBusy || newRepository.trim() === "",
+										onClick: add,
+										children: t("setup.repositoryAdd")
+									})
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.setupHint,
+								children: t("setup.repositoriesHint")
+							}),
+							repositoryError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.formError,
+								children: repositoryError
+							})
+						]
+					}),
+					statusError !== void 0 && mirror !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: github_module_css_default.setupSection,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GitHubSummaryBlock, { summary: mirror })
+					})
+				]
+			});
+		}
+		/** Read one failure the way the API phrased it. */
+		function messageOf(error) {
+			return error instanceof Error ? error.message : String(error);
+		}
+		//#endregion
 		//#region ../dsh-task-board-github/src/client/GithubSettingsCard.tsx
 		/** Bridges the extension's settings form onto the card's staged form. */
 		var GithubSettingsCardController = class {
+			setup;
 			form;
 			store;
-			/** @param scope - the bound configuration form of the entry that owns this namespace. */
-			constructor(scope) {
+			/**
+			* @param scope - the bound configuration form of the entry that owns this namespace.
+			* @param setup - the same-origin setup API the integration block uses.
+			*/
+			constructor(scope, setup) {
+				this.setup = setup;
 				this.form = new CardForm$2(scope, [booleanField$2("enabled"), booleanField$2("announceToAgent")]);
 				this.store = this.form.bind(() => this.projection());
 			}
@@ -14846,7 +15362,8 @@ window.__ModuleLoader__.load({
 			inject() {
 				return {
 					hooks: { githubSettingsCard: this.store },
-					...this.form.actions()
+					...this.form.actions(),
+					setup: this.setup
 				};
 			}
 			/** Release the card's scope subscription and bound stores. */
@@ -14862,7 +15379,6 @@ window.__ModuleLoader__.load({
 		function GithubSettingsCard(props) {
 			const { t } = props;
 			const state = props.useGithubSettingsCard((snapshot) => snapshot);
-			const summary = useGitHubSummary();
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(PluginSettingsCard$2, {
 				t,
 				titleKey: "settings.title",
@@ -14909,16 +15425,98 @@ window.__ModuleLoader__.load({
 							props.resetField("announceToAgent");
 						}
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: github_module_css_default.settingsSummary,
-						"data-dsh-part": "github-settings",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", {
-							className: github_module_css_default.settingsSummaryTitle,
-							children: t("summary.title")
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GitHubSummaryBlock, { summary })]
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(GitHubSetupPanel, {
+						t,
+						api: props.setup,
+						disabled: !state.writable
 					})
 				]
 			});
+		}
+		//#endregion
+		//#region ../dsh-task-board-github/src/client/setup-api.ts
+		/**
+		* Browser half of the setup API: the same-origin routes the Host serves for
+		* configuration reads and writes.
+		*
+		* The settings card talks to the Host through this module instead of writing
+		* the settings namespace itself, which is what keeps one write path: the card,
+		* the host routes and the agent tools all reach ./host/setup.ts, so a value
+		* typed in the card and a value written by a model produce the same stored
+		* configuration. No response here carries a credential value — only whether
+		* one is configured, where it came from and whether it is writable.
+		*
+		* @module dsh-task-board-github/client/setup-api
+		*/
+		/** Hard ceiling for one setup call; a stalled host must not pile up requests. */
+		const SETUP_FETCH_TIMEOUT_MS = 15e3;
+		/**
+		* Build the setup API client.
+		* @param fetchImpl - fetch implementation (a test seam).
+		* @returns the client.
+		*/
+		function createGitHubSetupApi(fetchImpl = fetch) {
+			const call = async (path, init = {}) => {
+				const response = await fetchImpl(GITHUB_SETUP_API_PREFIX + path, {
+					...init,
+					...init.body === void 0 ? {} : { headers: { "content-type": "application/json" } },
+					signal: AbortSignal.timeout(SETUP_FETCH_TIMEOUT_MS)
+				});
+				let payload;
+				try {
+					payload = await response.json();
+				} catch {
+					payload = void 0;
+				}
+				const body = typeof payload === "object" && payload !== null ? payload : {};
+				if (!response.ok || body.ok === false) throw new Error(typeof body.error === "string" && body.error !== "" ? body.error : "the Host refused the request (" + String(response.status) + ")");
+				return body;
+			};
+			const asSummary = (body) => {
+				return {
+					credential: (typeof body.credential === "object" && body.credential !== null ? body.credential : void 0) ?? {
+						configured: false,
+						writable: false,
+						envName: "GITHUB_TOKEN"
+					},
+					repositories: Array.isArray(body.repositories) ? body.repositories : [],
+					running: body.running === true,
+					settingsWritable: body.settingsWritable === true
+				};
+			};
+			return {
+				async status() {
+					return asSummary(await call("/status"));
+				},
+				async test(target = {}) {
+					const report = (await call("/test", {
+						method: "POST",
+						body: JSON.stringify(target)
+					})).report;
+					if (typeof report !== "object" || report === null) throw new Error("the Host returned no test report");
+					return report;
+				},
+				async setCredential(token) {
+					return asSummary(await call("/credential", {
+						method: "POST",
+						body: JSON.stringify({ token })
+					}));
+				},
+				async clearCredential() {
+					return asSummary(await call("/credential", { method: "DELETE" }));
+				},
+				async listRepositories() {
+					const body = await call("/repositories");
+					return Array.isArray(body.repositories) ? body.repositories : [];
+				},
+				async writeRepositories(repositories) {
+					const body = await call("/repositories", {
+						method: "PUT",
+						body: JSON.stringify({ repositories })
+					});
+					return Array.isArray(body.repositories) ? body.repositories : [];
+				}
+			};
 		}
 		//#endregion
 		//#region ../dsh-task-board-github/src/core/contract.ts
@@ -15359,9 +15957,10 @@ window.__ModuleLoader__.load({
 				subscribe: (listener) => scope.subscribe(listener)
 			};
 			ctx.effect(() => installGitHubClientHalf(ctx, enabledSource), "task-board-github: provider seats");
+			const setupApi = createGitHubSetupApi();
 			let controller;
 			try {
-				controller = new GithubSettingsCardController(scope);
+				controller = new GithubSettingsCardController(scope, setupApi);
 			} catch {
 				return;
 			}

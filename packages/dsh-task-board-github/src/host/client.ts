@@ -194,4 +194,33 @@ export class GitHubApiClient {
     const endpoint = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${pullNumber}`
     return await this.request<GitHubPullRequestPayload>(endpoint)
   }
+
+  /**
+   * Identify the account this credential authenticates as. The setup surface
+   * uses it as the one call that proves a token works before it checks any
+   * repository.
+   */
+  async getAuthenticatedUser(): Promise<{ login: string; name?: string | null }> {
+    return await this.request<{ login: string; name?: string | null }>('/user')
+  }
+
+  /** Read one repository's identity facts, or throw the status that refused it. */
+  async getRepository(owner: string, repo: string): Promise<{ full_name?: string; default_branch?: string; private?: boolean }> {
+    const endpoint = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+    return await this.request<{ full_name?: string; default_branch?: string; private?: boolean }>(endpoint)
+  }
+
+  /**
+   * Count open issues carrying one label. GitHub caps a page at 100 entries
+   * and the caller only needs a usable answer, so a full page reports as
+   * "capped" rather than paginating through a large backlog.
+   */
+  async countOpenIssues(owner: string, repo: string, label: string, cap = 100): Promise<{ count: number; capped: boolean }> {
+    const params = new URLSearchParams({ state: 'open', per_page: String(cap) })
+    if (label !== '') params.set('labels', label)
+    const endpoint = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?${params.toString()}`
+    const raw = await this.request<GitHubIssuePayload[]>(endpoint)
+    const issues = raw.filter(item => item.pull_request === undefined)
+    return { count: issues.length, capped: raw.length >= cap }
+  }
 }
