@@ -14973,24 +14973,30 @@ window.__ModuleLoader__.load({
 		* @returns disposer releasing every contribution.
 		*/
 		function installGitHubClientHalf(ctx, source) {
-			let releaseSeats;
-			const apply = () => {
-				if (source.read()) {
-					if (releaseSeats === void 0) releaseSeats = installSeats(ctx);
-					return;
-				}
-				if (releaseSeats === void 0) return;
-				releaseSeats();
-				releaseSeats = void 0;
+			/** The dependency-scoped fiber that owns the seats, while both gates are on. */
+			let injection;
+			const install = () => {
+				if (injection !== void 0) return;
+				injection = ctx.inject(["taskBoard"], (scope) => {
+					scope.effect(() => installSeats(scope), "task-board-github: provider seats");
+				});
+			};
+			const release = () => {
+				const current = injection;
+				injection = void 0;
+				if (current === void 0) return;
+				current.dispose();
 				clearSummary();
+			};
+			const apply = () => {
+				if (source.read()) install();
+				else release();
 			};
 			const unsubscribe = source.subscribe(apply);
 			apply();
 			return () => {
 				unsubscribe();
-				releaseSeats?.();
-				releaseSeats = void 0;
-				clearSummary();
+				release();
 			};
 		}
 		/**
@@ -15002,7 +15008,7 @@ window.__ModuleLoader__.load({
 		function installSeats(ctx) {
 			const face = resolveTaskBoardClientFace(ctx);
 			if (face === void 0) {
-				console.warn("[dsh-task-board-github] the task board client service is not served; the GitHub seats stay unregistered");
+				console.error("[dsh-task-board-github] the taskBoard service does not answer the client contract");
 				return () => {};
 			}
 			const slots = ctx.slots;

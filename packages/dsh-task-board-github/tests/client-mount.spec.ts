@@ -53,6 +53,11 @@ function context(options: { group?: boolean } = {}) {
     get: (name: string) => (options.group === true && name === 'webUiSettings' ? { bind: () => scope } : undefined),
     on: () => () => {},
     effect: (callback: () => unknown) => callback(),
+    // This page serves no task board, so the dependency scope never runs: the
+    // dictionaries and the settings card must mount anyway (they are what the
+    // operator needs to configure the extension without a board). The shape
+    // matches cordis's: a fiber with a dispose.
+    inject: () => ({ dispose: () => {} }),
     slots: {
       register: (entry: Record<string, unknown>) => {
         registrations.push(entry)

@@ -15,10 +15,7 @@
  */
 import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import {
-  resolveTaskBoardHostFace,
-  type TaskBoardHostFace,
-} from './core/contract.ts'
+import { resolveTaskBoardHostFace } from './core/contract.ts'
 import { createGitHubExtension } from './host/extension.ts'
 import { mountOnce } from './mount-once.ts'
 
@@ -277,6 +274,13 @@ export const apply = mountOnce(PACKAGE_NAME, applyImpl)
  * volatile, so `sync` reads them at use time and follows
  * `loader/volatile-update`; a switch flip re-registers (or releases) the
  * provider immediately, without a remount.
+ *
+ * Registration lives behind a cordis dependency scope (`ctx.inject`) rather
+ * than a one-shot lookup: the Host loads plugin rows in an order this package
+ * does not own, so the board's registration service may genuinely not exist yet
+ * when this row activates. The scope mounts once the service is served and
+ * unloads — releasing the provider, its tools and its published summary — when
+ * the board withdraws it.
  * @param ctx - the plugin context.
  * @param config - resolved plugin config (schema defaults applied by the loader).
  */
@@ -284,42 +288,51 @@ function applyImpl(ctx: Context, config?: Config): void {
   /** Current settings, read live so a volatile switch edit is followed. */
   const settings = (): GitHubProviderSettings => resolveProviderSettings(config)
 
-  let disposeRegistration: (() => void) | undefined
+  /** The dependency-scoped fiber that owns the registration, while enabled. */
+  let injection: ReturnType<Context['inject']> | undefined
   let disposeSection: (() => void) | undefined
   let appliedEnabled: boolean | undefined
   let appliedAnnounce: boolean | undefined
-  let warnedMissingBoard = false
 
   const releaseProvider = (): void => {
-    const dispose = disposeRegistration
-    disposeRegistration = undefined
-    try { dispose?.() } catch { /* the board owns its own teardown */ }
+    const current = injection
+    injection = undefined
+    if (current === undefined) return
+    void current.dispose()
   }
 
-  const registerProvider = (face: TaskBoardHostFace): void => {
-    disposeRegistration = face.registerExtension(createGitHubExtension({
-      repositories: config?.repositories,
-      tokenEnv: config?.tokenEnv,
-      enabled: () => settings().enabled,
-    }))
+  const registerProvider = (): void => {
+    if (injection !== undefined) return
+    // Cordis runs this callback once the board serves `taskBoard` — whether
+    // that is already true when this row activates or becomes true later — and
+    // disposes the scope (unregistering the provider, its tools and its
+    // published summary) when the service is withdrawn or replaced.
+    injection = ctx.inject(['taskBoard'], (scope: Context) => {
+      scope.effect(() => {
+        const face = resolveTaskBoardHostFace(scope)
+        if (face === undefined) {
+          // Unreachable while the dependency scope holds, and not a dead end:
+          // cordis re-runs this effect when the implementation behind the name
+          // changes.
+          console.error('[dsh-task-board-github] the taskBoard service does not answer the registration contract')
+          return () => {}
+        }
+        const dispose = face.registerExtension(createGitHubExtension({
+          repositories: config?.repositories,
+          tokenEnv: config?.tokenEnv,
+          enabled: () => settings().enabled,
+        }))
+        return () => { dispose() }
+      }, 'task-board-github: provider registration')
+    })
   }
 
   const sync = (): void => {
     const next = settings()
     if (appliedEnabled !== next.enabled) {
       appliedEnabled = next.enabled
-      releaseProvider()
-      if (next.enabled) {
-        const face = resolveTaskBoardHostFace(ctx)
-        if (face === undefined) {
-          if (!warnedMissingBoard) {
-            warnedMissingBoard = true
-            console.warn('[dsh-task-board-github] the task board provider service is not served; the GitHub provider stays idle until the board is installed')
-          }
-        } else {
-          registerProvider(face)
-        }
-      }
+      if (next.enabled) registerProvider()
+      else releaseProvider()
     }
     if (appliedAnnounce !== next.announceToAgent) {
       appliedAnnounce = next.announceToAgent

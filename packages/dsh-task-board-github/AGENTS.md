@@ -7,8 +7,8 @@
 - 本包是 `packages/dsh-task-board` 的外部提供方：它不 import 看板的任何
   `src/**` 内部实现，跨包协作只走看板的提供方契约（cordis 服务），由看板
   侧拥有登记面。契约的唯一事实源是看板的 `src/core/extension.ts`；本包在
-  `src/core/contract.ts` 同形重述它，并在 host 半区经 `ctx.get('taskBoard')`
-  解析 `registerExtension`、在浏览器半区解析客户端能力面。
+  `src/core/contract.ts` 同形重述它，两侧半区都经 `ctx.inject(['taskBoard'], ...)`
+  的依赖作用域取得能力面（host 半区 `registerExtension`，浏览器半区客户端面）。
 - 三个子席位（`task-board.detail.section`、`task-board.settings.section`、
   `task-board.card.decoration`）在 `src/client/index.ts` 以同形
   `declare module` 声明，不 value import 看板包。
@@ -16,9 +16,12 @@
   `tasks.*` / `integration.*` 能力面。远端不可变身份索引是扩展自己的结构，
   在 `start()` 时从 `tasks.list()`／`tasks.linked()` 建立并随
   `onTaskDeleted` 维护；扩展自身不得抛出未捕获异常。
-- 聚合展开时本包的行必须排在 `../dsh-task-board` 之后（见
-  `packages/dsh-web-all/aggregate.yml` 注释），浏览器半区的卡片与宿主半区
-  的提供方登记都依赖看板先行就位。
+- 两侧半区都经 `ctx.inject(['taskBoard'], ...)` 等待看板的提供方服务：宿主
+  半区登记 provider，浏览器半区安装三个席位；服务后到也能挂上（聚合的
+  mount-children 不保证 `ctx.plugin` 的 apply 顺序），服务撤走即自动释放。
+  聚合包仍把本包的行排在 `../dsh-task-board` 之后（见
+  `packages/dsh-web-all/aggregate.yml` 注释），但那是加载顺序的可读性偏好，
+  不再是正确性的前提。禁止改回一次性 `ctx.get('taskBoard')` 解析。
 - GitHub 令牌只经 `tokenEnv` 指定的环境变量在宿主半区读取，不得进入浏览器、
   设置卡或 agent 工具面。
 

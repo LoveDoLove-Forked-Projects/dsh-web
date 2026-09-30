@@ -25,6 +25,7 @@ import type {
   TaskBoardExtension,
   TaskBoardExtensionHost,
   TaskBoardExtensionPayload,
+  TaskBoardHostFace,
   TaskBoardLinkedTask,
   TaskBoardStatusChangedEvent,
   TaskBoardTaskDeletedEvent,
@@ -148,6 +149,20 @@ export class FakeBoard {
   /** Whether the board currently runs a given provider. */
   isActive(extensionId: string): boolean {
     return this.admitted.some(entry => entry.extension.id === extensionId && entry.active)
+  }
+
+  /**
+   * The board's registration surface, exactly as a provider receives it. The
+   * gate, the capability face and the teardown are the ones {@link admit}
+   * already implements, so a test that publishes this face through a real
+   * cordis context exercises the same board the extension meets in production.
+   * @returns the host capability face.
+   */
+  hostFace(): TaskBoardHostFace {
+    return {
+      registerExtension: extension => this.admit(extension),
+      isExtensionEnabled: extensionId => this.isActive(extensionId),
+    }
   }
 
   /** Emit one status change to every running provider. */

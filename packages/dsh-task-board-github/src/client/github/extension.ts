@@ -11,6 +11,15 @@
  * - this EXTENSION's own volatile switch hides the seats entirely, without a
  *   restart, because the installer follows the settings form the card edits.
  *
+ * The board's browser half publishes its `taskBoard` service inside its own
+ * apply, and the aggregate mounts its client children without ordering those
+ * applies, so the service is frequently NOT there yet when this installer runs.
+ * The seats therefore live behind a cordis dependency scope (`ctx.inject`)
+ * instead of a one-shot lookup: the scope mounts once the board serves the
+ * service and unloads — releasing every seat — when the board withdraws it.
+ * A one-shot "resolve, give up, never retry" lookup is what made the seats
+ * permanently absent under a real aggregate load.
+ *
  * @module dsh-task-board-github/client/github/extension
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -43,19 +52,33 @@ export interface ExtensionEnabledSource {
  * @returns disposer releasing every contribution.
  */
 export function installGitHubClientHalf(ctx: ClientContext, source: ExtensionEnabledSource): () => void {
-  let releaseSeats: (() => void) | undefined
+  /** The dependency-scoped fiber that owns the seats, while both gates are on. */
+  let injection: ReturnType<ClientContext['inject']> | undefined
 
-  const apply = (): void => {
-    if (source.read()) {
-      if (releaseSeats === undefined) releaseSeats = installSeats(ctx)
-      return
-    }
-    if (releaseSeats === undefined) return
-    releaseSeats()
-    releaseSeats = undefined
+  const install = (): void => {
+    if (injection !== undefined) return
+    // Cordis runs this callback once the board serves `taskBoard` — immediately
+    // if it is already there (on the microtask the fiber load settles on), or
+    // the moment it appears otherwise — and disposes the scope when the service
+    // is withdrawn or replaced, which is what releases the seats again.
+    injection = ctx.inject(['taskBoard'], (scope: ClientContext) => {
+      scope.effect(() => installSeats(scope), 'task-board-github: provider seats')
+    })
+  }
+
+  const release = (): void => {
+    const current = injection
+    injection = undefined
+    if (current === undefined) return
+    void current.dispose()
     // A hidden provider publishes no summary; keep the last one from looking
     // like live state on a settings page that is still open.
     clearSummary()
+  }
+
+  const apply = (): void => {
+    if (source.read()) install()
+    else release()
   }
 
   const unsubscribe = source.subscribe(apply)
@@ -63,9 +86,7 @@ export function installGitHubClientHalf(ctx: ClientContext, source: ExtensionEna
 
   return () => {
     unsubscribe()
-    releaseSeats?.()
-    releaseSeats = undefined
-    clearSummary()
+    release()
   }
 }
 
@@ -78,7 +99,12 @@ export function installGitHubClientHalf(ctx: ClientContext, source: ExtensionEna
 function installSeats(ctx: ClientContext): () => void {
   const face = resolveTaskBoardClientFace(ctx)
   if (face === undefined) {
-    console.warn('[dsh-task-board-github] the task board client service is not served; the GitHub seats stay unregistered')
+    // Unreachable while the dependency scope holds: `ctx.inject(['taskBoard'])`
+    // only runs this once the service is served. It stays as a guard against a
+    // service that answers the name without carrying the client contract, and
+    // it is not a dead end — cordis re-runs this effect when the implementation
+    // behind the name changes.
+    console.error('[dsh-task-board-github] the taskBoard service does not answer the client contract')
     return () => {}
   }
   const slots = ctx.slots as {
