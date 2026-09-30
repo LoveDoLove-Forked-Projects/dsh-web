@@ -22,6 +22,10 @@ export function matchesFilter(task: TaskRecord, filter: string): boolean {
   const needle = filter.trim().toLowerCase()
   const haystacks = [task.title, task.description, ...(task.tags ?? []).map(tag => tag.name)]
   if (task.freeze !== undefined) haystacks.push(task.freeze.goal, task.freeze.progress, task.freeze.next)
+  if (task.integrations?.github !== undefined) {
+    const gh = task.integrations.github
+    haystacks.push(gh.owner, gh.repository, `${gh.owner}/${gh.repository}`, `#${gh.issueNumber}`, String(gh.issueNumber), ...gh.remoteLabels)
+  }
   return haystacks.some(text => text.toLowerCase().includes(needle))
 }
 
@@ -98,9 +102,10 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
   // filter never loses an option just because its task was archived.
   const knownTags = collectKnownTags(snapshot.tasks)
   // The family of cards this view owns: the board columns, or the archive.
-  const onBoard = snapshot.tasks.filter(task =>
-    archiveView ? task.archivedAt !== undefined : task.archivedAt === undefined,
-  )
+  const onBoard = snapshot.tasks.filter(task => {
+    if (task.integrations?.github?.deactivated === true) return false
+    return archiveView ? task.archivedAt !== undefined : task.archivedAt === undefined
+  })
   // Direct subtask count and state roll-up per task, for the card badge: a
   // hidden tree still has to report how many children run, fail, or finish.
   const subtaskCounts = new Map<string, number>()

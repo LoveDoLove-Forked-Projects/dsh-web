@@ -23,6 +23,15 @@ html[data-dsh-skin="maid-atelier"] body {
   isolation: isolate;
 }
 
+/* Windows desktop host paints --dsw-specific-sidebar-fill on the whole-window
+   frame element. Because the frame is an ancestor of the conversation column,
+   it crushes the z-index: -2 background illustration. Set background to transparent.
+   Suffix matching on _frame handles the host CSS-module hash (e.g. ZTP-Xa_frame)
+   without being neutralized by the skin patch prefix pipeline (issue #1763). */
+html[data-dsh-skin="maid-atelier"] [class*="_frame"] {
+  background: transparent !important;
+}
+
 html[data-dsh-skin="maid-atelier"] body:before {
   content: "";
   position: fixed;
@@ -2324,6 +2333,11 @@ html[data-dsh-skin="maid-atelier"] [data-skin-chrome="titlebar-brand"] {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+
+html[data-dsh-skin="maid-atelier"] [data-skin-chrome="titlebar-brand"] svg {
+  height: 18px;
+  flex: none;
 }
 
 html[data-dsh-skin="maid-atelier"] [data-skin-chrome="top-trim"] {

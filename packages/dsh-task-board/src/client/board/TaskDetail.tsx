@@ -426,6 +426,286 @@ function SubtaskSection({ controller, task, pending, archived, snapshot }: {
   )
 }
 
+
+function CreatePrModal({ controller, task, onClose }: { controller: BoardController; task: TaskRecord; onClose: () => void }) {
+  const gh = task.integrations?.github
+  const [headBranch, setHeadBranch] = useState(`issue-${gh?.issueNumber ?? ''}`)
+  const [baseBranch, setBaseBranch] = useState('main')
+  const [draft, setDraft] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | undefined>()
+
+  const handleCreate = async () => {
+    if (headBranch.trim() === '') return
+    setLoading(true)
+    setError(undefined)
+    try {
+      const ok = await controller.createGitHubPr(task.id, {
+        headBranch: headBranch.trim(),
+        baseBranch: baseBranch.trim() || undefined,
+        draft,
+      })
+      if (!ok) {
+        setError(controller.getSnapshot().transportError ?? 'Failed to create PR')
+      } else {
+        onClose()
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className={css.modalBackdrop} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className={css.modal} role="dialog" aria-label={t('detail.github.createPrTitle')}>
+        <h3 className={css.modalTitle}>{t('detail.github.createPrTitle')}</h3>
+        <div className={css.modalBody}>
+          {error !== undefined && <p className={css.formError}>{error}</p>}
+          <label className={css.field}>
+            <span className={css.fieldLabel}>{t('detail.github.headBranch')}</span>
+            <input
+              type="text"
+              className={css.input}
+              value={headBranch}
+              placeholder={t('detail.github.headBranchPlaceholder')}
+              onChange={e => setHeadBranch(e.target.value)}
+              disabled={loading}
+            />
+          </label>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>{t('detail.github.baseBranch')}</span>
+            <input
+              type="text"
+              className={css.input}
+              value={baseBranch}
+              onChange={e => setBaseBranch(e.target.value)}
+              disabled={loading}
+            />
+          </label>
+          <label className={css.scheduleToggle}>
+            <input
+              type="checkbox"
+              checked={draft}
+              onChange={e => setDraft(e.target.checked)}
+              disabled={loading}
+            />
+            <span>{t('detail.github.prDraft')}</span>
+          </label>
+        </div>
+        <footer className={css.modalFooter}>
+          <button type="button" className={css.ghostButton} onClick={onClose} disabled={loading}>
+            {t('new.cancel')}
+          </button>
+          <button type="button" className={css.primaryButton} onClick={handleCreate} disabled={loading || headBranch.trim() === ''}>
+            {loading ? t('detail.github.refreshing') : t('detail.github.createPr')}
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+function LinkPrModal({ controller, task, onClose }: { controller: BoardController; task: TaskRecord; onClose: () => void }) {
+  const [prNumber, setPrNumber] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | undefined>()
+
+  const handleLink = async () => {
+    const num = Number(prNumber)
+    if (!Number.isInteger(num) || num <= 0) return
+    setLoading(true)
+    setError(undefined)
+    try {
+      const ok = await controller.linkGitHubPr(task.id, num)
+      if (!ok) {
+        setError(controller.getSnapshot().transportError ?? 'Failed to link PR')
+      } else {
+        onClose()
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className={css.modalBackdrop} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className={css.modal} role="dialog" aria-label={t('detail.github.linkPrTitle')}>
+        <h3 className={css.modalTitle}>{t('detail.github.linkPrTitle')}</h3>
+        <div className={css.modalBody}>
+          {error !== undefined && <p className={css.formError}>{error}</p>}
+          <label className={css.field}>
+            <span className={css.fieldLabel}>{t('detail.github.prNumberInput')}</span>
+            <input
+              type="number"
+              className={css.input}
+              value={prNumber}
+              min="1"
+              onChange={e => setPrNumber(e.target.value)}
+              disabled={loading}
+            />
+          </label>
+        </div>
+        <footer className={css.modalFooter}>
+          <button type="button" className={css.ghostButton} onClick={onClose} disabled={loading}>
+            {t('new.cancel')}
+          </button>
+          <button type="button" className={css.primaryButton} onClick={handleLink} disabled={loading || !Number.isInteger(Number(prNumber)) || Number(prNumber) <= 0}>
+            {loading ? t('detail.github.refreshing') : t('detail.github.linkPr')}
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+function GitHubSection({ controller, task, pending, timeZone }: {
+  controller: BoardController
+  task: TaskRecord
+  pending: boolean
+  timeZone?: string
+}) {
+  const gh = task.integrations?.github
+  if (gh === undefined) return null
+
+  const [refreshing, setRefreshing] = useState(false)
+  const [showCreatePr, setShowCreatePr] = useState(false)
+  const [showLinkPr, setShowLinkPr] = useState(false)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await controller.refreshGitHub(task.id)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  return (
+    <section className={css.detailSection} data-dsh-part="github-integration">
+      <h4>{t('detail.github.title')}</h4>
+      {gh.deactivated === true && (
+        <p className={css.formError}>{t('detail.github.deactivated')}</p>
+      )}
+      <div className={css.detailText} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <a
+          href={gh.issueUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={css.linkButton}
+          data-dsh-part="github-link"
+          title={gh.issueUrl}
+        >
+          {gh.owner}/{gh.repository} #{gh.issueNumber} ↗
+        </a>
+        <span className={css.statusBadge} data-status={gh.remoteState === 'closed' ? 'done' : 'todo'}>
+          {t(`detail.github.state.${gh.remoteState ?? 'open'}` as TaskBoardKey)}
+        </span>
+      </div>
+
+      {gh.remoteLabels.length > 0 && (
+        <div className={css.cardTags} style={{ marginTop: '6px' }}>
+          {gh.remoteLabels.map(label => (
+            <span
+              key={label}
+              className={css.cardTag}
+              data-dsh-part="github-label"
+              title={label}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {gh.pullRequest !== undefined && (
+        <div className={css.detailText} data-dsh-part="github-pr" style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span>{t('detail.github.pr')}:</span>
+          <a
+            href={gh.pullRequest.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={css.linkButton}
+            title={gh.pullRequest.url}
+          >
+            {t('detail.github.prNumber', { number: String(gh.pullRequest.number) })} ↗
+          </a>
+          <span className={css.statusBadge} data-status={gh.pullRequest.state === 'merged' ? 'done' : gh.pullRequest.state === 'closed' ? 'failed' : 'running'}>
+            {t(`detail.github.prState.${gh.pullRequest.state}` as TaskBoardKey)}
+          </span>
+          {gh.pullRequest.draft && (
+            <span className={css.cardTag}>{t('detail.github.prDraft')}</span>
+          )}
+          {gh.pullRequest.headBranch && (
+            <span className={css.detailMeta}>
+              ({gh.pullRequest.headBranch} → {gh.pullRequest.baseBranch ?? 'main'})
+            </span>
+          )}
+        </div>
+      )}
+
+      {gh.lastSyncedAt !== undefined && (
+        <p className={css.detailMeta} style={{ marginTop: '6px' }}>
+          {t('detail.github.syncedAt', { time: formatHostTimestamp(gh.lastSyncedAt, timeZone) })}
+        </p>
+      )}
+
+      {gh.lastSyncError !== undefined && gh.lastSyncError !== '' && (
+        <p className={css.formError}>{t('detail.github.syncError', { error: gh.lastSyncError })}</p>
+      )}
+
+      <div className={css.moveRow} style={{ marginTop: '8px' }}>
+        <button
+          type="button"
+          className={css.ghostButton}
+          disabled={pending || refreshing}
+          onClick={handleRefresh}
+        >
+          {refreshing ? t('detail.github.refreshing') : t('detail.github.refresh')}
+        </button>
+        {gh.pullRequest === undefined && (
+          <>
+            <button
+              type="button"
+              className={css.ghostButton}
+              disabled={pending || refreshing}
+              onClick={() => setShowCreatePr(true)}
+            >
+              {t('detail.github.createPr')}
+            </button>
+            <button
+              type="button"
+              className={css.ghostButton}
+              disabled={pending || refreshing}
+              onClick={() => setShowLinkPr(true)}
+            >
+              {t('detail.github.linkPr')}
+            </button>
+          </>
+        )}
+      </div>
+
+      {showCreatePr && (
+        <CreatePrModal
+          controller={controller}
+          task={task}
+          onClose={() => setShowCreatePr(false)}
+        />
+      )}
+      {showLinkPr && (
+        <LinkPrModal
+          controller={controller}
+          task={task}
+          onClose={() => setShowLinkPr(false)}
+        />
+      )}
+    </section>
+  )
+}
+
 /** Task detail overlay. */
 export function TaskDetail({ controller, task }: { controller: BoardController; task: TaskRecord }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -556,6 +836,8 @@ export function TaskDetail({ controller, task }: { controller: BoardController; 
           {current.permissionConfirmedAt !== undefined && (
             <p className={css.detailMeta}>{t('detail.permissionConfirmed', { time: formatHostTimestamp(current.permissionConfirmedAt, timeZone) })}</p>
           )}
+
+          <GitHubSection controller={controller} task={current} pending={pending} timeZone={timeZone} />
 
           <section className={css.detailSection}>
             <h4>{t('detail.prompt')}</h4>

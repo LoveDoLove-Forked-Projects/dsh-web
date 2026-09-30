@@ -149,6 +149,22 @@ function isDirectRegistrySpec(spec: string): boolean {
 }
 
 /**
+ * The package name of a spec that names no version, or undefined when the
+ * caller already chose one.
+ *
+ * A scoped name's `@` opens the scope, so only a `@` after the scope counts as
+ * a version separator; every other separator form (`name@1.2.3`, `name@next`,
+ * `name@^1`) yields undefined and is passed through untouched.
+ * @param spec - the install spec the caller supplied.
+ * @returns the bare package name when the spec is unversioned.
+ */
+function barePackageName(spec: string): string | undefined {
+  if (spec === '') return undefined
+  const separator = spec.startsWith('@') ? spec.indexOf('@', 1) : spec.indexOf('@')
+  return separator < 0 ? spec : undefined
+}
+
+/**
  * Build the gateway routes.
  * @param deps - profile facts, the CLI gateway, and seams.
  * @returns the web-server routes to register.
@@ -234,7 +250,28 @@ export function makeGatewayRoutes(deps: GatewayRouteDeps): WebRoute[] {
       writeJson(res, 500, { error: 'plugin-manager: dsh CLI not found on PATH' })
       return
     }
-    writeJson(res, 200, gateway.install(spec.trim()))
+    // A bare package name must be pinned to the registry's current latest
+    // before it reaches the installer (#1759). pnpm 11 applies a supply-chain
+    // gate that silently skips releases younger than `minimumReleaseAge`
+    // (24 h by default), so an unpinned spec resolves to the newest release OLDER
+    // than the cutoff — the same-day version the panel just advertised was
+    // silently skipped and the install landed one release behind with no error.
+    // An explicit version or range the caller chose is honored as given.
+    let installSpec = spec.trim()
+    const name = barePackageName(installSpec)
+    if (name !== undefined && isDirectRegistrySpec(installSpec)) {
+      const manifest = await fetchManifest(name).catch(() => undefined)
+      if (manifest?.version !== undefined && manifest.version !== '') {
+        const pinned = `${name}@${manifest.version}`
+        const unsafePinned = unsafeSpecReason(pinned)
+        if (unsafePinned !== undefined) {
+          writeJson(res, 400, { error: unsafePinned })
+          return
+        }
+        installSpec = pinned
+      }
+    }
+    writeJson(res, 200, gateway.install(installSpec))
   }
 
   const updateHandler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {

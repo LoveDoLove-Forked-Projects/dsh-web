@@ -2612,6 +2612,8 @@ window.__ModuleLoader__.load({
 			disposeForm;
 			disposed = false;
 			saving = false;
+			/** A save asked for while one was in flight; it runs once the first settles (#1754). */
+			saveQueued = false;
 			failed = false;
 			failedReason;
 			/** @param scope - the bound configuration form for this card's namespace. */
@@ -2687,7 +2689,7 @@ window.__ModuleLoader__.load({
 						});
 					},
 					save: () => {
-						this.save();
+						this.requestSave();
 					},
 					discard: () => {
 						if (this.staged.size === 0 && !this.failed) return;
@@ -2714,6 +2716,29 @@ window.__ModuleLoader__.load({
 			* the user can correct them instead of retyping.
 			* @returns settlement after the mutation and the read-back.
 			*/
+			/**
+			* Run one save, and re-run it once if another was asked for while this one
+			* was still in flight.
+			*
+			* A save is a Host round trip that also drives the profile reconcile, and
+			* the Host runs that write inside one exclusive transaction. Answering a
+			* press that arrives mid-flight by returning immediately dropped the edit
+			* with no explanation, which is the "the save button stops working after a
+			* few rounds" report (#1754). Serializing instead means a save pressed while
+			* another is still settling runs against the settled state - which is what
+			* the operator meant by pressing it again.
+			* @returns settlement after the mutation and the read-back.
+			*/
+			async requestSave() {
+				if (this.saving) {
+					this.saveQueued = true;
+					return;
+				}
+				await this.save();
+				if (!this.saveQueued) return;
+				this.saveQueued = false;
+				await this.requestSave();
+			}
 			async save() {
 				const plan = this.plan();
 				const valid = plan.filter((item) => item.judge !== void 0);
@@ -4660,6 +4685,63 @@ window.__ModuleLoader__.load({
 				}
 			});
 		}
+		//#endregion
+		//#region ../dsh-task-board/src/core/github/types.ts
+		/** Validate whether a value is a structural GitHubTaskMetadata object. */
+		function isGitHubTaskMetadata(value) {
+			if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+			const gh = value;
+			if (gh.provider !== "github") return false;
+			if (typeof gh.owner !== "string" || gh.owner.trim() === "") return false;
+			if (typeof gh.repository !== "string" || gh.repository.trim() === "") return false;
+			if (typeof gh.issueNumber !== "number" || !Number.isInteger(gh.issueNumber) || gh.issueNumber <= 0) return false;
+			if (typeof gh.issueUrl !== "string" || gh.issueUrl.trim() === "") return false;
+			if (!Array.isArray(gh.remoteLabels) || !gh.remoteLabels.every((l) => typeof l === "string")) return false;
+			if (gh.remoteState !== void 0 && gh.remoteState !== "open" && gh.remoteState !== "closed") return false;
+			if (gh.pullRequest !== void 0) {
+				if (typeof gh.pullRequest !== "object" || gh.pullRequest === null || Array.isArray(gh.pullRequest)) return false;
+				const pr = gh.pullRequest;
+				if (typeof pr.number !== "number" || !Number.isInteger(pr.number) || pr.number <= 0) return false;
+				if (typeof pr.url !== "string" || pr.url.trim() === "") return false;
+				if (pr.state !== "open" && pr.state !== "closed" && pr.state !== "merged") return false;
+			}
+			return true;
+		}
+		/** Normalize and repair an integrations container from the ledger or wire. */
+		function normalizeIntegrations(value) {
+			if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
+			const container = value;
+			if (container.github === void 0) return void 0;
+			if (!isGitHubTaskMetadata(container.github)) return void 0;
+			const gh = container.github;
+			let pullRequest;
+			if (gh.pullRequest !== void 0) pullRequest = {
+				number: gh.pullRequest.number,
+				url: gh.pullRequest.url.trim(),
+				state: gh.pullRequest.state,
+				...gh.pullRequest.draft === true ? { draft: true } : {},
+				...typeof gh.pullRequest.headBranch === "string" && gh.pullRequest.headBranch !== "" ? { headBranch: gh.pullRequest.headBranch } : {},
+				...typeof gh.pullRequest.baseBranch === "string" && gh.pullRequest.baseBranch !== "" ? { baseBranch: gh.pullRequest.baseBranch } : {},
+				...typeof gh.pullRequest.mergedAt === "number" && Number.isFinite(gh.pullRequest.mergedAt) ? { mergedAt: gh.pullRequest.mergedAt } : {}
+			};
+			return { github: {
+				provider: "github",
+				owner: gh.owner.trim(),
+				repository: gh.repository.trim(),
+				issueNumber: gh.issueNumber,
+				issueUrl: gh.issueUrl.trim(),
+				remoteLabels: [...gh.remoteLabels],
+				...typeof gh.issueNodeId === "string" && gh.issueNodeId !== "" ? { issueNodeId: gh.issueNodeId } : {},
+				...typeof gh.remoteTitle === "string" ? { remoteTitle: gh.remoteTitle } : {},
+				...typeof gh.remoteBody === "string" ? { remoteBody: gh.remoteBody } : {},
+				...gh.remoteState !== void 0 ? { remoteState: gh.remoteState } : {},
+				...typeof gh.lastSyncedAt === "number" && Number.isFinite(gh.lastSyncedAt) ? { lastSyncedAt: gh.lastSyncedAt } : {},
+				...typeof gh.lastRemoteUpdatedAt === "number" && Number.isFinite(gh.lastRemoteUpdatedAt) ? { lastRemoteUpdatedAt: gh.lastRemoteUpdatedAt } : {},
+				...typeof gh.lastSyncError === "string" && gh.lastSyncError !== "" ? { lastSyncError: gh.lastSyncError } : {},
+				...pullRequest !== void 0 ? { pullRequest } : {},
+				...gh.deactivated === true ? { deactivated: true } : {}
+			} };
+		}
 		/**
 		* Repair a persisted tag list: keep the well-formed entries, trim, drop
 		* blanks and repeats, cap the count, and collapse a blank prompt line to
@@ -4839,6 +4921,7 @@ window.__ModuleLoader__.load({
 		/** Create a task from user input. */
 		function createTask(input, now, id) {
 			const tags = normalizeTags(input.tags);
+			const integrations = normalizeIntegrations(input.integrations);
 			return {
 				id,
 				title: input.title.trim(),
@@ -4861,7 +4944,8 @@ window.__ModuleLoader__.load({
 					...input.handover,
 					bundledAt: now
 				} },
-				...tags === void 0 ? {} : { tags }
+				...tags === void 0 ? {} : { tags },
+				...integrations === void 0 ? {} : { integrations }
 			};
 		}
 		/** Clone a task with an updated status and a fresh updatedAt. */
@@ -6054,6 +6138,34 @@ window.__ModuleLoader__.load({
 				this.persistAndNotify();
 				return true;
 			}
+			/** Trigger synchronization between GitHub and the task board. */
+			async refreshGitHub(taskId, owner, repository) {
+				if (this.deps.transport === void 0) return false;
+				return await this.commitRemote({
+					kind: "github-refresh",
+					taskId,
+					owner,
+					repository
+				}, taskId);
+			}
+			/** Create a GitHub Pull Request for a task. */
+			async createGitHubPr(taskId, input) {
+				if (this.deps.transport === void 0) return false;
+				return await this.commitRemote({
+					kind: "github-create-pr",
+					taskId,
+					...input
+				}, taskId);
+			}
+			/** Link an existing GitHub Pull Request to a task. */
+			async linkGitHubPr(taskId, pullRequestNumber) {
+				if (this.deps.transport === void 0) return false;
+				return await this.commitRemote({
+					kind: "github-link-pr",
+					taskId,
+					pullRequestNumber
+				}, taskId);
+			}
 			/**
 			* Update a task's schedule rule. A blank or invalid cron expression is
 			* rejected (returns false, state untouched). When the rule ends up enabled
@@ -6591,6 +6703,7 @@ window.__ModuleLoader__.load({
 			if (record.workspaceId !== void 0 && typeof record.workspaceId !== "string") return false;
 			if (record.mode !== void 0 && typeof record.mode !== "string") return false;
 			if (record.permission !== void 0 && typeof record.permission !== "string") return false;
+			if (record.integrations !== void 0 && (typeof record.integrations !== "object" || record.integrations === null || Array.isArray(record.integrations))) return false;
 			if (record.reuseSession !== void 0 && typeof record.reuseSession !== "boolean") return false;
 			if (record.goalRun !== void 0 && typeof record.goalRun !== "boolean") return false;
 			if (!Array.isArray(record.executions)) return false;
@@ -6717,6 +6830,7 @@ window.__ModuleLoader__.load({
 				task.handover = normalizeHandover(row.handover);
 				task.tags = normalizeTags(row.tags);
 				task.permissionConfirmedAt = typeof row.permissionConfirmedAt === "number" && Number.isFinite(row.permissionConfirmedAt) ? row.permissionConfirmedAt : void 0;
+				task.integrations = normalizeIntegrations(row.integrations);
 				tasks.push(task);
 			}
 			return tasks;
@@ -7065,7 +7179,38 @@ window.__ModuleLoader__.load({
 			"card.subtasksBreakdown": "子任务 {total}：已完成 {done}，运行中 {running}，失败 {failed}",
 			"board.hideSubtasks": "隐藏子任务",
 			"board.showSubtasks": "显示子任务",
-			"board.subtaskFilterHint": "看板默认只显示父任务；搜索或按标签筛选时会自动展开子任务。"
+			"board.subtaskFilterHint": "看板默认只显示父任务；搜索或按标签筛选时会自动展开子任务。",
+			"detail.github.title": "GitHub Issue",
+			"detail.github.issue": "Issue #{number}",
+			"detail.github.repo": "仓库",
+			"detail.github.state.open": "开启",
+			"detail.github.state.closed": "已关闭",
+			"detail.github.labels": "GitHub 标签",
+			"detail.github.syncedAt": "同步于 {time}",
+			"detail.github.syncError": "同步异常：{error}",
+			"detail.github.open": "在 GitHub 打开",
+			"detail.github.refresh": "同步 Issue",
+			"detail.github.refreshing": "正在同步…",
+			"detail.github.pr": "Pull Request",
+			"detail.github.prNumber": "PR #{number}",
+			"detail.github.prState.open": "开启",
+			"detail.github.prState.closed": "已关闭",
+			"detail.github.prState.merged": "已合并",
+			"detail.github.prDraft": "草稿",
+			"detail.github.createPr": "创建 PR",
+			"detail.github.createPrTitle": "创建 Pull Request",
+			"detail.github.headBranch": "远程来源分支 (Head)",
+			"detail.github.headBranchPlaceholder": "例如 feature-branch",
+			"detail.github.baseBranch": "目标基线分支 (Base)",
+			"detail.github.linkPr": "关联 PR",
+			"detail.github.linkPrTitle": "关联已有 Pull Request",
+			"detail.github.prNumberInput": "PR 编号",
+			"detail.github.deactivated": "该 Issue 在 GitHub 上已移除包含标签，已在看板停用。",
+			"settings.github.title": "GitHub 集成",
+			"settings.github.configuredRepos": "已配置仓库 ({count})",
+			"settings.github.noRepos": "未配置 GitHub 仓库（通过 profile patch 或环境变量配置）",
+			"settings.github.credentialOk": "Host 凭据：有效",
+			"settings.github.credentialMissing": "Host 凭据：未检测到（请设置 GITHUB_TOKEN 环境变量）"
 		};
 		/** en dictionary, complete against the zh key set. */
 		const en$9 = {
@@ -7326,7 +7471,38 @@ window.__ModuleLoader__.load({
 			"card.subtasksBreakdown": "Subtasks {total}: {done} done, {running} running, {failed} failed",
 			"board.hideSubtasks": "Hide subtasks",
 			"board.showSubtasks": "Show subtasks",
-			"board.subtaskFilterHint": "The board shows parent tasks only; a text or label filter reveals the subtasks automatically."
+			"board.subtaskFilterHint": "The board shows parent tasks only; a text or label filter reveals the subtasks automatically.",
+			"detail.github.title": "GitHub Issue",
+			"detail.github.issue": "Issue #{number}",
+			"detail.github.repo": "Repository",
+			"detail.github.state.open": "Open",
+			"detail.github.state.closed": "Closed",
+			"detail.github.labels": "GitHub Labels",
+			"detail.github.syncedAt": "Synced at {time}",
+			"detail.github.syncError": "Sync error: {error}",
+			"detail.github.open": "Open on GitHub",
+			"detail.github.refresh": "Sync Issue",
+			"detail.github.refreshing": "Syncing…",
+			"detail.github.pr": "Pull Request",
+			"detail.github.prNumber": "PR #{number}",
+			"detail.github.prState.open": "Open",
+			"detail.github.prState.closed": "Closed",
+			"detail.github.prState.merged": "Merged",
+			"detail.github.prDraft": "Draft",
+			"detail.github.createPr": "Create PR",
+			"detail.github.createPrTitle": "Create Pull Request",
+			"detail.github.headBranch": "Remote Head Branch",
+			"detail.github.headBranchPlaceholder": "e.g. feature-branch",
+			"detail.github.baseBranch": "Target Base Branch",
+			"detail.github.linkPr": "Link PR",
+			"detail.github.linkPrTitle": "Link Existing Pull Request",
+			"detail.github.prNumberInput": "PR Number",
+			"detail.github.deactivated": "Inclusion label was removed on GitHub; item is deactivated on the board.",
+			"settings.github.title": "GitHub Integration",
+			"settings.github.configuredRepos": "Configured Repositories ({count})",
+			"settings.github.noRepos": "No GitHub repositories configured (configure in profile patch or environment)",
+			"settings.github.credentialOk": "Host credential: Valid",
+			"settings.github.credentialMissing": "Host credential: None detected (set GITHUB_TOKEN environment variable)"
 		};
 		/** Active dictionary, picked by the document language at call time. */
 		function dictionary$5() {
@@ -9381,6 +9557,329 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
+		function CreatePrModal({ controller, task, onClose }) {
+			const gh = task.integrations?.github;
+			const [headBranch, setHeadBranch] = (0, react.useState)(`issue-${gh?.issueNumber ?? ""}`);
+			const [baseBranch, setBaseBranch] = (0, react.useState)("main");
+			const [draft, setDraft] = (0, react.useState)(false);
+			const [loading, setLoading] = (0, react.useState)(false);
+			const [error, setError] = (0, react.useState)();
+			const handleCreate = async () => {
+				if (headBranch.trim() === "") return;
+				setLoading(true);
+				setError(void 0);
+				try {
+					if (!await controller.createGitHubPr(task.id, {
+						headBranch: headBranch.trim(),
+						baseBranch: baseBranch.trim() || void 0,
+						draft
+					})) setError(controller.getSnapshot().transportError ?? "Failed to create PR");
+					else onClose();
+				} catch (e) {
+					setError(e instanceof Error ? e.message : String(e));
+				} finally {
+					setLoading(false);
+				}
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: board_module_css_default.modalBackdrop,
+				onMouseDown: (e) => {
+					if (e.target === e.currentTarget) onClose();
+				},
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: board_module_css_default.modal,
+					role: "dialog",
+					"aria-label": t$4("detail.github.createPrTitle"),
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+							className: board_module_css_default.modalTitle,
+							children: t$4("detail.github.createPrTitle")
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: board_module_css_default.modalBody,
+							children: [
+								error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: board_module_css_default.formError,
+									children: error
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: board_module_css_default.field,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: board_module_css_default.fieldLabel,
+										children: t$4("detail.github.headBranch")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										type: "text",
+										className: board_module_css_default.input,
+										value: headBranch,
+										placeholder: t$4("detail.github.headBranchPlaceholder"),
+										onChange: (e) => setHeadBranch(e.target.value),
+										disabled: loading
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: board_module_css_default.field,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: board_module_css_default.fieldLabel,
+										children: t$4("detail.github.baseBranch")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										type: "text",
+										className: board_module_css_default.input,
+										value: baseBranch,
+										onChange: (e) => setBaseBranch(e.target.value),
+										disabled: loading
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: board_module_css_default.scheduleToggle,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										type: "checkbox",
+										checked: draft,
+										onChange: (e) => setDraft(e.target.checked),
+										disabled: loading
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$4("detail.github.prDraft") })]
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("footer", {
+							className: board_module_css_default.modalFooter,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: board_module_css_default.ghostButton,
+								onClick: onClose,
+								disabled: loading,
+								children: t$4("new.cancel")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: board_module_css_default.primaryButton,
+								onClick: handleCreate,
+								disabled: loading || headBranch.trim() === "",
+								children: loading ? t$4("detail.github.refreshing") : t$4("detail.github.createPr")
+							})]
+						})
+					]
+				})
+			});
+		}
+		function LinkPrModal({ controller, task, onClose }) {
+			const [prNumber, setPrNumber] = (0, react.useState)("");
+			const [loading, setLoading] = (0, react.useState)(false);
+			const [error, setError] = (0, react.useState)();
+			const handleLink = async () => {
+				const num = Number(prNumber);
+				if (!Number.isInteger(num) || num <= 0) return;
+				setLoading(true);
+				setError(void 0);
+				try {
+					if (!await controller.linkGitHubPr(task.id, num)) setError(controller.getSnapshot().transportError ?? "Failed to link PR");
+					else onClose();
+				} catch (e) {
+					setError(e instanceof Error ? e.message : String(e));
+				} finally {
+					setLoading(false);
+				}
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: board_module_css_default.modalBackdrop,
+				onMouseDown: (e) => {
+					if (e.target === e.currentTarget) onClose();
+				},
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: board_module_css_default.modal,
+					role: "dialog",
+					"aria-label": t$4("detail.github.linkPrTitle"),
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+							className: board_module_css_default.modalTitle,
+							children: t$4("detail.github.linkPrTitle")
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: board_module_css_default.modalBody,
+							children: [error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: board_module_css_default.formError,
+								children: error
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: board_module_css_default.field,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: board_module_css_default.fieldLabel,
+									children: t$4("detail.github.prNumberInput")
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									type: "number",
+									className: board_module_css_default.input,
+									value: prNumber,
+									min: "1",
+									onChange: (e) => setPrNumber(e.target.value),
+									disabled: loading
+								})]
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("footer", {
+							className: board_module_css_default.modalFooter,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: board_module_css_default.ghostButton,
+								onClick: onClose,
+								disabled: loading,
+								children: t$4("new.cancel")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: board_module_css_default.primaryButton,
+								onClick: handleLink,
+								disabled: loading || !Number.isInteger(Number(prNumber)) || Number(prNumber) <= 0,
+								children: loading ? t$4("detail.github.refreshing") : t$4("detail.github.linkPr")
+							})]
+						})
+					]
+				})
+			});
+		}
+		function GitHubSection({ controller, task, pending, timeZone }) {
+			const gh = task.integrations?.github;
+			if (gh === void 0) return null;
+			const [refreshing, setRefreshing] = (0, react.useState)(false);
+			const [showCreatePr, setShowCreatePr] = (0, react.useState)(false);
+			const [showLinkPr, setShowLinkPr] = (0, react.useState)(false);
+			const handleRefresh = async () => {
+				setRefreshing(true);
+				try {
+					await controller.refreshGitHub(task.id);
+				} finally {
+					setRefreshing(false);
+				}
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: board_module_css_default.detailSection,
+				"data-dsh-part": "github-integration",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t$4("detail.github.title") }),
+					gh.deactivated === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.formError,
+						children: t$4("detail.github.deactivated")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: board_module_css_default.detailText,
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: "8px",
+							flexWrap: "wrap"
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("a", {
+							href: gh.issueUrl,
+							target: "_blank",
+							rel: "noopener noreferrer",
+							className: board_module_css_default.linkButton,
+							"data-dsh-part": "github-link",
+							title: gh.issueUrl,
+							children: [
+								gh.owner,
+								"/",
+								gh.repository,
+								" #",
+								gh.issueNumber,
+								" ↗"
+							]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.statusBadge,
+							"data-status": gh.remoteState === "closed" ? "done" : "todo",
+							children: t$4(`detail.github.state.${gh.remoteState ?? "open"}`)
+						})]
+					}),
+					gh.remoteLabels.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: board_module_css_default.cardTags,
+						style: { marginTop: "6px" },
+						children: gh.remoteLabels.map((label) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.cardTag,
+							"data-dsh-part": "github-label",
+							title: label,
+							children: label
+						}, label))
+					}),
+					gh.pullRequest !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: board_module_css_default.detailText,
+						"data-dsh-part": "github-pr",
+						style: {
+							marginTop: "8px",
+							display: "flex",
+							alignItems: "center",
+							gap: "8px",
+							flexWrap: "wrap"
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [t$4("detail.github.pr"), ":"] }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("a", {
+								href: gh.pullRequest.url,
+								target: "_blank",
+								rel: "noopener noreferrer",
+								className: board_module_css_default.linkButton,
+								title: gh.pullRequest.url,
+								children: [t$4("detail.github.prNumber", { number: String(gh.pullRequest.number) }), " ↗"]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: board_module_css_default.statusBadge,
+								"data-status": gh.pullRequest.state === "merged" ? "done" : gh.pullRequest.state === "closed" ? "failed" : "running",
+								children: t$4(`detail.github.prState.${gh.pullRequest.state}`)
+							}),
+							gh.pullRequest.draft && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: board_module_css_default.cardTag,
+								children: t$4("detail.github.prDraft")
+							}),
+							gh.pullRequest.headBranch && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: board_module_css_default.detailMeta,
+								children: [
+									"(",
+									gh.pullRequest.headBranch,
+									" → ",
+									gh.pullRequest.baseBranch ?? "main",
+									")"
+								]
+							})
+						]
+					}),
+					gh.lastSyncedAt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.detailMeta,
+						style: { marginTop: "6px" },
+						children: t$4("detail.github.syncedAt", { time: formatHostTimestamp(gh.lastSyncedAt, timeZone) })
+					}),
+					gh.lastSyncError !== void 0 && gh.lastSyncError !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.formError,
+						children: t$4("detail.github.syncError", { error: gh.lastSyncError })
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: board_module_css_default.moveRow,
+						style: { marginTop: "8px" },
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: board_module_css_default.ghostButton,
+							disabled: pending || refreshing,
+							onClick: handleRefresh,
+							children: refreshing ? t$4("detail.github.refreshing") : t$4("detail.github.refresh")
+						}), gh.pullRequest === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: board_module_css_default.ghostButton,
+							disabled: pending || refreshing,
+							onClick: () => setShowCreatePr(true),
+							children: t$4("detail.github.createPr")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: board_module_css_default.ghostButton,
+							disabled: pending || refreshing,
+							onClick: () => setShowLinkPr(true),
+							children: t$4("detail.github.linkPr")
+						})] })]
+					}),
+					showCreatePr && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CreatePrModal, {
+						controller,
+						task,
+						onClose: () => setShowCreatePr(false)
+					}),
+					showLinkPr && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LinkPrModal, {
+						controller,
+						task,
+						onClose: () => setShowLinkPr(false)
+					})
+				]
+			});
+		}
 		/** Task detail overlay. */
 		function TaskDetail({ controller, task }) {
 			const [confirmDelete, setConfirmDelete] = (0, react.useState)(false);
@@ -9587,6 +10086,12 @@ window.__ModuleLoader__.load({
 										className: board_module_css_default.detailMeta,
 										children: t$4("detail.permissionConfirmed", { time: formatHostTimestamp(current.permissionConfirmedAt, timeZone) })
 									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(GitHubSection, {
+										controller,
+										task: current,
+										pending,
+										timeZone
+									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 										className: board_module_css_default.detailSection,
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t$4("detail.prompt") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
@@ -9775,6 +10280,10 @@ window.__ModuleLoader__.load({
 				...(task.tags ?? []).map((tag) => tag.name)
 			];
 			if (task.freeze !== void 0) haystacks.push(task.freeze.goal, task.freeze.progress, task.freeze.next);
+			if (task.integrations?.github !== void 0) {
+				const gh = task.integrations.github;
+				haystacks.push(gh.owner, gh.repository, `${gh.owner}/${gh.repository}`, `#${gh.issueNumber}`, String(gh.issueNumber), ...gh.remoteLabels);
+			}
 			return haystacks.some((text) => text.toLowerCase().includes(needle));
 		}
 		/**
@@ -9825,7 +10334,10 @@ window.__ModuleLoader__.load({
 			const selected = selectedTaskOf(snapshot);
 			const archiveView = snapshot.archiveView;
 			const knownTags = collectKnownTags(snapshot.tasks);
-			const onBoard = snapshot.tasks.filter((task) => archiveView ? task.archivedAt !== void 0 : task.archivedAt === void 0);
+			const onBoard = snapshot.tasks.filter((task) => {
+				if (task.integrations?.github?.deactivated === true) return false;
+				return archiveView ? task.archivedAt !== void 0 : task.archivedAt === void 0;
+			});
 			const subtaskCounts = /* @__PURE__ */ new Map();
 			const subtaskRollup = /* @__PURE__ */ new Map();
 			for (const task of onBoard) {
@@ -10744,6 +11256,8 @@ window.__ModuleLoader__.load({
 			disposeForm;
 			disposed = false;
 			saving = false;
+			/** A save asked for while one was in flight; it runs once the first settles (#1754). */
+			saveQueued = false;
 			failed = false;
 			failedReason;
 			/** @param scope - the bound configuration form for this card's namespace. */
@@ -10819,7 +11333,7 @@ window.__ModuleLoader__.load({
 						});
 					},
 					save: () => {
-						this.save();
+						this.requestSave();
 					},
 					discard: () => {
 						if (this.staged.size === 0 && !this.failed) return;
@@ -10846,6 +11360,29 @@ window.__ModuleLoader__.load({
 			* the user can correct them instead of retyping.
 			* @returns settlement after the mutation and the read-back.
 			*/
+			/**
+			* Run one save, and re-run it once if another was asked for while this one
+			* was still in flight.
+			*
+			* A save is a Host round trip that also drives the profile reconcile, and
+			* the Host runs that write inside one exclusive transaction. Answering a
+			* press that arrives mid-flight by returning immediately dropped the edit
+			* with no explanation, which is the "the save button stops working after a
+			* few rounds" report (#1754). Serializing instead means a save pressed while
+			* another is still settling runs against the settled state - which is what
+			* the operator meant by pressing it again.
+			* @returns settlement after the mutation and the read-back.
+			*/
+			async requestSave() {
+				if (this.saving) {
+					this.saveQueued = true;
+					return;
+				}
+				await this.save();
+				if (!this.saveQueued) return;
+				this.saveQueued = false;
+				await this.requestSave();
+			}
 			async save() {
 				const plan = this.plan();
 				const valid = plan.filter((item) => item.judge !== void 0);
@@ -11051,8 +11588,12 @@ window.__ModuleLoader__.load({
 			const state = props.useTaskBoardSettingsCard((snapshot) => snapshot);
 			const disabled = !state.writable;
 			const [power, setPower] = (0, react.useState)();
+			const [github, setGithub] = (0, react.useState)();
 			(0, react.useEffect)(() => {
 				let live = true;
+				fetch("api/task-board/state").then((r) => r.ok ? r.json() : void 0).then((data) => {
+					if (data?.github && live) setGithub(data.github);
+				}).catch(() => {});
 				const events = new EventSource("api/task-board/events");
 				events.onmessage = (message) => {
 					try {
@@ -11147,6 +11688,63 @@ window.__ModuleLoader__.load({
 						onReset: () => {
 							props.resetField("maxSubtaskDepth");
 						}
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						"data-dsh-part": "github-settings",
+						style: {
+							marginTop: "16px",
+							borderTop: "1px solid var(--dsw-alias-border-subtle, #333)",
+							paddingTop: "12px"
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", {
+								style: {
+									margin: "0 0 8px 0",
+									fontSize: "13px",
+									fontWeight: 600
+								},
+								children: t("settings.github.title")
+							}),
+							github?.repositories && github.repositories.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+								style: {
+									margin: "4px 0",
+									fontSize: "12px"
+								},
+								children: [t("settings.github.configuredRepos", { count: String(github.repositories.length) }), ":"]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+								style: {
+									margin: "4px 0 8px 16px",
+									padding: 0,
+									fontSize: "12px"
+								},
+								children: github.repositories.map((r) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", { children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", { children: [
+										r.owner,
+										"/",
+										r.repository
+									] }),
+									" (label: ",
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: r.inclusionLabel }),
+									r.prCreationEnabled ? ", auto PR" : "",
+									")"
+								] }, `${r.owner}/${r.repository}`))
+							})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								style: {
+									margin: "4px 0 8px 0",
+									fontSize: "12px",
+									opacity: .8
+								},
+								children: t("settings.github.noRepos")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								style: {
+									margin: "4px 0",
+									fontSize: "12px",
+									opacity: .8
+								},
+								children: github?.hasCredential ? t("settings.github.credentialOk") : t("settings.github.credentialMissing")
+							})
+						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: t("settings.powerStatus", {
 						platform: power?.platform ?? t("settings.powerUnknown"),
@@ -16728,6 +17326,8 @@ window.__ModuleLoader__.load({
 			disposeForm;
 			disposed = false;
 			saving = false;
+			/** A save asked for while one was in flight; it runs once the first settles (#1754). */
+			saveQueued = false;
 			failed = false;
 			failedReason;
 			/** @param scope - the bound configuration form for this card's namespace. */
@@ -16803,7 +17403,7 @@ window.__ModuleLoader__.load({
 						});
 					},
 					save: () => {
-						this.save();
+						this.requestSave();
 					},
 					discard: () => {
 						if (this.staged.size === 0 && !this.failed) return;
@@ -16830,6 +17430,29 @@ window.__ModuleLoader__.load({
 			* the user can correct them instead of retyping.
 			* @returns settlement after the mutation and the read-back.
 			*/
+			/**
+			* Run one save, and re-run it once if another was asked for while this one
+			* was still in flight.
+			*
+			* A save is a Host round trip that also drives the profile reconcile, and
+			* the Host runs that write inside one exclusive transaction. Answering a
+			* press that arrives mid-flight by returning immediately dropped the edit
+			* with no explanation, which is the "the save button stops working after a
+			* few rounds" report (#1754). Serializing instead means a save pressed while
+			* another is still settling runs against the settled state - which is what
+			* the operator meant by pressing it again.
+			* @returns settlement after the mutation and the read-back.
+			*/
+			async requestSave() {
+				if (this.saving) {
+					this.saveQueued = true;
+					return;
+				}
+				await this.save();
+				if (!this.saveQueued) return;
+				this.saveQueued = false;
+				await this.requestSave();
+			}
 			async save() {
 				const plan = this.plan();
 				const valid = plan.filter((item) => item.judge !== void 0);
@@ -19809,7 +20432,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-update/src/client/update.module.css.mjs
-		const css$7 = ".WYT-ka_overlay{z-index:1000;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.WYT-ka_mask{background:var(--dsw-alias-bg-mask-1);backdrop-filter:var(--dsw-mask-blur);position:absolute;inset:0}.WYT-ka_trigger{width:36px;height:36px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;transition:background-color .12s,color .12s,box-shadow .12s;display:inline-flex;position:relative}.WYT-ka_trigger[data-update-available]{color:var(--dsw-alias-brand-primary)}.WYT-ka_trigger[data-update-available]:after{box-sizing:border-box;border:2px solid var(--dsw-alias-bg-layer-1);background:var(--dsw-alias-brand-primary);content:\"\";pointer-events:none;border-radius:50%;width:8px;height:8px;position:absolute;top:4px;right:4px}.WYT-ka_trigger[data-wide=wide]{border-radius:999px;flex:auto;justify-content:flex-start;gap:8px;width:auto;min-width:0;padding:0 10px}.WYT-ka_trigger[data-update-available][data-wide=wide]{flex:none;gap:6px}.WYT-ka_trigger[data-update-available][data-wide=wide]:after{display:none}.WYT-ka_updateBadgeText{white-space:nowrap;font-size:13px;font-weight:500;line-height:1}.WYT-ka_trigger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.WYT-ka_trigger:active:not(:disabled){background:var(--dsw-alias-interactive-bg-active)}.WYT-ka_trigger:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-bg-layer-2), 0 0 0 4px var(--dsw-alias-brand-primary);outline:none}.WYT-ka_trigger:disabled{opacity:.5;cursor:default}.WYT-ka_panel{z-index:1;box-sizing:border-box;background:var(--dsw-alias-bg-layer-2);width:560px;max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:24px;flex-direction:column;gap:14px;padding:24px;font-size:14px;line-height:22px;display:flex;position:relative;overflow:auto}.WYT-ka_header{align-items:flex-start;gap:12px;display:flex}.WYT-ka_heading{flex:1;min-width:0}.WYT-ka_title{margin:0;font-size:18px;font-weight:600;line-height:26px}.WYT-ka_subtitle{color:var(--dsw-alias-label-secondary);margin:4px 0 0;font-size:13px}.WYT-ka_close{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;transition:background-color .12s,color .12s,box-shadow .12s;display:inline-flex}.WYT-ka_close:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.WYT-ka_close:active:not(:disabled){background:var(--dsw-alias-interactive-bg-active)}.WYT-ka_close:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-bg-layer-2), 0 0 0 4px var(--dsw-alias-brand-primary);outline:none}.WYT-ka_close:disabled{opacity:.5;cursor:default}@media (prefers-reduced-motion:reduce){.WYT-ka_trigger,.WYT-ka_close{transition:none}}.WYT-ka_updateStatus{margin:0;font-weight:600}.WYT-ka_updateDetail{color:var(--dsw-alias-label-secondary);margin:6px 0 0;font-size:13px}.WYT-ka_updateError{color:var(--dsw-alias-text-danger,var(--dsw-alias-label-primary));margin:0;font-weight:600}.WYT-ka_updateOutput{background:var(--dsw-alias-bg-layer-1);max-height:180px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;word-break:break-all;border-radius:10px;margin:10px 0 0;padding:10px 12px;font-size:12px;line-height:18px;overflow:auto}.WYT-ka_updateList{flex-direction:column;gap:6px;margin:12px 0 0;padding:0;list-style:none;display:flex}.WYT-ka_updateListItem{justify-content:space-between;align-items:baseline;gap:12px;font-size:13px;display:flex}.WYT-ka_updateListName{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-primary);overflow:hidden}.WYT-ka_updateListVersions{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;flex:none}.WYT-ka_updateNotes{margin-top:14px}.WYT-ka_updateNotesTitle{margin:0 0 8px;font-size:14px;font-weight:600}.WYT-ka_updateNoteSection{flex-direction:column;gap:4px;margin-top:10px;display:flex}.WYT-ka_updateNoteHeading{color:var(--dsw-alias-label-secondary);margin:0;font-size:13px;font-weight:600}.WYT-ka_updateNoteList{flex-direction:column;gap:4px;margin:0;padding-left:18px;font-size:13px;display:flex}.WYT-ka_updateNoteItem{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}.WYT-ka_updateVersions{margin-top:12px}.WYT-ka_updateVersionsSummary{cursor:pointer;color:var(--dsw-alias-label-secondary);user-select:none;font-size:12px}.WYT-ka_updateActions{justify-content:flex-end;margin-top:16px;display:flex}.WYT-ka_updateRetry{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:10px;align-items:center;gap:6px;padding:8px 14px;font-size:13px;transition:background-color .12s,color .12s;display:inline-flex}.WYT-ka_updateRetry:hover{background:var(--dsw-alias-interactive-bg-active)}@media (prefers-reduced-motion:reduce){.WYT-ka_updateRetry{transition:none}}";
+		const css$7 = ".WYT-ka_overlay{z-index:1000;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.WYT-ka_mask{background:var(--dsw-alias-bg-mask-1);backdrop-filter:var(--dsw-mask-blur);position:absolute;inset:0}.WYT-ka_trigger{width:36px;height:36px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;transition:background-color .12s,color .12s,box-shadow .12s;display:inline-flex;position:relative}.WYT-ka_trigger[data-update-available]{color:var(--dsw-alias-brand-primary)}.WYT-ka_trigger[data-update-available]:after{box-sizing:border-box;border:2px solid var(--dsw-alias-bg-layer-1);background:var(--dsw-alias-brand-primary);content:\"\";pointer-events:none;border-radius:50%;width:8px;height:8px;position:absolute;top:4px;right:4px}.WYT-ka_trigger[data-wide=wide]{border-radius:999px;flex:auto;justify-content:flex-start;gap:8px;width:auto;min-width:0;padding:0 10px}.WYT-ka_trigger[data-update-available][data-wide=wide]{flex:none;gap:6px}.WYT-ka_trigger[data-update-available][data-wide=wide]:after{display:none}.WYT-ka_updateBadgeText{white-space:nowrap;font-size:13px;font-weight:500;line-height:1}.WYT-ka_trigger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.WYT-ka_trigger:active:not(:disabled){background:var(--dsw-alias-interactive-bg-active)}.WYT-ka_trigger:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-bg-layer-2), 0 0 0 4px var(--dsw-alias-brand-primary);outline:none}.WYT-ka_trigger:disabled{opacity:.5;cursor:default}.WYT-ka_panel{z-index:1;box-sizing:border-box;background:var(--dsw-alias-bg-layer-2);width:560px;max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:24px;flex-direction:column;gap:14px;padding:24px;font-size:14px;line-height:22px;display:flex;position:relative;overflow:auto}.WYT-ka_header{align-items:flex-start;gap:12px;display:flex}.WYT-ka_heading{flex:1;min-width:0}.WYT-ka_title{margin:0;font-size:18px;font-weight:600;line-height:26px}.WYT-ka_subtitle{color:var(--dsw-alias-label-secondary);margin:4px 0 0;font-size:13px}.WYT-ka_close{width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;transition:background-color .12s,color .12s,box-shadow .12s;display:inline-flex}.WYT-ka_close:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.WYT-ka_close:active:not(:disabled){background:var(--dsw-alias-interactive-bg-active)}.WYT-ka_close:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-bg-layer-2), 0 0 0 4px var(--dsw-alias-brand-primary);outline:none}.WYT-ka_close:disabled{opacity:.5;cursor:default}@media (prefers-reduced-motion:reduce){.WYT-ka_trigger,.WYT-ka_close{transition:none}}.WYT-ka_updateStatus{margin:0;font-weight:600}.WYT-ka_updateDetail{color:var(--dsw-alias-label-secondary);margin:6px 0 0;font-size:13px}.WYT-ka_updateRequiresDsh{color:var(--dsw-alias-text-danger,var(--dsw-alias-label-primary));margin:0 0 8px;font-size:13px;font-weight:600}.WYT-ka_updateError{color:var(--dsw-alias-text-danger,var(--dsw-alias-label-primary));margin:0;font-weight:600}.WYT-ka_updateOutput{background:var(--dsw-alias-bg-layer-1);max-height:180px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;word-break:break-all;border-radius:10px;margin:10px 0 0;padding:10px 12px;font-size:12px;line-height:18px;overflow:auto}.WYT-ka_updateList{flex-direction:column;gap:6px;margin:12px 0 0;padding:0;list-style:none;display:flex}.WYT-ka_updateListItem{justify-content:space-between;align-items:baseline;gap:12px;font-size:13px;display:flex}.WYT-ka_updateListName{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-primary);overflow:hidden}.WYT-ka_updateListVersions{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;flex:none}.WYT-ka_updateNotes{margin-top:14px}.WYT-ka_updateNotesTitle{margin:0 0 8px;font-size:14px;font-weight:600}.WYT-ka_updateNoteSection{flex-direction:column;gap:4px;margin-top:10px;display:flex}.WYT-ka_updateNoteHeading{color:var(--dsw-alias-label-secondary);margin:0;font-size:13px;font-weight:600}.WYT-ka_updateNoteList{flex-direction:column;gap:4px;margin:0;padding-left:18px;font-size:13px;display:flex}.WYT-ka_updateNoteItem{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}.WYT-ka_updateVersions{margin-top:12px}.WYT-ka_updateVersionsSummary{cursor:pointer;color:var(--dsw-alias-label-secondary);user-select:none;font-size:12px}.WYT-ka_updateActions{justify-content:flex-end;margin-top:16px;display:flex}.WYT-ka_updateRetry{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:10px;align-items:center;gap:6px;padding:8px 14px;font-size:13px;transition:background-color .12s,color .12s;display:inline-flex}.WYT-ka_updateRetry:hover{background:var(--dsw-alias-interactive-bg-active)}@media (prefers-reduced-motion:reduce){.WYT-ka_updateRetry{transition:none}}";
 		const tagId$7 = "@linxin666/dsh-web-all/packages/dsh-update/src/client/update.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$7) + "]") === null) {
 			const tag = document.createElement("style");
@@ -19843,6 +20466,7 @@ window.__ModuleLoader__.load({
 			"updateNotes": "WYT-ka_updateNotes",
 			"updateNotesTitle": "WYT-ka_updateNotesTitle",
 			"updateOutput": "WYT-ka_updateOutput",
+			"updateRequiresDsh": "WYT-ka_updateRequiresDsh",
 			"updateRetry": "WYT-ka_updateRetry",
 			"updateStatus": "WYT-ka_updateStatus",
 			"updateVersions": "WYT-ka_updateVersions",
@@ -19966,6 +20590,16 @@ window.__ModuleLoader__.load({
 			}
 		}
 		/** The checked result body: mode banner + version list. */
+		/**
+		* The DSH floor the available release declares, when any package in the
+		* update declares one. The anchor's own floor is preferred because that is the
+		* package whose row disappears when the host is too old.
+		* @param status - the update status the panel renders.
+		* @returns the declared floor, or undefined when none is declared.
+		*/
+		function requiredDshOf(status) {
+			return status.packages.find((pkg) => pkg.name === status.anchor)?.requiresDsh ?? status.packages.find((pkg) => pkg.requiresDsh !== void 0)?.requiresDsh;
+		}
 		function ResultBody({ t, status }) {
 			const anchor = anchorName(status);
 			const latest = anchorLatest(status);
@@ -19991,6 +20625,11 @@ window.__ModuleLoader__.load({
 				children: t("update.offlineDetail")
 			})] });
 			if (status.outdated) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [
+				requiredDshOf(status) !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: update_module_css_default.updateRequiresDsh,
+					"data-update-requires-dsh": requiredDshOf(status),
+					children: t("update.requiresDsh", { version: requiredDshOf(status) ?? "" })
+				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 					className: update_module_css_default.updateStatus,
 					children: t("update.found")
@@ -20296,6 +20935,7 @@ window.__ModuleLoader__.load({
 			"update.checking": "正在检查远程仓库中的新版本…",
 			"update.upToDate": "当前已是最新版本",
 			"update.upToDateDetail": "{name} 已是最新版本 v{version}。",
+			"update.requiresDsh": "需要 DSH {version}",
 			"update.found": "发现新版本",
 			"update.foundDetail": "{name} 有新版本 v{version}。确认后开始更新。",
 			"update.start": "开始更新",
@@ -20341,6 +20981,7 @@ window.__ModuleLoader__.load({
 			"update.checking": "Checking the remote repository for newer releases…",
 			"update.upToDate": "Everything is up to date",
 			"update.upToDateDetail": "{name} is at the latest version v{version}.",
+			"update.requiresDsh": "Requires DSH {version}",
 			"update.found": "A new version is available",
 			"update.foundDetail": "{name} has a newer release v{version}. Confirm to start the update.",
 			"update.start": "Update now",
@@ -38200,6 +38841,8 @@ window.__ModuleLoader__.load({
 			disposeForm;
 			disposed = false;
 			saving = false;
+			/** A save asked for while one was in flight; it runs once the first settles (#1754). */
+			saveQueued = false;
 			failed = false;
 			failedReason;
 			/** @param scope - the bound configuration form for this card's namespace. */
@@ -38275,7 +38918,7 @@ window.__ModuleLoader__.load({
 						});
 					},
 					save: () => {
-						this.save();
+						this.requestSave();
 					},
 					discard: () => {
 						if (this.staged.size === 0 && !this.failed) return;
@@ -38302,6 +38945,29 @@ window.__ModuleLoader__.load({
 			* the user can correct them instead of retyping.
 			* @returns settlement after the mutation and the read-back.
 			*/
+			/**
+			* Run one save, and re-run it once if another was asked for while this one
+			* was still in flight.
+			*
+			* A save is a Host round trip that also drives the profile reconcile, and
+			* the Host runs that write inside one exclusive transaction. Answering a
+			* press that arrives mid-flight by returning immediately dropped the edit
+			* with no explanation, which is the "the save button stops working after a
+			* few rounds" report (#1754). Serializing instead means a save pressed while
+			* another is still settling runs against the settled state - which is what
+			* the operator meant by pressing it again.
+			* @returns settlement after the mutation and the read-back.
+			*/
+			async requestSave() {
+				if (this.saving) {
+					this.saveQueued = true;
+					return;
+				}
+				await this.save();
+				if (!this.saveQueued) return;
+				this.saveQueued = false;
+				await this.requestSave();
+			}
 			async save() {
 				const plan = this.plan();
 				const valid = plan.filter((item) => item.judge !== void 0);

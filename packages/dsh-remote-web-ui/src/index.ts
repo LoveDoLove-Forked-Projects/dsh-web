@@ -39,6 +39,7 @@ import { withIdentityEncoding } from './http.ts'
 import { TunnelManager, type TunnelInfo } from './tunnel.ts'
 import { PublicBaseKeeper } from './public-base.ts'
 import { mountOnce } from './mount-once.ts'
+import { runDetached } from './detached-work.ts'
 import { REMOTE_CHANNEL_BOOT_SCRIPT } from './remote-channel-boot.ts'
 import { UUID_POLYFILL_SCRIPT } from './uuid-polyfill.ts'
 
@@ -743,14 +744,26 @@ function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
   // the re-assert at every boot keeps it in sync with both the toggle and
   // the flags.
   //
-  // This work must leave the caller's async context first: a settings save
-  // runs inside the Host's hmr.runExclusive, and cordis.patch.yml is exactly
-  // the file the HMR config watcher refreshes from. A write issued on that
-  // same context makes the watcher's refresh re-enter runExclusive, which
-  // rejects with "HMR transactions cannot be nested" and fails the user's
-  // save (issue #1751). setImmediate starts a fresh AsyncLocalStorage store,
-  // so the assertion runs outside the transaction; it is idempotent, so the
-  // coalesced follow-up sync() re-reading the same block writes nothing.
+  // cordis.patch.yml is exactly the file the Host's HMR config watcher
+  // refreshes from, and a settings save runs inside the Host's exclusive HMR
+  // transaction. Writing that file while the caller's transaction is open makes
+  // the watcher's refresh re-enter it, which the Host refuses with "HMR
+  // transactions cannot be nested" and which surfaces on the user's save
+  // (#1751, #1754).
+  //
+  // Deferring alone does NOT escape that context, and the earlier belt rested
+  // on a premise that measurement disproves: AsyncLocalStorage is propagated
+  // into setImmediate, into node:timers, and into AsyncResource scopes (a
+  // plain resource built while the transaction runs inherits it), so
+  // "setImmediate starts a fresh store" is false. What does start clean is an
+  // AsyncResource created at module scope, before any transaction existed -
+  // see detached-work.ts. scheduleLanBindWork runs the scheduling through it,
+  // so the write lands outside the caller's transaction.
+  //
+  // The assertion is also idempotent on its own: the write is guarded by the
+  // current-vs-desired comparison below, so once the profile carries the block
+  // a coalesced follow-up sync() finds nothing to do. That guard is a second
+  // belt, not the fix.
   const applyLanBindWork = (value: ResolvedConfig): void => {
     if (value.lanBind !== undefined) {
       const startup = ctx.get('webStartup') as StartupFacts | undefined
@@ -794,11 +807,19 @@ function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
   // The LAN bind assertion never blocks the caller: one pending work item is
   // enough, and it always re-reads the config through `resolve()` at run time
   // so a toggle flipped twice before the tick lands on the last value.
+  //
+  // The scheduling itself runs through runDetached: the settings save that
+  // drives sync() holds the Host's exclusive HMR transaction in its async
+  // context, and a `setImmediate` scheduled directly from here would inherit
+  // that mark (measured on Node 24), so the write would still land inside the
+  // transaction the watcher then tries to re-enter. Scheduling from the
+  // module-scope resource starts the timer - and therefore the write - with no
+  // store at all.
   let lanBindWorkPending = false
   const scheduleLanBindWork = (): void => {
     if (lanBindWorkPending) return
     lanBindWorkPending = true
-    setImmediate(() => {
+    runDetached(() => setImmediate(() => {
       lanBindWorkPending = false
       try {
         applyLanBindWork(resolve())
@@ -808,7 +829,7 @@ function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
         // reads the live block state back on its own poll.
         console.error(`remote-web-ui: the deferred lan-bind assertion failed: ${error instanceof Error ? error.message : String(error)}`)
       }
-    })
+    }))
   }
   ctx.effect(() => () => { lanBindWorkPending = false }, 'remote-web-ui: lan-bind work')
 

@@ -1,17 +1,20 @@
 /**
- * Issue #1751: saving a remote-web-ui setting failed with "HMR transactions
- * cannot be nested".
+ * Issues #1751 and #1754: saving a remote-web-ui setting failed with
+ * "HMR transactions cannot be nested".
  *
  * The Host runs settings/mutate inside hmr.runExclusive. Committing a volatile
- * field announces loader/volatile-update, which drove sync() synchronously on
- * that same async context, and sync() wrote cordis.patch.yml - the file the HMR
- * config watcher refreshes from. The watcher's refresh then re-entered
- * runExclusive and rejected, which surfaced as the user's save failing.
+ * field announces loader/volatile-update, which drove sync() on that same async
+ * context, and sync() wrote cordis.patch.yml - the file the HMR config watcher
+ * refreshes from. The watcher's refresh then re-entered runExclusive and
+ * rejected, which surfaced as the user's save failing.
  *
- * The regression is a placement rule, so the test asserts it directly: the
- * patch write and the blocking firewall probes live in applyLanBindWork, which
- * only ever runs from a setImmediate hop, and sync() itself reaches them
- * solely through scheduleLanBindWork().
+ * The first fix deferred the write with setImmediate on the belief that a fresh
+ * callback starts a fresh AsyncLocalStorage store. That belief is false and is
+ * refuted in detached-work.spec.ts; the deferral now runs through the
+ * module-scope AsyncResource in src/detached-work.ts, which really does start
+ * clean. This file asserts the two placement rules that keep the write off the
+ * save path at all: only the deferred worker touches the patch file and the
+ * firewall, and the write sits behind the current-vs-desired guard.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -43,7 +46,7 @@ function bodyOf(name) {
   throw new Error('unbalanced braces after ' + name)
 }
 
-describe('remote-web-ui LAN bind vs. the HMR transaction (issue #1751)', () => {
+describe('remote-web-ui LAN bind vs. the HMR transaction (issues #1751 and #1754)', () => {
   it('operator keeps the patch write and the firewall probes off the sync path', () => {
     // Given the host half that applies the settings
     // When the two functions that own the LAN bind work and the save path are read
@@ -55,17 +58,35 @@ describe('remote-web-ui LAN bind vs. the HMR transaction (issue #1751)', () => {
     expect(bodyOf('sync')).not.toContain('ensureFirewallRule(')
   })
 
-  it('operator reaches the LAN bind work only through the setImmediate hop', () => {
-    // Given the same source
-    // When the scheduler that defers the work is read
-    // Then it starts a fresh async context before running it, which keeps the
-    // watcher-driven refresh out of the save's own transaction
+  it('operator writes the block only when the committed one differs from the desired one', () => {
+    // Given the deferred worker, the one thing that keeps the patch file out of
+    // a second save is that a settled profile produces no write at all
+    // When the current-vs-desired comparison that guards the write is read
+    // Then the write sits behind that comparison, and re-reading the same block
+    // therefore cannot touch the file a second time
+    const work = bodyOf('applyLanBindWork')
+    expect(work).toContain('current.host !== desiredHost || current.port !== desiredPort')
+    const guard = work.indexOf('current.host !== desiredHost || current.port !== desiredPort')
+    const write = work.indexOf('writeLanBind(')
+    expect(guard).toBeGreaterThan(-1)
+    expect(write).toBeGreaterThan(guard)
+  })
+
+  it('operator sees the deferred write leave the settings transaction', () => {
+    // Given the scheduler that defers the work
+    // When it is read
+    // Then it schedules through runDetached - the AsyncResource that starts
+    // clean - rather than a bare setImmediate that inherits the save's
+    // AsyncLocalStorage store and would land the write inside the transaction
+    // the watcher then tries to re-enter
     const schedule = bodyOf('scheduleLanBindWork')
+    expect(schedule).toContain('runDetached(')
     expect(schedule).toContain('setImmediate(')
-    expect(schedule).toContain('applyLanBindWork(')
-    // The deferred value is re-read at run time, so two toggles inside one
-    // tick settle on the last committed value rather than the first.
     expect(schedule).toContain('applyLanBindWork(resolve())')
+    // The detachment must wrap the scheduling, not sit inside the deferred
+    // callback: by the time the callback runs, the timer has already captured
+    // the caller's context.
+    expect(schedule.indexOf('runDetached(')).toBeLessThan(schedule.indexOf('setImmediate('))
   })
 
   it('operator sees a failed assertion swallowed instead of rejecting the save', () => {

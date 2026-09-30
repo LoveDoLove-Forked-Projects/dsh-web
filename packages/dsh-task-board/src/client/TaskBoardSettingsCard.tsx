@@ -8,7 +8,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { useEffect, useState } from 'react'
-import type { TaskBoardPowerSnapshot } from '../protocol.ts'
+import type { TaskBoardPowerSnapshot, TaskBoardSnapshot } from '../protocol.ts'
 import { PluginSettingsCard, BooleanField, ChoiceField } from './PluginSettingsCard.tsx'
 import { SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from '../core/subtask.ts'
 import { CardForm, booleanField, type CardActions, type CardShell, type FieldSpec, type FieldState as CardFieldState } from './settings-form.ts'
@@ -128,11 +128,18 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
   const state = props.useTaskBoardSettingsCard(snapshot => snapshot)
   const disabled = !state.writable
   const [power, setPower] = useState<TaskBoardPowerSnapshot | undefined>()
+  const [github, setGithub] = useState<TaskBoardSnapshot['github'] | undefined>()
   useEffect(() => {
     // The SSE channel already carries power on every real change and pushes
     // one frame on subscribe; polling the full /state snapshot every 5 s
     // re-cloned and re-serialized the whole ledger server-side for one field.
     let live = true
+    void fetch('api/task-board/state')
+      .then(r => r.ok ? r.json() : undefined)
+      .then((data: TaskBoardSnapshot | undefined) => {
+        if (data?.github && live) setGithub(data.github)
+      })
+      .catch(() => {})
     const events = new EventSource('api/task-board/events')
     events.onmessage = (message: MessageEvent<string>): void => {
       try {
@@ -212,6 +219,32 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
         onEdit={(text) => { props.edit('maxSubtaskDepth', text) }}
         onReset={() => { props.resetField('maxSubtaskDepth') }}
       />
+
+      <div data-dsh-part="github-settings" style={{ marginTop: '16px', borderTop: '1px solid var(--dsw-alias-border-subtle, #333)', paddingTop: '12px' }}>
+        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 600 }}>{t('settings.github.title')}</h4>
+        {github?.repositories && github.repositories.length > 0 ? (
+          <div>
+            <p style={{ margin: '4px 0', fontSize: '12px' }}>
+              {t('settings.github.configuredRepos', { count: String(github.repositories.length) })}:
+            </p>
+            <ul style={{ margin: '4px 0 8px 16px', padding: 0, fontSize: '12px' }}>
+              {github.repositories.map(r => (
+                <li key={`${r.owner}/${r.repository}`}>
+                  <strong>{r.owner}/{r.repository}</strong> (label: <code>{r.inclusionLabel}</code>
+                  {r.prCreationEnabled ? ', auto PR' : ''})
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p style={{ margin: '4px 0 8px 0', fontSize: '12px', opacity: 0.8 }}>
+            {t('settings.github.noRepos')}
+          </p>
+        )}
+        <p style={{ margin: '4px 0', fontSize: '12px', opacity: 0.8 }}>
+          {github?.hasCredential ? t('settings.github.credentialOk') : t('settings.github.credentialMissing')}
+        </p>
+      </div>
       <p>
         {t('settings.powerStatus', {
           platform: power?.platform ?? t('settings.powerUnknown'),
