@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-30",
+  "generated": "2026-09-29",
   "items": [
     {
       "id": "porco-rosso",
@@ -2110,64 +2110,6 @@
       }
     },
     {
-      "id": "rainy-night",
-      "name": "鲸鱼娘 · 雨夜",
-      "nameEn": "Whale Girl · Rainy Night",
-      "author": "stushansusu",
-      "rank": 49,
-      "tagline": "冷青蓝 · 暖琥珀 · 雨夜散景 · 低饱和电影光",
-      "description": "雨夜的一路：背景是用户给的雨夜动画（透明伞下的蓝发少女、湿路面映着街灯的暖橙散景），配色全部从用户那张配色表 + 画面实测量出来 —— 面板取夜景底色 #1A2436，正文取皮肤底色 #E8F2F5，牌子取虹膜那支湖冰蓝 #38B9E8，强调色取街灯光斑那支暖橙 #F79C58。语言是「雨夜里的一块冷玻璃」：面全是薄玻璃（背后永远是正在落雨的画面），骨架是 1px 冰蓝细线，**暖橙只给状态**（当前行、聚焦中的输入卡、链接、悬停的图标、新会话的四角括号）。画面本身是冷蓝的（逐帧均值 R−B ≈ −33、暖色只占 3.2%），所以这几笔橙就是映在玻璃上的城市灯火。全屏唯一的实心是新会话那颗冰蓝到暖橙的按钮。**暗色专用**，左上角品牌行换成「鲸鱼娘 · 雨夜」。",
-      "tags": [
-        "rainy-night",
-        "anime",
-        "umbrella",
-        "bokeh",
-        "cyan-amber",
-        "warm-cool",
-        "low-saturation",
-        "cinematic",
-        "hologram",
-        "hud",
-        "video-background",
-        "dark",
-        "dark-only"
-      ],
-      "version": "1.0.0",
-      "accent": "#38B9E8",
-      "preview": {
-        "light": "assets/skins/rainy-night/preview/light.jpg",
-        "dark": "assets/skins/rainy-night/preview/dark.jpg"
-      },
-      "files": [
-        "LICENSE",
-        "README.md",
-        "README.zh.md",
-        "assets/rainy-night-loop.mp4",
-        "patches.css",
-        "preview/dark.jpg",
-        "preview/light.jpg",
-        "skin.css",
-        "skin.json"
-      ],
-      "repo": "https://github.com/zhu1090093659/dsh-skins/tree/main/skins/rainy-night",
-      "contributes": {
-        "stylesheet": "skin.css",
-        "patches": "patches.css",
-        "backgroundMedia": {
-          "light": {
-            "type": "video",
-            "src": "assets/skins/rainy-night/assets/rainy-night-loop.mp4",
-            "scrim": "linear-gradient(180deg, rgba(12,17,26,0) 0%, rgba(12,17,26,0) 92%, rgba(12,17,26,0.12) 98%, rgba(12,17,26,0.18) 100%)"
-          },
-          "dark": {
-            "type": "video",
-            "src": "assets/skins/rainy-night/assets/rainy-night-loop.mp4",
-            "scrim": "linear-gradient(180deg, rgba(12,17,26,0) 0%, rgba(12,17,26,0) 92%, rgba(12,17,26,0.12) 98%, rgba(12,17,26,0.18) 100%)"
-          }
-        }
-      }
-    },
-    {
       "id": "claude",
       "name": "Claude",
       "nameEn": "Claude",
@@ -2563,125 +2505,6 @@
             "type": "image",
             "src": "assets/skins/war-thunder/assets/dark-art.webp",
             "scrim": "linear-gradient(rgba(9, 11, 8, 0.1) 0%, rgba(11, 13, 10, 0.14) 60%, rgba(8, 10, 8, 0.18) 100%)"
-          }
-        }
-      },
-      "requires": {
-        "contracts": [
-          {
-            "apiVersion": "x-org.linxin666.skin-center/v1alpha1",
-            "kind": "SkinHooks",
-            "optional": true
-          }
-        ]
-      },
-      "facets": {
-        "client": {
-          "entry": "hooks.mjs",
-          "apiVersion": "x-org.linxin666.skin-center/v1alpha1"
-        }
-      }
-    },
-    {
-      "id": "meridian",
-      "name": "子午线",
-      "nameEn": "DeepSeek-Meridian",
-      "author": "LOrz-3",
-      "rank": 120,
-      "tagline": "DeepSeek 男性形象 · 服饰与配色可切换",
-      "description": "DeepSeek 男性形象皮肤，可切换不同风格服饰（骑士／西装／盛夏／甜点师／主治），可切换为 Claude 与 GPT 配色。安装一次即可在侧栏左下切换，选择记忆在本机。",
-      "tags": [
-        "meridian",
-        "knight",
-        "wardrobe",
-        "outfit",
-        "palette",
-        "recolour",
-        "anime",
-        "art",
-        "translucent"
-      ],
-      "version": "0.2.0",
-      "accent": "#2b4bd8",
-      "preview": {
-        "light": "assets/skins/meridian/preview/light.jpg",
-        "dark": "assets/skins/meridian/preview/dark.jpg"
-      },
-      "files": [
-        "README.md",
-        "README.zh.md",
-        "assets/background-chef-dark.jpg",
-        "assets/background-chef-light.jpg",
-        "assets/background-clau-dark.jpg",
-        "assets/background-clau-light.jpg",
-        "assets/background-doctor-dark.jpg",
-        "assets/background-doctor-light.jpg",
-        "assets/background-gp-dark.jpg",
-        "assets/background-gp-light.jpg",
-        "assets/background-knight-dark.jpg",
-        "assets/background-knight-light.jpg",
-        "assets/background-suit-dark.jpg",
-        "assets/background-suit-light.jpg",
-        "assets/background-swim-dark.jpg",
-        "assets/background-swim-light.jpg",
-        "assets/details-chef-dark.jpg",
-        "assets/details-chef-light.jpg",
-        "assets/details-clau-dark.jpg",
-        "assets/details-clau-light.jpg",
-        "assets/details-doctor-dark.jpg",
-        "assets/details-doctor-light.jpg",
-        "assets/details-gp-dark.jpg",
-        "assets/details-gp-light.jpg",
-        "assets/details-knight-dark.jpg",
-        "assets/details-knight-light.jpg",
-        "assets/details-suit-dark.jpg",
-        "assets/details-suit-light.jpg",
-        "assets/details-swim-dark.jpg",
-        "assets/details-swim-light.jpg",
-        "assets/meridian-corner-bl-dark.svg",
-        "assets/meridian-corner-bl.svg",
-        "assets/meridian-corner-br-dark.svg",
-        "assets/meridian-corner-br.svg",
-        "assets/meridian-corner-tl-dark.svg",
-        "assets/meridian-corner-tl.svg",
-        "assets/meridian-corner-tr-dark.svg",
-        "assets/meridian-corner-tr.svg",
-        "assets/meridian-crest-dark.svg",
-        "assets/meridian-crest.svg",
-        "assets/meridian-divider-dark.svg",
-        "assets/meridian-divider.svg",
-        "assets/meridian-graticule-dark.svg",
-        "assets/meridian-graticule.svg",
-        "assets/meridian-lace-dark.svg",
-        "assets/meridian-lace.svg",
-        "assets/meridian-petals.svg",
-        "assets/meridian-seal-dark.svg",
-        "assets/meridian-seal.svg",
-        "assets/meridian-tick-bl.svg",
-        "assets/meridian-tick-br.svg",
-        "assets/meridian-tick-tl.svg",
-        "assets/meridian-tick-tr.svg",
-        "hooks.mjs",
-        "patches.css",
-        "preview/dark.jpg",
-        "preview/light.jpg",
-        "skin.css",
-        "skin.json"
-      ],
-      "repo": "https://github.com/zhu1090093659/dsh-skins/tree/main/skins/meridian",
-      "contributes": {
-        "stylesheet": "skin.css",
-        "patches": "patches.css",
-        "backgroundMedia": {
-          "light": {
-            "type": "image",
-            "src": "assets/skins/meridian/assets/background-knight-light.jpg",
-            "scrim": "linear-gradient(rgba(244, 246, 251, 0.16), rgba(244, 246, 251, 0.30))"
-          },
-          "dark": {
-            "type": "image",
-            "src": "assets/skins/meridian/assets/background-knight-dark.jpg",
-            "scrim": "linear-gradient(rgba(10, 18, 48, 0.28), rgba(10, 18, 48, 0.45))"
           }
         }
       },
