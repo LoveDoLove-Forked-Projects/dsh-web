@@ -4,7 +4,7 @@ import { parseLedger } from './core/store.ts'
 import { isValidTimeZone } from './core/schedule.ts'
 import { sanitizeFreezeSnapshot, type FreezeSnapshot } from './core/freeze-snapshot.ts'
 import { sanitizeHandover, type TaskHandoverInput } from './core/handover.ts'
-import { normalizeIntegrations } from './core/github/types.ts'
+import { isTaskBoardExtensionPayload, normalizeTaskIntegrations, type TaskBoardExtensionPayload } from './core/extension.ts'
 import { normalizeVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 
 /** Freeze payload carried by create/update actions after the gate (redacted in place). */
@@ -68,18 +68,11 @@ export interface TaskBoardSnapshot {
    * into team execution (Team Lead session plus one teammate per subtask).
    */
   teamRunAvailable?: boolean
-  /** Non-sensitive GitHub integration status and configured repositories. */
-  github?: {
-    enabled: boolean
-    repositories: Array<{
-      owner: string
-      repository: string
-      inclusionLabel: string
-      prCreationEnabled: boolean
-      hasCredential: boolean
-    }>
-    hasCredential: boolean
-  }
+  /**
+   * Read-only summaries published by running extensions, keyed by extension id.
+   * The board forwards them verbatim; it never interprets their shape.
+   */
+  extensions?: Record<string, unknown>
 }
 
 /**
@@ -151,9 +144,7 @@ export type TaskBoardAction =
   | { kind: 'rerun'; taskId: string }
   | { kind: 'confirm-permission'; taskId: string }
   | { kind: 'set-parent'; taskId: string; parentId: string | null }
-  | { kind: 'github-refresh'; taskId?: string; owner?: string; repository?: string }
-  | { kind: 'github-create-pr'; taskId: string; headBranch: string; baseBranch?: string; title?: string; body?: string; draft?: boolean }
-  | { kind: 'github-link-pr'; taskId: string; pullRequestNumber: number }
+  | { kind: 'extension-action'; extensionId: string; action: string; taskId?: string; payload?: TaskBoardExtensionPayload }
 
 export interface TaskBoardActionEnvelope {
   requestId: string
@@ -198,7 +189,7 @@ function validImportedKnownFields(value: Record<string, unknown>): boolean {
   // must carry a well-formed list or none at all, so a hand-edited export
   // cannot smuggle a malformed tag past the gate.
   if (value.tags !== undefined && !isTaskTagList(value.tags)) return false
-  if (value.integrations !== undefined && normalizeIntegrations(value.integrations) === undefined) return false
+  if (value.integrations !== undefined && normalizeTaskIntegrations(value.integrations) === undefined) return false
   if (value.schedule !== undefined) {
     const schedule = record(value.schedule)
     if (schedule === undefined || typeof schedule.enabled !== 'boolean' || typeof schedule.cron !== 'string') return false
@@ -316,7 +307,7 @@ function createInput(value: unknown): value is NewTaskInput {
   if (input.goalRun !== undefined && typeof input.goalRun !== 'boolean') return false
   if (input.permission !== undefined && !isTaskPermission(input.permission)) return false
   if (input.tags !== undefined && !isTaskTagList(input.tags)) return false
-  if (input.integrations !== undefined && normalizeIntegrations(input.integrations) === undefined) return false
+  if (input.integrations !== undefined && normalizeTaskIntegrations(input.integrations) === undefined) return false
   if (input.freeze !== undefined && freezePayload(input.freeze) === undefined) return false
   if (input.handover !== undefined && handoverPayload(input.handover) === undefined) return false
   if (input.schedule !== undefined) {
@@ -431,26 +422,24 @@ function parseEnvelopeAction(value: unknown): TaskBoardActionEnvelope | undefine
       return taskId !== undefined && isTaskStatus(action.status)
         ? { requestId: envelope.requestId, action: action as unknown as Extract<TaskBoardAction, { kind: 'move' }> }
         : undefined
-    case 'github-refresh': {
-      if (!exactKeys(action, ['kind', 'taskId', 'owner', 'repository'])) return undefined
-      if (action.taskId !== undefined && typeof action.taskId !== 'string') return undefined
-      if (action.owner !== undefined && typeof action.owner !== 'string') return undefined
-      if (action.repository !== undefined && typeof action.repository !== 'string') return undefined
-      return { requestId: envelope.requestId, action: action as TaskBoardAction }
-    }
-    case 'github-create-pr': {
-      if (!exactKeys(action, ['kind', 'taskId', 'headBranch', 'baseBranch', 'title', 'body', 'draft'])) return undefined
-      if (taskId === undefined || typeof action.headBranch !== 'string' || action.headBranch.trim() === '') return undefined
-      if (action.baseBranch !== undefined && typeof action.baseBranch !== 'string') return undefined
-      if (action.title !== undefined && typeof action.title !== 'string') return undefined
-      if (action.body !== undefined && typeof action.body !== 'string') return undefined
-      if (action.draft !== undefined && typeof action.draft !== 'boolean') return undefined
-      return { requestId: envelope.requestId, action: action as TaskBoardAction }
-    }
-    case 'github-link-pr': {
-      if (!exactKeys(action, ['kind', 'taskId', 'pullRequestNumber'])) return undefined
-      if (taskId === undefined || typeof action.pullRequestNumber !== 'number' || !Number.isInteger(action.pullRequestNumber) || action.pullRequestNumber <= 0) return undefined
-      return { requestId: envelope.requestId, action: action as TaskBoardAction }
+    case 'extension-action': {
+      // Structural gate only: whether the id names a registered, enabled
+      // extension is decided by the host registry, which owns that state.
+      if (!exactKeys(action, ['kind', 'extensionId', 'action', 'taskId', 'payload'])) return undefined
+      if (typeof action.extensionId !== 'string' || action.extensionId.trim() === '' || action.extensionId.length > 128) return undefined
+      if (typeof action.action !== 'string' || action.action.trim() === '' || action.action.length > 128) return undefined
+      if (action.taskId !== undefined && (typeof action.taskId !== 'string' || action.taskId === '')) return undefined
+      if (action.payload !== undefined && !isTaskBoardExtensionPayload(action.payload)) return undefined
+      return {
+        requestId: envelope.requestId,
+        action: {
+          kind: 'extension-action',
+          extensionId: action.extensionId,
+          action: action.action,
+          ...(action.taskId === undefined ? {} : { taskId: action.taskId }),
+          ...(action.payload === undefined ? {} : { payload: action.payload }),
+        },
+      }
     }
     case 'confirm-permission':
     case 'delete':

@@ -20,6 +20,7 @@
 | packages/dsh-skill-explorer | @linxin666/dsh-client-ui-skill-explorer | 0.4.4 | public |
 | packages/dsh-ssh | @linxin666/dsh-ssh | 0.4.4 | public |
 | packages/dsh-task-board | @linxin666/dsh-client-ui-task-board | 0.4.4 | public |
+| packages/dsh-task-board-github | @linxin666/dsh-client-ui-task-board-github | 0.4.4 | public |
 | packages/dsh-update | @linxin666/dsh-update | 0.4.4 | public |
 | packages/dsh-usage | @linxin666/dsh-usage | 0.4.4 | public |
 | packages/dsh-web-all | @linxin666/dsh-web-all | 0.4.4 | public |

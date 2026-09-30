@@ -1,0 +1,148 @@
+/**
+ * The task board's GitHub provider, assembled as one extension.
+ *
+ * Everything GitHub-specific lives behind this factory: the board admits it
+ * through the cordis `taskBoard` service (or, transitionally, the host entry
+ * registers it directly), hands it the capability face, and never learns what
+ * the provider does with it.
+ *
+ * @module dsh-task-board/host/github/extension
+ */
+import type { HostTimerFace } from '../../host-service.ts'
+import {
+  TASK_BOARD_API_VERSION,
+  type TaskBoardExtension,
+  type TaskBoardExtensionActionRequest,
+  type TaskBoardExtensionHost,
+} from '../../core/extension.ts'
+import type { GitHubRepoConfig } from '../../core/github/types.ts'
+import { GitHubApiClient } from './client.ts'
+import { GitHubSyncService } from './service.ts'
+import { buildGitHubTools } from './tools.ts'
+
+/** Extension id; also the key of this provider's integration payload. */
+export const GITHUB_EXTENSION_ID = 'github'
+
+export interface GitHubExtensionOptions {
+  repositories?: GitHubRepoConfig[]
+  client?: GitHubApiClient
+  /** Environment variable holding the API token; never exposed to browser or agent. */
+  tokenEnv?: string
+  timers?: HostTimerFace
+  now?: () => number
+}
+
+/** One provider action the GitHub browser half dispatches. */
+function requireTaskId(request: TaskBoardExtensionActionRequest): string {
+  if (request.taskId === undefined || request.taskId === '') {
+    throw new Error(`github action "${request.action}" requires a taskId`)
+  }
+  return request.taskId
+}
+
+function stringField(request: TaskBoardExtensionActionRequest, key: string): string | undefined {
+  const value = request.payload?.[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+function numberField(request: TaskBoardExtensionActionRequest, key: string): number | undefined {
+  const value = request.payload?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/**
+ * Build the GitHub provider extension. The service is created on start(), when
+ * the board hands over the capability face, and released on stop().
+ * @param options - deployment configuration for the integration.
+ * @returns the extension the board registers.
+ */
+export function createGitHubExtension(options: GitHubExtensionOptions = {}): TaskBoardExtension {
+  let service: GitHubSyncService | undefined
+  const disposers: Array<() => void> = []
+
+  const settings = (host: TaskBoardExtensionHost): GitHubSyncService => {
+    service ??= new GitHubSyncService({
+      host,
+      client: options.client ?? new GitHubApiClient({ tokenEnv: options.tokenEnv }),
+      repositories: options.repositories,
+      timers: options.timers,
+      now: options.now,
+    })
+    return service
+  }
+
+  return {
+    id: GITHUB_EXTENSION_ID,
+    apiVersion: TASK_BOARD_API_VERSION,
+    start(host) {
+      const sync = settings(host)
+      disposers.push(host.events.onExecutionSettled(event => {
+        const task = host.tasks.get(event.taskId)
+        const execution = task?.executions.find(entry => entry.id === event.executionId)
+        if (execution === undefined) return
+        void sync.handleExecutionSettled(event.taskId, execution).catch(() => {})
+      }))
+      disposers.push(host.events.onStatusChanged(event => {
+        void sync.writeBackTaskStatus(event.taskId, event.status).catch(() => {})
+      }))
+      for (const tool of buildGitHubTools(sync)) disposers.push(host.registerTool(tool))
+      try {
+        host.publish(sync.snapshotSummary())
+      } catch {
+        // A refused summary only costs the settings card its status line.
+      }
+      sync.start()
+    },
+    stop() {
+      for (const dispose of disposers.splice(0)) {
+        try { dispose() } catch { /* best-effort */ }
+      }
+      service?.dispose()
+      service = undefined
+    },
+    async handleAction(request: TaskBoardExtensionActionRequest) {
+      if (service === undefined) throw new Error('GitHub extension is not running')
+      switch (request.action) {
+        case 'refresh': {
+          const taskId = request.taskId
+          if (taskId !== undefined && taskId !== '') {
+            const result = await service.syncTask(taskId)
+            if (!result.ok) throw new Error(result.error ?? 'sync failed')
+            return { ok: true, synced: 1 }
+          }
+          const owner = stringField(request, 'owner')
+          const repository = stringField(request, 'repository')
+          const result = owner !== undefined && repository !== undefined
+            ? await service.syncRepository(owner, repository)
+            : await service.syncAll()
+          if (result.errors.length > 0) throw new Error(result.errors.join('; '))
+          return { ok: true, synced: result.synced }
+        }
+        case 'create-pr': {
+          const taskId = requireTaskId(request)
+          const headBranch = stringField(request, 'headBranch')
+          if (headBranch === undefined || headBranch.trim() === '') throw new Error('headBranch is required')
+          const pullRequest = await service.createPullRequest(taskId, {
+            headBranch,
+            ...(stringField(request, 'baseBranch') === undefined ? {} : { baseBranch: stringField(request, 'baseBranch') }),
+            ...(stringField(request, 'title') === undefined ? {} : { title: stringField(request, 'title') }),
+            ...(stringField(request, 'body') === undefined ? {} : { body: stringField(request, 'body') }),
+            ...(request.payload?.draft === undefined ? {} : { draft: request.payload.draft === true }),
+          })
+          return { ok: true, pullRequest }
+        }
+        case 'link-pr': {
+          const taskId = requireTaskId(request)
+          const pullRequestNumber = numberField(request, 'pullRequestNumber')
+          if (pullRequestNumber === undefined || !Number.isInteger(pullRequestNumber) || pullRequestNumber <= 0) {
+            throw new Error('pullRequestNumber must be a positive integer')
+          }
+          const pullRequest = await service.linkPullRequest(taskId, pullRequestNumber)
+          return { ok: true, pullRequest }
+        }
+        default:
+          throw new Error(`unknown GitHub action "${request.action}"`)
+      }
+    },
+  }
+}

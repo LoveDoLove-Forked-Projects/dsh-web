@@ -35,6 +35,8 @@
 - **系统提示词注入**：Host 通过 `SystemPrompt.section` 注册 order 200 的 `plugin:task-board` 段；任务看板设置可单独关闭声明而不关闭看板。该提示也会提醒 agent 在最终回复前收尾可见的 `todo_write` 计划列表。
 - **Agent 工具**：每个会话都可使用八个面向模型的工具（`task_board_list`、`task_board_get`、`task_board_create`、`task_board_update`、`task_board_set_parent`、`task_board_run`、`task_board_manage`、`task_board_schedule`），它们驱动与浏览器完全相同的 Host 账本，因此 agent 可以在对话里列出看板、创建子任务、关联或解除关联、执行级联、把卡片移到任意列（含不经执行直接声明完成、失败或进行中）、归档/恢复/删除卡片、对看板已无法观察的卡片强制结算，以及为卡片配置 cron 计划。
 
+- **外部提供方扩展**：GitHub Issues 扩展（`@linxin666/dsh-client-ui-task-board-github`，默认开启、可在其设置卡关闭）把 GitHub Issues 同步成看板卡片，见[扩展包 README](../dsh-task-board-github/README.zh.md)。
+
 ## 架构与协议
 
 看板视图在首次打开时渲染，关闭后重新打开会保留本地视图状态。Host 同步、调度和执行独立于视图持续运行。

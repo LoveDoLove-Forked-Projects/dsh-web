@@ -11,6 +11,7 @@ import { memo } from 'react'
 import type { TaskRecord } from '../../core/tasks.ts'
 import { executionLabel, hasOpenExecution, tagTone } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
+import { useTaskBoardSeats } from '../seats.tsx'
 import { verificationRunningKey } from './status-key.ts'
 import css from '../board.module.css'
 
@@ -83,6 +84,7 @@ function TaskCardInner({
   /** Direct subtasks that failed, for the roll-up badge. */
   subtasksFailed?: number
 }) {
+  const { cardDecoration } = useTaskBoardSeats()
   const latest = task.executions[task.executions.length - 1]
   const runs = task.executions.length
   const archived = task.archivedAt !== undefined
@@ -174,6 +176,7 @@ function TaskCardInner({
         )}
         {!archived && (busy || pending) && <span className={css.cardSpinner} aria-hidden="true" />}
       </span>
+      {cardDecoration({ task })}
       {!archived && pending && <span className={css.cardRunningLabel}>{t('board.pending')}…</span>}
       {!archived && latest !== undefined && executionLabel(latest) === 'running' && (
         <span className={css.cardRunningLabel}>

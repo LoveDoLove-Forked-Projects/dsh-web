@@ -9,10 +9,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HostTaskLedger } from '../src/host-ledger.ts'
+import { TaskBoardExtensionRegistry } from '../src/host/extension-registry.ts'
 import { GitHubSyncService } from '../src/host/github/service.ts'
 import { GitHubApiClient } from '../src/host/github/client.ts'
 import type { HostTimerFace } from '../src/host-service.ts'
-import type { GitHubIssuePayload, GitHubPullRequestPayload } from '../src/core/github/types.ts'
+import { readTaskGitHubMetadata, type GitHubIssuePayload, type GitHubPullRequestPayload } from '../src/core/github/types.ts'
+import type { TaskBoardExtensionHost } from '../src/core/extension.ts'
+import { TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSnapshot } from '../src/protocol.ts'
 import { startExecution } from '../src/core/tasks.ts'
 
 /** A throwaway Host ledger plus its cleanup. */
@@ -20,6 +23,28 @@ function makeTempLedger(): { ledger: HostTaskLedger, cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-github-test-'))
   const ledger = new HostTaskLedger(dir, () => 1_000)
   return { ledger, cleanup: () => { rmSync(dir, { recursive: true, force: true }) } }
+}
+
+/**
+ * Build the capability face the board would hand the GitHub extension, backed
+ * by the real registry and ledger so every board gate stays in the path.
+ */
+function makeHost(ledger: HostTaskLedger): TaskBoardExtensionHost {
+  const apply = (action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): TaskBoardSnapshot => {
+    const result = ledger.applyRequest(crypto.randomUUID(), action, initiator)
+    return {
+      schemaVersion: TASK_BOARD_SCHEMA_VERSION,
+      revision: result.state.revision,
+      tasks: result.state.tasks,
+      scheduler: result.state.scheduler,
+      power: { platform: 'test', phase: 'disabled', enabled: false, runningSessions: 0, armedSchedules: 0, sessionStateKnown: true },
+    }
+  }
+  const registry = new TaskBoardExtensionRegistry({ ledger, apply })
+  let host: TaskBoardExtensionHost | undefined
+  registry.registerExtension({ id: 'github', apiVersion: 1, start: face => { host = face } })
+  if (host === undefined) throw new Error('capability host was not started')
+  return host
 }
 
 /** The repository every case configures. */
@@ -145,7 +170,7 @@ describe('GitHub sync service (issue #1758)', () => {
     const backend = new FakeGitHubBackend()
     backend.issues = [issueFixture(10, ['dsh', 'bug'], 'Issue 10 description'), issueFixture(11, ['feature'])]
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
       repositories: [REPO],
       now: () => 100,
@@ -158,8 +183,8 @@ describe('GitHub sync service (issue #1758)', () => {
     expect(first.synced).toBe(1)
     expect(ledger.allTasks()).toHaveLength(1)
     const task = ledger.allTasks()[0]
-    expect(task?.integrations?.github?.issueNumber).toBe(10)
-    expect(task?.integrations?.github?.remoteLabels).toEqual(['dsh', 'bug'])
+    expect(readTaskGitHubMetadata(task)?.issueNumber).toBe(10)
+    expect(readTaskGitHubMetadata(task)?.remoteLabels).toEqual(['dsh', 'bug'])
     // And its GitHub labels never leak into the native tag list
     expect(task?.tags).toBeUndefined()
 
@@ -180,7 +205,7 @@ describe('GitHub sync service (issue #1758)', () => {
     const backend = new FakeGitHubBackend()
     backend.issues = [issueFixture(25, ['dsh'])]
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
       repositories: [REPO],
       now: () => 100,
@@ -197,7 +222,7 @@ describe('GitHub sync service (issue #1758)', () => {
 
     // Then the card is deactivated, not deleted, and its history survives
     const deactivated = ledger.getTask(task.id)
-    expect(deactivated?.integrations?.github?.deactivated).toBe(true)
+    expect(readTaskGitHubMetadata(deactivated)?.deactivated).toBe(true)
     expect(deactivated?.executions).toHaveLength(1)
     expect(deactivated?.executions[0]?.result).toBe('succeeded')
 
@@ -207,7 +232,7 @@ describe('GitHub sync service (issue #1758)', () => {
 
     // Then the same card is restored with its history intact
     const restored = ledger.getTask(task.id)
-    expect(restored?.integrations?.github?.deactivated).toBeUndefined()
+    expect(readTaskGitHubMetadata(restored)?.deactivated).toBeUndefined()
     expect(restored?.executions).toHaveLength(1)
 
     cleanup()
@@ -219,7 +244,7 @@ describe('GitHub sync service (issue #1758)', () => {
     const backend = new FakeGitHubBackend()
     backend.issues = [issueFixture(50, ['dsh'], 'Initial Prompt Content')]
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
       repositories: [REPO],
       now: () => 100,
@@ -242,8 +267,8 @@ describe('GitHub sync service (issue #1758)', () => {
     const stored = ledger.getTask(task.id)!
     expect(stored.prompt).toBe('Initial Prompt Content')
     expect(stored.title).toBe('Issue 50')
-    expect(stored.integrations?.github?.remoteTitle).toBe('Changed Title')
-    expect(stored.integrations?.github?.remoteBody).toBe('Changed Remote Body')
+    expect(readTaskGitHubMetadata(stored)?.remoteTitle).toBe('Changed Title')
+    expect(readTaskGitHubMetadata(stored)?.remoteBody).toBe('Changed Remote Body')
 
     cleanup()
   })
@@ -254,7 +279,7 @@ describe('GitHub sync service (issue #1758)', () => {
     const backend = new FakeGitHubBackend()
     backend.issues = [issueFixture(77, ['dsh', 'bug', 'priority:p0', 'team:core'])]
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
       repositories: [REPO],
       now: () => 100,
@@ -292,7 +317,7 @@ describe('GitHub sync service (issue #1758)', () => {
     const backend = new FakeGitHubBackend()
     backend.networkFailure = true
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
       repositories: [REPO],
       now: () => 100,
@@ -316,7 +341,7 @@ describe('GitHub sync service (issue #1758)', () => {
     backend.issues = [issueFixture(88, ['dsh'], 'Implement PR')]
     backend.branches = ['feature-88']
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
       repositories: [REPO],
       now: () => 100,
@@ -339,8 +364,8 @@ describe('GitHub sync service (issue #1758)', () => {
     expect(pull.draft).toBe(true)
     expect(backend.labelsOf(88)).toContain('dsh:phase:pr')
     const updated = ledger.getTask(task.id)!
-    expect(updated.integrations?.github?.pullRequest?.number).toBe(1)
-    expect(updated.integrations?.github?.pullRequest?.state).toBe('open')
+    expect(readTaskGitHubMetadata(updated)?.pullRequest?.number).toBe(1)
+    expect(readTaskGitHubMetadata(updated)?.pullRequest?.state).toBe('open')
 
     cleanup()
   })
@@ -352,7 +377,7 @@ describe('GitHub sync service (issue #1758)', () => {
     backend.issues = [issueFixture(90, ['dsh'])]
     backend.branches = ['branch-90']
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
       repositories: [{ ...REPO, closeIssueOnMerge: true }],
       now: () => 100,
@@ -370,12 +395,12 @@ describe('GitHub sync service (issue #1758)', () => {
     // Then the card records the merged PR, drops the PR phase label, gains the
     // done state label, and the issue is closed
     const settled = ledger.getTask(task.id)!
-    expect(settled.integrations?.github?.pullRequest?.state).toBe('merged')
+    expect(readTaskGitHubMetadata(settled)?.pullRequest?.state).toBe('merged')
     const labels = backend.labelsOf(90)
     expect(labels).not.toContain('dsh:phase:pr')
     expect(labels).toContain('dsh:state:done')
     expect(backend.stateOf(90)).toBe('closed')
-    expect(settled.integrations?.github?.remoteState).toBe('closed')
+    expect(readTaskGitHubMetadata(settled)?.remoteState).toBe('closed')
 
     cleanup()
   })
@@ -387,7 +412,7 @@ describe('GitHub sync service (issue #1758)', () => {
     backend.issues = [issueFixture(95, ['dsh'])]
     backend.branches = ['branch-95']
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
       repositories: [{ ...REPO, closeIssueOnMerge: true }],
       now: () => 100,
@@ -403,9 +428,9 @@ describe('GitHub sync service (issue #1758)', () => {
 
     // Then the card reports the closed PR while the issue stays open
     const settled = ledger.getTask(task.id)!
-    expect(settled.integrations?.github?.pullRequest?.state).toBe('closed')
+    expect(readTaskGitHubMetadata(settled)?.pullRequest?.state).toBe('closed')
     expect(backend.stateOf(95)).toBe('open')
-    expect(settled.integrations?.github?.remoteState).toBe('open')
+    expect(readTaskGitHubMetadata(settled)?.remoteState).toBe('open')
 
     cleanup()
   })
@@ -423,7 +448,7 @@ describe('GitHub sync service (issue #1758)', () => {
       },
     }
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'test-token', fetch: async () => json([]) }),
       repositories: [{ ...REPO, pollingIntervalMs: 60_000 }],
       timers,
@@ -444,7 +469,7 @@ describe('GitHub sync service (issue #1758)', () => {
     // Given a service holding a credential
     const { ledger, cleanup } = makeTempLedger()
     const service = new GitHubSyncService({
-      ledger,
+      host: makeHost(ledger),
       client: new GitHubApiClient({ token: 'super-secret-token' }),
       repositories: [REPO],
     })

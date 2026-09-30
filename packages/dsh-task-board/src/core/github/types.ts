@@ -170,6 +170,20 @@ export function isGitHubTaskMetadata(value: unknown): value is GitHubTaskMetadat
   return true
 }
 
+/**
+ * Read a task's GitHub metadata from the opaque integrations container.
+ *
+ * The board stores integrations opaquely, so a provider reads its own entry
+ * back through its own validator; an entry that does not match the provider's
+ * shape is treated as absent rather than crashing the provider.
+ * @param task - the task to read.
+ * @returns the validated metadata, or undefined.
+ */
+export function readTaskGitHubMetadata(task: { integrations?: Record<string, unknown> } | undefined): GitHubTaskMetadata | undefined {
+  const value = task?.integrations?.github
+  return isGitHubTaskMetadata(value) ? value : undefined
+}
+
 /** Normalize and repair an integrations container from the ledger or wire. */
 export function normalizeIntegrations(value: unknown): TaskIntegrations | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined

@@ -1,20 +1,18 @@
 /**
- * GitHub synchronization service for DSH Task Board.
+ * GitHub synchronization engine for the task board's GitHub extension.
  *
- * Responsibilities:
- * - Inbound sync: discover issues carrying inclusion label, materialize/reconcile tasks.
- * - Outbound write-back: maintain DSH-managed lifecycle labels (never touching unrelated labels).
- * - PR lifecycle: creation, linking, merge detection, and native issue closure.
- * - Background polling with bounded, independent timer.
- * - Fault tolerance: GitHub failures never break local execution.
+ * The engine no longer touches the Host ledger: it reads and writes every task
+ * through the extension capability face ({@link TaskBoardExtensionHost}), so the
+ * board stays the single authority and this provider owns only its own
+ * payload, its identity index, and its outbound HTTP.
  *
  * @module dsh-task-board/host/github/service
  */
-
-import type { HostTaskLedger } from '../../host-ledger.ts'
 import type { HostTimerFace } from '../../host-service.ts'
+import type { TaskBoardExtensionHost } from '../../core/extension.ts'
 import type { ExecutionRecord, TaskRecord, TaskStatus } from '../../core/tasks.ts'
 import {
+  readTaskGitHubMetadata,
   type GitHubPullRequestMetadata,
   type GitHubRepoConfig,
   type GitHubTaskMetadata,
@@ -30,7 +28,8 @@ import {
 import { GitHubApiClient } from './client.ts'
 
 export interface GitHubSyncServiceOptions {
-  ledger: HostTaskLedger
+  /** The capability face the board hands the extension while it is enabled. */
+  host: TaskBoardExtensionHost
   client?: GitHubApiClient
   repositories?: GitHubRepoConfig[]
   timers?: HostTimerFace
@@ -49,17 +48,17 @@ const DEFAULT_TIMERS: HostTimerFace = {
 }
 
 export class GitHubSyncService {
-  readonly ledger: HostTaskLedger
+  readonly host: TaskBoardExtensionHost
   readonly client: GitHubApiClient
   readonly repositories: ResolvedGitHubRepoConfig[]
   private readonly timers: HostTimerFace
   private readonly now: () => number
   private pollTimer: (() => void) | undefined
-  private disposed = false
+  private stopped = false
   private syncing = false
 
   constructor(options: GitHubSyncServiceOptions) {
-    this.ledger = options.ledger
+    this.host = options.host
     this.client = options.client ?? new GitHubApiClient()
     this.repositories = (options.repositories ?? []).map(resolveRepoConfig)
     this.timers = options.timers ?? DEFAULT_TIMERS
@@ -75,7 +74,7 @@ export class GitHubSyncService {
 
   /** Start background polling across configured repositories. */
   start(): void {
-    if (this.disposed || this.pollTimer !== undefined) return
+    if (this.stopped || this.pollTimer !== undefined) return
     const intervals = this.repositories
       .map(r => r.pollingIntervalMs)
       .filter(ms => ms > 0)
@@ -99,13 +98,84 @@ export class GitHubSyncService {
   }
 
   dispose(): void {
-    this.disposed = true
+    this.stopped = true
     this.stop()
+  }
+
+  /** GitHub metadata on one task, through the provider's own validator. */
+  private metadataOf(task: TaskRecord | undefined): GitHubTaskMetadata | undefined {
+    return readTaskGitHubMetadata(task)
+  }
+
+  /** Find a local task by the provider's immutable issue identity. */
+  private findByGitHubIdentity(owner: string, repository: string, issueNumber: number): TaskRecord | undefined {
+    const o = owner.toLowerCase()
+    const r = repository.toLowerCase()
+    for (const { task, payload } of this.host.tasks.linked()) {
+      const gh = payload as unknown as GitHubTaskMetadata
+      if (typeof gh.owner !== 'string' || typeof gh.repository !== 'string') continue
+      if (gh.owner.toLowerCase() === o && gh.repository.toLowerCase() === r && gh.issueNumber === issueNumber) return task
+    }
+    return undefined
+  }
+
+  /**
+   * Project one reconciled task onto the board: materialize a new card, or patch
+   * an existing card's content (through the board's own content gate) and merge
+   * the provider payload back.
+   */
+  private applyRecord(next: TaskRecord, previous: TaskRecord | undefined): void {
+    const payload = next.integrations?.github
+    if (previous === undefined) {
+      this.host.tasks.create(
+        {
+          title: next.title,
+          description: next.description,
+          prompt: next.prompt,
+          status: next.status,
+          ...(next.parentId === undefined ? {} : { parentId: next.parentId }),
+        },
+        {
+          ...(payload === undefined ? {} : { payload }),
+          ...(next.hidden === true ? { hidden: true } : {}),
+        },
+      )
+      return
+    }
+    const contentChanged = next.title !== previous.title
+      || next.description !== previous.description
+      || next.prompt !== previous.prompt
+    if (contentChanged) {
+      try {
+        // The board's canEditTaskContent gate is the authority: a card that has
+        // started executing (or was archived) keeps its recorded content, and
+        // the refusal is exactly the immutability contract, not an error.
+        this.host.tasks.patchContent(next.id, {
+          title: next.title,
+          description: next.description,
+          prompt: next.prompt,
+        })
+      } catch {
+        // Frozen card: keep the local content.
+      }
+    }
+    if (payload !== undefined) this.host.integration.write(next.id, payload)
+  }
+
+  /** Merge a provider payload patch into one task's GitHub entry. */
+  private writePayload(taskId: string, patch: Partial<GitHubTaskMetadata>): void {
+    const clean: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(patch)) clean[key] = value
+    try {
+      this.host.integration.write(taskId, clean)
+    } catch {
+      // A disabled provider or a refused payload must never break a sync.
+    }
   }
 
   /** Synchronize all configured repositories. */
   async syncAll(): Promise<{ synced: number; errors: string[] }> {
-    if (this.disposed || this.syncing) return { synced: 0, errors: [] }
+    if (this.stopped || this.syncing) return { synced: 0, errors: [] }
     this.syncing = true
     let totalSynced = 0
     const errors: string[] = []
@@ -149,38 +219,38 @@ export class GitHubSyncService {
       for (const issue of issues) {
         const labels = extractLabelNames(issue)
         const hasInclusion = labels.includes(config.inclusionLabel)
-        const existing = this.ledger.findTaskByGitHubIdentity(config.owner, config.repository, issue.number)
+        const existing = this.findByGitHubIdentity(config.owner, config.repository, issue.number)
 
         if (hasInclusion) {
           activeIssueNumbers.add(issue.number)
           if (existing !== undefined) {
             let updated = reconcileIssueWithTask(existing, issue, now, config)
             // If task has a linked PR, check PR status as well
-            if (updated.integrations?.github?.pullRequest !== undefined) {
+            if (this.metadataOf(updated)?.pullRequest !== undefined) {
               updated = await this.checkPullRequestStatus(updated, config)
             }
-            this.ledger.saveTaskRecord(updated)
+            this.applyRecord(updated, existing)
             synced += 1
           } else {
             // Materialize a new task
             const newTask = materializeTaskFromIssue(issue, crypto.randomUUID(), now, config)
-            this.ledger.saveTaskRecord(newTask)
+            this.applyRecord(newTask, undefined)
             synced += 1
           }
         } else if (existing !== undefined) {
           // Issue lacks inclusion label; deactivate without deleting history
           let updated = reconcileIssueWithTask(existing, issue, now, config)
-          if (updated.integrations?.github?.pullRequest !== undefined) {
+          if (this.metadataOf(updated)?.pullRequest !== undefined) {
             updated = await this.checkPullRequestStatus(updated, config)
           }
-          this.ledger.saveTaskRecord(updated)
+          this.applyRecord(updated, existing)
           synced += 1
         }
       }
 
       // Check any local tasks for this repo whose issue was not returned or is absent
-      for (const task of this.ledger.allTasks()) {
-        const gh = task.integrations?.github
+      for (const task of this.host.tasks.list()) {
+        const gh = this.metadataOf(task)
         if (
           gh !== undefined
           && gh.owner.toLowerCase() === config.owner.toLowerCase()
@@ -193,8 +263,7 @@ export class GitHubSyncService {
             const single = await this.client.getIssue(config.owner, config.repository, gh.issueNumber)
             const labels = extractLabelNames(single)
             if (!labels.includes(config.inclusionLabel)) {
-              const updated = reconcileIssueWithTask(task, single, now, config)
-              this.ledger.saveTaskRecord(updated)
+              this.applyRecord(reconcileIssueWithTask(task, single, now, config), task)
             }
           } catch (error) {
             // A failed single-issue read proves nothing about the inclusion
@@ -203,7 +272,7 @@ export class GitHubSyncService {
             // transient outage, so the failure is recorded instead and the
             // next sync re-evaluates.
             const message = error instanceof Error ? error.message : String(error)
-            this.ledger.updateTaskIntegrations(task.id, { lastSyncError: message })
+            this.writePayload(task.id, { lastSyncError: message })
           }
         }
       }
@@ -211,14 +280,14 @@ export class GitHubSyncService {
       const msg = error instanceof Error ? error.message : String(error)
       errors.push(msg)
       // Record sync error on all tasks of this repo
-      for (const task of this.ledger.allTasks()) {
-        const gh = task.integrations?.github
+      for (const task of this.host.tasks.list()) {
+        const gh = this.metadataOf(task)
         if (
           gh !== undefined
           && gh.owner.toLowerCase() === config.owner.toLowerCase()
           && gh.repository.toLowerCase() === config.repository.toLowerCase()
         ) {
-          this.ledger.updateTaskIntegrations(task.id, { lastSyncError: msg })
+          this.writePayload(task.id, { lastSyncError: msg })
         }
       }
     }
@@ -227,15 +296,15 @@ export class GitHubSyncService {
   }
 
   /** Synchronize one specific task by task ID. */
-  async syncTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
-    const task = this.ledger.getTask(taskId)
-    if (task?.integrations?.github === undefined) {
+  async syncTask(taskId: string): Promise<{ ok: boolean; error?: string; task?: TaskRecord }> {
+    const task = this.host.tasks.get(taskId)
+    const metadata = this.metadataOf(task)
+    if (task === undefined || metadata === undefined) {
       return { ok: false, error: 'task is not linked to GitHub' }
     }
-    const gh = task.integrations.github
-    const config = this.findRepoConfig(gh.owner, gh.repository)
+    const config = this.findRepoConfig(metadata.owner, metadata.repository)
     if (config === undefined) {
-      return { ok: false, error: `repository ${gh.owner}/${gh.repository} is not configured` }
+      return { ok: false, error: `repository ${metadata.owner}/${metadata.repository} is not configured` }
     }
     if (!this.client.hasCredential()) {
       return { ok: false, error: 'no GitHub API credential available' }
@@ -243,25 +312,25 @@ export class GitHubSyncService {
 
     const now = this.now()
     try {
-      const issue = await this.client.getIssue(config.owner, config.repository, gh.issueNumber)
+      const issue = await this.client.getIssue(config.owner, config.repository, metadata.issueNumber)
       let updated = reconcileIssueWithTask(task, issue, now, config)
-      if (updated.integrations?.github?.pullRequest !== undefined) {
+      if (this.metadataOf(updated)?.pullRequest !== undefined) {
         updated = await this.checkPullRequestStatus(updated, config)
       }
-      this.ledger.saveTaskRecord(updated)
-      return { ok: true }
+      this.applyRecord(updated, task)
+      return { ok: true, task: this.host.tasks.get(taskId) }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      this.ledger.updateTaskIntegrations(task.id, { lastSyncError: message })
+      this.writePayload(task.id, { lastSyncError: message })
       return { ok: false, error: message }
     }
   }
 
   /** Write back local status changes to GitHub state labels. Never throws. */
   async writeBackTaskStatus(taskId: string, targetStatus: TaskStatus): Promise<void> {
-    const task = this.ledger.getTask(taskId)
-    if (task?.integrations?.github === undefined) return
-    const gh = task.integrations.github
+    const task = this.host.tasks.get(taskId)
+    const gh = this.metadataOf(task)
+    if (task === undefined || gh === undefined) return
     const config = this.findRepoConfig(gh.owner, gh.repository)
     if (config === undefined || !this.client.hasCredential()) return
 
@@ -282,14 +351,14 @@ export class GitHubSyncService {
         ...gh.remoteLabels.filter((l: string) => !labelsToRemove.includes(l)),
         ...labelsToAdd.filter((l: string) => !gh.remoteLabels.includes(l)),
       ]
-      this.ledger.updateTaskIntegrations(task.id, {
+      this.writePayload(task.id, {
         remoteLabels: nextLabels,
         lastSyncedAt: now,
         lastSyncError: undefined,
       })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
-      this.ledger.updateTaskIntegrations(task.id, { lastSyncError: msg })
+      this.writePayload(task.id, { lastSyncError: msg })
     }
   }
 
@@ -298,9 +367,9 @@ export class GitHubSyncService {
    * Auto PR creation triggers if enabled on repo and execution succeeded.
    */
   async handleExecutionSettled(taskId: string, execution: ExecutionRecord): Promise<void> {
-    const task = this.ledger.getTask(taskId)
-    if (task?.integrations?.github === undefined) return
-    const gh = task.integrations.github
+    const task = this.host.tasks.get(taskId)
+    const gh = this.metadataOf(task)
+    if (task === undefined || gh === undefined) return
     const config = this.findRepoConfig(gh.owner, gh.repository)
     if (config === undefined) return
 
@@ -334,12 +403,12 @@ export class GitHubSyncService {
         } catch (error) {
           // PR creation failure must NEVER fail the task execution
           const message = error instanceof Error ? error.message : String(error)
-          this.ledger.updateTaskIntegrations(taskId, {
+          this.writePayload(taskId, {
             lastSyncError: `Auto PR creation failed: ${message}`,
           })
         }
       } else {
-        this.ledger.updateTaskIntegrations(taskId, {
+        this.writePayload(taskId, {
           lastSyncError: `Auto PR creation skipped: remote branch not found (tried: ${candidates.join(', ')})`,
         })
       }
@@ -354,11 +423,11 @@ export class GitHubSyncService {
     taskId: string,
     input: { headBranch: string; baseBranch?: string; title?: string; body?: string; draft?: boolean },
   ): Promise<GitHubPullRequestMetadata> {
-    const task = this.ledger.getTask(taskId)
-    if (task?.integrations?.github === undefined) {
+    const task = this.host.tasks.get(taskId)
+    const gh = this.metadataOf(task)
+    if (task === undefined || gh === undefined) {
       throw new Error('task is not linked to a GitHub issue')
     }
-    const gh = task.integrations.github
     const config = this.findRepoConfig(gh.owner, gh.repository)
     if (config === undefined) {
       throw new Error(`repository ${gh.owner}/${gh.repository} is not configured`)
@@ -415,7 +484,7 @@ export class GitHubSyncService {
       ? gh.remoteLabels
       : [...gh.remoteLabels, config.prPhaseLabel]
 
-    this.ledger.updateTaskIntegrations(task.id, {
+    this.writePayload(task.id, {
       pullRequest,
       remoteLabels: nextLabels,
       lastSyncedAt: now,
@@ -427,11 +496,11 @@ export class GitHubSyncService {
 
   /** Link an existing GitHub pull request to a task. */
   async linkPullRequest(taskId: string, pullRequestNumber: number): Promise<GitHubPullRequestMetadata> {
-    const task = this.ledger.getTask(taskId)
-    if (task?.integrations?.github === undefined) {
+    const task = this.host.tasks.get(taskId)
+    const gh = this.metadataOf(task)
+    if (task === undefined || gh === undefined) {
       throw new Error('task is not linked to a GitHub issue')
     }
-    const gh = task.integrations.github
     const config = this.findRepoConfig(gh.owner, gh.repository)
     if (config === undefined) {
       throw new Error(`repository ${gh.owner}/${gh.repository} is not configured`)
@@ -464,7 +533,7 @@ export class GitHubSyncService {
       ? gh.remoteLabels
       : [...gh.remoteLabels, config.prPhaseLabel]
 
-    this.ledger.updateTaskIntegrations(task.id, {
+    this.writePayload(task.id, {
       pullRequest,
       remoteLabels: nextLabels,
       lastSyncedAt: now,
@@ -481,7 +550,7 @@ export class GitHubSyncService {
     task: TaskRecord,
     config: ResolvedGitHubRepoConfig,
   ): Promise<TaskRecord> {
-    const gh = task.integrations?.github
+    const gh = this.metadataOf(task)
     if (gh?.pullRequest === undefined) return task
     const currentPr = gh.pullRequest
     if (currentPr.state === 'merged') return task
@@ -571,8 +640,8 @@ export class GitHubSyncService {
 
   /** List all tasks carrying GitHub integration metadata. */
   listTasks(filter: { owner?: string; repository?: string; state?: 'open' | 'closed' | 'all'; hasPr?: boolean } = {}): TaskRecord[] {
-    return (this.ledger.allTasks() as TaskRecord[]).filter((task: TaskRecord) => {
-      const gh = task.integrations?.github
+    return (this.host.tasks.list() as TaskRecord[]).filter((task: TaskRecord) => {
+      const gh = this.metadataOf(task)
       if (gh === undefined) return false
       if (filter.owner !== undefined && gh.owner.toLowerCase() !== filter.owner.toLowerCase()) return false
       if (filter.repository !== undefined && gh.repository.toLowerCase() !== filter.repository.toLowerCase()) return false

@@ -4,11 +4,12 @@
  * the Web UI plugin group renders, bound to the `task-board` namespace.
  */
 
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { useEffect, useState } from 'react'
-import type { TaskBoardPowerSnapshot, TaskBoardSnapshot, TaskBoardVerificationOptions } from '../protocol.ts'
+import type { TaskBoardPowerSnapshot, TaskBoardVerificationOptions } from '../protocol.ts'
+import type { TaskBoardExtensionDispatch } from '../core/extension.ts'
 import { resolveContract, type ModelCatalogView, type VerificationSettings } from '../core/verification.ts'
 import { parseModelRoute } from '../core/verification.ts'
 import { PluginSettingsCard, BooleanField, ChoiceField } from './PluginSettingsCard.tsx'
@@ -114,6 +115,8 @@ export interface TaskBoardSettingsCardFace extends CardActions {
     /** Card snapshot bound by the renderer as useTaskBoardSettingsCard. */
     taskBoardSettingsCard: SnapshotStore<TaskBoardSettingsCardState>
   }
+  /** Deliver one provider action over the board's same-origin channel. */
+  dispatch: TaskBoardExtensionDispatch
 }
 
 /** Bridges the `task-board` settings form onto the card's staged form. */
@@ -122,7 +125,7 @@ export class TaskBoardSettingsCardController {
   private readonly store: SnapshotStore<TaskBoardSettingsCardState>
 
   /** @param scope - the bound configuration form for the `task-board` namespace. */
-  constructor(scope: ConfigForm<TaskBoardSettings>) {
+  constructor(scope: ConfigForm<TaskBoardSettings>, private readonly dispatch: TaskBoardExtensionDispatch) {
     this.form = new CardForm(scope, [
       booleanField('enabled'),
       booleanField('announceToAgent'),
@@ -153,7 +156,7 @@ export class TaskBoardSettingsCardController {
    * @returns the card's snapshot and its form actions.
    */
   inject(): TaskBoardSettingsCardFace {
-    return { hooks: { taskBoardSettingsCard: this.store }, ...this.form.actions() }
+    return { hooks: { taskBoardSettingsCard: this.store }, ...this.form.actions(), dispatch: this.dispatch }
   }
 
   /**
@@ -170,6 +173,7 @@ export type TaskBoardSettingsCardProps =
   PropsRuntime<'web-ui.plugin.item'>
   & PropsLocale<'task-board'>
   & InjectFace<TaskBoardSettingsCardFace>
+  & PropsRenderSlots<'task-board.settings.section'>
 
 /**
  * Render the task-board card.
@@ -177,23 +181,16 @@ export type TaskBoardSettingsCardProps =
  * @returns the card.
  */
 export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
-  const { t } = props
+  const { t, renderSlot, dispatch } = props
   const state = props.useTaskBoardSettingsCard(snapshot => snapshot)
   const disabled = !state.writable
   const [power, setPower] = useState<TaskBoardPowerSnapshot | undefined>()
-  const [github, setGithub] = useState<TaskBoardSnapshot['github'] | undefined>()
   const [verification, setVerification] = useState<TaskBoardVerificationOptions | undefined>()
   useEffect(() => {
     // The SSE channel already carries power on every real change and pushes
     // one frame on subscribe; polling the full /state snapshot every 5 s
     // re-cloned and re-serialized the whole ledger server-side for one field.
     let live = true
-    void fetch('api/task-board/state')
-      .then(r => r.ok ? r.json() : undefined)
-      .then((data: TaskBoardSnapshot | undefined) => {
-        if (data?.github && live) setGithub(data.github)
-      })
-      .catch(() => {})
     void fetch('api/task-board/verification')
       .then(r => r.ok ? r.json() : undefined)
       .then((data: TaskBoardVerificationOptions | undefined) => {
@@ -391,31 +388,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
         )}
       </div>
 
-      <div data-dsh-part="github-settings" style={{ marginTop: '16px', borderTop: '1px solid var(--dsw-alias-border-subtle, #333)', paddingTop: '12px' }}>
-        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 600 }}>{t('settings.github.title')}</h4>
-        {github?.repositories && github.repositories.length > 0 ? (
-          <div>
-            <p style={{ margin: '4px 0', fontSize: '12px' }}>
-              {t('settings.github.configuredRepos', { count: String(github.repositories.length) })}:
-            </p>
-            <ul style={{ margin: '4px 0 8px 16px', padding: 0, fontSize: '12px' }}>
-              {github.repositories.map(r => (
-                <li key={`${r.owner}/${r.repository}`}>
-                  <strong>{r.owner}/{r.repository}</strong> (label: <code>{r.inclusionLabel}</code>
-                  {r.prCreationEnabled ? ', auto PR' : ''})
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p style={{ margin: '4px 0 8px 0', fontSize: '12px', opacity: 0.8 }}>
-            {t('settings.github.noRepos')}
-          </p>
-        )}
-        <p style={{ margin: '4px 0', fontSize: '12px', opacity: 0.8 }}>
-          {github?.hasCredential ? t('settings.github.credentialOk') : t('settings.github.credentialMissing')}
-        </p>
-      </div>
+      {renderSlot('task-board.settings.section', { dispatch })}
       <p>
         {t('settings.powerStatus', {
           platform: power?.platform ?? t('settings.powerUnknown'),

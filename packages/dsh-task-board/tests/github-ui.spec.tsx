@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
 /**
  * The GitHub surfaces of the task board as an operator sees them: the detail
- * panel's GitHub section, the board's search behaviour, and the way a
- * deactivated remote issue stops appearing in the active columns.
+ * panel's provider seat, the board's generic integration search, and the way a
+ * deactivated remote issue stops appearing in the active columns through the
+ * provider's own visibility predicate.
  */
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { TaskDetail } from '../src/client/board/TaskDetail.tsx'
 import { TaskBoard, matchesFilter } from '../src/client/board/TaskBoard.tsx'
+import { GitHubDetailSection } from '../src/client/github/sections.tsx'
+import { isGitHubTaskVisible } from '../src/client/github/visibility.ts'
+import { TaskBoardSeatsProvider, type TaskBoardSeats } from '../src/client/seats.tsx'
 import type { BoardController, ControllerSnapshot } from '../src/core/controller.ts'
 import type { TaskRecord } from '../src/core/tasks.ts'
 
@@ -39,7 +43,7 @@ function fakeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
 }
 
 /** A controller double serving the given tasks (no host round trip). */
-function fakeController(tasks: TaskRecord[]): BoardController {
+function fakeController(tasks: TaskRecord[], visibility: ControllerSnapshot['visibility'] = []): BoardController {
   const state: ControllerSnapshot = {
     tasks,
     boardOpen: true,
@@ -47,6 +51,7 @@ function fakeController(tasks: TaskRecord[]): BoardController {
     selectedTaskId: tasks[0]?.id,
     executionOptions: { workspaces: [], presets: [] },
     pendingTaskIds: [],
+    visibility,
   }
   return {
     getSnapshot: () => state,
@@ -57,10 +62,15 @@ function fakeController(tasks: TaskRecord[]): BoardController {
     toggleArchiveView: () => {},
     retryHostSync: async () => {},
     isHostBacked: () => true,
-    refreshGitHub: async () => true,
-    createGitHubPr: async () => true,
-    linkGitHubPr: async () => true,
+    dispatchExtension: async () => true,
   } as unknown as BoardController
+}
+
+/** Seats that render the GitHub provider into the board's detail seat. */
+const githubSeats: TaskBoardSeats = {
+  detailSection: props => <GitHubDetailSection {...props} />,
+  settingsSection: () => null,
+  cardDecoration: () => null,
 }
 
 /** Render one element into a fresh container and return it. */
@@ -74,7 +84,7 @@ function render(element: React.ReactElement): HTMLElement {
 }
 
 describe('GitHub UI integration', () => {
-  it('operator reads the issue, its labels and its pull request from the task detail panel', () => {
+  it('operator reads the issue, its labels and its pull request from the provider detail seat', () => {
     // Given a card backed by a GitHub issue carrying ten labels and an open draft PR
     const task = fakeTask({
       integrations: {
@@ -99,11 +109,15 @@ describe('GitHub UI integration', () => {
       },
     })
 
-    // When the detail panel renders it
-    const container = render(<TaskDetail controller={fakeController([task])} task={task} />)
+    // When the detail panel renders it through the declared seat
+    const container = render(
+      <TaskBoardSeatsProvider value={githubSeats}>
+        <TaskDetail controller={fakeController([task])} task={task} />
+      </TaskBoardSeatsProvider>,
+    )
 
-    // Then the GitHub section is anchored for skins, names the issue, and shows
-    // every label (ten, i.e. beyond the native eight-tag limit) and the PR
+    // Then the provider's section is anchored for skins, names the issue, and
+    // shows every label (ten, beyond the native eight-tag limit) and the PR
     const section = container.querySelector('[data-dsh-part="github-integration"]')
     expect(section?.querySelector('[data-dsh-part="github-link"]')?.textContent).toContain('deepseek-ai/dsh #123')
     expect(section?.textContent).toContain('deepseek-ai/dsh')
@@ -130,7 +144,11 @@ describe('GitHub UI integration', () => {
     })
 
     // When the detail panel renders it
-    const container = render(<TaskDetail controller={fakeController([task])} task={task} />)
+    const container = render(
+      <TaskBoardSeatsProvider value={githubSeats}>
+        <TaskDetail controller={fakeController([task])} task={task} />
+      </TaskBoardSeatsProvider>,
+    )
 
     // Then the panel explains the deactivation instead of looking broken
     const section = container.querySelector('[data-dsh-part="github-integration"]')
@@ -155,9 +173,9 @@ describe('GitHub UI integration', () => {
     })
 
     // When the board filter is applied
-    // Then the remote identifiers and labels are searchable, and unrelated text is not
+    // Then the generic payload leaves the board indexes are searchable (the
+    // provider's identifiers and labels included), and unrelated text is not
     expect(matchesFilter(task, '1758')).toBe(true)
-    expect(matchesFilter(task, '#1758')).toBe(true)
     expect(matchesFilter(task, 'dsh-web')).toBe(true)
     expect(matchesFilter(task, 'deepseek-ai')).toBe(true)
     expect(matchesFilter(task, 'priority:critical')).toBe(true)
@@ -184,8 +202,8 @@ describe('GitHub UI integration', () => {
       },
     })
 
-    // When the board renders both
-    const container = render(<TaskBoard controller={fakeController([activeTask, deactivatedTask])} />)
+    // When the board renders both under the provider's visibility predicate
+    const container = render(<TaskBoard controller={fakeController([activeTask, deactivatedTask], [isGitHubTaskVisible])} />)
 
     // Then only the active card is on the board
     expect(container.textContent).toContain('Active Task')

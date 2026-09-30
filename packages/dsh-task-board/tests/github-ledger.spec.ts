@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseLedger } from '../src/core/store.ts'
+import { readTaskGitHubMetadata } from '../src/core/github/types.ts'
 import type { TaskRecord } from '../src/core/tasks.ts'
 import { HostTaskLedger } from '../src/host-ledger.ts'
 import { TASK_BOARD_SCHEMA_VERSION } from '../src/protocol.ts'
@@ -73,11 +74,12 @@ describe('GitHub metadata persistence (issue #1758)', () => {
 
     // Then the card comes back with its stable identity, labels and PR intact
     const task = restored.find(candidate => candidate.id === 'task-gh')
-    expect(task?.integrations?.github?.issueNumber).toBe(1758)
-    expect(task?.integrations?.github?.remoteLabels).toEqual(['dsh', 'enhancement'])
-    expect(task?.integrations?.github?.pullRequest?.number).toBe(42)
-    expect(task?.integrations?.github?.pullRequest?.draft).toBe(true)
-    expect(task?.integrations?.github?.pullRequest?.headBranch).toBe('feat/gh')
+    const metadata = readTaskGitHubMetadata(task)
+    expect(metadata?.issueNumber).toBe(1758)
+    expect(metadata?.remoteLabels).toEqual(['dsh', 'enhancement'])
+    expect(metadata?.pullRequest?.number).toBe(42)
+    expect(metadata?.pullRequest?.draft).toBe(true)
+    expect(metadata?.pullRequest?.headBranch).toBe('feat/gh')
 
     cleanup()
   })
@@ -99,19 +101,22 @@ describe('GitHub metadata persistence (issue #1758)', () => {
     cleanup()
   })
 
-  it('operator sees a malformed persisted integration dropped instead of the whole card', () => {
-    // Given an on-disk document whose integration metadata is structurally invalid
+  it('operator sees a malformed persisted integrations container dropped instead of the whole card', () => {
+    // Given an on-disk document whose integrations container repairs to
+    // nothing (the board no longer validates provider vocabulary, so an empty
+    // container is simply dropped; a non-object value would drop the row, which
+    // the shape gate owns)
     const { dir, ledger, cleanup } = makeTempLedger()
     ledger.saveTaskRecord({ ...baseTask('task-gh', 'Sync me'), integrations: INTEGRATION })
     const document = readDocument(dir)
     const row = document.tasks.find(candidate => (candidate as { id?: string }).id === 'task-gh') as Record<string, unknown>
-    row.integrations = { github: { provider: 'github' } }
+    row.integrations = {}
     writeFileSync(ledgerFile(dir), JSON.stringify(document))
 
     // When the document is re-read
     const restored = reopen(dir)
 
-    // Then the card survives with the unusable metadata dropped, rather than
+    // Then the card survives with the unusable container dropped, rather than
     // taking the whole ledger row down
     const task = restored.find(candidate => candidate.id === 'task-gh')
     expect(task?.title).toBe('Sync me')

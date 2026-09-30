@@ -22,21 +22,21 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // the copy-count buckets below match on forward slashes.
   const entries = copyEntries().map(entry => ({ ...entry, target: entry.target.replaceAll('\\', '/') }))
   // The total is every generated copy in the manifest; the single-instance
-  // guard alone contributes one mount-once.ts per host half (13 today). The
+  // guard alone contributes one mount-once.ts per host half (14 today). The
   // buckets below split the same set by target location, and what neither
-  // bucket holds is the package-root test setup (5 today) plus the per-package
+  // bucket holds is the package-root test setup (6 today) plus the per-package
   // http.ts and console-output.ts copies. The settings bucket is the card trio
   // plus the entry-bound form fallback, the latter one per package whose card
-  // binds a family namespace (6 today). Every family panel now renders through
+  // binds a family namespace (7 today). Every family panel now renders through
   // the native layout seats, so the panel-mount-core and sidebar-entry-core
   // copies are gone and body-mutations serves the aggregate shell, the usage
   // card and the plugin-manager's list-level update toolbar. run-guarded.ts is
   // not synced here: no in-repo package imports
   // it (the satellite repositories that do carry their own copies), so only the
   // shared source and its spec remain in this repository.
-  assert.equal(entries.length, 97)
+  assert.equal(entries.length, 104)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 40)
+  assert.equal(clientTrio.length, 45)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')
@@ -44,7 +44,7 @@ test('copies cover the settings trio for all consumers plus host and http helper
     || entry.target.includes('/src/pair-access.ts')
     || entry.target.includes('/src/agent/')
     || entry.target.endsWith('/packages/dsh-task-board/src/http.ts'))
-  assert.equal(hostCopies.length, 45)
+  assert.equal(hostCopies.length, 46)
 })
 
 test('checkSync detects drift and applySync repairs it', async () => {

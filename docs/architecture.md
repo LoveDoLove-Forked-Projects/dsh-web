@@ -182,6 +182,7 @@ flowchart LR
 | dsh-skins | 皮肤中心：皮肤资产、试穿、无刷新原子切换（独立仓，以已发布包消费） |
 | dsh-pet | 注册表驱动桌宠：响应模型活动、命名与好感度（独立仓，以已发布包消费） |
 | dsh-task-board | 宿主权威任务板：真实会话执行与 cron 调度 |
+| dsh-task-board-github | 任务看板外部提供方扩展：GitHub Issues 同步（默认开启，设置可关） |
 | dsh-git-graph | 空会话 git 分支选择器与提交图 |
 | dsh-ssh | 远程 SSH：PTY 终端、SFTP、端口转发与 agent 工具 |
 | dsh-remote-web-ui | 扫码配对远程访问与可撤销设备会话 |

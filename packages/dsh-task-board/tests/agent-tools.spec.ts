@@ -617,13 +617,17 @@ describe('task registration rebinding', () => {
     // Given an activation served by one registry instance
     const live = activate(Config({ enabled: true }), true)
     activations.push(live)
-    expect(live.registered).toHaveLength(TASK_BOARD_TOOL_NAMES.length)
+    // The board's own tools, plus whatever provider extensions the assembly
+    // contributed into the same registry.
+    const registered = live.registered.length
+    expect(live.registered).toEqual(expect.arrayContaining([...TASK_BOARD_TOOL_NAMES]))
+    expect(registered).toBeGreaterThanOrEqual(TASK_BOARD_TOOL_NAMES.length)
 
     // When cordis unloads that provider fiber and re-runs the injected callback
     live.replaceRegistry()
 
     // Then the new registry receives the tools instead of the guard short-circuiting
-    expect(live.registered).toHaveLength(TASK_BOARD_TOOL_NAMES.length)
+    expect(live.registered).toHaveLength(registered)
   })
 })
 describe('team-run opt-in through the tools', () => {
@@ -831,8 +835,9 @@ describe('tool registration lifecycle', () => {
     const live = activate(Config({ enabled: true }), true)
     activations.push(live)
 
-    // Then every tool is registered
-    expect([...live.registered].sort()).toEqual([...TASK_BOARD_TOOL_NAMES].sort())
+    // Then every board tool is registered, alongside any provider tools
+    const registered = live.registered.length
+    expect(live.registered).toEqual(expect.arrayContaining([...TASK_BOARD_TOOL_NAMES]))
 
     // When the operator switches the board off
     live.commit('enabled', false)
@@ -840,7 +845,7 @@ describe('tool registration lifecycle', () => {
     // Then no tool answers, and switching it on registers them again
     expect(live.registered).toHaveLength(0)
     live.commit('enabled', true)
-    expect(live.registered).toHaveLength(TASK_BOARD_TOOL_NAMES.length)
+    expect(live.registered).toHaveLength(registered)
   })
 
   it('operator on a runtime without a tool registry still mounts the board', () => {

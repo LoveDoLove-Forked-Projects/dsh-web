@@ -254,6 +254,7 @@ Install individual components independently if you prefer not to use the complet
 
 ```sh
 dsh plugin --profile web add @linxin666/dsh-client-ui-task-board@latest              # Task Board
+dsh plugin --profile web add @linxin666/dsh-client-ui-task-board-github@latest      # Task board GitHub Issues sync extension
 dsh plugin --profile web add @linxin666/dsh-ssh@latest                             # SSH Remote Ops
 dsh plugin --profile web add @linxin666/dsh-usage@latest                           # Usage Statistics
 dsh plugin --profile web add @linxin666/dsh-client-ui-model-capabilities@latest    # Model Capabilities
@@ -270,6 +271,7 @@ All plugins are published under the `@linxin666/dsh-*` npm scope:
 | --- | --- |
 | [@linxin666/dsh-web-all](https://www.npmjs.com/package/@linxin666/dsh-web-all) | Aggregate bundle: complete suite of feature plugins and skin center |
 | [@linxin666/dsh-client-ui-task-board](https://www.npmjs.com/package/@linxin666/dsh-client-ui-task-board) | Task board: multi-column tracking and cron scheduling |
+| [@linxin666/dsh-client-ui-task-board-github](https://www.npmjs.com/package/@linxin666/dsh-client-ui-task-board-github) | Task board extension: GitHub Issues sync, on by default and switchable off in settings |
 | [@linxin666/dsh-remote-web-ui](https://www.npmjs.com/package/@linxin666/dsh-remote-web-ui) | Mobile remote control: QR pairing, cross-device sync, and touch gestures |
 | [@linxin666/dsh-ssh](https://www.npmjs.com/package/@linxin666/dsh-ssh) | SSH operations: web terminal, SFTP transfers, tunnels, and cluster commands |
 | [@linxin666/dsh-usage](https://www.npmjs.com/package/@linxin666/dsh-usage) | Usage statistics: token consumption, balances, plan tracking, and Token Bank |

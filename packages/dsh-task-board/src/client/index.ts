@@ -33,8 +33,17 @@ import { TaskBoardSettingsCard, TaskBoardSettingsCardController, type TaskBoardS
 import { en, zh, setRuntimeTranslate, type TaskBoardKey } from './locales.ts'
 import { HttpTaskBoardHostTransport } from './host-api.ts'
 import { reportDailyHeartbeat } from './telemetry.ts'
-import { installPluginCard } from './plugin-card-seat.ts'
+import { installBoardCard } from './board-card-seat.ts'
 import { createServedEntryForm } from './settings-entry-form.ts'
+import { TaskBoardClientService } from './service.ts'
+import { installBoardClientExtensions } from './extensions.ts'
+import {
+  TASK_BOARD_SERVICE_NAME,
+  type TaskBoardCardDecorationProps,
+  type TaskBoardDetailSectionProps,
+  type TaskBoardHostFace,
+  type TaskBoardSettingsSectionProps,
+} from '../core/extension.ts'
 
 /** Locale namespace this plugin owns. */
 const NS = 'task-board'
@@ -95,6 +104,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * package can register without depending on the sibling UI package.
      */
     'web-ui.plugin.item': { kind: 'list'; scope: 'root'; owner: SettingsPluginItemOwnerProps }
+
+    /** Provider task-detail section; the board declares and renders it. */
+    'task-board.detail.section': { kind: 'list'; scope: 'root'; owner: TaskBoardDetailSectionProps }
+    /** Provider settings section; the board declares and renders it. */
+    'task-board.settings.section': { kind: 'list'; scope: 'root'; owner: TaskBoardSettingsSectionProps }
+    /** Provider card decoration; the board declares and renders it. */
+    'task-board.card.decoration': { kind: 'list'; scope: 'root'; owner: TaskBoardCardDecorationProps }
   }
 }
 
@@ -211,12 +227,29 @@ export function apply(ctx: ClientContext): void {
   // namespace, contributed to whichever plugin-card seat this host declares
   // (the family group's list seat, or the official bundle-configuration seat).
   const settingsForm = bindSettingsForm(ctx)
-  const settingsCard = new TaskBoardSettingsCardController(settingsForm)
-  installPluginCard(ctx, {
+  // The board's browser-half extension service. It is provided before any
+  // controller exists (the UI mounts only once the settings form settles), so
+  // providers can subscribe and register visibility immediately.
+  const clientService = new TaskBoardClientService()
+  // A capture-only test context implements no service registry; the board's
+  // own surfaces still mount.
+  if (typeof (ctx as { provide?: unknown }).provide === 'function') {
+    ;(ctx.provide as unknown as (name: string, value: unknown) => void)(TASK_BOARD_SERVICE_NAME, clientService as unknown as TaskBoardHostFace)
+  }
+  ctx.effect(() => () => { clientService.detach() }, 'task-board: extension service')
+  // Provider browser halves: assembled here while the one bundled provider
+  // still lives in this package; each installs into the seats the board declares.
+  ctx.effect(() => installBoardClientExtensions(ctx, clientService), 'task-board: provider browser halves')
+
+  const settingsCard = new TaskBoardSettingsCardController(settingsForm, request => clientService.dispatch(request))
+  installBoardCard(ctx, {
     bundle: '@linxin666/dsh-client-ui-task-board',
     id: 'task-board',
     order: 110,
     locale: NS,
+    // The board's own settings card declares the provider settings seat; the
+    // provider registers into it and this card renders it.
+    children: { 'task-board.settings.section': { kind: 'list', scope: 'root' } },
     inject: () => settingsCard.inject(),
     component: TaskBoardSettingsCard,
   })
@@ -263,6 +296,9 @@ export function apply(ctx: ClientContext): void {
       },
     })
     controller.start()
+    // The extension service follows the live controller: providers observe the
+    // board mirror and dispatch through it while the board runs.
+    clientService.attach(controller)
 
     const disposers: Array<() => void> = []
 
@@ -400,6 +436,7 @@ export function apply(ctx: ClientContext): void {
 
     uiDisposer = () => {
       for (const dispose of disposers.splice(0)) dispose()
+      clientService.detach()
       controller.dispose()
       uiDisposer = undefined
     }
@@ -409,8 +446,13 @@ export function apply(ctx: ClientContext): void {
     const enabled = snapshot.status === 'ready'
       ? snapshot.value?.enabled ?? true
       : snapshot.status === 'unavailable'
-    if (enabled) mountUi()
-    else uiDisposer?.()
+    if (enabled) {
+      mountUi()
+      clientService.setEnabled(true)
+    } else {
+      clientService.setEnabled(false)
+      uiDisposer?.()
+    }
   }
   const unsubscribeSettings = settingsForm.subscribe(syncEnabled)
   // The mounted surfaces and the settings subscription belong to this fiber.

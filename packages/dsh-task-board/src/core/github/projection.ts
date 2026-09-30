@@ -11,6 +11,7 @@
  */
 
 import type { TaskRecord, TaskStatus } from '../tasks.ts'
+import { canEditTaskContent } from '../use-cases/task-update.ts'
 import type { GitHubIssuePayload, ResolvedGitHubRepoConfig } from './types.ts'
 
 /** Check if a GitHub label is owned and managed by the DSH task board integration. */
@@ -108,11 +109,14 @@ export function resolveStatusFromLabels(
 
 /**
  * Whether a task's content (title/description/prompt) may be refreshed from remote.
- * Execution immutability: once a task has ever started executing (even if failed/cancelled),
- * the historical execution prompt must never be rewritten.
+ * Execution immutability: once a task has ever started executing (even if
+ * failed/cancelled) the historical execution prompt must never be rewritten,
+ * and an archived card is read-only too. This defers to the board's own
+ * content authority ({@link canEditTaskContent}) so the provider and the board
+ * can never disagree about which cards are frozen.
  */
 export function shouldRefreshContent(task: TaskRecord): boolean {
-  return task.executions.length === 0
+  return canEditTaskContent(task)
 }
 
 /**

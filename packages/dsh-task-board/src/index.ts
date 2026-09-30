@@ -25,7 +25,8 @@ import { DEFAULT_SESSION_PERMISSION } from './core/handover.ts'
 import { buildTaskBoardTools } from './host/agent-tools.ts'
 import { makeTaskBoardRoutes } from './host-routes.ts'
 import type { GitHubRepoConfig } from './core/github/types.ts'
-import { GitHubApiClient } from './host/github/client.ts'
+import { createGitHubExtension } from './host/github/extension.ts'
+import { TASK_BOARD_SERVICE_NAME, type TaskBoardExtension } from './core/extension.ts'
 import { mountOnce } from './mount-once.ts'
 import { createGoalVerificationGate, type GoalFace } from './host/verification-gate.ts'
 import { normalizeCatalog, type ModelCatalogView, type VerificationSettings } from './core/verification.ts'
@@ -474,8 +475,6 @@ function applyImpl(ctx: Context, config?: Config): void {
     verificationCatalog,
     timers: resolveHostTimers(ctx),
     team: buildTeamDispatcher(ctx, config?.teamProvider ?? DEFAULT_TEAM_PROVIDER),
-    githubRepositories: config?.githubRepositories,
-    githubClient: new GitHubApiClient({ tokenEnv: config?.githubTokenEnv }),
     commandDispatcher: {
       async execute(sessionId, line, signal) {
         const agent = ctx.agents.get(sessionId)
@@ -490,12 +489,31 @@ function applyImpl(ctx: Context, config?: Config): void {
   host.setConfiguration(enabled(), preventIdleSleep())
   host.start()
 
+  // External providers. The board publishes the registration service first, so
+  // a provider package can resolve it; the GitHub integration is the one
+  // in-package consumer assembled here (it moves to its own package later).
+  // A capture-only test context implements no service registry; the board
+  // still serves its own surfaces and the assembly below still registers.
+  if (typeof (ctx as { provide?: unknown }).provide === 'function') {
+    ctx.provide(TASK_BOARD_SERVICE_NAME, {
+      registerExtension: (extension: TaskBoardExtension) => host.registerExtension(extension),
+      isExtensionEnabled: (extensionId: string) => host.extensions.isActive(extensionId),
+    })
+  }
+  const disposeGitHub = host.registerExtension(createGitHubExtension({
+    repositories: config?.githubRepositories,
+    tokenEnv: config?.githubTokenEnv,
+  }))
+
   // Agent tools: the same Host ledger the browser drives, so any session can
   // list, create, link, run and settle board work. Registration follows the
   // master switch (a disabled board answers no tool call), and the mount
-  // effect below owns the disposers.
+  // effect below owns the disposers. Provider tools register through the
+  // extension registry, which follows the same gate and rebinds when the tool
+  // registry appears late.
   let disposeTools: (() => void) | undefined
   const setToolsEnabled = (active: boolean): void => {
+    host.extensions.setToolRegistry(() => resolveToolRegistry(ctx))
     if (!active) {
       disposeTools?.()
       disposeTools = undefined
@@ -517,6 +535,9 @@ function applyImpl(ctx: Context, config?: Config): void {
   if (typeof scopedInject === 'function') {
     scopedInject.call(ctx, ['tools'], () => {
       setToolsEnabled(enabled())
+      // The extension registry follows the same rebinding: a registry that
+      // appears (or is replaced) after a provider started adopts its tools.
+      host.extensions.setToolRegistry(() => resolveToolRegistry(ctx))
       // Cordis unloads and re-runs this callback when the injected service's
       // provider fiber changes, and the old registry dies with its provider.
       // Releasing the guard here is what lets the callback register into the
@@ -585,6 +606,7 @@ function applyImpl(ctx: Context, config?: Config): void {
     }
     return () => {
       setToolsEnabled(false)
+      disposeGitHub()
       for (const dispose of disposers) dispose()
       host.dispose()
     }

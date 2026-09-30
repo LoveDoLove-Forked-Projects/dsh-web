@@ -16,15 +16,39 @@ import { TaskDetail } from './TaskDetail.tsx'
 /** Sentinel option value of the project row's "register a new project" entry. */
 export const NEW_PROJECT_VALUE = '__dsh_new_project__'
 
-/** Case-insensitive title/description/tag/freeze-snapshot match. */
+/**
+ * Collect every string leaf of an opaque extension payload. The board does not
+ * interpret provider data, but a provider's identifiers and labels should stay
+ * searchable from the board's own filter, so the leaf strings join the haystack.
+ */
+function collectSearchLeaves(value: unknown, out: string[]): void {
+  if (typeof value === 'string') {
+    out.push(value)
+    return
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    out.push(String(value))
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectSearchLeaves(item, out)
+    return
+  }
+  if (typeof value === 'object' && value !== null) {
+    for (const nested of Object.values(value)) collectSearchLeaves(nested, out)
+  }
+}
+
+/** Case-insensitive title/description/tag/freeze-snapshot/provider-payload match. */
 export function matchesFilter(task: TaskRecord, filter: string): boolean {
   if (filter.trim() === '') return true
   const needle = filter.trim().toLowerCase()
   const haystacks = [task.title, task.description, ...(task.tags ?? []).map(tag => tag.name)]
   if (task.freeze !== undefined) haystacks.push(task.freeze.goal, task.freeze.progress, task.freeze.next)
-  if (task.integrations?.github !== undefined) {
-    const gh = task.integrations.github
-    haystacks.push(gh.owner, gh.repository, `${gh.owner}/${gh.repository}`, `#${gh.issueNumber}`, String(gh.issueNumber), ...gh.remoteLabels)
+  if (task.integrations !== undefined) {
+    const leaves: string[] = []
+    collectSearchLeaves(task.integrations, leaves)
+    haystacks.push(...leaves)
   }
   return haystacks.some(text => text.toLowerCase().includes(needle))
 }
@@ -101,9 +125,12 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
   // Every label in use across the ledger (board and archive alike), so the
   // filter never loses an option just because its task was archived.
   const knownTags = collectKnownTags(snapshot.tasks)
-  // The family of cards this view owns: the board columns, or the archive.
+  // The family of cards this view owns: the board columns, or the archive. A
+  // provider-hidden card (board hidden flag, or any registered visibility
+  // predicate rejecting it) never appears here.
   const onBoard = snapshot.tasks.filter(task => {
-    if (task.integrations?.github?.deactivated === true) return false
+    if (task.hidden === true) return false
+    if (!(snapshot.visibility ?? []).every(predicate => predicate(task))) return false
     return archiveView ? task.archivedAt !== undefined : task.archivedAt === undefined
   })
   // Direct subtask count and state roll-up per task, for the card badge: a

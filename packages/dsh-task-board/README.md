@@ -35,6 +35,8 @@ A hot-pluggable DeepSeek Harness (DSH) Web GUI plugin with a Host-authoritative 
 - **System-prompt injection**: the Host registers a `plugin:task-board` section (order 200) through `SystemPrompt.section`, and the task-board settings can disable the announcement without disabling the board. The guidance also reminds agents to close any visible `todo_write` plan before the final answer.
 - **Agent tools**: every session gets eight model-facing tools (`task_board_list`, `task_board_get`, `task_board_create`, `task_board_update`, `task_board_set_parent`, `task_board_run`, `task_board_manage`, `task_board_schedule`) that drive the same Host ledger the browser drives, so an agent can list the board, create subtasks, link or detach them, run a cascade, move a card to any column (declaring it done, failed, or in progress without a run), archive/restore/delete it, settle a card the board can no longer observe, and arm its cron schedule from the conversation.
 
+- **External provider extensions**: the GitHub Issues extension (`@linxin666/dsh-client-ui-task-board-github`, enabled by default and switchable off in its settings card) synchronizes GitHub Issues into board cards; see [its README](../dsh-task-board-github/README.md).
+
 ## Architecture and protocol
 
 The board view renders on first open and keeps its local view state when closed and reopened. Host synchronization, scheduling and execution remain active independently of the view.

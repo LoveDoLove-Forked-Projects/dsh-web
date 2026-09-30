@@ -111,7 +111,7 @@ describe('goal acceptance view', () => {
       goalVerification: false,
       goalVerificationModel: 'deepseek-official/deepseek-flash',
       goalVerificationReasoningEffort: 'high',
-    }) as never)
+    }) as never, async () => false)
     const face = controller.inject()
 
     // When: the card projects its state

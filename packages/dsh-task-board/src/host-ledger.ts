@@ -24,7 +24,6 @@ import { applyUpdateTask, canEditTaskContent, hasContentPatch } from './core/use
 import { TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS, TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts'
 import type { ExecutionVerification } from './core/verification.ts'
 import { DEFAULT_SESSION_PERMISSION, effectivePermission, permissionCarriedBy, requiresPermissionConfirmation, type TaskPermission } from './core/handover.ts'
-import type { GitHubTaskMetadata } from './core/github/types.ts'
 
 interface PersistedScheduler extends TaskBoardSchedulerSnapshot {
   importedSources?: string[]
@@ -762,43 +761,6 @@ export class HostTaskLedger {
 
   getTask(id: string): TaskRecord | undefined {
     return this.document.tasks.find(item => item.id === id)
-  }
-
-  findTaskByGitHubIdentity(owner: string, repository: string, issueNumber: number): TaskRecord | undefined {
-    const o = owner.toLowerCase()
-    const r = repository.toLowerCase()
-    return this.document.tasks.find(task => {
-      const gh = task.integrations?.github
-      return gh !== undefined
-        && gh.owner.toLowerCase() === o
-        && gh.repository.toLowerCase() === r
-        && gh.issueNumber === issueNumber
-    })
-  }
-
-  updateTaskIntegrations(taskId: string, patch: Partial<GitHubTaskMetadata>): TaskRecord | undefined {
-    const now = this.now()
-    let updated: TaskRecord | undefined
-    this.document.tasks = this.document.tasks.map(item => {
-      if (item.id !== taskId) return item
-      const existingGh = item.integrations?.github
-      if (existingGh === undefined) return item
-      const mergedGh: GitHubTaskMetadata = {
-        ...existingGh,
-        ...patch,
-      }
-      updated = {
-        ...item,
-        updatedAt: now,
-        integrations: {
-          ...item.integrations,
-          github: mergedGh,
-        },
-      }
-      return updated
-    })
-    if (updated !== undefined) this.commit()
-    return updated
   }
 
   saveTaskRecord(task: TaskRecord): void {

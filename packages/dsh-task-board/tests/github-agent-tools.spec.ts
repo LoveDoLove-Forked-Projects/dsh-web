@@ -1,20 +1,25 @@
 /**
  * The GitHub-specific Task Board agent tools. These are the model-visible
- * surface of the #1758 integration, so each case asserts what the model can
- * actually observe through a tool call rather than how the tool is built.
+ * surface of the #1758 integration, now contributed by the GitHub provider
+ * through the board's `registerTool` capability rather than by the board's own
+ * agent-tools module, so each case asserts what the model can observe through a
+ * tool call.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildTaskBoardTools, TASK_BOARD_TOOL_NAMES } from '../src/host/agent-tools.ts'
+import { TASK_BOARD_TOOL_NAMES } from '../src/host/agent-tools.ts'
+import { buildGitHubTools } from '../src/host/github/tools.ts'
 import { HostTaskLedger } from '../src/host-ledger.ts'
 import { TaskBoardHostService } from '../src/host-service.ts'
 import { GitHubSyncService } from '../src/host/github/service.ts'
 import { GitHubApiClient } from '../src/host/github/client.ts'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
+import type { TaskBoardExtensionHost } from '../src/core/extension.ts'
 import type { GitHubIssuePayload, GitHubPullRequestPayload } from '../src/core/github/types.ts'
+import type { NewTaskInput } from '../src/core/tasks.ts'
 
 const roots: string[] = []
 let previousHome: string | undefined
@@ -42,6 +47,14 @@ function fakeGateway(): TypertGateway {
   } as unknown as TypertGateway
 }
 
+/** Admit the GitHub extension and capture the capability face the board hands it. */
+function admitGitHub(host: TaskBoardHostService): TaskBoardExtensionHost {
+  let face: TaskBoardExtensionHost | undefined
+  host.registerExtension({ id: 'github', apiVersion: 1, start: (capabilities) => { face = capabilities } })
+  if (face === undefined) throw new Error('the board did not start the GitHub extension')
+  return face
+}
+
 /** Locate one registered tool by name; a missing tool is a wiring failure. */
 function findTool(tools: ToolDefinition[], name: string): ToolDefinition {
   const tool = tools.find(candidate => candidate.name === name)
@@ -55,22 +68,7 @@ async function runTool(tool: ToolDefinition, args: Record<string, unknown>): Pro
 }
 
 /** One GitHub-backed task input naming a repository and issue. */
-function gitHubTaskInput(owner: string, repository: string, issueNumber: number): {
-  title: string
-  description: string
-  prompt: string
-  integrations: {
-    github: {
-      provider: 'github'
-      owner: string
-      repository: string
-      issueNumber: number
-      issueUrl: string
-      remoteLabels: string[]
-      remoteState: 'open' | 'closed'
-    }
-  }
-} {
+function gitHubTaskInput(owner: string, repository: string, issueNumber: number): NewTaskInput {
   return {
     title: `${repository} issue ${String(issueNumber)}`,
     description: '',
@@ -90,15 +88,26 @@ function gitHubTaskInput(owner: string, repository: string, issueNumber: number)
 }
 
 describe('GitHub Agent Tools', () => {
-  it('operator sees all five GitHub tools registered in the task-board tool set', () => {
-    // Given the task-board plugin registers its model-visible tools
-    // When the registered names are read
-    // Then the whole narrowly-scoped GitHub surface is present
-    expect(TASK_BOARD_TOOL_NAMES).toContain('task_board_github_list')
-    expect(TASK_BOARD_TOOL_NAMES).toContain('task_board_github_get')
-    expect(TASK_BOARD_TOOL_NAMES).toContain('task_board_github_refresh')
-    expect(TASK_BOARD_TOOL_NAMES).toContain('task_board_github_create_pr')
-    expect(TASK_BOARD_TOOL_NAMES).toContain('task_board_github_link_pr')
+  it('operator sees the five GitHub tools contributed by the provider, separate from the board tool set', () => {
+    // Given the board's own tool names and the provider's tool set
+    // When both are read
+    // Then the board no longer carries GitHub vocabulary, and the provider
+    // contributes exactly its five narrowly-scoped tools
+    expect(TASK_BOARD_TOOL_NAMES).not.toContain('task_board_github_list')
+    const root = mkdtempSync(join(tmpdir(), 'dsh-gh-tools-'))
+    roots.push(root)
+    const ledger = new HostTaskLedger(root)
+    const host = new TaskBoardHostService(fakeGateway(), { ledger })
+    const service = new GitHubSyncService({ host: admitGitHub(host), repositories: [] })
+    const names = buildGitHubTools(service).map(tool => tool.name)
+    expect(names).toEqual([
+      'task_board_github_list',
+      'task_board_github_get',
+      'task_board_github_refresh',
+      'task_board_github_create_pr',
+      'task_board_github_link_pr',
+    ])
+    host.dispose()
   })
 
   it('operator lists only GitHub-backed cards and can narrow by owner or remote state', async () => {
@@ -107,14 +116,16 @@ describe('GitHub Agent Tools', () => {
     roots.push(root)
     const ledger = new HostTaskLedger(root)
     const host = new TaskBoardHostService(fakeGateway(), { ledger })
+    const face = admitGitHub(host)
 
     host.apply('c1', { kind: 'create', id: 'task-plain', input: { title: 'Plain task', description: '', prompt: 'p' } })
     host.apply('c2', { kind: 'create', id: 'task-gh-1', input: gitHubTaskInput('deepseek-ai', 'dsh', 1) })
     const second = gitHubTaskInput('other-org', 'other-repo', 2)
-    second.integrations.github.remoteState = 'closed'
+    ;(second.integrations!.github as Record<string, unknown>).remoteState = 'closed'
     host.apply('c3', { kind: 'create', id: 'task-gh-2', input: second })
 
-    const listTool = findTool(buildTaskBoardTools(host), 'task_board_github_list')
+    const service = new GitHubSyncService({ host: face, repositories: [] })
+    const listTool = findTool(buildGitHubTools(service), 'task_board_github_list')
 
     // When the model lists them unfiltered, then by owner, then by state
     const all = await runTool(listTool, {})
@@ -137,9 +148,11 @@ describe('GitHub Agent Tools', () => {
     roots.push(root)
     const ledger = new HostTaskLedger(root)
     const host = new TaskBoardHostService(fakeGateway(), { ledger })
+    const face = admitGitHub(host)
     host.apply('c1', { kind: 'create', id: 'task-10', input: gitHubTaskInput('deepseek-ai', 'dsh', 10) })
 
-    const getTool = findTool(buildTaskBoardTools(host), 'task_board_github_get')
+    const service = new GitHubSyncService({ host: face, repositories: [] })
+    const getTool = findTool(buildGitHubTools(service), 'task_board_github_get')
 
     // When the model looks it up by task id, then by the stable triple, then by a missing id
     const byId = await runTool(getTool, { taskId: 'task-10' })
@@ -205,15 +218,16 @@ describe('GitHub Agent Tools', () => {
     }
 
     const client = new GitHubApiClient({ token: 'test-token', fetch: fakeFetch })
-    const github = new GitHubSyncService({
-      ledger,
+    const host = new TaskBoardHostService(fakeGateway(), { ledger })
+    const face = admitGitHub(host)
+    const service = new GitHubSyncService({
+      host: face,
       client,
       repositories: [{ owner: 'deepseek-ai', repository: 'dsh', inclusionLabel: 'dsh' }],
     })
-    const host = new TaskBoardHostService(fakeGateway(), { ledger, github })
     host.apply('c1', { kind: 'create', id: 'task-40', input: gitHubTaskInput('deepseek-ai', 'dsh', 40) })
 
-    const tools = buildTaskBoardTools(host)
+    const tools = buildGitHubTools(service)
     const createPrTool = findTool(tools, 'task_board_github_create_pr')
     const linkPrTool = findTool(tools, 'task_board_github_link_pr')
     const refreshTool = findTool(tools, 'task_board_github_refresh')
