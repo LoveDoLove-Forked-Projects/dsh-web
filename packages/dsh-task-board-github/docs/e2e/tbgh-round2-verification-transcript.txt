@@ -1,0 +1,40 @@
+tbgh-round2-verification-transcript.txt
+状态：修复后（baseline e2e50678，含挂载竞态修复与客户端面桩测试）。
+采集：scratch profile 真实 dsh web（--port 0，独立 DSH_HOME），--family-dir 全量本地化 17 个 workspace tarball，Playwright 无头 Chromium。
+说明：PASS/FAIL 行即断言原文（17 条全 PASS）；SHOT 行对应本目录同名 PNG。
+注：SAVE_BUTTONS_VISIBLE 1 是复跑修正点——首版脚本在展开 Task Board 卡片后用 .first() 点 Save 点错了卡片，导致 D2/D3/D4 假失败；修正后重跑全绿。
+
+==================== 原始输出 ====================
+SAVE_SET true before="false"
+SAVE_BUTTONS_VISIBLE 1
+SAVE_AFTER "true"
+PASS A1 console has no "is not served" :: []
+PASS A2 badge count === 1 :: count=1
+PASS A3 badge text === #42 :: text=#42
+PASS A4 active card visible :: 
+PASS A5 plain control visible :: 
+PASS A6 deactivated card hidden :: 
+SHOT tbgh-card-badge.png (card close-up with #42)
+SHOT tbgh-deactivated-hidden.png
+PASS B1 [data-dsh-part=github-integration] present :: count=1
+PASS B2 github-link text contains deepseek-ai/dsh #42 :: text=deepseek-ai/dsh #42
+SHOT tbgh-detail-github-section.png
+PASS C1 [data-dsh-part=github-settings] present while on :: count=1
+SHOT tbgh-settings-seat-on.png
+SAVE_SET false before="true"
+SAVE_BUTTONS_VISIBLE 1
+SAVE_AFTER "false"
+PASS D1 switch read-back false :: 
+PASS D2 github-settings seat gone while off :: count=0
+SHOT tbgh-extension-switch-off.png
+PASS D3 badge count 0 while off :: count=0
+PASS D4 detail section gone while off :: count=0
+PASS D5 ledger keeps integrations.github while off :: ["m4-gh-active","m4-gh-deactivated"]
+SAVE_SET true before="false"
+SAVE_BUTTONS_VISIBLE 1
+SAVE_AFTER "true"
+PASS E1 github-settings seat restored :: count=1
+SHOT tbgh-extension-switch-on.png
+PASS E2 badge count restored to 1 :: count=1
+PASS E3 detail section restored :: count=1
+CONSOLE_ALL []
