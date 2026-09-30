@@ -39,6 +39,21 @@ const LLM_KIMI = {
   listConfigurableProviders: () => [],
 }
 
+/** The live route id llm-deepseek-account registers for a signed-in account. */
+const LLM_DEEPSEEK_ACCOUNT = {
+  listProviders: () => [{ id: 'deepseek-account', name: 'DeepSeek Account' }],
+  listConfigurableProviders: () => [],
+}
+
+/** Both DeepSeek channels live at once: the API-key route and the account route. */
+const LLM_DEEPSEEK_BOTH = {
+  listProviders: () => [
+    { id: 'deepseek-official', name: 'DeepSeek' },
+    { id: 'deepseek-account', name: 'DeepSeek Account' },
+  ],
+  listConfigurableProviders: () => [],
+}
+
 const CREDENTIALS_KIMI_KEY = {
   readRecord: async () => ({ kind: 'api-key', key: 'sk-kimi' }),
   resolve: async () => ({ value: 'unused' }),
@@ -228,6 +243,58 @@ describe('probes and per-fact errors', () => {
     service.stop()
   })
 
+  // #1772: `llm-deepseek-account` registers the live route `deepseek-account`
+  // for a user signed in to a DeepSeek account. It bills the same account and
+  // must be priced, but it holds no API key: probing it with the official
+  // balance endpoint would fail, and with DEEPSEEK_API_KEY configured it would
+  // print the API-key account's money under the account route's name.
+  it('user signed in to a DeepSeek account sees priced usage and no borrowed balance', async () => {
+    // Given a live account route, credentials that would resolve the family
+    // env fallback, and a session spending on that route
+    const fetchMock = stubFetch(() => jsonResponse(BALANCE_BODY))
+    const { ctx, fireSessionEvent } = makeCtx({ llm: LLM_DEEPSEEK_ACCOUNT, credentials: CREDENTIALS_ENV })
+    const service = new UsageService(ctx, OPTIONS)
+    await service.refresh()
+    service.start()
+    const session = {}
+    fireSessionEvent(session, requestHeaderEvent('deepseek-account', 'deepseek-flash'))
+    fireSessionEvent(session, usageEvent(1_000, 500))
+
+    // When the overview is assembled
+    const overview = service.overview()
+    // Then the account route issued no request and carries no balance fact, so
+    // the API-key account's money is never printed under the account route
+    expect(fetchMock).not.toHaveBeenCalled()
+    const row = overview.providers.find((provider) => provider.provider === 'deepseek-account')
+    expect(row?.balance).toBeUndefined()
+    expect(row?.balanceSupported).toBeUndefined()
+
+    // And its calls are still priced as the official family, so the fold-time
+    // spend estimate and the whale-yuan bank are no longer empty
+    const today = overview.usage.today.providers.find((entry) => entry.provider === 'deepseek-account')
+    expect(today?.totals.calls).toBe(1)
+    expect(today?.totals.cost).toBeGreaterThan(0)
+    expect(overview.current.displayName).toBe('DeepSeek Account')
+    service.stop()
+  })
+
+  it('user with both DeepSeek channels sees two rows, not one aliased account', async () => {
+    // Given the API-key route and the account route live at once, which are
+    // two real accounts rather than one account named twice
+    stubFetch(() => jsonResponse(BALANCE_BODY))
+    const { ctx } = makeCtx({ llm: LLM_DEEPSEEK_BOTH, credentials: CREDENTIALS_ENV })
+    const service = new UsageService(ctx, OPTIONS)
+    // When the cycle runs and the overview is assembled
+    await service.refresh()
+    const rows = service.overview().providers
+    // Then both rows survive, the key route still carries the official
+    // balance, and the account route stays separate and unprobed
+    expect(rows.map((provider) => provider.provider).sort()).toEqual(['deepseek-account', 'deepseek-official'])
+    const official = rows.find((provider) => provider.provider === 'deepseek-official')
+    expect(official?.balance).toMatchObject({ currency: 'CNY', totalBalance: '110.00' })
+    expect(rows.find((provider) => provider.provider === 'deepseek-account')?.balance).toBeUndefined()
+    service.stop()
+  })
   it('operator with the official deepseek origin still sees its balance', async () => {
     // Given the same route id explicitly pointed at the official origin.
     const fetchMock = stubFetch((url) => url.includes('api.deepseek.com') ? jsonResponse(BALANCE_BODY) : jsonResponse({}, 404))
