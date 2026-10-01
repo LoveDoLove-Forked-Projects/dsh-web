@@ -315,7 +315,7 @@ describe('goal acceptance gate', () => {
     expect(verification.failedReason).toContain('the second tool result reports a failure the summary ignored')
   })
 
-  it('a final failure without findings tells the agent where to look instead of staying silent', async () => {
+  it('user whose judge reports no findings sees a failure reason that says where to look instead of staying silent', async () => {
     // Given: a judge that fails the work without reporting any finding
     const fx = fixture()
     const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'T' }), goal: goalDouble('active') })
