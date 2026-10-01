@@ -125,8 +125,19 @@ export function installGitHubClientHalf(
 
 /**
  * Register the configuration section into the seat the board's settings card
- * renders. A seat that refuses the contribution is reported and leaves the rest
- * of the extension working.
+ * renders.
+ *
+ * The registration goes through the seat's OWN declaration lifecycle
+ * (`slots.inject`), not a one-shot `register`: the board's card declares the
+ * seat, and re-declares it whenever it moves between plugin-card seats (the
+ * family group loading after boot is the normal case). Re-declaring RELEASES
+ * the seat's declarations together with every entry registered in it, so a
+ * one-shot registration is silently dropped — the section then never renders
+ * while nothing reports an error. Following the declaration epoch re-registers
+ * the contribution on every declaration and drops it on every release.
+ *
+ * A seat that refuses the contribution is reported and leaves the rest of the
+ * extension working.
  * @param ctx - the dependency-scoped context (slot registry).
  * @param seat - the contribution to register.
  * @returns disposer releasing the registration.
@@ -134,19 +145,33 @@ export function installGitHubClientHalf(
 function registerSettingsSection(ctx: ClientContext, seat: GitHubSettingsSectionSeat): () => void {
   const slots = ctx.slots as {
     register(options: Record<string, unknown>, component: unknown): () => void
+    inject?(key: string, callback: () => () => void): () => void
+  }
+  const register = (): (() => void) => {
+    try {
+      const dispose = slots.register({
+        name: TASK_BOARD_SETTINGS_SECTION,
+        id: GITHUB_EXTENSION_ID,
+        locale: LOCALE_NS,
+        inject: seat.inject,
+      }, seat.component as never)
+      return () => {
+        try { dispose() } catch { /* best-effort */ }
+      }
+    } catch (error) {
+      console.error('[dsh-task-board-github] provider settings section registration failed', error)
+      return () => {}
+    }
+  }
+  if (typeof slots.inject !== 'function') {
+    // A shell without the declaration-tracking face: register once. The section
+    // renders as long as the board's card keeps its first declaration.
+    return register()
   }
   try {
-    const dispose = slots.register({
-      name: TASK_BOARD_SETTINGS_SECTION,
-      id: GITHUB_EXTENSION_ID,
-      locale: LOCALE_NS,
-      inject: seat.inject,
-    }, seat.component as never)
-    return () => {
-      try { dispose() } catch { /* best-effort */ }
-    }
+    return slots.inject(TASK_BOARD_SETTINGS_SECTION, register)
   } catch (error) {
-    console.error('[dsh-task-board-github] provider settings section registration failed', error)
+    console.error('[dsh-task-board-github] provider settings section could not follow its seat', error)
     return () => {}
   }
 }

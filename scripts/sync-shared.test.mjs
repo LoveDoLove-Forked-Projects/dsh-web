@@ -33,10 +33,12 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // card and the plugin-manager's list-level update toolbar. run-guarded.ts is
   // not synced here: no in-repo package imports
   // it (the satellite repositories that do carry their own copies), so only the
-  // shared source and its spec remain in this repository.
-  assert.equal(entries.length, 106)
+  // shared source and its spec remain in this repository. The plugin-card seat
+  // copy has three consumers: the GitHub extension renders inside the board's
+  // own settings card now, so it carries no card of its own.
+  assert.equal(entries.length, 105)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 45)
+  assert.equal(clientTrio.length, 44)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')

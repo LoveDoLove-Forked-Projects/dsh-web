@@ -54,9 +54,11 @@ function form(initial: Record<string, unknown>) {
  * client face. `inject` runs the dependency callback the way cordis does once
  * the board serves its service, so the seats register into the recorded list.
  */
-function context(options: { enabled?: boolean } = {}) {
+function context(options: { enabled?: boolean; declarationFace?: boolean } = {}) {
   const registrations: Array<Record<string, unknown>> = []
   const dictionaries: string[] = []
+  /** Seat keys the section subscribed to through the declaration-tracking face. */
+  const followedSeats: string[] = []
   const { scope } = form({ enabled: options.enabled !== false })
   const face = {
     dispatch: async () => true,
@@ -64,11 +66,22 @@ function context(options: { enabled?: boolean } = {}) {
     subscribe: () => () => {},
     snapshot: () => ({ enabled: true, tasks: [], extensions: {} }),
   }
-  const slots = {
+  const slots: Record<string, unknown> = {
     register: (entry: Record<string, unknown>) => {
       registrations.push(entry)
       return () => {}
     },
+  }
+  if (options.declarationFace !== false) {
+    // The seat's declaration lifecycle: the renderer's face runs the callback
+    // once the seat is declared and re-runs it whenever the declaration
+    // changes, which is what keeps the section alive across the board card
+    // moving between plugin-card seats.
+    slots.inject = (key: string, callback: () => () => void) => {
+      followedSeats.push(key)
+      const dispose = callback()
+      return () => { dispose() }
+    }
   }
   const ctx = {
     get: (name: string) => {
@@ -98,7 +111,7 @@ function context(options: { enabled?: boolean } = {}) {
       describe: () => ({ getSnapshot: () => ({ view: undefined }), subscribe: () => () => {} }),
     },
   }
-  return { ctx, registrations, dictionaries }
+  return { ctx, registrations, dictionaries, followedSeats }
 }
 
 describe('task-board GitHub extension browser half', () => {
@@ -115,6 +128,31 @@ describe('task-board GitHub extension browser half', () => {
     expect(section).toMatchObject({ name: SETTINGS_SECTION, id: 'github', locale: NS })
     // And both dictionaries of that namespace were registered for the page
     expect(harness.dictionaries).toEqual(['task-board-github:zh,en'])
+  })
+
+  it('operator whose board card moves between seats keeps the GitHub section in it', () => {
+    // Given a page whose slot registry tracks declarations
+    const harness = context({ enabled: true })
+
+    // When the browser half applies
+    apply(harness.ctx as never)
+
+    // Then the section followed the seat's declaration instead of registering once:
+    // a one-shot entry is released the moment the board card re-declares the seat
+    expect(harness.followedSeats).toEqual([SETTINGS_SECTION])
+    expect(harness.registrations.map(entry => entry.name)).toContain(SETTINGS_SECTION)
+  })
+
+  it('operator on a shell without the declaration face still gets the section registered', () => {
+    // Given a page whose slot registry has no declaration-tracking face
+    const harness = context({ enabled: true, declarationFace: false })
+
+    // When the browser half applies
+    apply(harness.ctx as never)
+
+    // Then the section is registered directly, so the configuration is reachable
+    expect(harness.followedSeats).toEqual([])
+    expect(harness.registrations.map(entry => entry.name)).toContain(SETTINGS_SECTION)
   })
 
   it('operator turning the extension off keeps the section that turns it back on', () => {
