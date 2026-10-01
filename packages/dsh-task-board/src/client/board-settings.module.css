@@ -53,8 +53,8 @@
 }
 
 /* The nested disclosure cards of this card: the board and its runtime
-   behavior, goal acceptance, and the sections a provider contributes (the
-   GitHub Issues extension contributes one). The gap keeps the stacked card
+   behavior, goal acceptance, and the sections a provider extension
+   contributes. The gap keeps the stacked card
    borders apart; an empty list draws nothing. */
 .nestedCards {
   display: flex;

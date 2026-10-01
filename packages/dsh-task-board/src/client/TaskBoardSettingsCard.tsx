@@ -292,8 +292,8 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
     >
       {/* The board's own settings are nested disclosure cards, so an expanded
           card reads as a short topic list: the board and its runtime behavior,
-          goal acceptance, and whatever a provider contributes (the GitHub
-          Issues integration registers into the seat rendered last). Every one
+          goal acceptance, and whatever a provider contributes (a provider
+          extension registers into the seat rendered last). Every one
           of them starts collapsed and shares this card's single save. */}
       <ul className={settingsCss.nestedCards}>
         <PluginSettingsCard
@@ -440,7 +440,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
 
         {/* Provider sections: a family extension contributes its own nested
             settings card into this list through the seat this card declares —
-            the GitHub Issues integration is the one that does. Each
+            the family provider extension is the one that does. Each
             contributed card keeps its own chrome and save row, and an empty
             seat draws nothing. */}
         {renderSlot('task-board.settings.section', { dispatch })}
