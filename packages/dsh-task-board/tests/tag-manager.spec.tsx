@@ -162,6 +162,25 @@ describe('label manager', () => {
     expect(container.querySelectorAll('li')).toHaveLength(0)
   })
 
+  it('user pressing Escape while renaming cancels the edit instead of closing the manager', () => {
+    // Given an open manager with a row editor open
+    const { controller } = fakeController([task('a', [{ name: 'ship' }])])
+    const onClose = vi.fn()
+    const container = render(<TagManagerModal controller={controller} onClose={onClose} />)
+    click(container, t('tags.rename'))
+    expect(container.querySelectorAll('input')).toHaveLength(1)
+
+    // When Escape is pressed
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    })
+
+    // Then the editor is gone, the manager is still open and nothing was closed
+    expect(container.querySelectorAll('input')).toHaveLength(0)
+    expect(container.textContent).toContain(t('tags.title'))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('user closing the manager asks the board to close it', () => {
     // Given an open manager and a close recorder
     const { controller } = fakeController([task('a', [{ name: 'ship' }])])

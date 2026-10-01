@@ -58,7 +58,6 @@ export interface TagManagerModalProps {
 
 /** Label-manager overlay. */
 export function TagManagerModal({ controller, onClose, phase = 'open' }: TagManagerModalProps) {
-  const dialog = useDialog<HTMLDivElement>(onClose, phase)
   /** The label whose row is being renamed, and the draft name. */
   const [editing, setEditing] = useState<string | undefined>(undefined)
   const [draft, setDraft] = useState('')
@@ -66,6 +65,18 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
   const [error, setError] = useState<string | undefined>(undefined)
   const [confirmDelete, setConfirmDelete] = useState<string | undefined>(undefined)
   const confirmPresence = usePresence(confirmDelete !== undefined)
+  // Escape and a backdrop press peel one layer at a time: an open row editor
+  // first, then the dialog — so a half-typed rename is never lost to the same
+  // key that closes the surface under it.
+  const dismiss = (): void => {
+    if (editing !== undefined) {
+      setEditing(undefined)
+      setError(undefined)
+      return
+    }
+    onClose()
+  }
+  const dialog = useDialog<HTMLDivElement>(dismiss, phase)
   const snapshot = controller.getSnapshot()
   const rows = useMemo(() => tagUsage(snapshot.tasks), [snapshot.tasks])
   const deleting = rows.find(row => row.name === confirmDelete)
@@ -147,7 +158,6 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
                               onChange={event => { setDraft(event.target.value); setError(undefined) }}
                               onKeyDown={event => {
                                 if (event.key === 'Enter') void submitRename(row.name)
-                                if (event.key === 'Escape') { event.stopPropagation(); setEditing(undefined) }
                               }}
                             />
                             <button
