@@ -66,11 +66,15 @@ export function applyRenameTag(
     const tags = task.tags
     if (tags === undefined || !tags.some(tag => tag.name === source)) return task
     changed = true
+    // A task that already carried BOTH names keeps the target's own row — the
+    // target is the label that survives, so its execution hint stays the one
+    // that applies. A task carrying only the source keeps that row's hint under
+    // the new name.
+    const hasTarget = tags.some(tag => tag.name === target)
     const merged: TaskTag[] = []
     for (const tag of tags) {
+      if (hasTarget && tag.name === source) continue
       const name = tag.name === source ? target : tag.name
-      // First occurrence wins, so a task that carried both names keeps the row
-      // it already had — including the execution hint the user typed there.
       if (merged.some(entry => entry.name === name)) continue
       merged.push(name === tag.name ? tag : { ...tag, name })
     }

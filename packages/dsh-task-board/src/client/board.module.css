@@ -565,6 +565,65 @@
   margin-top: 4px;
 }
 
+/* Label manager (label cleanup): a titled overlay with one row per label in
+   use, each carrying its usage count and the two ledger-wide transitions. */
+.modalHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modalHeader > .modalTitle {
+  flex: 1;
+  min-width: 0;
+}
+
+.tagManageList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tagManageRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsh-tb-control-radius);
+}
+
+.tagManageName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.tagManageCount {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagManageInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tagManageMerge {
+  flex: 1 0 100%;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 /* --- form sections (create/edit dialog) --------------------------------------
  * The task form groups its configuration into collapsible regions so the
  * dialog fits without a scrollbar: only the content region starts open, and

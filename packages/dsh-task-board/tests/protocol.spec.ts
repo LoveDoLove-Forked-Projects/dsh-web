@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createTask } from '../src/core/tasks.ts'
+import { TAG_NAME_MAX_LENGTH, createTask } from '../src/core/tasks.ts'
 import { parseActionEnvelope } from '../src/protocol.ts'
 
 describe('task-board action protocol', () => {
@@ -209,3 +209,45 @@ describe('task-board action protocol', () => {
     expect(parsed.action.tasks[0].goalRun).toBe(false)
   })
 })
+
+describe('label management actions', () => {
+  it('operator renaming a label on the wire gets it carried, and a blank or over-long name rejected', () => {
+    // Given a rename envelope, a blank name and a name past the tag cap
+    // When each is parsed
+    // Then only the well-formed rename survives
+    const accepted = parseActionEnvelope({
+      requestId: 'rename-tag',
+      action: { kind: 'rename-tag', from: 'ship', to: 'release' },
+    })
+    expect(accepted?.action.kind).toBe('rename-tag')
+    expect(accepted?.action).toMatchObject({ from: 'ship', to: 'release' })
+    expect(parseActionEnvelope({
+      requestId: 'rename-tag-blank',
+      action: { kind: 'rename-tag', from: 'ship', to: '   ' },
+    })).toBeUndefined()
+    expect(parseActionEnvelope({
+      requestId: 'rename-tag-long',
+      action: { kind: 'rename-tag', from: 'ship', to: 'x'.repeat(TAG_NAME_MAX_LENGTH + 1) },
+    })).toBeUndefined()
+  })
+
+  it('operator deleting a label on the wire gets it carried, and an unnamed or extra-keyed action rejected', () => {
+    // Given a delete envelope, a blank name and an action carrying an unknown key
+    // When each is parsed
+    // Then only the well-formed delete survives
+    const accepted = parseActionEnvelope({
+      requestId: 'delete-tag',
+      action: { kind: 'delete-tag', name: 'ship' },
+    })
+    expect(accepted?.action.kind).toBe('delete-tag')
+    expect(parseActionEnvelope({
+      requestId: 'delete-tag-blank',
+      action: { kind: 'delete-tag', name: '' },
+    })).toBeUndefined()
+    expect(parseActionEnvelope({
+      requestId: 'delete-tag-extra',
+      action: { kind: 'delete-tag', name: 'ship', taskId: 'task-a' },
+    })).toBeUndefined()
+  })
+})
+

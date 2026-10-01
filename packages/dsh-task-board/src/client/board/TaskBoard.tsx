@@ -12,6 +12,7 @@ import { IconChevronLeft, IconPlus } from './icons.tsx'
 import { NewTaskModal } from './NewTaskModal.tsx'
 import { usePresence } from './overlay.tsx'
 import { STATUS_KEY } from './status-key.ts'
+import { TagManagerModal } from './TagManagerModal.tsx'
 import { TaskCard } from './TaskCard.tsx'
 import { TaskDetail } from './TaskDetail.tsx'
 
@@ -123,6 +124,7 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
   // them automatically, so searching a subtask title still finds it.
   const [hideSubtasks, setHideSubtasks] = useState(true)
   const [showNew, setShowNew] = useState(false)
+  const [showTagManager, setShowTagManager] = useState(false)
   // Project partition (#1536): '' means "all projects". A selected project
   // narrows the board and becomes the new-task form's default workspace.
   const [projectId, setProjectId] = useState('')
@@ -142,6 +144,7 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
   useEffect(() => { if (selected !== undefined) lastDetail.current = selected }, [selected])
   const detailTask = selected ?? lastDetail.current
   const newTaskPresence = usePresence(showNew)
+  const tagManagerPresence = usePresence(showTagManager)
   // Every label in use across the ledger (board and archive alike), so the
   // filter never loses an option just because its task was archived.
   const knownTags = collectKnownTags(snapshot.tasks)
@@ -353,6 +356,16 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
               </button>
             )
           })}
+          {/* The row can only shrink through the manager: without it a label
+              created once stays on the board forever. */}
+          <button
+            type="button"
+            className={css.linkButton}
+            data-dsh-part="tag-manage"
+            onClick={() => { setShowTagManager(true) }}
+          >
+            {t('board.tagManage')}
+          </button>
           {tagFilter.length > 0 && (
             <button type="button" className={css.linkButton} onClick={() => { setTagFilter([]) }}>
               {t('board.tagFilterClear')}
@@ -462,6 +475,13 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
           {...(projectId === '' ? {} : { defaultWorkspaceId: projectId })}
           onClose={() => { setShowNew(false) }}
           phase={newTaskPresence.phase}
+        />
+      )}
+      {tagManagerPresence.mounted && (
+        <TagManagerModal
+          controller={controller}
+          onClose={() => { setShowTagManager(false) }}
+          phase={tagManagerPresence.phase}
         />
       )}
     </div>

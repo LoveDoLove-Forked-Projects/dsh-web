@@ -939,3 +939,31 @@ describe('task-board ledger lock refusal text', () => {
     first.dispose()
   })
 })
+
+describe('HostTaskLedger label management', () => {
+  it('operator renaming and deleting labels rewrites every card and refuses an unknown label', () => {
+    // Given a ledger with two cards sharing one label
+    const root = tempRoot()
+    const ledger = new HostTaskLedger(root, () => NOW)
+    ledger.applyRequest('label-create-a', { kind: 'create', id: 'label-a', input: { title: 'A', description: '', prompt: 'a', tags: [{ name: 'ship' }] } })
+    ledger.applyRequest('label-create-b', { kind: 'create', id: 'label-b', input: { title: 'B', description: '', prompt: 'b', tags: [{ name: 'ship' }] } })
+    const before = ledger.state().revision
+
+    // When the operator renames the label
+    ledger.applyRequest('label-rename', { kind: 'rename-tag', from: 'ship', to: 'release' })
+
+    // Then both cards carry the new name and the revision moved exactly once
+    expect(ledger.state().tasks.map(entry => entry.tags?.map(tag => tag.name))).toEqual([['release'], ['release']])
+    expect(ledger.state().revision).toBe(before + 1)
+
+    // And renaming a label no card carries is refused
+    expect(() => ledger.applyRequest('label-rename-ghost', { kind: 'rename-tag', from: 'ghost', to: 'x' })).toThrow('label not found')
+
+    // When the operator deletes the label
+    ledger.applyRequest('label-delete', { kind: 'delete-tag', name: 'release' })
+
+    // Then no card carries a label any more
+    expect(ledger.state().tasks.map(entry => entry.tags)).toEqual([undefined, undefined])
+  })
+})
+
