@@ -284,6 +284,53 @@ describe('goal acceptance gate', () => {
     expect(qualityAttempts(verificationOf(fx.ledger))).toHaveLength(callsBeforeThird)
   })
 
+  it('user reading the final failure sees the baseline, every failing criterion and the judge findings, not only the total', async () => {
+    // Given: a judge that always fails the work AND reports a locatable finding
+    const fx = fixture()
+    const goal = goalDouble('active')
+    const gate = gateOver({
+      ledger: fx.ledger,
+      llm: judgeLlm({
+        raw: '<score_A> T </score_A>\n<score_B> T </score_B>\n<finding criterion="Error Signal Detection" evidence="TASK" action="rerun the failing command and read its stderr">the second tool result reports a failure the summary ignored</finding>',
+      }),
+      goal,
+    })
+    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+
+    // When: the cycle is spent
+    await gate(completion(agent))
+    const second = await gate(completion(agent))
+
+    // Then: the final reason carries the improvement material — the baseline
+    // comparison, the failing criteria, and the judge's located finding — and
+    // the goal block the run ends with repeats them.
+    const reason = (second as { kind: 'deny', reason: string }).reason
+    expect(reason).toContain('空工作基线')
+    expect(reason).toContain('Error Signal Detection')
+    expect(reason).toContain('可定位问题')
+    expect(reason).toContain('the second tool result reports a failure the summary ignored')
+    expect(reason).toContain('rerun the failing command and read its stderr')
+    expect(goal.blocks[0]).toContain('the second tool result reports a failure the summary ignored')
+    const verification = verificationOf(fx.ledger)
+    expect(verification.failedReason).toContain('the second tool result reports a failure the summary ignored')
+  })
+
+  it('a final failure without findings tells the agent where to look instead of staying silent', async () => {
+    // Given: a judge that fails the work without reporting any finding
+    const fx = fixture()
+    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'T' }), goal: goalDouble('active') })
+    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+
+    // When: the cycle is spent
+    await gate(completion(agent))
+    const second = await gate(completion(agent))
+
+    // Then: the reason still points the agent at the criteria and the evidence.
+    const reason = (second as { kind: 'deny', reason: string }).reason
+    expect(reason).toContain('本次验收没有记录可定位的问题')
+    expect(reason).toContain('未达标判据')
+  })
+
   it('user claiming completion twice at once sees one acceptance, not two', async () => {
     // Given: a slow judge and a session already bound to the execution
     const fx = fixture()
