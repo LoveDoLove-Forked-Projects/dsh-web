@@ -51,7 +51,7 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board-github
 
 ## 在界面里配置
 
-打开 Web GUI 设置页，找到 **GitHub Issues 同步** 卡片。常规配置全部在卡片里完成，不用改 profile patch，也不用重启：
+打开 Web GUI 设置页，在 Web 插件里找到 **任务看板** 卡片：**GitHub Issues 同步** 区块就渲染在它内部——本扩展是这块看板的提供方，配置自然与看板同处一处。关闭该区块的总开关会隐藏仓库与凭据表单（区块本身保留，随时可以重新打开）；常规配置全部在区块里完成，不用改 profile patch，也不用重启：
 
 1. **粘贴 GitHub Token** 并保存。令牌只发给本机宿主一次，存进 DSH 凭据库（与 Models 页存 API Key 是同一处），浏览器不会读回；一个只有仓库读权限（contents / issues / pull requests）的 fine-grained token 就够用。如果不想把令牌放进凭据库，也可以改用环境变量：`tokenEnv` 指定的变量名（默认 `GITHUB_TOKEN`）或 `GH_TOKEN`；卡片会显示当前用的是哪种来源，以及凭据库是否可写。
 2. **添加要同步的仓库**：输入 `owner/repo`，或直接粘贴 GitHub 链接 / SSH 远程地址，并可顺便指定该仓库使用的纳入标签与纳入指派账号。issue 带该标签、**或**被指派给该登录时就会成为看板卡片——在指派栏填 `@me` 即可跟随你自己的指派，不必再给 issue 打标签。

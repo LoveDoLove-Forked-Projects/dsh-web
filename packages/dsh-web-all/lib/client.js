@@ -9745,7 +9745,6 @@ window.__ModuleLoader__.load({
 		}
 		/** Label-manager overlay. */
 		function TagManagerModal({ controller, onClose, phase = "open" }) {
-			const dialog = useDialog(onClose, phase);
 			/** The label whose row is being renamed, and the draft name. */
 			const [editing, setEditing] = (0, react.useState)(void 0);
 			const [draft, setDraft] = (0, react.useState)("");
@@ -9753,6 +9752,15 @@ window.__ModuleLoader__.load({
 			const [error, setError] = (0, react.useState)(void 0);
 			const [confirmDelete, setConfirmDelete] = (0, react.useState)(void 0);
 			const confirmPresence = usePresence(confirmDelete !== void 0);
+			const dismiss = () => {
+				if (editing !== void 0) {
+					setEditing(void 0);
+					setError(void 0);
+					return;
+				}
+				onClose();
+			};
+			const dialog = useDialog(dismiss, phase);
 			const snapshot = controller.getSnapshot();
 			const rows = (0, react.useMemo)(() => tagUsage(snapshot.tasks), [snapshot.tasks]);
 			const deleting = rows.find((row) => row.name === confirmDelete);
@@ -9839,10 +9847,6 @@ window.__ModuleLoader__.load({
 												},
 												onKeyDown: (event) => {
 													if (event.key === "Enter") submitRename(row.name);
-													if (event.key === "Escape") {
-														event.stopPropagation();
-														setEditing(void 0);
-													}
 												}
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -16335,28 +16339,48 @@ window.__ModuleLoader__.load({
 		}
 		/**
 		* Register the configuration section into the seat the board's settings card
-		* renders. A seat that refuses the contribution is reported and leaves the rest
-		* of the extension working.
+		* renders.
+		*
+		* The registration goes through the seat's OWN declaration lifecycle
+		* (`slots.inject`), not a one-shot `register`: the board's card declares the
+		* seat, and re-declares it whenever it moves between plugin-card seats (the
+		* family group loading after boot is the normal case). Re-declaring RELEASES
+		* the seat's declarations together with every entry registered in it, so a
+		* one-shot registration is silently dropped — the section then never renders
+		* while nothing reports an error. Following the declaration epoch re-registers
+		* the contribution on every declaration and drops it on every release.
+		*
+		* A seat that refuses the contribution is reported and leaves the rest of the
+		* extension working.
 		* @param ctx - the dependency-scoped context (slot registry).
 		* @param seat - the contribution to register.
 		* @returns disposer releasing the registration.
 		*/
 		function registerSettingsSection(ctx, seat) {
 			const slots = ctx.slots;
+			const register = () => {
+				try {
+					const dispose = slots.register({
+						name: TASK_BOARD_SETTINGS_SECTION,
+						id: GITHUB_EXTENSION_ID,
+						locale: LOCALE_NS,
+						inject: seat.inject
+					}, seat.component);
+					return () => {
+						try {
+							dispose();
+						} catch {}
+					};
+				} catch (error) {
+					console.error("[dsh-task-board-github] provider settings section registration failed", error);
+					return () => {};
+				}
+			};
+			if (typeof slots.inject !== "function") return register();
 			try {
-				const dispose = slots.register({
-					name: TASK_BOARD_SETTINGS_SECTION,
-					id: GITHUB_EXTENSION_ID,
-					locale: LOCALE_NS,
-					inject: seat.inject
-				}, seat.component);
-				return () => {
-					try {
-						dispose();
-					} catch {}
-				};
+				return slots.inject(TASK_BOARD_SETTINGS_SECTION, register);
 			} catch (error) {
-				console.error("[dsh-task-board-github] provider settings section registration failed", error);
+				console.error("[dsh-task-board-github] provider settings section could not follow its seat", error);
 				return () => {};
 			}
 		}
