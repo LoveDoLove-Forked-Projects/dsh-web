@@ -182,7 +182,17 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://dsh-market.com/tryon/?skin=national-day</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://dsh-market.com/tryon/?skin=whale-fantasy</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://dsh-market.com/tryon/?skin=rainy-night</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
@@ -223,6 +233,11 @@
   </url>
   <url>
     <loc>https://dsh-market.com/tryon/?skin=war-thunder</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://dsh-market.com/tryon/?skin=meridian</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>

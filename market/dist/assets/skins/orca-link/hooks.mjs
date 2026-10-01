@@ -300,7 +300,19 @@ const SEGMENT_GAP_MS = 420
 const GROUP_GAP_MS = 640
 const GROUP_HOLD_MS = 20000
 
-const HEADLINE_SELECTOR = "[data-phase='hero'] [class*='headlineText']"
+/* The hero headline is the title text span inside the shell's title group.
+   The shell (dsh-client-ui-conversation EmptyHero.tsx) renders:
+     div.headline > span.titleGroup > (span  <- headline text
+                                       span.previewBadge)
+   An earlier shell exposed the text span as .headlineText; the class is gone,
+   so the old [class*='headlineText'] anchor matched nothing and the whole
+   typewriter stood down. Keep the legacy class as a first choice and fall back
+   to the group, then take its first child span -- the text, never the badge --
+   which is the node this controller writes textContent on. */
+const HEADLINE_SELECTOR = [
+  "[data-phase='hero'] [class*='headlineText']",
+  "[data-phase='hero'] [class*='titleGroup'] > span:first-child",
+].join(', ')
 
 function splitGraphemes(value) {
   if (typeof Intl.Segmenter === 'function') {
@@ -2599,7 +2611,7 @@ export default function defineSkinHooks() {
       /* ------------------------- settings overlay ----------------------- */
 
       const settingsOverlayDisposer = (() => {
-        const SETTINGS_DIALOG_SELECTOR = "[data-slot='sidebar.settings'] [role='dialog']"
+        const SETTINGS_DIALOG_SELECTOR = "[data-dsh-surface='settings']"
         const SETTINGS_OPEN_ATTRIBUTE = 'data-orca-settings-open'
         const CORDIS_PANEL_SELECTOR = "[data-slot='sidebar.footer.action'] [data-cordis-panel]"
         const CORDIS_OPEN_ATTRIBUTE = 'data-orca-cordis-panel-open'
