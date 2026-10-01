@@ -97,6 +97,8 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board
 
 ## 配置
 
+本插件的设置卡把选项组织成可折叠的分区——看板与运行行为、任务验收，以及提供方扩展（GitHub Issues 集成）贡献的分区。每个分区默认折叠，整张卡共用一次保存。
+
 | 键 | 默认值 | 行为 |
 | --- | --- | --- |
 | `enabled` | `true` | 启用 Host 服务与浏览器看板。 |

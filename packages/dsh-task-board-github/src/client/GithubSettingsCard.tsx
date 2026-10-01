@@ -112,6 +112,9 @@ export function GitHubSettingsSection(props: GitHubSettingsSectionProps) {
       t={t}
       titleKey="settings.title"
       descriptionKey="settings.description"
+      // Collapsed on arrival like the board card's own sections: the settings
+      // page opens as a topic list, and the integration's form is one topic.
+      defaultOpen={false}
       state={state}
       onSave={props.save}
       onDiscard={props.discard}

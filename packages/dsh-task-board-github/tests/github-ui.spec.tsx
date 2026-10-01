@@ -99,6 +99,19 @@ function render(element: React.ReactElement): HTMLElement {
   return container
 }
 
+/**
+ * Open a settings card's disclosure, which every settings card starts closed
+ * with: the card renders its rows only once the operator expands it.
+ * @param container - the container the card rendered into.
+ * @returns the header button that was toggled.
+ */
+function expandSettingsCard(container: HTMLElement): HTMLButtonElement {
+  const header = container.querySelector<HTMLButtonElement>('button[aria-expanded]')
+  if (header === null) throw new Error('the settings card disclosure did not render')
+  act(() => { header.click() })
+  return header
+}
+
 describe('GitHub UI integration', () => {
   it('operator reads the issue, its labels and its pull request from the provider detail seat', () => {
     // Given a card backed by a GitHub issue carrying ten labels and an open draft PR
@@ -265,8 +278,10 @@ describe('GitHub UI integration', () => {
       }],
     })
 
-    // When the section the board's settings card renders is mounted
+    // When the section the board's settings card renders is mounted and the
+    // operator opens it
     const container = render(<GitHubSettingsSection {...cardProps()} />)
+    expandSettingsCard(container)
 
     // Then the integration block inside it names itself, the repository,
     // its inclusion label, the auto-PR policy and the credential state
@@ -279,13 +294,34 @@ describe('GitHub UI integration', () => {
 
   it('operator with the extension switched off sees what turning it on would do, not a dead credential form', () => {
     // Given a section whose master switch draft is off
-    // When it renders
+    // When it renders and the operator opens it
     const container = render(<GitHubSettingsSection {...cardProps('false')} />)
+    expandSettingsCard(container)
 
     // Then the setup block is gone and the explanation stands in its place
     expect(container.querySelector('[data-dsh-part="github-settings"]')).toBeNull()
     expect(container.textContent).toContain(zh['settings.integrationOff'])
     // And the switch itself is still there to turn it back on
     expect(container.textContent).toContain(zh['settings.enabled'])
+  })
+
+  it('operator finds the integration card collapsed until they open it', () => {
+    // Given the extension section mounted in the board's settings card
+    const container = render(<GitHubSettingsSection {...cardProps()} />)
+
+    // When the operator has not opened the card yet
+    // Then its header is the only thing rendered, so the board card stays a
+    // short list of topics
+    const header = container.querySelector('button[aria-expanded]')
+    expect(header?.textContent).toContain(zh['settings.title'])
+    expect(header?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('#settings-task-board-github-enabled')).toBeNull()
+
+    // When the operator opens it
+    act(() => { (header as HTMLButtonElement).click() })
+
+    // Then the switches it configures are editable and show the draft they hold
+    expect(header?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('#settings-task-board-github-enabled')?.textContent).toBe(zh['settings.inherit'])
   })
 })

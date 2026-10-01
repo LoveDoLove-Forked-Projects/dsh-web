@@ -2,24 +2,10 @@
  * Local styles of the task-board settings card.
  *
  * The card's chrome belongs to the shared family slice
- * (`settings-card.module.css`, generated); this file owns only the
- * verification block this package adds on top of it, so the section keeps its
- * own hierarchy — a divider, a section heading, quiet notes and one error line
- * — on theme tokens instead of inline literals.
+ * (`settings-card.module.css`, generated); this file owns only the nested
+ * disclosure list and the acceptance block's quiet notes, on theme tokens
+ * instead of inline literals.
  */
-
-.section {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--dsw-alias-separator-primary);
-}
-
-.sectionTitle {
-  margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-}
 
 .note {
   margin: 4px 0;
@@ -40,10 +26,14 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Host for the sections other plugins contribute into this card (the GitHub
-   Issues extension contributes a nested settings card). Empty draws nothing;
-   the contributed card keeps its own chrome, border and save row. */
-.providerSections {
+/* The nested disclosure cards of this card: the board and its runtime
+   behavior, goal acceptance, and the sections a provider contributes (the
+   GitHub Issues extension contributes one). The gap keeps the stacked card
+   borders apart; an empty list draws nothing. */
+.nestedCards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   list-style: none;
   margin: 0;
   padding: 0;

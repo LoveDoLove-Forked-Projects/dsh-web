@@ -97,6 +97,8 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board
 
 ## Configuration
 
+This plugin's settings card groups its options into collapsible sections — the board and its runtime behavior, task acceptance, and the section a provider extension contributes (the GitHub Issues integration). Every section starts collapsed, and one save writes them all.
+
 | Key | Default | Behavior |
 | --- | --- | --- |
 | `enabled` | `true` | Enables the Host service and browser board. |

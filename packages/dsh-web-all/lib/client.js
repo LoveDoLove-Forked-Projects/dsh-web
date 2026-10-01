@@ -7630,6 +7630,7 @@ window.__ModuleLoader__.load({
 			"settings.title": "任务看板",
 			"settings.description": "控制 Host 任务看板、agent 播报与运行期间的系统空闲睡眠保护。",
 			"settings.enabled": "启用任务看板",
+			"settings.enabledCardHint": "看板总开关及其运行行为：agent 播报、系统空闲睡眠保护、子任务层级。",
 			"settings.enabledHint": "关闭后隐藏侧边栏入口与看板视图，并注销 task_board_* agent 工具；开启时任何会话都可以通过这些工具读写看板、子任务与定时计划。",
 			"settings.announceToAgent": "向 agent 播报任务看板",
 			"settings.announceToAgentHint": "开启：每条 agent 系统提示都会包含本看板的说明；关闭：不播报，agent 仅在用户主动提及时了解看板。",
@@ -7659,6 +7660,7 @@ window.__ModuleLoader__.load({
 			"settings.maxSubtaskDepthOption": "{depth} 层",
 			"settings.goalVerificationTitle": "任务验收",
 			"settings.goalVerification": "启用任务验收",
+			"settings.goalVerificationCardHint": "goal 形式任务的完成前验收：开关、裁判模型与判据阈值。",
 			"settings.goalVerificationHint": "默认打开：以 goal 形式执行的任务在 update_goal 标记完成前必须先通过一次验收（三项 coding 判据（本分区面向工程任务）、阈值 0.65、每项两轮且交换 A/B 位置，实际工作须胜过空工作基线）。首次不通过会把总分、逐项分数与可定位问题反馈给 agent 修复，同一执行最多两次验收；第二次仍不通过则本次执行判失败。仅作用于本插件以 goal 形式执行的任务，不影响普通聊天，也不影响显式 goalRun:false 的单回合任务。每次验收都会真实调用裁判模型并消耗额度。",
 			"settings.goalVerificationModel": "验收模型",
 			"settings.goalVerificationModelHint": "留空即继承宿主：使用宿主模型目录的默认路由，而不是任务卡钉住的执行模型。",
@@ -7964,6 +7966,7 @@ window.__ModuleLoader__.load({
 			"settings.title": "Task Board",
 			"settings.description": "Configure the Host task board, agent announcement, and idle-system-sleep protection while work is pending.",
 			"settings.enabled": "Enable the task board",
+			"settings.enabledCardHint": "The board master switch and its runtime behavior: agent announcement, idle-sleep protection and subtask depth.",
 			"settings.enabledHint": "When off, the sidebar entry and board view are hidden and the task_board_* agent tools are unregistered; while on, any session can read and drive the board, its subtasks and its schedules through those tools.",
 			"settings.announceToAgent": "Announce the task board to agents",
 			"settings.announceToAgentHint": "On: every agent system prompt includes a note about this board. Off: no announcement; agents learn about the board only when you mention it.",
@@ -7993,6 +7996,7 @@ window.__ModuleLoader__.load({
 			"settings.maxSubtaskDepthOption": "{depth} levels",
 			"settings.goalVerificationTitle": "Task acceptance",
 			"settings.goalVerification": "Enable task acceptance",
+			"settings.goalVerificationCardHint": "Acceptance before a goal-form task completes: the switch, the judge model and the criteria threshold.",
 			"settings.goalVerificationHint": "On by default: a task executed in goal form must pass one acceptance before update_goal may mark it complete (the three coding criteria, aimed at engineering tasks, a 0.65 threshold, two rounds per criterion with the A/B slots swapped, and the work must beat the empty-work baseline). A first failure returns the total, the per-criterion scores and the located findings to the fixing agent, and one execution may accept at most twice; a second failure fails that execution. It affects only this board goal-form executions, never plain chat and never a task pinned to goalRun: false. Every acceptance really calls the judge model and spends quota.",
 			"settings.goalVerificationModel": "Judge model",
 			"settings.goalVerificationModelHint": "Blank inherits the host: the default route of the host model catalog, never the card pinned execution model.",
@@ -12587,7 +12591,7 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region \0dsh-css:packages/dsh-task-board/src/client/board-settings.module.css.mjs
-		const css$13 = ".bQNdXW_section{border-top:1px solid var(--dsw-alias-separator-primary);margin-top:16px;padding-top:12px}.bQNdXW_sectionTitle{color:var(--dsw-alias-label-primary);margin:0 0 8px;font-size:13px;font-weight:600}.bQNdXW_note{color:var(--dsw-alias-label-secondary);margin:4px 0;font-size:12px}.bQNdXW_error{color:var(--dsw-alias-state-error-primary);margin:4px 0;font-size:12px}.bQNdXW_resolvedList{color:var(--dsw-alias-label-secondary);margin:4px 0 8px;padding-left:16px;font-size:12px}.bQNdXW_providerSections{margin:0;padding:0;list-style:none}";
+		const css$13 = ".bQNdXW_note{color:var(--dsw-alias-label-secondary);margin:4px 0;font-size:12px}.bQNdXW_error{color:var(--dsw-alias-state-error-primary);margin:4px 0;font-size:12px}.bQNdXW_resolvedList{color:var(--dsw-alias-label-secondary);margin:4px 0 8px;padding-left:16px;font-size:12px}.bQNdXW_nestedCards{flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;display:flex}";
 		const tagId$13 = "@linxin666/dsh-web-all/packages/dsh-task-board/src/client/board-settings.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$13) + "]") === null) {
 			const tag = document.createElement("style");
@@ -12598,11 +12602,9 @@ window.__ModuleLoader__.load({
 		}
 		var board_settings_module_css_default = {
 			"error": "bQNdXW_error",
+			"nestedCards": "bQNdXW_nestedCards",
 			"note": "bQNdXW_note",
-			"providerSections": "bQNdXW_providerSections",
-			"resolvedList": "bQNdXW_resolvedList",
-			"section": "bQNdXW_section",
-			"sectionTitle": "bQNdXW_sectionTitle"
+			"resolvedList": "bQNdXW_resolvedList"
 		};
 		//#endregion
 		//#region ../dsh-task-board/src/client/TaskBoardSettingsCard.tsx
@@ -12776,6 +12778,15 @@ window.__ModuleLoader__.load({
 				invalidLabel: t("settings.invalidNumber"),
 				disabled
 			};
+			const nestedShell = {
+				available: true,
+				exposed: true,
+				writable: state.writable,
+				dirty: false,
+				invalid: state.invalid,
+				saving: state.saving,
+				failed: false
+			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(PluginSettingsCard$3, {
 				t,
 				titleKey: "settings.title",
@@ -12787,157 +12798,174 @@ window.__ModuleLoader__.load({
 				onSave: props.save,
 				onDiscard: props.discard,
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
-						id: "settings-task-board-enabled",
-						label: t("settings.enabled"),
-						hint: t("settings.enabledHint"),
-						inheritLabel: t("settings.inherit"),
-						onLabel: t("settings.on"),
-						offLabel: t("settings.off"),
-						...fieldProps,
-						...state.enabled,
-						onEdit: (text) => {
-							props.edit("enabled", text);
-						},
-						onReset: () => {
-							props.resetField("enabled");
-						}
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
-						id: "settings-task-board-announce",
-						label: t("settings.announceToAgent"),
-						hint: t("settings.announceToAgentHint"),
-						inheritLabel: t("settings.inherit"),
-						onLabel: t("settings.on"),
-						offLabel: t("settings.off"),
-						...fieldProps,
-						...state.announceToAgent,
-						onEdit: (text) => {
-							props.edit("announceToAgent", text);
-						},
-						onReset: () => {
-							props.resetField("announceToAgent");
-						}
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
-						id: "settings-task-board-prevent-idle-sleep",
-						label: t("settings.preventIdleSleep"),
-						hint: t("settings.preventIdleSleepHint"),
-						inheritLabel: t("settings.inherit"),
-						onLabel: t("settings.on"),
-						offLabel: t("settings.off"),
-						...fieldProps,
-						...state.preventIdleSleep,
-						onEdit: (text) => {
-							props.edit("preventIdleSleep", text);
-						},
-						onReset: () => {
-							props.resetField("preventIdleSleep");
-						}
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField$1, {
-						id: "settings-task-board-subtask-depth",
-						label: t("settings.maxSubtaskDepth"),
-						hint: t("settings.maxSubtaskDepthHint"),
-						inheritLabel: t("settings.inherit"),
-						choices: SUBTASK_DEPTH_CHOICES.map((value) => ({
-							value,
-							label: t("settings.maxSubtaskDepthOption", { depth: value })
-						})),
-						...fieldProps,
-						...state.maxSubtaskDepth,
-						onEdit: (text) => {
-							props.edit("maxSubtaskDepth", text);
-						},
-						onReset: () => {
-							props.resetField("maxSubtaskDepth");
-						}
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: board_settings_module_css_default.section,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("ul", {
+						className: board_settings_module_css_default.nestedCards,
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", {
-								className: board_settings_module_css_default.sectionTitle,
-								children: t("settings.goalVerificationTitle")
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
-								id: "settings-task-board-goal-verification",
-								label: t("settings.goalVerification"),
-								hint: t("settings.goalVerificationHint"),
-								inheritLabel: t("settings.inherit"),
-								onLabel: t("settings.on"),
-								offLabel: t("settings.off"),
-								...fieldProps,
-								...state.goalVerification,
-								onEdit: (text) => {
-									props.edit("goalVerification", text);
-								},
-								onReset: () => {
-									props.resetField("goalVerification");
-								}
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField$1, {
-								id: "settings-task-board-goal-verification-model",
-								label: t("settings.goalVerificationModel"),
-								hint: t("settings.goalVerificationModelHint"),
-								inheritLabel: t("settings.inherit"),
-								choices: modelChoices,
-								...fieldProps,
-								...state.goalVerificationModel,
-								onEdit: (text) => {
-									props.edit("goalVerificationModel", text);
-								},
-								onReset: () => {
-									props.resetField("goalVerificationModel");
-								}
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField$1, {
-								id: "settings-task-board-goal-verification-effort",
-								label: t("settings.goalVerificationEffort"),
-								hint: t("settings.goalVerificationEffortHint"),
-								inheritLabel: t("settings.inherit"),
-								choices: effortChoices,
-								...fieldProps,
-								...state.goalVerificationReasoningEffort,
-								onEdit: (text) => {
-									props.edit("goalVerificationReasoningEffort", text);
-								},
-								onReset: () => {
-									props.resetField("goalVerificationReasoningEffort");
-								}
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: board_settings_module_css_default.note,
-								children: t("settings.goalVerificationResolved")
-							}),
-							preview.route === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: board_settings_module_css_default.error,
-								children: t("settings.goalVerificationRouteMissing")
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("ul", {
-								className: board_settings_module_css_default.resolvedList,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(PluginSettingsCard$3, {
+								t,
+								titleKey: "settings.enabled",
+								descriptionKey: "settings.enabledCardHint",
+								defaultOpen: false,
+								hideFooter: true,
+								state: nestedShell,
+								onSave: props.save,
+								onDiscard: props.discard,
 								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: t("settings.goalVerificationResolvedModel", { model: preview.route.provider + "/" + preview.route.model }) }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: preview.route.reasoningEffort === void 0 ? t("settings.goalVerificationResolvedNoEffort") : t("settings.goalVerificationResolvedEffort", { effort: preview.route.reasoningEffort }) }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: t("settings.goalVerificationResolvedSource", { source: preview.modelSource === "inherit" ? t("settings.goalVerificationSourceInherit") : t("settings.goalVerificationSourceExplicit") }) }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: t("settings.goalVerificationResolvedPreset", { threshold: String(preview.threshold) }) })
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
+										id: "settings-task-board-enabled",
+										label: t("settings.enabled"),
+										hint: t("settings.enabledHint"),
+										inheritLabel: t("settings.inherit"),
+										onLabel: t("settings.on"),
+										offLabel: t("settings.off"),
+										...fieldProps,
+										...state.enabled,
+										onEdit: (text) => {
+											props.edit("enabled", text);
+										},
+										onReset: () => {
+											props.resetField("enabled");
+										}
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
+										id: "settings-task-board-announce",
+										label: t("settings.announceToAgent"),
+										hint: t("settings.announceToAgentHint"),
+										inheritLabel: t("settings.inherit"),
+										onLabel: t("settings.on"),
+										offLabel: t("settings.off"),
+										...fieldProps,
+										...state.announceToAgent,
+										onEdit: (text) => {
+											props.edit("announceToAgent", text);
+										},
+										onReset: () => {
+											props.resetField("announceToAgent");
+										}
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
+										id: "settings-task-board-prevent-idle-sleep",
+										label: t("settings.preventIdleSleep"),
+										hint: t("settings.preventIdleSleepHint"),
+										inheritLabel: t("settings.inherit"),
+										onLabel: t("settings.on"),
+										offLabel: t("settings.off"),
+										...fieldProps,
+										...state.preventIdleSleep,
+										onEdit: (text) => {
+											props.edit("preventIdleSleep", text);
+										},
+										onReset: () => {
+											props.resetField("preventIdleSleep");
+										}
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField$1, {
+										id: "settings-task-board-subtask-depth",
+										label: t("settings.maxSubtaskDepth"),
+										hint: t("settings.maxSubtaskDepthHint"),
+										inheritLabel: t("settings.inherit"),
+										choices: SUBTASK_DEPTH_CHOICES.map((value) => ({
+											value,
+											label: t("settings.maxSubtaskDepthOption", { depth: value })
+										})),
+										...fieldProps,
+										...state.maxSubtaskDepth,
+										onEdit: (text) => {
+											props.edit("maxSubtaskDepth", text);
+										},
+										onReset: () => {
+											props.resetField("maxSubtaskDepth");
+										}
+									})
 								]
 							}),
-							preview.effortFallback !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: board_settings_module_css_default.note,
-								children: preview.effortFallback.resolved === void 0 ? t("settings.goalVerificationEffortFallbackNone", { requested: preview.effortFallback.requested }) : t("settings.goalVerificationEffortFallback", {
-									requested: preview.effortFallback.requested,
-									resolved: preview.effortFallback.resolved
-								})
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(PluginSettingsCard$3, {
+								t,
+								titleKey: "settings.goalVerificationTitle",
+								descriptionKey: "settings.goalVerificationCardHint",
+								defaultOpen: false,
+								hideFooter: true,
+								state: nestedShell,
+								onSave: props.save,
+								onDiscard: props.discard,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
+										id: "settings-task-board-goal-verification",
+										label: t("settings.goalVerification"),
+										hint: t("settings.goalVerificationHint"),
+										inheritLabel: t("settings.inherit"),
+										onLabel: t("settings.on"),
+										offLabel: t("settings.off"),
+										...fieldProps,
+										...state.goalVerification,
+										onEdit: (text) => {
+											props.edit("goalVerification", text);
+										},
+										onReset: () => {
+											props.resetField("goalVerification");
+										}
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField$1, {
+										id: "settings-task-board-goal-verification-model",
+										label: t("settings.goalVerificationModel"),
+										hint: t("settings.goalVerificationModelHint"),
+										inheritLabel: t("settings.inherit"),
+										choices: modelChoices,
+										...fieldProps,
+										...state.goalVerificationModel,
+										onEdit: (text) => {
+											props.edit("goalVerificationModel", text);
+										},
+										onReset: () => {
+											props.resetField("goalVerificationModel");
+										}
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField$1, {
+										id: "settings-task-board-goal-verification-effort",
+										label: t("settings.goalVerificationEffort"),
+										hint: t("settings.goalVerificationEffortHint"),
+										inheritLabel: t("settings.inherit"),
+										choices: effortChoices,
+										...fieldProps,
+										...state.goalVerificationReasoningEffort,
+										onEdit: (text) => {
+											props.edit("goalVerificationReasoningEffort", text);
+										},
+										onReset: () => {
+											props.resetField("goalVerificationReasoningEffort");
+										}
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: board_settings_module_css_default.note,
+										children: t("settings.goalVerificationResolved")
+									}),
+									preview.route === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: board_settings_module_css_default.error,
+										children: t("settings.goalVerificationRouteMissing")
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("ul", {
+										className: board_settings_module_css_default.resolvedList,
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: t("settings.goalVerificationResolvedModel", { model: preview.route.provider + "/" + preview.route.model }) }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: preview.route.reasoningEffort === void 0 ? t("settings.goalVerificationResolvedNoEffort") : t("settings.goalVerificationResolvedEffort", { effort: preview.route.reasoningEffort }) }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: t("settings.goalVerificationResolvedSource", { source: preview.modelSource === "inherit" ? t("settings.goalVerificationSourceInherit") : t("settings.goalVerificationSourceExplicit") }) }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: t("settings.goalVerificationResolvedPreset", { threshold: String(preview.threshold) }) })
+										]
+									}),
+									preview.effortFallback !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: board_settings_module_css_default.note,
+										children: preview.effortFallback.resolved === void 0 ? t("settings.goalVerificationEffortFallbackNone", { requested: preview.effortFallback.requested }) : t("settings.goalVerificationEffortFallback", {
+											requested: preview.effortFallback.requested,
+											resolved: preview.effortFallback.resolved
+										})
+									}),
+									stagedSettings.model.trim() !== "" && parseModelRoute(stagedSettings.model) === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: board_settings_module_css_default.note,
+										children: t("settings.goalVerificationModelInvalid")
+									})
+								]
 							}),
-							stagedSettings.model.trim() !== "" && parseModelRoute(stagedSettings.model) === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: board_settings_module_css_default.note,
-								children: t("settings.goalVerificationModelInvalid")
-							})
+							renderSlot("task-board.settings.section", { dispatch })
 						]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
-						className: board_settings_module_css_default.providerSections,
-						children: renderSlot("task-board.settings.section", { dispatch })
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: t("settings.powerStatus", {
 						platform: power?.platform ?? t("settings.powerUnknown"),
@@ -16119,6 +16147,7 @@ window.__ModuleLoader__.load({
 				t,
 				titleKey: "settings.title",
 				descriptionKey: "settings.description",
+				defaultOpen: false,
 				state,
 				onSave: props.save,
 				onDiscard: props.discard,

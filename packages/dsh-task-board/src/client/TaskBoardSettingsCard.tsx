@@ -254,6 +254,18 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
     invalidLabel: t('settings.invalidNumber'),
     disabled,
   }
+  // Chrome state of the nested disclosure cards below: they stage into this
+  // card's form and are written by its one save, so they carry no footer and no
+  // unsaved pill of their own (the outer header owns the pill).
+  const nestedShell: CardShell = {
+    available: true,
+    exposed: true,
+    writable: state.writable,
+    dirty: false,
+    invalid: state.invalid,
+    saving: state.saving,
+    failed: false,
+  }
   return (
     <PluginSettingsCard
       t={t}
@@ -266,61 +278,86 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
       onSave={props.save}
       onDiscard={props.discard}
     >
-      <BooleanField
-        id="settings-task-board-enabled"
-        label={t('settings.enabled')}
-        hint={t('settings.enabledHint')}
-        inheritLabel={t('settings.inherit')}
-        onLabel={t('settings.on')}
-        offLabel={t('settings.off')}
-        {...fieldProps}
-        {...state.enabled}
-        onEdit={(text) => { props.edit('enabled', text) }}
-        onReset={() => { props.resetField('enabled') }}
-      />
-      <BooleanField
-        id="settings-task-board-announce"
-        label={t('settings.announceToAgent')}
-        hint={t('settings.announceToAgentHint')}
-        inheritLabel={t('settings.inherit')}
-        onLabel={t('settings.on')}
-        offLabel={t('settings.off')}
-        {...fieldProps}
-        {...state.announceToAgent}
-        onEdit={(text) => { props.edit('announceToAgent', text) }}
-        onReset={() => { props.resetField('announceToAgent') }}
-      />
-      <BooleanField
-        id="settings-task-board-prevent-idle-sleep"
-        label={t('settings.preventIdleSleep')}
-        hint={t('settings.preventIdleSleepHint')}
-        inheritLabel={t('settings.inherit')}
-        onLabel={t('settings.on')}
-        offLabel={t('settings.off')}
-        {...fieldProps}
-        {...state.preventIdleSleep}
-        onEdit={(text) => { props.edit('preventIdleSleep', text) }}
-        onReset={() => { props.resetField('preventIdleSleep') }}
-      />
-      <ChoiceField
-        id="settings-task-board-subtask-depth"
-        label={t('settings.maxSubtaskDepth')}
-        hint={t('settings.maxSubtaskDepthHint')}
-        inheritLabel={t('settings.inherit')}
-        choices={SUBTASK_DEPTH_CHOICES.map(value => ({
-          value,
-          label: t('settings.maxSubtaskDepthOption', { depth: value }),
-        }))}
-        {...fieldProps}
-        {...state.maxSubtaskDepth}
-        onEdit={(text) => { props.edit('maxSubtaskDepth', text) }}
-        onReset={() => { props.resetField('maxSubtaskDepth') }}
-      />
+      {/* The board's own settings are nested disclosure cards, so an expanded
+          card reads as a short topic list: the board and its runtime behavior,
+          goal acceptance, and whatever a provider contributes (the GitHub
+          Issues integration registers into the seat rendered last). Every one
+          of them starts collapsed and shares this card's single save. */}
+      <ul className={settingsCss.nestedCards}>
+        <PluginSettingsCard
+          t={t}
+          titleKey="settings.enabled"
+          descriptionKey="settings.enabledCardHint"
+          defaultOpen={false}
+          hideFooter
+          state={nestedShell}
+          onSave={props.save}
+          onDiscard={props.discard}
+        >
+          <BooleanField
+            id="settings-task-board-enabled"
+            label={t('settings.enabled')}
+            hint={t('settings.enabledHint')}
+            inheritLabel={t('settings.inherit')}
+            onLabel={t('settings.on')}
+            offLabel={t('settings.off')}
+            {...fieldProps}
+            {...state.enabled}
+            onEdit={(text) => { props.edit('enabled', text) }}
+            onReset={() => { props.resetField('enabled') }}
+          />
+          <BooleanField
+            id="settings-task-board-announce"
+            label={t('settings.announceToAgent')}
+            hint={t('settings.announceToAgentHint')}
+            inheritLabel={t('settings.inherit')}
+            onLabel={t('settings.on')}
+            offLabel={t('settings.off')}
+            {...fieldProps}
+            {...state.announceToAgent}
+            onEdit={(text) => { props.edit('announceToAgent', text) }}
+            onReset={() => { props.resetField('announceToAgent') }}
+          />
+          <BooleanField
+            id="settings-task-board-prevent-idle-sleep"
+            label={t('settings.preventIdleSleep')}
+            hint={t('settings.preventIdleSleepHint')}
+            inheritLabel={t('settings.inherit')}
+            onLabel={t('settings.on')}
+            offLabel={t('settings.off')}
+            {...fieldProps}
+            {...state.preventIdleSleep}
+            onEdit={(text) => { props.edit('preventIdleSleep', text) }}
+            onReset={() => { props.resetField('preventIdleSleep') }}
+          />
+          <ChoiceField
+            id="settings-task-board-subtask-depth"
+            label={t('settings.maxSubtaskDepth')}
+            hint={t('settings.maxSubtaskDepthHint')}
+            inheritLabel={t('settings.inherit')}
+            choices={SUBTASK_DEPTH_CHOICES.map(value => ({
+              value,
+              label: t('settings.maxSubtaskDepthOption', { depth: value }),
+            }))}
+            {...fieldProps}
+            {...state.maxSubtaskDepth}
+            onEdit={(text) => { props.edit('maxSubtaskDepth', text) }}
+            onReset={() => { props.resetField('maxSubtaskDepth') }}
+          />
+        </PluginSettingsCard>
 
-      <div className={settingsCss.section}>
-        <h4 className={settingsCss.sectionTitle}>{t('settings.goalVerificationTitle')}</h4>
-        <BooleanField
-          id="settings-task-board-goal-verification"
+        <PluginSettingsCard
+          t={t}
+          titleKey="settings.goalVerificationTitle"
+          descriptionKey="settings.goalVerificationCardHint"
+          defaultOpen={false}
+          hideFooter
+          state={nestedShell}
+          onSave={props.save}
+          onDiscard={props.discard}
+        >
+          <BooleanField
+            id="settings-task-board-goal-verification"
           label={t('settings.goalVerification')}
           hint={t('settings.goalVerificationHint')}
           inheritLabel={t('settings.inherit')}
@@ -331,70 +368,71 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
           onEdit={(text) => { props.edit('goalVerification', text) }}
           onReset={() => { props.resetField('goalVerification') }}
         />
-        <ChoiceField
-          id="settings-task-board-goal-verification-model"
-          label={t('settings.goalVerificationModel')}
-          hint={t('settings.goalVerificationModelHint')}
-          inheritLabel={t('settings.inherit')}
-          choices={modelChoices}
-          {...fieldProps}
-          {...state.goalVerificationModel}
-          onEdit={(text) => { props.edit('goalVerificationModel', text) }}
-          onReset={() => { props.resetField('goalVerificationModel') }}
-        />
-        <ChoiceField
-          id="settings-task-board-goal-verification-effort"
-          label={t('settings.goalVerificationEffort')}
-          hint={t('settings.goalVerificationEffortHint')}
-          inheritLabel={t('settings.inherit')}
-          choices={effortChoices}
-          {...fieldProps}
-          {...state.goalVerificationReasoningEffort}
-          onEdit={(text) => { props.edit('goalVerificationReasoningEffort', text) }}
-          onReset={() => { props.resetField('goalVerificationReasoningEffort') }}
-        />
-        <p className={settingsCss.note}>{t('settings.goalVerificationResolved')}</p>
-        {preview.route === undefined
-          ? <p className={settingsCss.error}>{t('settings.goalVerificationRouteMissing')}</p>
-          : (
-            <ul className={settingsCss.resolvedList}>
-              <li>{t('settings.goalVerificationResolvedModel', { model: preview.route.provider + '/' + preview.route.model })}</li>
-              <li>
-                {preview.route.reasoningEffort === undefined
-                  ? t('settings.goalVerificationResolvedNoEffort')
-                  : t('settings.goalVerificationResolvedEffort', { effort: preview.route.reasoningEffort })}
-              </li>
-              <li>
-                {t('settings.goalVerificationResolvedSource', {
-                  source: preview.modelSource === 'inherit'
-                    ? t('settings.goalVerificationSourceInherit')
-                    : t('settings.goalVerificationSourceExplicit'),
+          <ChoiceField
+            id="settings-task-board-goal-verification-model"
+            label={t('settings.goalVerificationModel')}
+            hint={t('settings.goalVerificationModelHint')}
+            inheritLabel={t('settings.inherit')}
+            choices={modelChoices}
+            {...fieldProps}
+            {...state.goalVerificationModel}
+            onEdit={(text) => { props.edit('goalVerificationModel', text) }}
+            onReset={() => { props.resetField('goalVerificationModel') }}
+          />
+          <ChoiceField
+            id="settings-task-board-goal-verification-effort"
+            label={t('settings.goalVerificationEffort')}
+            hint={t('settings.goalVerificationEffortHint')}
+            inheritLabel={t('settings.inherit')}
+            choices={effortChoices}
+            {...fieldProps}
+            {...state.goalVerificationReasoningEffort}
+            onEdit={(text) => { props.edit('goalVerificationReasoningEffort', text) }}
+            onReset={() => { props.resetField('goalVerificationReasoningEffort') }}
+          />
+          <p className={settingsCss.note}>{t('settings.goalVerificationResolved')}</p>
+          {preview.route === undefined
+            ? <p className={settingsCss.error}>{t('settings.goalVerificationRouteMissing')}</p>
+            : (
+              <ul className={settingsCss.resolvedList}>
+                <li>{t('settings.goalVerificationResolvedModel', { model: preview.route.provider + '/' + preview.route.model })}</li>
+                <li>
+                  {preview.route.reasoningEffort === undefined
+                    ? t('settings.goalVerificationResolvedNoEffort')
+                    : t('settings.goalVerificationResolvedEffort', { effort: preview.route.reasoningEffort })}
+                </li>
+                <li>
+                  {t('settings.goalVerificationResolvedSource', {
+                    source: preview.modelSource === 'inherit'
+                      ? t('settings.goalVerificationSourceInherit')
+                      : t('settings.goalVerificationSourceExplicit'),
+                  })}
+                </li>
+                <li>{t('settings.goalVerificationResolvedPreset', { threshold: String(preview.threshold) })}</li>
+              </ul>
+            )}
+          {preview.effortFallback !== undefined && (
+            <p className={settingsCss.note}>
+              {preview.effortFallback.resolved === undefined
+                ? t('settings.goalVerificationEffortFallbackNone', { requested: preview.effortFallback.requested })
+                : t('settings.goalVerificationEffortFallback', {
+                  requested: preview.effortFallback.requested,
+                  resolved: preview.effortFallback.resolved,
                 })}
-              </li>
-              <li>{t('settings.goalVerificationResolvedPreset', { threshold: String(preview.threshold) })}</li>
-            </ul>
+            </p>
           )}
-        {preview.effortFallback !== undefined && (
-          <p className={settingsCss.note}>
-            {preview.effortFallback.resolved === undefined
-              ? t('settings.goalVerificationEffortFallbackNone', { requested: preview.effortFallback.requested })
-              : t('settings.goalVerificationEffortFallback', {
-                requested: preview.effortFallback.requested,
-                resolved: preview.effortFallback.resolved,
-              })}
-          </p>
-        )}
-        {stagedSettings.model.trim() !== '' && parseModelRoute(stagedSettings.model) === undefined && (
-          <p className={settingsCss.note}>{t('settings.goalVerificationModelInvalid')}</p>
-        )}
-      </div>
+          {stagedSettings.model.trim() !== '' && parseModelRoute(stagedSettings.model) === undefined && (
+            <p className={settingsCss.note}>{t('settings.goalVerificationModelInvalid')}</p>
+          )}
+        </PluginSettingsCard>
 
-      {/* Provider sections: a family extension contributes its own nested
-          settings card here through the seat this card declares — the GitHub
-          Issues integration is the one that does. The list wrapper keeps the
-          contributed <li> cards valid where they land, and an empty list draws
-          nothing. */}
-      <ul className={settingsCss.providerSections}>{renderSlot('task-board.settings.section', { dispatch })}</ul>
+        {/* Provider sections: a family extension contributes its own nested
+            settings card into this list through the seat this card declares —
+            the GitHub Issues integration is the one that does. Each
+            contributed card keeps its own chrome and save row, and an empty
+            seat draws nothing. */}
+        {renderSlot('task-board.settings.section', { dispatch })}
+      </ul>
       <p>
         {t('settings.powerStatus', {
           platform: power?.platform ?? t('settings.powerUnknown'),
