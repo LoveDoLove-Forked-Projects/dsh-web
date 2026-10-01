@@ -1,5 +1,5 @@
 import type { TaskUpdatePatch } from './core/use-cases/task-update.ts'
-import { isTaskPermission, isTaskStatus, isTaskTagList, type NewTaskInput, type TaskPermission, type TaskRecord, type TaskStatus } from './core/tasks.ts'
+import { TAG_NAME_MAX_LENGTH, isTaskPermission, isTaskStatus, isTaskTagList, type NewTaskInput, type TaskPermission, type TaskRecord, type TaskStatus } from './core/tasks.ts'
 import { parseLedger } from './core/store.ts'
 import { isValidTimeZone } from './core/schedule.ts'
 import { sanitizeFreezeSnapshot, type FreezeSnapshot } from './core/freeze-snapshot.ts'
@@ -144,6 +144,9 @@ export type TaskBoardAction =
   | { kind: 'rerun'; taskId: string }
   | { kind: 'confirm-permission'; taskId: string }
   | { kind: 'set-parent'; taskId: string; parentId: string | null }
+  /** Ledger-wide label management; see core/use-cases/task-tag.ts. */
+  | { kind: 'rename-tag'; from: string; to: string }
+  | { kind: 'delete-tag'; name: string }
   | { kind: 'extension-action'; extensionId: string; action: string; taskId?: string; payload?: TaskBoardExtensionPayload }
 
 export interface TaskBoardActionEnvelope {
@@ -341,6 +344,15 @@ function updatePatch(value: unknown): boolean {
   return patch.handover === undefined || patch.handover === null || handoverPayload(patch.handover) !== undefined
 }
 
+/**
+ * A label name on the wire: a non-empty trimmed string within the tag cap. The
+ * trim/merge/duplicate rules belong to the use case; this gate only keeps a
+ * malformed name off the ledger.
+ */
+function isTagName(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '' && value.trim().length <= TAG_NAME_MAX_LENGTH
+}
+
 function schedulePatch(value: unknown): boolean {
   const patch = record(value)
   return patch !== undefined
@@ -411,6 +423,16 @@ function parseEnvelopeAction(value: unknown): TaskBoardActionEnvelope | undefine
       const parentId = action.parentId
       if (parentId !== null && (typeof parentId !== 'string' || parentId.trim() === '')) return undefined
       return { requestId: envelope.requestId, action: { kind: 'set-parent', taskId, parentId } }
+    }
+    case 'rename-tag': {
+      if (!exactKeys(action, ['kind', 'from', 'to'])) return undefined
+      if (!isTagName(action.from) || !isTagName(action.to)) return undefined
+      return { requestId: envelope.requestId, action: { kind: 'rename-tag', from: action.from, to: action.to } }
+    }
+    case 'delete-tag': {
+      if (!exactKeys(action, ['kind', 'name'])) return undefined
+      if (!isTagName(action.name)) return undefined
+      return { requestId: envelope.requestId, action: { kind: 'delete-tag', name: action.name } }
     }
     case 'set-schedule':
       if (!exactKeys(action, ['kind', 'taskId', 'patch'])) return undefined

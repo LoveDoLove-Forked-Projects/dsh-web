@@ -17,6 +17,13 @@ import type { GitHubRepoConfig } from '../core/types.ts'
 /** Hard ceiling for one setup call; a stalled host must not pile up requests. */
 const SETUP_FETCH_TIMEOUT_MS = 15_000
 
+/**
+ * The same route prefix in the form the browser should resolve: document
+ * relative, so a GUI served from a sub-path reaches the Host under that same
+ * entry directory.
+ */
+const SETUP_PATH_PREFIX = GITHUB_SETUP_API_PREFIX.slice(1)
+
 /** The setup API as the card uses it. */
 export interface GitHubSetupApi {
   /** Credential facts, configured repositories and mount state. */
@@ -40,7 +47,7 @@ export interface GitHubSetupApi {
  */
 export function createGitHubSetupApi(fetchImpl: typeof fetch = fetch): GitHubSetupApi {
   const call = async (path: string, init: RequestInit = {}): Promise<Record<string, unknown>> => {
-    const response = await fetchImpl(GITHUB_SETUP_API_PREFIX + path, {
+    const response = await fetchImpl(SETUP_PATH_PREFIX + path, {
       ...init,
       ...(init.body === undefined ? {} : { headers: { 'content-type': 'application/json' } }),
       signal: AbortSignal.timeout(SETUP_FETCH_TIMEOUT_MS),

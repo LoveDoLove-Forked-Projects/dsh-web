@@ -3,12 +3,14 @@
  * active. Cards open the task detail (never execute directly); the header
  * offers filter, new-task, and a back-to-chat escape.
  */
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { selectedTaskOf, type BoardController } from '../../core/controller.ts'
 import { COLUMNS, MANUAL_STATUSES, canMoveTask, collectKnownTags, hasOpenExecution, tagTone, type TaskRecord } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
 import css from '../board.module.css'
+import { IconChevronLeft, IconPlus } from './icons.tsx'
 import { NewTaskModal } from './NewTaskModal.tsx'
+import { usePresence } from './overlay.tsx'
 import { STATUS_KEY } from './status-key.ts'
 import { TaskCard } from './TaskCard.tsx'
 import { TaskDetail } from './TaskDetail.tsx'
@@ -130,6 +132,16 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
   const [newProjectPending, setNewProjectPending] = useState(false)
   const selected = selectedTaskOf(snapshot)
   const archiveView = snapshot.archiveView
+  // Overlay lifecycle: both the detail view and the create dialog keep the
+  // last thing they showed while their exit leg runs, so closing one is the
+  // return trip of opening it instead of a node disappearing from under the
+  // pointer. The detail view's task is remembered so the surface still has its
+  // content to animate out after the selection is cleared.
+  const detailPresence = usePresence(selected !== undefined)
+  const lastDetail = useRef<TaskRecord | undefined>(undefined)
+  useEffect(() => { if (selected !== undefined) lastDetail.current = selected }, [selected])
+  const detailTask = selected ?? lastDetail.current
+  const newTaskPresence = usePresence(showNew)
   // Every label in use across the ledger (board and archive alike), so the
   // filter never loses an option just because its task was archived.
   const knownTags = collectKnownTags(snapshot.tasks)
@@ -201,7 +213,7 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
           aria-label={t('board.close')}
           onClick={() => { controller.closeBoard() }}
         >
-          <span aria-hidden="true">‹</span>
+          <IconChevronLeft size={15} />
           <span>{t('board.close')}</span>
         </button>
         <h2 className={css.boardTitle}>{t('board.title')}</h2>
@@ -213,68 +225,78 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
             })}
           </span>
         )}
-        {(projects.length > 0 || canCreateProject) && (
-          <label className={css.projectFilter}>
-            <span className={css.projectFilterLabel}>{t('board.project')}</span>
-            <select
-              className={css.select}
-              data-dsh-part="project-filter"
-              value={projectId}
-              aria-label={t('board.project')}
-              onChange={event => {
-                const value = event.target.value
-                if (value === NEW_PROJECT_VALUE) {
-                  setNewProjectError(undefined)
-                  setShowNewProject(true)
-                  return
-                }
-                setProjectId(value)
-              }}
+        {/* Filters, view toggles and the create action share one toolbar group so
+            the header reads as identity + tools instead of one long strip. The
+            toggles keep the outlined control and only change role colour when
+            they are on, so pressing one never resizes the row. */}
+        <div className={css.boardTools}>
+          {(projects.length > 0 || canCreateProject) && (
+            <label className={css.projectFilter}>
+              <span className={css.projectFilterLabel}>{t('board.project')}</span>
+              <select
+                className={css.select}
+                data-dsh-part="project-filter"
+                value={projectId}
+                aria-label={t('board.project')}
+                onChange={event => {
+                  const value = event.target.value
+                  if (value === NEW_PROJECT_VALUE) {
+                    setNewProjectError(undefined)
+                    setShowNewProject(true)
+                    return
+                  }
+                  setProjectId(value)
+                }}
+              >
+                <option value="">{t('board.projectAll')}</option>
+                {projects.map(project => (
+                  <option key={project.workspaceId} value={project.workspaceId}>{project.title}</option>
+                ))}
+                {canCreateProject && <option value={NEW_PROJECT_VALUE}>{t('board.projectNew')}</option>}
+              </select>
+            </label>
+          )}
+          <input
+            className={css.search}
+            type="search"
+            placeholder={t('board.search')}
+            value={filter}
+            onChange={event => { setFilter(event.target.value) }}
+            aria-label={t('board.search')}
+          />
+          {hasSubtasks && (
+            <button
+              type="button"
+              className={css.ghostButton}
+              data-dsh-part="subtask-filter"
+              data-active={hidingSubtasks ? 'true' : undefined}
+              aria-pressed={hidingSubtasks}
+              title={t('board.subtaskFilterHint')}
+              onClick={() => { setHideSubtasks(value => !value) }}
             >
-              <option value="">{t('board.projectAll')}</option>
-              {projects.map(project => (
-                <option key={project.workspaceId} value={project.workspaceId}>{project.title}</option>
-              ))}
-              {canCreateProject && <option value={NEW_PROJECT_VALUE}>{t('board.projectNew')}</option>}
-            </select>
-          </label>
-        )}
-        <input
-          className={css.search}
-          type="search"
-          placeholder={t('board.search')}
-          value={filter}
-          onChange={event => { setFilter(event.target.value) }}
-          aria-label={t('board.search')}
-        />
-        {hasSubtasks && (
+              {hidingSubtasks ? t('board.showSubtasks') : t('board.hideSubtasks')}
+            </button>
+          )}
           <button
             type="button"
-            className={hidingSubtasks ? css.primaryButton : css.ghostButton}
-            data-dsh-part="subtask-filter"
-            aria-pressed={hidingSubtasks}
-            title={t('board.subtaskFilterHint')}
-            onClick={() => { setHideSubtasks(value => !value) }}
+            className={css.ghostButton}
+            data-active={archiveView ? 'true' : undefined}
+            aria-pressed={archiveView}
+            onClick={() => { controller.toggleArchiveView() }}
           >
-            {hidingSubtasks ? t('board.showSubtasks') : t('board.hideSubtasks')}
+            {archiveView
+              ? t('board.backToBoard')
+              : t('board.archiveView', { count: String(snapshot.tasks.filter(task => task.archivedAt !== undefined).length) })}
           </button>
-        )}
-        <button
-          type="button"
-          className={archiveView ? css.primaryButton : css.ghostButton}
-          onClick={() => { controller.toggleArchiveView() }}
-        >
-          {archiveView
-            ? t('board.backToBoard')
-            : t('board.archiveView', { count: String(snapshot.tasks.filter(task => task.archivedAt !== undefined).length) })}
-        </button>
-        <button
-          type="button"
-          className={css.primaryButton}
-          onClick={() => { setShowNew(true) }}
-        >
-          + {t('board.new')}
-        </button>
+          <button
+            type="button"
+            className={css.primaryButton}
+            onClick={() => { setShowNew(true) }}
+          >
+            <IconPlus size={15} />
+            {t('board.new')}
+          </button>
+        </div>
       </header>
 
       {showNewProject && (
@@ -431,14 +453,15 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
         )}
       </div>
 
-      {selected !== undefined && (
-        <TaskDetail controller={controller} task={selected} />
+      {detailTask !== undefined && detailPresence.mounted && (
+        <TaskDetail controller={controller} task={detailTask} phase={detailPresence.phase} />
       )}
-      {showNew && (
+      {newTaskPresence.mounted && (
         <NewTaskModal
           controller={controller}
           {...(projectId === '' ? {} : { defaultWorkspaceId: projectId })}
           onClose={() => { setShowNew(false) }}
+          phase={newTaskPresence.phase}
         />
       )}
     </div>

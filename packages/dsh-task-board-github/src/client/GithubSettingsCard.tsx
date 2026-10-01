@@ -1,11 +1,17 @@
 /**
- * GitHub provider settings card.
+ * GitHub provider settings section.
  *
- * One staged form over this extension's settings namespace, contributed to the
- * plugin-card seat this host renders. It renders the two volatile switches the
- * extension owns (the master switch and the system-prompt announcement) plus
- * the GitHub integration block: the credential, the synchronized repositories
- * and a live connection test, all served by this extension's own host routes.
+ * One staged form over this extension's settings namespace, rendered INSIDE the
+ * task board's own settings card: the board declares the provider-settings seat
+ * and this extension is a provider of that board, so its configuration belongs
+ * where the board it configures is configured, not in a peer card of its own.
+ *
+ * It renders the two volatile switches the extension owns (the master switch
+ * and the system-prompt announcement) plus the GitHub integration block: the
+ * credential, the synchronized repositories and a live connection test, all
+ * served by this extension's own host routes. The integration block is live
+ * only while the extension is on — a disabled extension shows what turning it
+ * on would do instead of a credential form nothing can use.
  *
  * The switches are staged and written by the shared CardForm; the integration
  * block writes immediately through the setup API, because adding a repository
@@ -20,6 +26,7 @@ import { BooleanField, PluginSettingsCard } from './PluginSettingsCard.tsx'
 import { CardForm, booleanField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
 import { GitHubSetupPanel } from './SetupPanel.tsx'
 import type { GitHubSetupApi } from './setup-api.ts'
+import css from './github.module.css'
 
 /** The extension fields this card edits (the namespace's schema). */
 export interface GitHubSettings {
@@ -83,20 +90,23 @@ export class GithubSettingsCardController {
   }
 }
 
-/** Props the renderer binds for the GitHub card. */
-export type GithubSettingsCardProps =
-  PropsRuntime<'web-ui.plugin.item'>
+/** Props the renderer binds for the board's provider-settings seat. */
+export type GitHubSettingsSectionProps =
+  PropsRuntime<'task-board.settings.section'>
   & PropsLocale<'task-board-github'>
   & InjectFace<GitHubSettingsCardFace>
 
 /**
- * Render the GitHub provider card.
- * @param props - locale copy, the card snapshot, and its form actions.
- * @returns the card.
+ * Render the GitHub provider settings section.
+ * @param props - locale copy, the section snapshot, and its form actions.
+ * @returns the section, or nothing while the namespace is unavailable.
  */
-export function GithubSettingsCard(props: GithubSettingsCardProps) {
+export function GitHubSettingsSection(props: GitHubSettingsSectionProps) {
   const { t } = props
   const state = props.useGithubSettingsCard((snapshot: GitHubSettingsCardState) => snapshot)
+  // An empty draft inherits the composition, whose default for this switch is
+  // on; only an explicit "false" turns the integration off.
+  const integrationEnabled = state.enabled.text !== 'false'
   return (
     <PluginSettingsCard
       t={t}
@@ -136,7 +146,9 @@ export function GithubSettingsCard(props: GithubSettingsCardProps) {
         onEdit={(text) => { props.edit('announceToAgent', text) }}
         onReset={() => { props.resetField('announceToAgent') }}
       />
-      <GitHubSetupPanel t={t} api={props.setup} disabled={!state.writable} />
+      {integrationEnabled
+        ? <GitHubSetupPanel t={t} api={props.setup} disabled={!state.writable} />
+        : <p className={css.sectionHint}>{t('settings.integrationOff')}</p>}
     </PluginSettingsCard>
   )
 }

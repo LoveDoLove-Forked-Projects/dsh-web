@@ -19,8 +19,10 @@ import { nextRunLabel, zoneChoices } from '../schedule-zone.ts'
 import css from '../board.module.css'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { EditTaskModal, EditTagsModal } from './EditTaskModal.tsx'
+import { IconClose, IconPlus, IconSession } from './icons.tsx'
 import { LinkSubtaskModal } from './LinkSubtaskModal.tsx'
 import { NewTaskModal } from './NewTaskModal.tsx'
+import { useDialog, usePresence, type OverlayPhase } from './overlay.tsx'
 import { inheritPresetLabel, presetLabel } from './preset-label.ts'
 import { formatHostTimestamp, formatTime } from './TaskCard.tsx'
 import { STATUS_KEY } from './status-key.ts'
@@ -58,7 +60,8 @@ function ExecutionRow({ execution, timeZone, onOpen }: { execution: ExecutionRec
           onClick={() => { onOpen(execution.sessionId as string) }}
           title={execution.sessionId}
         >
-          {t('detail.viewSession')} ⌁
+          {t('detail.viewSession')}
+          <IconSession size={13} />
         </button>
       )}
       {execution.error !== undefined && execution.error !== '' && (
@@ -351,6 +354,8 @@ function SubtaskSection({ controller, task, pending, archived, snapshot }: {
 }) {
   const [showAdd, setShowAdd] = useState(false)
   const [showLink, setShowLink] = useState(false)
+  const addPresence = usePresence(showAdd)
+  const linkPresence = usePresence(showLink)
   const tasks = snapshot.tasks
   const parent = task.parentId === undefined ? undefined : tasks.find(candidate => candidate.id === task.parentId)
   const children = directSubtasks(tasks, task.id)
@@ -411,7 +416,8 @@ function SubtaskSection({ controller, task, pending, archived, snapshot }: {
           ? (
             <div className={css.subtaskAddRow}>
               <button type="button" className={css.ghostButton} disabled={!editable} onClick={() => { setShowAdd(true) }}>
-                + {t('detail.subtasks.add')}
+                <IconPlus size={14} />
+                {t('detail.subtasks.add')}
               </button>
               <button type="button" className={css.ghostButton} disabled={!editable} onClick={() => { setShowLink(true) }}>
                 {t('detail.subtasks.link')}
@@ -420,11 +426,11 @@ function SubtaskSection({ controller, task, pending, archived, snapshot }: {
             )
           : <p className={css.detailMeta}>{t('detail.subtasks.hostOnly')}</p>)
         : <p className={css.detailMeta}>{t('detail.subtasks.depthLimit', { depth: String(limit) })}</p>)}
-      {showAdd && (
-        <NewTaskModal controller={controller} parentTask={task} onClose={() => { setShowAdd(false) }} />
+      {addPresence.mounted && (
+        <NewTaskModal controller={controller} parentTask={task} phase={addPresence.phase} onClose={() => { setShowAdd(false) }} />
       )}
-      {showLink && (
-        <LinkSubtaskModal controller={controller} parent={task} onClose={() => { setShowLink(false) }} />
+      {linkPresence.mounted && (
+        <LinkSubtaskModal controller={controller} parent={task} phase={linkPresence.phase} onClose={() => { setShowLink(false) }} />
       )}
     </section>
   )
@@ -432,7 +438,7 @@ function SubtaskSection({ controller, task, pending, archived, snapshot }: {
 
 
 /** Task detail overlay. */
-export function TaskDetail({ controller, task }: { controller: BoardController; task: TaskRecord }) {
+export function TaskDetail({ controller, task, phase = 'open' }: { controller: BoardController; task: TaskRecord; phase?: OverlayPhase }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [showEditTags, setShowEditTags] = useState(false)
@@ -463,10 +469,21 @@ export function TaskDetail({ controller, task }: { controller: BoardController; 
   const timeZone = snapshot.host?.scheduler.timeZone
   const permissionPending = requiresPermissionConfirmation(current, snapshot.host?.sessionDefaultPermission)
   const subtaskChildren = directSubtasks(snapshot.tasks, current.id)
+  const dialog = useDialog<HTMLDivElement>(() => { controller.closeTask() }, phase)
+  // One presence per nested overlay: the detail view sits under up to four of
+  // them, and each has to run its own exit leg instead of the surface being
+  // pulled out of the DOM the moment its flag flips.
+  const editOpen = showEdit && !archived && canEditTaskContent(current)
+  const tagsOpen = showEditTags && !archived && !busy
+  const duplicateOpen = showDuplicate && !archived
+  const confirmPresence = usePresence(confirmDelete)
+  const editPresence = usePresence(editOpen)
+  const tagsPresence = usePresence(tagsOpen)
+  const duplicatePresence = usePresence(duplicateOpen)
 
   return (
-    <div className={css.modalBackdrop} onMouseDown={event => { if (event.target === event.currentTarget) controller.closeTask() }}>
-      <div className={css.detail} role="dialog" aria-label={t('detail.title')}>
+    <div className={css.modalBackdrop} data-state={phase} onMouseDown={dialog.onMouseDown}>
+      <div ref={dialog.attach} className={css.detail} role="dialog" aria-modal="true" aria-label={t('detail.title')} tabIndex={-1}>
         <header className={css.detailHeader}>
           <h2 className={css.detailTitle}>{current.title}</h2>
           <span className={css.statusBadge} data-status={archived ? 'archived' : current.status}>
@@ -476,9 +493,10 @@ export function TaskDetail({ controller, task }: { controller: BoardController; 
             type="button"
             className={css.iconButton}
             aria-label={t('detail.close')}
+            title={t('detail.close')}
             onClick={() => { controller.closeTask() }}
           >
-            ×
+            <IconClose size={16} />
           </button>
         </header>
 
@@ -715,12 +733,13 @@ export function TaskDetail({ controller, task }: { controller: BoardController; 
         </footer>
       </div>
 
-      {confirmDelete && (
+      {confirmPresence.mounted && (
         <ConfirmDialog
           title={t('delete.title')}
           message={t('delete.confirm', { name: current.title })}
           confirmLabel={t('delete.ok')}
           danger
+          phase={confirmPresence.phase}
           onCancel={() => { setConfirmDelete(false) }}
           onConfirm={() => {
             setConfirmDelete(false)
@@ -729,18 +748,19 @@ export function TaskDetail({ controller, task }: { controller: BoardController; 
         />
       )}
 
-      {showEdit && !archived && canEditTaskContent(current) && (
-        <EditTaskModal controller={controller} task={current} onClose={() => { setShowEdit(false) }} />
+      {editPresence.mounted && (
+        <EditTaskModal controller={controller} task={current} phase={editPresence.phase} onClose={() => { setShowEdit(false) }} />
       )}
 
-      {showEditTags && !archived && !busy && (
-        <EditTagsModal controller={controller} task={current} onClose={() => { setShowEditTags(false) }} />
+      {tagsPresence.mounted && (
+        <EditTagsModal controller={controller} task={current} phase={tagsPresence.phase} onClose={() => { setShowEditTags(false) }} />
       )}
 
-      {showDuplicate && !archived && (
+      {duplicatePresence.mounted && (
         <NewTaskModal
           controller={controller}
           initialTask={current}
+          phase={duplicatePresence.phase}
           onClose={() => { setShowDuplicate(false) }}
           onDuplicateSuccess={async (sourceId) => {
             await controller.archiveTask(sourceId)

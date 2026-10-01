@@ -19,6 +19,7 @@ import { applyDeleteTask } from './use-cases/task-delete.ts'
 import { applyScheduleNextRun as applyScheduleRollForward, applySetSchedule } from './use-cases/task-schedule.ts'
 import { resolveHostTimeZone } from './schedule.ts'
 import { applySetParent } from './use-cases/task-parent.ts'
+import { applyDeleteTag, applyRenameTag } from './use-cases/task-tag.ts'
 import { applyUpdateTask, type TaskUpdatePatch } from './use-cases/task-update.ts'
 import { DEFAULT_SUBTASK_DEPTH } from './subtask.ts'
 import type {
@@ -552,6 +553,44 @@ export class BoardController {
     this.tasks = [...tasks]
     if (this.selectedTaskId === id) this.selectedTaskId = undefined
     this.persistAndNotify()
+    return true
+  }
+
+  /**
+   * Rename one label across the whole ledger; a name already in use merges the
+   * two labels. Host-backed: the ledger owns the transition and confirms it, so
+   * the board's label row reflects whether the Host accepted the edit.
+   * @returns true when the edit was accepted by the authority.
+   */
+  async renameTag(from: string, to: string): Promise<boolean> {
+    if (this.deps.transport !== undefined) {
+      return await this.commitRemote({ kind: 'rename-tag', from, to })
+    }
+    const result = applyRenameTag(this.tasks, from, to, this.now())
+    if (result.error !== undefined) return false
+    if (result.changed) {
+      this.tasks = [...result.tasks]
+      this.persistAndNotify()
+    }
+    return true
+  }
+
+  /**
+   * Remove one label from every task that carries it, board and archive alike —
+   * the board's label row is drawn from the whole ledger, so a label left on an
+   * archived card would come straight back.
+   * @returns true when the edit was accepted by the authority.
+   */
+  async deleteTag(name: string): Promise<boolean> {
+    if (this.deps.transport !== undefined) {
+      return await this.commitRemote({ kind: 'delete-tag', name })
+    }
+    const result = applyDeleteTag(this.tasks, name, this.now())
+    if (result.error !== undefined) return false
+    if (result.changed) {
+      this.tasks = [...result.tasks]
+      this.persistAndNotify()
+    }
     return true
   }
 

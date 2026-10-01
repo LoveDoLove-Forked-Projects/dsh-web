@@ -21,11 +21,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
-import { GithubSettingsCard, GithubSettingsCardController, type GitHubSettings } from './GithubSettingsCard.tsx'
+import { GitHubSettingsSection, GithubSettingsCardController, type GitHubSettings } from './GithubSettingsCard.tsx'
 import { createGitHubSetupApi } from './setup-api.ts'
 import { installGitHubClientHalf, type ExtensionEnabledSource } from './github/extension.ts'
 import { en, setRuntimeTranslate, zh, type TaskBoardGithubKey } from './locales.ts'
-import { installPluginCard } from './plugin-card-seat.ts'
 import { createServedEntryForm } from './settings-entry-form.ts'
 
 /** Locale namespace this half owns. */
@@ -36,9 +35,6 @@ export const NS = 'task-board-github'
  * own settings form, and the row id a standalone bundle install carries.
  */
 export const SETTINGS_NAMESPACE = 'task-board-github'
-
-/** npm package name of this bundle: the key of the official plugin-card seat. */
-const BUNDLE = '@linxin666/dsh-client-ui-task-board-github'
 
 /**
  * Profile entry id the family aggregate's generated row carries — the shape
@@ -59,22 +55,8 @@ interface SettingsFormBinder {
   bind<T>(spec: { namespace: string }): ConfigForm<T>
 }
 
-/** Owner share of a plugin card (the section supplies nothing). */
-export interface SettingsPluginItemOwnerProps {
-  /** Marker field: card owner props are intentionally empty. */
-  children?: never
-}
-
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /**
-     * The child slot the Web UI plugin group declares; this card registers into
-     * the group's list seat rather than the official bundle-configuration seat.
-     * Declared here so this package needs no dependency on the sibling UI
-     * package.
-     */
-    'web-ui.plugin.item': { kind: 'list'; scope: 'root'; owner: SettingsPluginItemOwnerProps }
-
     /** Provider task-detail section; the board declares and renders it. */
     'task-board.detail.section': { kind: 'list'; scope: 'root'; owner: import('../core/contract.ts').TaskBoardDetailSectionProps }
     /** Provider settings section; the board declares and renders it. */
@@ -180,41 +162,33 @@ export function apply(ctx: ClientContext): void {
     scope = unavailableForm()
   }
 
-  // The seats follow the extension's own master switch, live: the settings form
-  // is the same volatile reference the Host commits an edit into.
+  // The rendering seats follow the extension's own master switch, live: the
+  // settings form is the same volatile reference the Host commits an edit into.
   const enabledSource: ExtensionEnabledSource = {
     read: () => scope.getSnapshot().value?.enabled !== false,
     subscribe: listener => scope.subscribe(listener),
   }
-  ctx.effect(() => installGitHubClientHalf(ctx, enabledSource), 'task-board-github: provider seats')
 
-  // The integration block talks to the extension's own host routes; the card
-  // stays usable (and the switches stay editable) when that API is absent, but
-  // then the block reports that this page cannot reach the Host.
+  // The integration block talks to the extension's own host routes; the
+  // section stays usable (and the switches stay editable) when that API is
+  // absent, but then the block reports that this page cannot reach the Host.
   const setupApi = createGitHubSetupApi()
   let controller: GithubSettingsCardController
   try {
     controller = new GithubSettingsCardController(scope, setupApi)
   } catch {
-    // A form that cannot be staged over: the extension keeps its seats and
-    // loses only the card.
+    // A form that cannot be staged over: the extension keeps its rendering
+    // seats and loses only the configuration section.
     return
   }
 
-  // Card seat: the family group's list seat, or the official
-  // bundle-configuration seat when the group is not installed. A refused seat
-  // is reported by the seat helper and leaves every other surface working.
-  try {
-    installPluginCard(ctx, {
-      bundle: BUNDLE,
-      id: SETTINGS_NAMESPACE,
-      order: 130,
-      locale: NS,
-      inject: () => controller.inject(),
-      component: GithubSettingsCard,
-    })
-  } catch {
-    // A slot registry that refuses the contribution: the card stays absent.
-  }
-  ctx.effect(() => () => { controller.dispose() }, 'task-board-github: settings card')
+  // Seats. The rendering seats (task-detail section and card decoration) sit
+  // behind both switches; the configuration section sits behind the board
+  // service alone, because it is where this extension's own switch lives — a
+  // section gated by that switch could never turn it back on.
+  ctx.effect(() => installGitHubClientHalf(ctx, enabledSource, {
+    inject: () => controller.inject(),
+    component: GitHubSettingsSection,
+  }), 'task-board-github: provider seats')
+  ctx.effect(() => () => { controller.dispose() }, 'task-board-github: provider settings section')
 }

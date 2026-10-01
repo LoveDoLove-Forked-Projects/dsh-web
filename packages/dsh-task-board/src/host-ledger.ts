@@ -20,6 +20,7 @@ import { applyCreateTask } from './core/use-cases/task-create.ts'
 import { applyDeleteTask } from './core/use-cases/task-delete.ts'
 import { applySetSchedule, applyScheduleNextRun } from './core/use-cases/task-schedule.ts'
 import { applySetParent } from './core/use-cases/task-parent.ts'
+import { applyDeleteTag, applyRenameTag } from './core/use-cases/task-tag.ts'
 import { applyUpdateTask, canEditTaskContent, hasContentPatch } from './core/use-cases/task-update.ts'
 import { TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS, TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts'
 import type { ExecutionVerification } from './core/verification.ts'
@@ -914,6 +915,18 @@ export class HostTaskLedger {
         this.document.tasks = this.document.tasks.map(item => item.id === action.taskId
           ? { ...item, permissionConfirmedAt: now, updatedAt: now }
           : item)
+        break
+      }
+      case 'rename-tag': {
+        const result = applyRenameTag(this.document.tasks, action.from, action.to, now)
+        if (result.error !== undefined) throw new Error(result.error)
+        if (result.changed) this.document.tasks = [...result.tasks]
+        break
+      }
+      case 'delete-tag': {
+        const result = applyDeleteTag(this.document.tasks, action.name, now)
+        if (result.error !== undefined) throw new Error(result.error)
+        if (result.changed) this.document.tasks = [...result.tasks]
         break
       }
       case 'set-schedule': {

@@ -111,7 +111,11 @@ describe('task detail subtask block', () => {
     // Then the block lists the subtask and offers both add actions
     const section = container.querySelector('[data-dsh-part="subtasks"]')
     expect(section?.textContent).toContain('child')
-    expect(button(container, '+ ' + t('detail.subtasks.add')).textContent).toBe('+ ' + t('detail.subtasks.add'))
+    const add = button(container, t('detail.subtasks.add'))
+    expect(add.textContent).toBe(t('detail.subtasks.add'))
+    // The leading mark is the board's own vector glyph, not a text "+", so the
+    // control's text is exactly its label.
+    expect(add.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 16 16')
     expect(button(container, t('detail.subtasks.link')).textContent).toBe(t('detail.subtasks.link'))
   })
 
@@ -127,7 +131,7 @@ describe('task detail subtask block', () => {
     // Then the depth rule is explained and no add control is offered
     const section = container.querySelector('[data-dsh-part="subtasks"]')
     expect(section?.textContent).toContain(t('detail.subtasks.depthLimit', { depth: '1' }))
-    expect([...container.querySelectorAll('button')].some(candidate => candidate.textContent === '+ ' + t('detail.subtasks.add'))).toBe(false)
+    expect([...container.querySelectorAll('button')].some(candidate => candidate.textContent === t('detail.subtasks.add'))).toBe(false)
     expect(controller.getSnapshot().tasks.find(entry => entry.id === 'child')?.parentId).toBe('parent')
   })
 

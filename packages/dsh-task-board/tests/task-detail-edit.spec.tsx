@@ -173,7 +173,11 @@ describe('task content editing before execution (issue #1110)', () => {
     await act(async () => { save.click() })
     expect(updateTask).toHaveBeenCalledOnce()
     expect(updateTask).toHaveBeenCalledWith('t1', { title: 'Renamed', description: 'new desc', prompt: 'new prompt' })
-    expect(container.querySelector('[role="dialog"][aria-label="编辑任务"]')).toBeNull()
+    // The save closes the overlay on its exit leg: the surface leaves once its
+    // reversible exit transition has run, not on the click's own tick.
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="dialog"][aria-label="编辑任务"]')).toBeNull()
+    })
   })
 
   it('keeps the modal open and does not save a blank title', async () => {

@@ -61,7 +61,6 @@ const MANIFEST = [
     targets: [
       'packages/dsh-remote-web-ui/src/client/plugin-card-seat.ts',
       'packages/dsh-task-board/src/client/plugin-card-seat.ts',
-      'packages/dsh-task-board-github/src/client/plugin-card-seat.ts',
       'packages/dsh-liangshen/src/client/plugin-card-seat.ts',
     ],
   },

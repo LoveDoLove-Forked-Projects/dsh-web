@@ -12,6 +12,7 @@ import type { TaskRecord } from '../../core/tasks.ts'
 import { executionLabel, hasOpenExecution, tagTone } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
 import { useTaskBoardSeats } from '../seats.tsx'
+import { IconClock, IconSession } from './icons.tsx'
 import { verificationRunningKey } from './status-key.ts'
 import css from '../board.module.css'
 
@@ -163,6 +164,7 @@ function TaskCardInner({
               ? `${t('card.scheduled')} · ${formatHostTimestamp(task.schedule.nextRunAt, timeZone)}`
               : t('card.scheduled')}
           >
+            <IconClock size={12} />
             {t('card.scheduled')}
           </span>
         )}
@@ -172,7 +174,9 @@ function TaskCardInner({
           </span>
         )}
         {latest?.sessionId !== undefined && (
-          <span className={css.cardSession} title={latest.sessionId}>⌁</span>
+          <span className={css.cardSession} title={latest.sessionId}>
+            <IconSession size={12} />
+          </span>
         )}
         {!archived && (busy || pending) && <span className={css.cardSpinner} aria-hidden="true" />}
       </span>

@@ -284,9 +284,19 @@
 /* Integration block of the extension's settings card: the credential, the
    synchronized repositories and the connection test, separated from the
    switches above it. */
+/* Copy shown in place of the integration block while the extension's master
+   switch is off: what the block would do, and that turning the switch on brings
+   it back. */
+.sectionHint {
+  margin: 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .setupPanel {
   margin-top: 16px;
-  border-top: 1px solid var(--dsw-alias-border-subtle, #333);
+  border-top: 1px solid var(--dsw-alias-separator-primary);
   padding-top: 12px;
 }
 

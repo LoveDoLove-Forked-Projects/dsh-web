@@ -8,6 +8,8 @@ import { useState, type ReactNode } from 'react'
 import { TAG_NAME_MAX_LENGTH, TAG_PROMPT_MAX_LENGTH, TASK_TAG_LIMIT, normalizeTags, type TaskTag } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
 import css from '../board.module.css'
+import { IconClose, IconPlus } from './icons.tsx'
+import { useDialog, type OverlayPhase } from './overlay.tsx'
 
 /** DOM id shared by the tag-name inputs and their datalist (one board at a time). */
 const TAG_NAME_LIST_ID = 'dsh-task-board-tag-names'
@@ -22,6 +24,7 @@ export function ModalShell({
   onSubmit,
   onClose,
   secondaryAction,
+  phase = 'open',
   children,
 }: {
   ariaLabel: string
@@ -33,14 +36,20 @@ export function ModalShell({
   onClose: () => void
   /** Optional second action beside the primary submit (e.g. create and run). */
   secondaryAction?: { label: string; onSubmit: () => void }
+  /** Which leg of the enter/exit motion pair the surface is on. */
+  phase?: OverlayPhase
   children: ReactNode
 }) {
+  const dialog = useDialog<HTMLFormElement>(onClose, phase)
   return (
-    <div className={css.modalBackdrop} onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <div className={css.modalBackdrop} data-state={phase} onMouseDown={dialog.onMouseDown}>
       <form
+        ref={dialog.attach}
         className={css.modal}
         role="dialog"
+        aria-modal="true"
         aria-label={ariaLabel}
+        tabIndex={-1}
         onSubmit={event => { event.preventDefault(); onSubmit() }}
       >
         <h2 className={css.modalTitle}>{title}</h2>
@@ -226,7 +235,7 @@ export function TaskTagFields({
             aria-label={t('new.tagRemove', { name: tag.name })}
             onClick={() => { onChange(tags.filter((_, position) => position !== index)) }}
           >
-            ×
+            <IconClose size={14} />
           </button>
         </div>
       ))}
@@ -239,7 +248,8 @@ export function TaskTagFields({
         disabled={tags.length >= TASK_TAG_LIMIT}
         onClick={() => { onChange([...tags, { name: '' }]) }}
       >
-        + {t('new.tagAdd')}
+        <IconPlus size={14} />
+        {t('new.tagAdd')}
       </button>
     </div>
   )

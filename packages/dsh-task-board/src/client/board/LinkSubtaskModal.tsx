@@ -10,6 +10,7 @@ import { DEFAULT_SUBTASK_DEPTH, buildLineageIndex, checkParentLink } from '../..
 import { hasOpenExecution, type TaskRecord } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
 import css from '../board.module.css'
+import { useDialog, type OverlayPhase } from './overlay.tsx'
 import { STATUS_KEY } from './status-key.ts'
 
 /** Link-subtask overlay props. */
@@ -18,10 +19,13 @@ export interface LinkSubtaskModalProps {
   /** The task the picked card becomes a subtask of. */
   parent: TaskRecord
   onClose: () => void
+  /** Which leg of the enter/exit motion pair the surface is on. */
+  phase?: OverlayPhase
 }
 
 /** Link-subtask overlay. */
-export function LinkSubtaskModal({ controller, parent, onClose }: LinkSubtaskModalProps) {
+export function LinkSubtaskModal({ controller, parent, onClose, phase = 'open' }: LinkSubtaskModalProps) {
+  const dialog = useDialog<HTMLDivElement>(onClose, phase)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const snapshot = controller.getSnapshot()
@@ -59,8 +63,8 @@ export function LinkSubtaskModal({ controller, parent, onClose }: LinkSubtaskMod
     setError(controller.getSnapshot().transportError ?? t('new.required'))
   }
   return (
-    <div className={css.modalBackdrop} onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-      <div className={css.modal} role="dialog" aria-label={t('link.subtask.title')}>
+    <div className={css.modalBackdrop} data-state={phase} onMouseDown={dialog.onMouseDown}>
+      <div ref={dialog.attach} className={css.modal} role="dialog" aria-modal="true" aria-label={t('link.subtask.title')} tabIndex={-1}>
         <h2 className={css.modalTitle}>{t('link.subtask.title')}</h2>
         <p className={css.fieldHint}>{t('link.subtask.hint')}</p>
         {candidates.length === 0

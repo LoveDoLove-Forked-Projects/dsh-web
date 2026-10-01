@@ -15,6 +15,7 @@ import { parseModelRoute } from '../core/verification.ts'
 import { PluginSettingsCard, BooleanField, ChoiceField } from './PluginSettingsCard.tsx'
 import { SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from '../core/subtask.ts'
 import { CardForm, booleanField, type CardActions, type CardShell, type FieldSpec, type FieldState as CardFieldState } from './settings-form.ts'
+import settingsCss from './board-settings.module.css'
 
 /** The depth choices the card offers, derived from the supported range. */
 const SUBTASK_DEPTH_CHOICES: readonly string[] = Array.from(
@@ -316,8 +317,8 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
         onReset={() => { props.resetField('maxSubtaskDepth') }}
       />
 
-      <div style={{ marginTop: '16px', borderTop: '1px solid var(--dsw-alias-border-subtle, #333)', paddingTop: '12px' }}>
-        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 600 }}>{t('settings.goalVerificationTitle')}</h4>
+      <div className={settingsCss.section}>
+        <h4 className={settingsCss.sectionTitle}>{t('settings.goalVerificationTitle')}</h4>
         <BooleanField
           id="settings-task-board-goal-verification"
           label={t('settings.goalVerification')}
@@ -352,11 +353,11 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
           onEdit={(text) => { props.edit('goalVerificationReasoningEffort', text) }}
           onReset={() => { props.resetField('goalVerificationReasoningEffort') }}
         />
-        <p style={{ margin: '4px 0', fontSize: '12px', opacity: 0.85 }}>{t('settings.goalVerificationResolved')}</p>
+        <p className={settingsCss.note}>{t('settings.goalVerificationResolved')}</p>
         {preview.route === undefined
-          ? <p style={{ margin: '4px 0', fontSize: '12px', color: 'var(--dsw-alias-label-error, #e66)' }}>{t('settings.goalVerificationRouteMissing')}</p>
+          ? <p className={settingsCss.error}>{t('settings.goalVerificationRouteMissing')}</p>
           : (
-            <ul style={{ margin: '4px 0 8px 16px', padding: 0, fontSize: '12px', opacity: 0.85 }}>
+            <ul className={settingsCss.resolvedList}>
               <li>{t('settings.goalVerificationResolvedModel', { model: preview.route.provider + '/' + preview.route.model })}</li>
               <li>
                 {preview.route.reasoningEffort === undefined
@@ -374,7 +375,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
             </ul>
           )}
         {preview.effortFallback !== undefined && (
-          <p style={{ margin: '4px 0', fontSize: '12px', opacity: 0.85 }}>
+          <p className={settingsCss.note}>
             {preview.effortFallback.resolved === undefined
               ? t('settings.goalVerificationEffortFallbackNone', { requested: preview.effortFallback.requested })
               : t('settings.goalVerificationEffortFallback', {
@@ -384,11 +385,16 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
           </p>
         )}
         {stagedSettings.model.trim() !== '' && parseModelRoute(stagedSettings.model) === undefined && (
-          <p style={{ margin: '4px 0', fontSize: '12px', opacity: 0.85 }}>{t('settings.goalVerificationModelInvalid')}</p>
+          <p className={settingsCss.note}>{t('settings.goalVerificationModelInvalid')}</p>
         )}
       </div>
 
-      {renderSlot('task-board.settings.section', { dispatch })}
+      {/* Provider sections: a family extension contributes its own nested
+          settings card here through the seat this card declares — the GitHub
+          Issues integration is the one that does. The list wrapper keeps the
+          contributed <li> cards valid where they land, and an empty list draws
+          nothing. */}
+      <ul className={settingsCss.providerSections}>{renderSlot('task-board.settings.section', { dispatch })}</ul>
       <p>
         {t('settings.powerStatus', {
           platform: power?.platform ?? t('settings.powerUnknown'),

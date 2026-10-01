@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { GitHubCredentialStatus, GitHubSetupSummary } from '../src/core/setup.ts'
+import { createGitHubSetupApi } from '../src/client/setup-api.ts'
 import { makeGitHubSetupRoutes } from '../src/host/routes.ts'
 import type { GitHubSetup } from '../src/host/setup.ts'
 
@@ -70,6 +71,42 @@ async function call(routes: ReturnType<typeof makeGitHubSetupRoutes>, suffix: st
   await route.handler(req, out.res)
   return out
 }
+
+describe('GitHub setup route addressing', () => {
+  it('operator mounting the extension gets every setup route on an absolute request path', () => {
+    // Given the extension's setup routes
+    const routes = makeGitHubSetupRoutes(recordingSetup().setup)
+
+    // When the webserver keys them for matching
+    const paths = routes.map(route => route.path)
+
+    // Then every path is absolute: the webserver matches the raw request path,
+    // so a prefix without its leading slash answers nothing.
+    expect(paths).toEqual([
+      '/api/task-board-github/status',
+      '/api/task-board-github/test',
+      '/api/task-board-github/credential',
+      '/api/task-board-github/repositories',
+    ])
+  })
+
+  it('operator reading the setup status reaches the path the Host actually serves', async () => {
+    // Given a card over a recorded fetch and the registered routes
+    const seen: string[] = []
+    const api = createGitHubSetupApi(async (input) => {
+      seen.push(String(input))
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    const routes = makeGitHubSetupRoutes(recordingSetup().setup)
+
+    // When the card reads the status
+    await api.status()
+
+    // Then the request resolves to the route the Host actually registered
+    const status = routes.find(route => route.path.endsWith('/status'))
+    expect(new URL(seen[0], 'http://127.0.0.1:19387/').pathname).toBe(status?.path)
+  })
+})
 
 describe('GitHub setup route fence', () => {
   it('operator on a LAN browser is refused before any setup operation runs', async () => {

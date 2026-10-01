@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { TaskBoardExtensionActionRequest } from '../src/core/contract.ts'
 import type { TaskRecord } from '../src/core/task-record.ts'
-import { GithubSettingsCard, type GithubSettingsCardProps, type GitHubSettingsCardState } from '../src/client/GithubSettingsCard.tsx'
+import { GitHubSettingsSection, type GitHubSettingsSectionProps, type GitHubSettingsCardState } from '../src/client/GithubSettingsCard.tsx'
 import { GitHubCardDecoration, GitHubDetailSection } from '../src/client/github/sections.tsx'
 import { setSummary, clearSummary } from '../src/client/github/summary.ts'
 import { isGitHubTaskVisible } from '../src/client/github/visibility.ts'
@@ -48,8 +48,8 @@ function fakeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
   }
 }
 
-/** One complete, writable card snapshot whose two switches are untouched. */
-function cardState(): GitHubSettingsCardState {
+/** One complete, writable section snapshot whose two switches are untouched. */
+function cardState(enabledText = ''): GitHubSettingsCardState {
   const field = { text: '', overridden: false, invalid: false }
   return {
     available: true,
@@ -59,14 +59,14 @@ function cardState(): GitHubSettingsCardState {
     invalid: false,
     saving: false,
     failed: false,
-    enabled: field,
+    enabled: { ...field, text: enabledText },
     announceToAgent: field,
   }
 }
 
-/** Render-ready props for the card: a fixed snapshot and inert form actions. */
-function cardProps(): GithubSettingsCardProps {
-  const state = cardState()
+/** Render-ready props for the section: a fixed snapshot and inert form actions. */
+function cardProps(enabledText = ''): GitHubSettingsSectionProps {
+  const state = cardState(enabledText)
   return {
     t: (key: string) => (zh as Record<string, string>)[key] ?? key,
     useGithubSettingsCard: (select: (snapshot: GitHubSettingsCardState) => unknown) => select(state),
@@ -74,7 +74,7 @@ function cardProps(): GithubSettingsCardProps {
     resetField: () => {},
     save: () => {},
     discard: () => {},
-  } as unknown as GithubSettingsCardProps
+  } as unknown as GitHubSettingsSectionProps
 }
 
 /** A dispatch channel that records what the seats sent and accepts everything. */
@@ -265,15 +265,27 @@ describe('GitHub UI integration', () => {
       }],
     })
 
-    // When the extension's own settings card renders
-    const container = render(<GithubSettingsCard {...cardProps()} />)
+    // When the section the board's settings card renders is mounted
+    const container = render(<GitHubSettingsSection {...cardProps()} />)
 
-    // Then the integration block inside that card names itself, the repository,
+    // Then the integration block inside it names itself, the repository,
     // its inclusion label, the auto-PR policy and the credential state
     const text = container.querySelector('[data-dsh-part="github-settings"]')?.textContent ?? ''
     expect(text).toContain(zh['summary.title'])
     expect(text).toContain('deepseek-ai/dsh')
     expect(text).toContain(zh['summary.credentialReady'])
     expect(text).toContain(zh['summary.autoPr'])
+  })
+
+  it('operator with the extension switched off sees what turning it on would do, not a dead credential form', () => {
+    // Given a section whose master switch draft is off
+    // When it renders
+    const container = render(<GitHubSettingsSection {...cardProps('false')} />)
+
+    // Then the setup block is gone and the explanation stands in its place
+    expect(container.querySelector('[data-dsh-part="github-settings"]')).toBeNull()
+    expect(container.textContent).toContain(zh['settings.integrationOff'])
+    // And the switch itself is still there to turn it back on
+    expect(container.textContent).toContain(zh['settings.enabled'])
   })
 })

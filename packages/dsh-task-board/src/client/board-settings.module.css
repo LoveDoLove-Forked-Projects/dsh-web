@@ -1,0 +1,50 @@
+/**
+ * Local styles of the task-board settings card.
+ *
+ * The card's chrome belongs to the shared family slice
+ * (`settings-card.module.css`, generated); this file owns only the
+ * verification block this package adds on top of it, so the section keeps its
+ * own hierarchy — a divider, a section heading, quiet notes and one error line
+ * — on theme tokens instead of inline literals.
+ */
+
+.section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-separator-primary);
+}
+
+.sectionTitle {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.note {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.error {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.resolvedList {
+  margin: 4px 0 8px;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Host for the sections other plugins contribute into this card (the GitHub
+   Issues extension contributes a nested settings card). Empty draws nothing;
+   the contributed card keeps its own chrome, border and save row. */
+.providerSections {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

@@ -26,6 +26,8 @@ All GitHub API communication is centralized in `GitHubApiClient` and `GitHubSync
 
 Background polling operates on its own configurable timer (`HostTimerFace`) independent of the 5-second session roster poll, preventing API rate limit starvation and decoupling external network latency from local heartbeat loops.
 
+The setup routes are addressed origin-absolute: `GITHUB_SETUP_API_PREFIX` is `/api/task-board-github`, because the Host webserver keys a route by the raw request pathname, which always begins at the origin root. A registered key without that leading slash can never match a request, and the settings card then reported "the Host refused the request (404)" for a deployment that was in fact mounted. The browser half calls the same route document-relative (`GITHUB_SETUP_API_PREFIX.slice(1)`), so a GUI served under a sub-path still resolves it against its own entry directory, and `tests/setup-routes.spec.ts` asserts that both halves name one path.
+
 ## Alternatives considered
 
 Direct two-way mirror between GitHub Issue state and Task Board columns was considered, where changing an issue state on GitHub would immediately drive local card movement and vice-versa. This was rejected because local task execution in DSH represents concrete agent runtime sessions: an external label change must not arbitrarily trigger or abort active local processes, and external GitHub status cannot represent transient local execution states like session launching or teammate spawning.

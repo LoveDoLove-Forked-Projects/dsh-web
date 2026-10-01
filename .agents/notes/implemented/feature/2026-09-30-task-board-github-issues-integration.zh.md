@@ -26,6 +26,8 @@ Status: implemented
 
 后台轮询使用独立的受限定时器（`HostTimerFace`），与现有的 5 秒会话名册心跳解耦，避免 API 配额耗尽并隔离外部网络抖动。
 
+配置路由按源点绝对路径寻址：`GITHUB_SETUP_API_PREFIX` 是 `/api/task-board-github`，因为宿主 web 服务器以原始请求路径名作为路由键，而请求路径名总是从源点根开始。注册键缺少前导斜杠就永远无法匹配任何请求，设置卡于是对一个其实已挂载的部署报出「无法访问本机 Host 配置接口：the Host refused the request (404)」。浏览器半区以文档相对形式调用同一条路由（`GITHUB_SETUP_API_PREFIX.slice(1)`），因此部署在子路径下的界面仍会相对自己的入口目录解析它；`tests/setup-routes.spec.ts` 断言两侧指向同一条路径。
+
 ## Alternatives considered
 
 曾考虑在 GitHub Issue 状态与任务看板列之间实现直接双向镜像（在 GitHub 变更状态直接驱动本地卡片移动，反之亦然）。该方案被否决，因为 DSH 本地任务执行对应真实的智能体运行时会话：外部标签变动不得随意中断或触发本地实际进程，且 GitHub 状态无法表达会话启动、队友生成等本地瞬态过程。

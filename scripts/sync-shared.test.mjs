@@ -34,7 +34,7 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // not synced here: no in-repo package imports
   // it (the satellite repositories that do carry their own copies), so only the
   // shared source and its spec remain in this repository.
-  assert.equal(entries.length, 104)
+  assert.equal(entries.length, 106)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
   assert.equal(clientTrio.length, 45)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
@@ -44,7 +44,7 @@ test('copies cover the settings trio for all consumers plus host and http helper
     || entry.target.includes('/src/pair-access.ts')
     || entry.target.includes('/src/agent/')
     || entry.target.endsWith('/packages/dsh-task-board/src/http.ts'))
-  assert.equal(hostCopies.length, 46)
+  assert.equal(hostCopies.length, 48)
 })
 
 test('checkSync detects drift and applySync repairs it', async () => {

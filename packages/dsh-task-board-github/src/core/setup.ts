@@ -15,11 +15,18 @@
 import type { GitHubRepoConfig, GitHubStateLabels } from './types.ts'
 
 /**
- * Same-origin route prefix of this extension's setup API. The browser calls it
- * document-relative (the GUI is served under `<base href="./">`), so a
- * sub-path deployment resolves it against its entry directory.
+ * Same-origin route prefix of this extension's setup API, written the way the
+ * Host webserver addresses a route: the request pathname always begins at the
+ * origin root, so a route registered without the leading slash lands under a
+ * key no request can produce and every setup call answers the SPA fallback
+ * (404) instead of the route — the card then reports "the Host refused the
+ * request (404)" for a deployment that is in fact mounted.
+ *
+ * The browser half calls the same route document-relative (the GUI is served
+ * under `<base href="./">`), which `./client/setup-api.ts` derives from this
+ * one constant so the two halves cannot drift apart again.
  */
-export const GITHUB_SETUP_API_PREFIX = 'api/task-board-github'
+export const GITHUB_SETUP_API_PREFIX = '/api/task-board-github'
 
 /** Settings namespace this extension's form is served under. */
 export const GITHUB_SETTINGS_NAMESPACE = 'task-board-github'

@@ -27,6 +27,7 @@ import {
   resolveTaskBoardClientFace,
   TASK_BOARD_CARD_DECORATION,
   TASK_BOARD_DETAIL_SECTION,
+  TASK_BOARD_SETTINGS_SECTION,
 } from '../../core/contract.ts'
 import { GITHUB_EXTENSION_ID } from '../../core/types.ts'
 import { GitHubCardDecoration, GitHubDetailSection } from './sections.tsx'
@@ -45,14 +46,36 @@ export interface ExtensionEnabledSource {
 }
 
 /**
+ * The configuration section this extension contributes to the board's own
+ * settings card.
+ *
+ * The section is NOT gated by the extension's own switch: turning the
+ * extension off must not remove the control that turns it back on. It is gated
+ * by the board's service alone, because the board's settings card is the only
+ * surface that declares the seat it renders into.
+ */
+export interface GitHubSettingsSectionSeat {
+  /** Build the face the section renders with (its staged form and setup API). */
+  inject(): unknown
+  /** The section component itself. */
+  component: unknown
+}
+
+/**
  * Install the GitHub browser half.
  * @param ctx - client context (slot registry).
  * @param source - the extension's live enabled switch.
  * @returns disposer releasing every contribution.
  */
-export function installGitHubClientHalf(ctx: ClientContext, source: ExtensionEnabledSource): () => void {
+export function installGitHubClientHalf(
+  ctx: ClientContext,
+  source: ExtensionEnabledSource,
+  settings?: GitHubSettingsSectionSeat,
+): () => void {
   /** The dependency-scoped fiber that owns the seats, while both gates are on. */
   let injection: ReturnType<ClientContext['inject']> | undefined
+  /** The fiber that owns the board's provider-settings section, independent of the switch. */
+  let settingsInjection: ReturnType<ClientContext['inject']> | undefined
 
   const install = (): void => {
     if (injection !== undefined) return
@@ -80,20 +103,59 @@ export function installGitHubClientHalf(ctx: ClientContext, source: ExtensionEna
     else release()
   }
 
+  // The provider-settings section: installed once, behind the board service,
+  // and left alone by the extension's own switch (see GitHubSettingsSectionSeat).
+  if (settings !== undefined) {
+    settingsInjection = ctx.inject(['taskBoard'], (scope: ClientContext) => {
+      scope.effect(() => registerSettingsSection(scope, settings), 'task-board-github: provider settings section')
+    })
+  }
+
   const unsubscribe = source.subscribe(apply)
   apply()
 
   return () => {
     unsubscribe()
     release()
+    const currentSettings = settingsInjection
+    settingsInjection = undefined
+    if (currentSettings !== undefined) void currentSettings.dispose()
   }
 }
 
 /**
- * Register the two seats, the visibility predicate and the mirror
+ * Register the configuration section into the seat the board's settings card
+ * renders. A seat that refuses the contribution is reported and leaves the rest
+ * of the extension working.
+ * @param ctx - the dependency-scoped context (slot registry).
+ * @param seat - the contribution to register.
+ * @returns disposer releasing the registration.
+ */
+function registerSettingsSection(ctx: ClientContext, seat: GitHubSettingsSectionSeat): () => void {
+  const slots = ctx.slots as {
+    register(options: Record<string, unknown>, component: unknown): () => void
+  }
+  try {
+    const dispose = slots.register({
+      name: TASK_BOARD_SETTINGS_SECTION,
+      id: GITHUB_EXTENSION_ID,
+      locale: LOCALE_NS,
+      inject: seat.inject,
+    }, seat.component as never)
+    return () => {
+      try { dispose() } catch { /* best-effort */ }
+    }
+  } catch (error) {
+    console.error('[dsh-task-board-github] provider settings section registration failed', error)
+    return () => {}
+  }
+}
+
+/**
+ * Register the two rendering seats, the visibility predicate and the mirror
  * subscription, for as long as the board's own master switch is on. The
- * board's settings seat is deliberately unused: the repository/credential
- * summary is part of this extension's own settings card.
+ * board's settings seat is installed separately (see
+ * {@link GitHubSettingsSectionSeat}): it must outlive this switch.
  * @param ctx - client context.
  * @returns disposer releasing every contribution.
  */

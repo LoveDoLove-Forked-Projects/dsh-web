@@ -12,6 +12,7 @@ import { t, type TaskBoardKey } from '../locales.ts'
 import { SCHEDULE_PRESETS } from '../schedule-presets.ts'
 import { nextRunLabel, zoneChoices } from '../schedule-zone.ts'
 import { CollapsibleSection, ModalShell, TaskContentFields, TaskTagFields, cleanTags } from './TaskForm.tsx'
+import type { OverlayPhase } from './overlay.tsx'
 import { formatHostTimestamp } from './TaskCard.tsx'
 import { readParseModelPreference, writeParseModelPreference } from './parse-model-pref.ts'
 import { inheritPresetLabel, isBuiltinPreset, presetLabel } from './preset-label.ts'
@@ -35,10 +36,12 @@ export interface NewTaskModalProps {
    * carries the parent link; unset targets inherit again at run time.
    */
   parentTask?: TaskRecord
+  /** Which leg of the enter/exit motion pair the surface is on. */
+  phase?: OverlayPhase
 }
 
 /** New-task form overlay. */
-export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspaceId, onDuplicateSuccess, parentTask }: NewTaskModalProps) {
+export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspaceId, onDuplicateSuccess, parentTask, phase }: NewTaskModalProps) {
   const isDuplicate = initialTask !== undefined
   const [title, setTitle] = useState(initialTask?.title ?? '')
   const [description, setDescription] = useState(initialTask?.description ?? '')
@@ -277,6 +280,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
       submitLabel={t('new.submit')}
       onSubmit={() => { void submit(false) }}
       onClose={onClose}
+      phase={phase}
       secondaryAction={{ label: t('new.createAndRun'), onSubmit: () => { void submit(true) } }}
     >
       {canParse && (

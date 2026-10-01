@@ -1,14 +1,22 @@
 /**
- * Browser half of the GitHub provider extension: the dictionaries it registers
- * and the settings card it contributes to whichever plugin-card seat the host
- * renders.
+ * Browser half of the GitHub provider extension: the dictionaries it registers,
+ * the rendering seats it installs while the board runs, and the configuration
+ * section it contributes into the board's own settings card. The configuration
+ * section must outlive the extension's own switch — it is where that switch
+ * lives, so a section gated by the switch could never turn it back on.
  */
 import { describe, expect, it } from 'vitest'
 import { apply, NS } from '../src/client/index.ts'
-import { FAMILY_PLUGIN_CARD_SEAT, OFFICIAL_PLUGIN_CARD_SEAT } from '../src/client/plugin-card-seat.ts'
+
+/** The board's settings seat, restated (this package may not import the board). */
+const SETTINGS_SECTION = 'task-board.settings.section'
+/** The board's task-detail seat. */
+const DETAIL_SECTION = 'task-board.detail.section'
+/** The board's card-decoration seat. */
+const CARD_DECORATION = 'task-board.card.decoration'
 
 /**
- * Settings-form double that applies the batched writes the card submits, so
+ * Settings-form double that applies the batched writes the section submits, so
  * the staged form's read-back judgment settles on the same values the Host
  * would hold.
  */
@@ -42,28 +50,43 @@ function form(initial: Record<string, unknown>) {
 
 /**
  * Browser context double over the services the browser half reads: the slot
- * registry, the locale catalog, the shared forms service, and (when the family
- * group is loaded) its settings binder.
+ * registry, the locale catalog, the family settings binder, and the board's
+ * client face. `inject` runs the dependency callback the way cordis does once
+ * the board serves its service, so the seats register into the recorded list.
  */
-function context(options: { group?: boolean } = {}) {
+function context(options: { enabled?: boolean } = {}) {
   const registrations: Array<Record<string, unknown>> = []
   const dictionaries: string[] = []
-  const { scope } = form({ enabled: true })
-  const ctx = {
-    get: (name: string) => (options.group === true && name === 'webUiSettings' ? { bind: () => scope } : undefined),
-    on: () => () => {},
-    effect: (callback: () => unknown) => callback(),
-    // This page serves no task board, so the dependency scope never runs: the
-    // dictionaries and the settings card must mount anyway (they are what the
-    // operator needs to configure the extension without a board). The shape
-    // matches cordis's: a fiber with a dispose.
-    inject: () => ({ dispose: () => {} }),
-    slots: {
-      register: (entry: Record<string, unknown>) => {
-        registrations.push(entry)
-        return () => {}
-      },
+  const { scope } = form({ enabled: options.enabled !== false })
+  const face = {
+    dispatch: async () => true,
+    registerVisibility: () => () => {},
+    subscribe: () => () => {},
+    snapshot: () => ({ enabled: true, tasks: [], extensions: {} }),
+  }
+  const slots = {
+    register: (entry: Record<string, unknown>) => {
+      registrations.push(entry)
+      return () => {}
     },
+  }
+  const ctx = {
+    get: (name: string) => {
+      if (name === 'taskBoard') return face
+      if (name === 'webUiSettings') return { bind: () => scope }
+      return undefined
+    },
+    on: () => () => {},
+    effect: (callback: () => unknown) => { callback(); return () => {} },
+    inject: (_services: readonly string[], callback: (scoped: unknown) => void) => {
+      callback({
+        get: ctx.get,
+        slots,
+        effect: (registered: () => unknown) => { registered(); return () => {} },
+      })
+      return { dispose: () => {} }
+    },
+    slots,
     locale: {
       register: (namespace: string, catalog: Record<string, unknown>) => {
         dictionaries.push(namespace + ':' + Object.keys(catalog).join(','))
@@ -79,39 +102,45 @@ function context(options: { group?: boolean } = {}) {
 }
 
 describe('task-board GitHub extension browser half', () => {
-  it('operator with the family settings group loaded sees the card in the family list seat', () => {
-    // Given a page whose settings group publishes its family binder
-    const harness = context({ group: true })
+  it('operator opening the board settings card gets the GitHub configuration inside it', () => {
+    // Given a page whose settings group publishes its family binder and whose board serves its service
+    const harness = context({ enabled: true })
 
     // When the browser half applies
     apply(harness.ctx as never)
 
-    // Then one card entry names this package, its row id, its order and its namespace
-    expect(harness.registrations).toHaveLength(1)
-    expect(harness.registrations[0]).toMatchObject({
-      name: FAMILY_PLUGIN_CARD_SEAT,
-      id: 'task-board-github',
-      order: 130,
-      locale: NS,
-    })
+    // Then the configuration section is registered into the BOARD's own card seat,
+    // under this extension's id and its own locale namespace
+    const section = harness.registrations.find(entry => entry.name === SETTINGS_SECTION)
+    expect(section).toMatchObject({ name: SETTINGS_SECTION, id: 'github', locale: NS })
     // And both dictionaries of that namespace were registered for the page
     expect(harness.dictionaries).toEqual(['task-board-github:zh,en'])
   })
 
-  it('operator without the settings group sees the card in the official bundle seat', () => {
-    // Given a page that serves no family group, only the shared forms service
-    const harness = context()
+  it('operator turning the extension off keeps the section that turns it back on', () => {
+    // Given the same page with the extension's master switch off
+    const harness = context({ enabled: false })
 
     // When the browser half applies
     apply(harness.ctx as never)
 
-    // Then the card is contributed under the official keyed seat, keyed by the bundle name
-    expect(harness.registrations).toHaveLength(1)
-    expect(harness.registrations[0]).toMatchObject({
-      name: OFFICIAL_PLUGIN_CARD_SEAT,
-      key: '@linxin666/dsh-client-ui-task-board-github',
-      locale: NS,
-    })
-    expect(harness.registrations[0]?.id).toBeUndefined()
+    // Then the configuration section is still registered ...
+    expect(harness.registrations.map(entry => entry.name)).toContain(SETTINGS_SECTION)
+    // ... while the board's rendering seats are gone, because the extension is not running
+    expect(harness.registrations.map(entry => entry.name)).not.toContain(DETAIL_SECTION)
+    expect(harness.registrations.map(entry => entry.name)).not.toContain(CARD_DECORATION)
+  })
+
+  it('operator running the extension gets both board rendering seats under one extension id', () => {
+    // Given a page whose board serves its service and an enabled extension
+    const harness = context({ enabled: true })
+
+    // When the browser half applies
+    apply(harness.ctx as never)
+
+    // Then the detail section and the card decoration are registered under the extension id
+    const seats = harness.registrations.filter(entry => entry.name === DETAIL_SECTION || entry.name === CARD_DECORATION)
+    expect(seats).toHaveLength(2)
+    for (const seat of seats) expect(seat.id).toBe('github')
   })
 })
