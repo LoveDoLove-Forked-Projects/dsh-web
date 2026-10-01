@@ -123,6 +123,25 @@ describe('task-board settings card disclosure', () => {
     expect(container.querySelector('#settings-task-board-enabled')).toBeNull()
   })
 
+  it('operator tells the board card apart from its topics by the glyph leading its header', () => {
+    // Given the expanded settings card with its board topic
+    const container = render(cardProps())
+    act(() => { header(container, zh['settings.title']).click() })
+
+    // When the operator scans the disclosure headers
+    const board = header(container, zh['settings.title'])
+    const topic = header(container, zh['settings.enabled'])
+
+    // Then the plugin card leads with a decorative glyph before its title,
+    // while a nested topic keeps the plain header shape without one
+    const mark = board.firstElementChild
+    expect(mark?.getAttribute('aria-hidden')).toBe('true')
+    expect(mark?.firstElementChild?.tagName.toLowerCase()).toBe('svg')
+    expect(mark?.nextElementSibling?.textContent).toContain(zh['settings.title'])
+    expect(topic.firstElementChild?.getAttribute('aria-hidden')).toBeNull()
+    expect(topic.querySelectorAll('span[aria-hidden="true"]')).toHaveLength(0)
+  })
+
   it('operator expanding the board card finds the board topic, task acceptance and the provider card collapsed', () => {
     // Given the collapsed settings card of a deployment whose provider seat
     // contributes one card

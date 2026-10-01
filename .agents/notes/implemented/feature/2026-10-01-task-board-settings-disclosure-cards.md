@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Extended by [family settings cards carry an identity mark and one-line copy](./2026-10-01-family-settings-cards-identity-marks-and-copy.md): the two topic descriptions and the card's copy line are shortened, and the power-status lines become quiet small print; the disclosure layout itself is unchanged.
+
 ## Problem
 
 The board's own settings card rendered every option in one flat body: the master

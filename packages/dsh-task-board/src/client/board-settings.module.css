@@ -26,6 +26,32 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* Live power facts plus the battery caveat, below the topic cards: quiet
+   small print that follows the disclosures instead of competing with them.
+   No rule of its own — the last topic card already closes with its border. */
+.power {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 14px;
+}
+
+/* Both the live power line and the battery caveat: secondary ink at the small
+   size the 12-13px roles use, so neither competes with the topic cards. */
+.powerLine {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.powerError {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-error-primary);
+}
+
 /* The nested disclosure cards of this card: the board and its runtime
    behavior, goal acceptance, and the sections a provider contributes (the
    GitHub Issues extension contributes one). The gap keeps the stacked card

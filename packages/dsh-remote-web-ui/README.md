@@ -72,7 +72,7 @@ Restart the profile (`dsh web`), then open the phone icon in the sidebar foot. T
 
 ## Use
 
-1. Open the settings card (设置 → Web 插件 → 远程访问设置) and flip **局域网访问** on if the server binds loopback; the card shows the live bind, the firewall state, and the reachable LAN URLs. The bind change takes effect from the next `dsh web` start.
+1. Open the settings card (设置 → Web 插件 → 远程访问) and flip **局域网访问** on if the server binds loopback; the card shows the live bind, the firewall state, and the reachable LAN URLs. The bind change takes effect from the next `dsh web` start.
 2. Start `dsh web`, click the phone icon, and the panel mints a fresh time-limited QR.
 3. Scan with the phone (or open the copied link): the device pairs and boots the **official Web GUI** served cookieless by the plugin (`/pair-accept` → `/pair-app`), which reloads into `/`. On a phone, the portrait adaptation layer is already active — same layout as the desktop, same live state. Later reopens from history or a bookmark go straight back into the app (https origins; see Security model).
 4. **To pair a PC instead**: copy the same link and open it in a browser on the other computer. After the same round trip the full Web GUI runs there over the gated `/remote` channel; unpaired PCs see the guided blocking page and no data. One active token pairs one device; mint a fresh QR for the next device.

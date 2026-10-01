@@ -13,7 +13,7 @@
 /** Extension copy, key source of truth. */
 export const zh = {
   'settings.title': 'GitHub Issues 同步',
-  'settings.description': '任务看板的外部提供方扩展：把 GitHub Issues 同步成看板卡片，并把列变化写回 issue 标签。本区块随「任务看板」设置卡一起呈现，默认开启，可随时关闭。',
+  'settings.description': '把 GitHub Issues 同步成看板卡片，并把列变化写回 issue 标签。',
   'settings.integrationOff': '本扩展当前关闭：仓库与凭据设置暂不加载，看板卡片与详情区也不会出现它的区块。把上面的开关打开即可继续配置。',
   'settings.enabled': '启用 GitHub Issues 同步',
   'settings.enabledHint': '关闭后本扩展不向任务看板注册任何东西：停止轮询、停止写回、注销 agent 工具、清空同步状态，详情区与卡片徽章随之消失；本设置卡保留并显示为未运行，随时可以重新开启。看板与已同步的卡片数据都不受影响。',
@@ -103,7 +103,7 @@ export const zh = {
 /** English counterpart; the key set mirrors {@link zh} exactly. */
 export const en: Record<keyof typeof zh, string> = {
   'settings.title': 'GitHub Issues sync',
-  'settings.description': 'External provider extension for the task board: it synchronizes GitHub Issues into board cards and writes column changes back to the issue labels. It renders inside the Task Board settings card, is on by default and can be switched off at any time.',
+  'settings.description': 'Synchronize GitHub Issues into board cards and write column changes back to the issue labels.',
   'settings.integrationOff': 'This extension is currently off: the repository and credential setup is not loaded, and its blocks disappear from the board cards and the task detail. Turn the switch above on to configure the integration.',
   'settings.enabled': 'Enable GitHub Issues sync',
   'settings.enabledHint': 'When off, this extension registers nothing with the board: polling stops, write-back stops, the agent tools unregister and the sync status clears, and its detail section and card decoration disappear. This settings card stays reachable and reports that the extension is not running, so the switch can be turned back on. The board and the cards already synchronized are unaffected.',
