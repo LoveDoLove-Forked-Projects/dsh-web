@@ -1,13 +1,21 @@
-# @linxin666/dsh-client-ui-market
+# dsh-market · DSH Workshop In-GUI Marketplace & One-Click Asset Installer
 
 English | [中文](README.zh.md)
 
-Workshop store card for the DSH Web GUI settings page: one first-level Workshop
-section that browses [dsh-market.com](https://dsh-market.com) from inside the GUI and installs skins,
-pets, plugins and community presets locally with one click; installed items are managed by their own
-surfaces (Skin Center, Pet, the plugin manager in the official Plugins section, and the Presets panel
-this card's preset tab renders). The leading 编辑推荐 (Editor's Picks) tab pins a small fixed
-selection of skins, pets and community plugins.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-client-ui-market?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>In-GUI Workshop Marketplace & One-Click Asset Installer for DeepSeek Harness (DSH)</strong><br>
+  <em>Unified dsh-market.com Browser · One-Click Themes / Pets / Presets / Plugins · Trending Rankings · Zero Restart</em>
+</p>
+
+The in-GUI Workshop marketplace card for DeepSeek Harness (DSH) Web GUI and official desktop client: browse themes, skins, animated desktop pets, ecosystem plugins, and community agent presets from [dsh-market.com](https://dsh-market.com) with one-click local installation and instant activation directly inside Settings.
 
 ## What it does
 

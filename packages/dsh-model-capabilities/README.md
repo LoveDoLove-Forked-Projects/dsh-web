@@ -1,8 +1,21 @@
-# dsh-model-capabilities
+# dsh-model-capabilities · Custom Model Capabilities & Vision Multimodal Declarations for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
 
-Per-model reasoning-effort declarations for custom DSH providers: declare which thinking levels a model offers and the exact wire value each one sends, for every model in a custom provider's catalog, edited in place on the Models settings page. The official pi-ai settings namespace has carried the field all along, and 0.1.7-alpha.1's Models page edits the model input types itself, so this plugin owns the reasoning-effort editor the settings page ships without.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-model-capabilities?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>Custom Model Capabilities & Vision Multimodal Declarations for DeepSeek Harness (DSH)</strong><br>
+  <em>Per-Model Reasoning Tiers · Multimodal Vision Declarations · Provider Archive & Restore · Models Settings Extension</em>
+</p>
+
+A custom model capability extension for DeepSeek Harness (DSH) Web GUI and official desktop client: visually declare reasoning effort profiles per model, customize payload values, configure multimodal vision inputs, and toggle provider activation states directly inside the official Models settings view without restarting the host.
 
 ## What it does
 

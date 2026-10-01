@@ -1,10 +1,21 @@
-# @linxin666/dsh-client-ui-skill-explorer
+# dsh-skill-explorer · Visual Skill & Tool Explorer for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
 
-A **skill center** for the DSH web GUI: browse every loaded skill grouped by
-source, enable or disable model invocation, create new skills, and delete
-skills into a recoverable trash.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-client-ui-skill-explorer?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>Visual Skill & Tool Explorer for DeepSeek Harness (DSH) Web GUI & Desktop</strong><br>
+  <em>Tiered Skill Catalog · Model Invocation Toggle · Visual SKILL.md Editor · Safe Trash · Zero Intrusion</em>
+</p>
+
+A visual Skill Explorer for DeepSeek Harness (DSH) Web GUI and desktop client: browse loaded skills tiered by source origin, toggle model invocation permissions, author new skills, and manage files through a safe trash mechanism.
 
 ## What it does
 

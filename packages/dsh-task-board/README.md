@@ -1,8 +1,21 @@
-# dsh-task-board — DSH web GUI task board plugin
+# dsh-task-board · Autonomous Task Board & Cron Scheduling for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
 
-A hot-pluggable DeepSeek Harness (DSH) Web GUI plugin with a Host-authoritative task ledger, real DSH session execution, Host cron scheduling, and optional cross-platform idle-sleep protection. It is mounted through `cordis.patch.yml` and the profile mechanism and does not modify DSH source code.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-task-board?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>Autonomous Kanban Task Board & Cron Scheduling for DeepSeek Harness (DSH)</strong><br>
+  <em>5-Column Kanban · Cron Background Scheduling · Real Agent Execution · Power Sleep Prevention · Verification Gate</em>
+</p>
+
+A hot-pluggable DeepSeek Harness (DSH) Web GUI and official desktop client task automation plugin with a Host-authoritative task ledger, real DSH agent session execution, cron background scheduling, cross-platform idle-sleep protection, multi-agent cascades, and automated verification quality gates. It executes unattended background workflows including automated code reviews, routine health checks, and scheduled pipelines without requiring an open browser window. It mounts cleanly via `cordis.patch.yml` and profiles without modifying DSH core code.
 
 - The browser is an asynchronous view; closing the page does not stop Host scheduling or execution settlement.
 - Every run applies the pinned workspace, agent preset, and permission before sending the task prompt; by default each run creates its own DSH session, and a task can opt into continuing in its previous session instead (issue #1419).

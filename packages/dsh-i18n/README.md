@@ -1,8 +1,21 @@
-# dsh-i18n
+# dsh-i18n · Internationalization & Multilingual (ZH/EN/RU) Localization for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
 
-Language pack plugin for the dsh web GUI: it adds the Русский language to the Web GUI language catalog and centrally carries the ru dictionaries for every family plugin namespace, so external contributors can translate and maintain Russian copy in one place.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-i18n?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>Internationalization & Multilingual (ZH/EN/RU) Localization for DeepSeek Harness (DSH)</strong><br>
+  <em>Multilingual Localization · Russian (Русский) Pack · Full Plugin Family Coverage · Seamless Fallbacks</em>
+</p>
+
+A localization language-pack plugin for DeepSeek Harness (DSH) Web GUI and desktop client: registers Русский (Russian) into the shared language catalog and provides dictionary coverage across all family plugin namespaces.
 
 ## What it does
 

@@ -1,8 +1,23 @@
-# @linxin666/dsh-web-all
+# dsh-web-all · DeepSeek Harness (DSH) Web GUI 官方插件全家桶聚合包
 
 [English](README.md) | 中文
 
-DSH Web UI 全家桶聚合插件：一键安装家族的全部功能插件（任务看板 / Git 图谱 / 宠物 / 移动端远程 / SSH / 模型能力 / 会话归档 / 皮肤 / 设置区 / 社区插件，完整清单以本包 `aggregate.yml` 为准）。compat 桥接层已并入本包（`src/client`），因此无需独立的 compat npm 包。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-web-all?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/npm/dm/@linxin666/dsh-web-all?style=flat-square" alt="Downloads">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端全家桶一键聚合包</strong><br>
+  <em>自动化任务看板 · 手机远程控制 · SSH 终端运维 · Git 图谱与 Worktree 隔离 · 会话归档 · 用量统计 · 主题皮肤</em>
+</p>
+
+DeepSeek Harness（DSH）Web UI 与官方桌面客户端全家桶聚合插件：一键安装家族的全部功能插件（任务看板 / Git 图谱 / 桌面宠物 / 移动端远程 / SSH 运维 / 模型能力声明 / 会话归档 / 皮肤中心 / 设置区 / 社区插件，完整清单以本包 `aggregate.yml` 为准）。compat 桥接层已并入本包（`src/client`），因此无需独立的 compat npm 包。
 
 > 注（alpha 分支，2026-09-17）：本分支不内置任何外部插件。
 

@@ -1,8 +1,21 @@
-# dsh-session-archive
+# dsh-session-archive · DeepSeek Harness (DSH) 全量会话多维检索、批量归档与生命周期清理插件
 
 [English](README.md) | 中文
 
-DSH Web 的会话归档管理插件：集中查看全部会话，批量归档/恢复，并以完整、可审计的管线物理删除会话。可选（默认关闭）的自动策略按未活动时长自动归档、按归档保留期自动清理。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-session-archive?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端全量会话归档与生命周期治理中心</strong><br>
+  <em>全量会话集中视图 · 多维搜索与异常过滤 · 批量归档与级联物理删除 · 自动化保留与清理策略 · 磁盘空间释放</em>
+</p>
+
+面向 DeepSeek Harness (DSH) Web GUI 与官方桌面客户端的会话归档管理插件：集中查看全部会话，批量归档/恢复，并以完整、可审计的管线物理删除会话与释放磁盘。可选（默认关闭）的自动策略按未活动时长自动归档、按归档保留期自动清理。
 
 ## 功能
 

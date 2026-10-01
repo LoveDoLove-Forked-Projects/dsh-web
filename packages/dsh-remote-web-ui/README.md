@@ -1,9 +1,23 @@
-# DSH Remote Web UI
+# dsh-remote-web-ui · Mobile & Cross-Device Remote Web Control for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
-> Remote access for the dsh web GUI that shares **one interface**: pair a phone or another computer from a QR beside the settings button, and both run the same official Web GUI this machine runs — phones get an injected portrait-touch adaptation, PCs get the full desktop — through time-limited pairing tokens and revocable device sessions. A settings toggle binds the server to the LAN, an optional Cloudflare quick tunnel reaches the internet — fronted by a never-changing stable hostname so the phone's bookmark and pairing survive restarts with zero setup.
 
-This repository is an external plugin package for DeepSeek Harness (DSH). It is a single dual-face package: the host half owns pairing tokens, device sessions, the `/api/pair` route family, the gated `/remote` channel, the LAN bind toggle; the browser half renders the sidebar-foot remote-access entry beside the settings button, the pairing panel with a QR code, live device status, the authorized-device roster, the settings card, and the portrait-touch adaptation layer over the official UI.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-client-ui-remote-web-ui?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>Mobile & Cross-Device Remote Web Control for DeepSeek Harness (DSH)</strong><br>
+  <em>Instant QR Pairing · Cross-Device PC Access · Mobile Touch Gestures · Cloudflare Tunnels · Secure Device Session</em>
+</p>
+
+> Seamless remote access for DeepSeek Harness (DSH) Web GUI and desktop client sharing the **exact same interface**: pair an iPhone, Android smartphone, tablet, or another computer from the QR code next to settings. Both ends run the authentic official Web GUI — phones receive an injected portrait touch layer while remote computers enjoy the complete desktop workbench. Access is guarded by expiring pairing tokens and revocable sessions. Built-in LAN binding and optional Cloudflare quick tunnels enable effortless external access with persistent hostnames.
+
+This package is an official external plugin for DeepSeek Harness (DSH), structured as a cordis bundle: the host half manages pairing tokens, device sessions, `/api/pair` routes, the gated `/remote` channel, and LAN binding; the browser half renders the remote access trigger, QR pairing modal, live device roster, settings card, and mobile portrait touch adaptation.
 
 ## What it does
 

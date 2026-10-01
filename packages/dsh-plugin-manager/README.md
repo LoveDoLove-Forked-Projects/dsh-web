@@ -1,8 +1,21 @@
-# @linxin666/dsh-client-ui-plugin-manager
+# dsh-plugin-manager · Client Plugin Manager & Lifecycle Control UI for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
 
-Update checking for the dsh web GUI's Plugins panel: it contributes the surfaces the official plugin manager page does not own — comparing an installed plugin against the version its registry source serves (the DSH-runtime compatibility gate included) as a section on that plugin's page, plus a list-level toolbar beside the page's "Installed" heading that checks every installed plugin, updates the third-party ones in one run, and restarts DSH to load them. Installing, uninstalling, enabling and disabling belong to the official page, which owns the panel; this package used to add a separate `Plugin manager` tab there and no longer does.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-client-ui-plugin-manager?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>Client Plugin Manager & Lifecycle Control UI for DeepSeek Harness (DSH)</strong><br>
+  <em>Installed Plugin Version Checks · One-Click Batch Updates · Runtime Compatibility Gate · Safety Rollback · Dual Channels</em>
+</p>
+
+An update and lifecycle manager for DeepSeek Harness (DSH) Web GUI and official desktop client: adds real-time registry version comparisons with DSH runtime compatibility checks directly into the official Plugins page, providing list-level batch updates, safe rollback mechanisms, and restart-to-apply workflows.
 
 ## What it does
 

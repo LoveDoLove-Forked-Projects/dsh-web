@@ -1,10 +1,25 @@
-# @linxin666/dsh-web-all
+# dsh-web-all · Official All-in-One Plugin Bundle for DeepSeek Harness (DSH) Web GUI
 
 English | [中文](README.zh.md)
 
-The one-click aggregate package for the whole dsh web UI family: installing it brings every functional plugin of the family (task board / Git graph / pet / mobile remote / SSH / model capabilities / session archive / skins / settings / community plugins, with `aggregate.yml` in this package as the complete list). The compat bridge layer is folded into this package (`src/client`), so no separate compat npm package is needed.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-web-all?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/npm/dm/@linxin666/dsh-web-all?style=flat-square" alt="Downloads">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
 
-> Note (alpha branch, 2026-09-17): this branch bundles no external plugin.
+<p align="center">
+  <strong>All-in-One Plugin Bundle for DeepSeek Harness (DSH) Web GUI & Desktop Client</strong><br>
+  <em>Task Board · Mobile Remote · SSH Terminal · Git Graph & Worktree · Session Archive · Usage Stats · Themes</em>
+</p>
+
+The official all-in-one aggregate plugin bundle for DeepSeek Harness (DSH) Web GUI and desktop client: install all family plugins with a single command (Task Board / Git Graph / Desktop Pet / Mobile Remote / SSH Ops / Model Capabilities / Session Archive / Skin Center / Settings / Community Plugins, as defined in `aggregate.yml`). The client compat layer is integrated directly (`src/client`) eliminating separate compat packages.
+
+> Note (alpha branch, 2026-09-17): this branch vendors no external third-party plugins.
 
 ## What it is
 

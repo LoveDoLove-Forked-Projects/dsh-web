@@ -1,8 +1,21 @@
-# @linxin666/dsh-client-ui-market
+# dsh-market · DeepSeek Harness (DSH) 创意工坊商厦与一键资产安装插件
 
 [English](README.md) | 中文
 
-DSH Web GUI 设置页的创意工坊商店卡片：唯一的「创意工坊」一级分区在 GUI 内浏览 [dsh-market.com](https://dsh-market.com) 的皮肤、宠物、插件与社区预设，并一键安装到本机；已安装内容由各自界面管理（皮肤中心、宠物、官方插件分区内的插件管理，以及本卡片预设标签页渲染的预设面板）；最前的「编辑推荐」标签固定展示一小份皮肤、宠物与社区插件清单。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-client-ui-market?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端内置创意工坊商店与资产管理中心</strong><br>
+  <em>一站式浏览 dsh-market.com · 主题皮肤/桌宠/预设/插件一键安装 · 在线热度榜 · 零重启热加载</em>
+</p>
+
+DSH Web GUI 与官方桌面客户端设置页的创意工坊商店卡片：唯一的「创意工坊」一级分区在 GUI 内浏览 [dsh-market.com](https://dsh-market.com) 的皮肤、宠物、插件与社区预设，并一键安装到本机；已安装内容由各自界面管理（皮肤中心、宠物、官方插件分区内的插件管理，以及本卡片预设标签页渲染的预设面板）；最前的「编辑推荐」标签固定展示一小份皮肤、宠物与社区插件清单。
 
 ## 功能
 

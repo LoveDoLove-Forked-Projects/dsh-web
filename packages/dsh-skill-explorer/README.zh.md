@@ -1,9 +1,21 @@
-# @linxin666/dsh-client-ui-skill-explorer
+# dsh-skill-explorer · DeepSeek Harness (DSH) Skill 技能与工具资源可视化浏览器
 
 [English](README.md) | 中文
 
-DSH Web GUI 的**技能中心**：按来源分级浏览已加载的全部 skill，启用/禁用模型
-调用，创建新技能，删除技能（移入可恢复的回收站）。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-client-ui-skill-explorer?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端专属技能中心与 Skill 管理面板</strong><br>
+  <em>按来源层级浏览 · 一键启闭模型调用 · 可视化新建/编辑 SKILL.md · 安全回收站 · 零侵入管理</em>
+</p>
+
+DSH Web GUI 与官方桌面客户端的**技能中心**：按来源分级浏览已加载的全部 skill，启用/禁用模型调用，创建新技能，删除技能（移入可恢复的回收站）。
 
 ## 功能
 

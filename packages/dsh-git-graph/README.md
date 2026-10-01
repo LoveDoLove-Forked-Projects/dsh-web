@@ -1,10 +1,23 @@
-# dsh-git-graph
+# dsh-git-graph · Visual Git Commit Graph & Multi-Agent Worktree Isolation for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
 
-External dsh Web GUI plugin: a **git branch selector** and **Git graph** panel. The selector appears only in blank sessions, in the context hole of the official input selector row (`conversation.input.selector.context`, a session-maybe list slot) next to the official workspace selector pill. If the running shell does not declare that slot (the npm SDK rc.6 removed it), it waits `CONTEXT_FALLBACK_MS` then falls back to `conversation.input.dock`; in its blank-session hero phase the chip lifts into the official hero row immediately after the agent-preset seat, using the same transparent 28px pill recipe and `--dsw-*` theme tokens as the official workspace and preset chips. Active sessions expose no branch-selection control. Git capabilities run in the host process (checkout-tree `git switch`) and the UI is browser React; workspace selection remains the official entry.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-git-graph?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
 
-Behavior aligns with ZCode's `GitBranchSwitcher`: searchable popover, a checkmark on the current item, bottom actions "创建并检出新分支… / Git 图谱" (Create and check out new branch… / Git graph), a switch guard (unresolved conflicts / an operation in progress / the target branch checked out by another worktree) and readable errors.
+<p align="center">
+  <strong>Visual Git Commit Graph & Multi-Agent Worktree Isolation for DeepSeek Harness (DSH)</strong><br>
+  <em>Interactive Commit Graph · Blank-Session Branch Switcher · Worktree Isolation · Conflict Prevention · Security Guards</em>
+</p>
+
+An external plugin for DeepSeek Harness (DSH) Web GUI and official desktop client: featuring an **interactive Git branch switcher** and a **visual Git commit graph** panel. The branch switcher appears exclusively on blank conversations, mounting into the shell's context slot (`conversation.input.selector.context`) alongside the workspace chip. If the running shell does not declare that slot, it falls back to `conversation.input.dock` after `CONTEXT_FALLBACK_MS`. In blank conversation hero state, the chip elevates into the hero row directly right of the agent-preset chip, styled with authentic 28px pill layout and `--dsw-*` theme tokens. Active sessions hide the switcher. Git operations run in the host process (`git switch`) while the UI renders via React.
+
+Mirrors ZCode's `GitBranchSwitcher` behavior: searchable dropdown, active checkmark, "Create and switch branch... / Git Graph" footer actions, safety guards (unresolved merge conflicts, operations in progress, branch locked by other worktrees), and clear error diagnostics.
 
 ## Repository layout and build
 

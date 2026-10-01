@@ -1,8 +1,21 @@
-# dsh-usage
+# dsh-usage · Token Usage Breakdown, API Balance & Cost Monitor for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
 
-Usage statistics plugin for the dsh web GUI: per-provider balance and coding-plan quota detection plus a live token usage ledger, with a compact price glance card above the sidebar's Settings row.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-usage?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>Token Usage Breakdown, Multi-Provider Balance & Cost Monitor for DeepSeek Harness (DSH)</strong><br>
+  <em>Daily Token Analytics · Provider API Balance · Subscription Quotas · Peak/Off-Peak Costing · Token Bank</em>
+</p>
+
+A dedicated token usage and cost monitoring plugin for DeepSeek Harness (DSH) Web GUI and official desktop client: multi-provider balances, coding subscription quota tracking, live token accounting ledgers, and a compact quick-glance card above settings in the sidebar.
 
 ## What it does
 

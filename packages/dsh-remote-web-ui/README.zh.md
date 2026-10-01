@@ -1,7 +1,21 @@
-# DSH 远程访问（Remote Web UI）
+# dsh-remote-web-ui · DeepSeek Harness (DSH) 手机端与跨设备浏览器远程控制插件
 
 [English](README.md) | 中文
-> 为 dsh web GUI 提供共享**同一份界面**的远程访问：在设置按钮旁的二维码配对手机或另一台电脑，两端运行的都和本机一样是官方 Web GUI——手机获得注入的竖屏触控适配，电脑获得完整桌面；准入基于限时配对令牌与可撤销设备会话。设置卡片可将服务绑定到局域网，可选 Cloudflare 快速隧道触达公网——并由一个永不变化的固定主机名前置，手机的书签与配对零配置跨重启有效。
+
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-client-ui-remote-web-ui?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端手机与跨设备远程控制中心</strong><br>
+  <em>手机扫码即连 · 跨设备 PC 浏览器访问 · 竖屏触控手势优化 · Cloudflare 公网隧道 · 安全设备配对</em>
+</p>
+
+> 为 DeepSeek Harness (DSH) Web GUI 与官方桌面客户端提供共享**同一份界面**的远程访问：在设置按钮旁的二维码配对手机或另一台电脑，两端运行的都和本机一样是官方 Web GUI——手机获得注入的竖屏触控适配，电脑获得完整桌面；准入基于限时配对令牌与可撤销设备会话。设置卡片可将服务绑定到局域网，可选 Cloudflare 快速隧道触达公网——并由一个永不变化的固定主机名前置，手机的书签与配对零配置跨重启有效。
 
 本仓库是 DeepSeek Harness（DSH）的外部插件包，为单一双面包：host 半区持有配对令牌、设备会话、`/api/pair` 路由族、门控 `/remote` 通道、局域网绑定开关；浏览器半区渲染侧栏底部、设置按钮旁的远程访问入口、带二维码的配对面板、实时设备状态、已授权设备列表、设置卡片，以及官方界面之上的竖屏触控适配层。
 

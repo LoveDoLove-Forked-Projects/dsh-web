@@ -1,8 +1,21 @@
-# dsh-session-archive
+# dsh-session-archive · Full-Text Session Search, Batch Archiving & Lifecycle Manager for DeepSeek Harness (DSH)
 
 English | [中文](README.zh.md)
 
-Session archive management for DSH Web: one place to see every session, archive or restore them in bulk, and physically delete sessions with a full, auditable pipeline. Optional (default-off) automatic policies archive long-inactive sessions and purge expired archives.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-session-archive?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>Full-Text Session Search, Batch Archiving & Lifecycle Manager for DeepSeek Harness (DSH)</strong><br>
+  <em>Centralized Session View · Faceted Search & Filtering · Batch Archive & Cascade Delete · Automated Retention Rules</em>
+</p>
+
+A comprehensive session lifecycle and archive management plugin for DeepSeek Harness (DSH) Web GUI and official desktop client: centralized session inventory, batch archive/unarchive, and verifiable cascade physical deletion pipelines with disk space reclamation. Optional automated policies automatically archive inactive sessions and prune expired archives based on retention schedules.
 
 ## What it does
 

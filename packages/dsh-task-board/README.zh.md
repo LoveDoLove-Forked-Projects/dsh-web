@@ -1,8 +1,21 @@
-# dsh-task-board — DSH web GUI 任务看板插件
+# dsh-task-board · DeepSeek Harness (DSH) 自动化任务看板与 Cron 定时调度插件
 
 [English](README.md) | 中文
 
-一个可热插拔的 DeepSeek Harness (DSH) Web GUI 插件，提供 Host 权威任务账本、真实 DSH 会话执行、Host cron 调度和可选的跨平台空闲睡眠保护。插件只通过 `cordis.patch.yml` 与 profile 机制挂载，不修改 DSH 源码。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-task-board?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端自动化任务管理与长程后台执行引擎</strong><br>
+  <em>5 列状态流转 · Cron 后台定时调度 · 智能体真实执行 · 防休眠电源保护 · 任务验收质检</em>
+</p>
+
+一个高可用、可热插拔的 DeepSeek Harness (DSH) Web GUI 与官方桌面客户端任务自动化插件，提供 Host 权威任务账本、真实 DSH 会话自动化执行、Cron 表达式后台定时调度、跨平台空闲睡眠保护、多 Agent 团队级联与自动化质量验收门禁。用户无需常驻浏览器，即可在后台无人值守运行代码巡检、健康检查与定时自动化流水线。插件只通过 `cordis.patch.yml` 与 profile 机制挂载，零修改侵入 DSH 官方源码。
 
 - 浏览器只是异步视图；关闭页面不会停止 Host 调度或执行结算。
 - 每次运行在发送任务 Prompt 前应用钉住的工作区、agent 预设与权限；默认每次新建独立 DSH 会话，任务也可选择改为在上一会话中继续（issue #1419）。

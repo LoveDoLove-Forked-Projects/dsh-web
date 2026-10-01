@@ -1,8 +1,21 @@
-# @linxin666/dsh-client-ui-plugin-manager
+# dsh-plugin-manager · DeepSeek Harness (DSH) 客户端插件可视化管理与启停中心
 
 [English](README.md) | 中文
 
-面向 dsh web GUI 官方「插件」面板的更新检查：补齐官方插件管理页没有的能力——把已装插件与其 registry 来源的版本比对（含 DSH 运行时兼容门禁）作为插件页内的一个区块渲染，并在该页「已安装」标题旁加一条列表级工具条：一次检查全部已装插件，一键更新其中的第三方插件，再重启 DSH 使更新生效。安装、卸载与启停由官方页面负责（面板归它所有）；本包此前在该分区另注册一个「插件管理」Tab，现已移除。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-client-ui-plugin-manager?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端插件生命周期与更新管理中心</strong><br>
+  <em>已装插件版本比对 · 一键批量检查更新 · 运行时兼容性门禁 · 冲突预检与安全回滚 · 桌面客户端与 Web 双通道</em>
+</p>
+
+面向 dsh web GUI 与官方桌面客户端「插件」面板的更新检查与生命周期管理插件：补齐官方插件管理页没有的能力——把已装插件与其 registry 来源的版本比对（含 DSH 运行时兼容门禁）作为插件页内的一个区块渲染，并在该页「已安装」标题旁加一条列表级工具条：一次检查全部已装插件，一键更新其中的第三方插件，再重启 DSH 使更新生效。安装、卸载与启停由官方页面负责（面板归它所有）。
 
 ## 功能
 

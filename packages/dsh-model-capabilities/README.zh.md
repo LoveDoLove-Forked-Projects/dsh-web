@@ -1,8 +1,21 @@
-# dsh-model-capabilities
+# dsh-model-capabilities · DeepSeek Harness (DSH) 自定义模型能力与 Vision 多模态声明插件
 
 [English](README.md) | 中文
 
-为 DSH 自定义提供方声明逐模型推理档位:为自定义模型目录里的每个模型声明它支持哪些思考档位、每档实际发送的取值,直接在 Models 设置页上编辑。官方 pi-ai 设置命名空间一直就承载这个字段,而 0.1.7-alpha.1 的 Models 页已自带模型输入类型编辑——本插件负责的是设置页仍未提供的推理档位编辑入口。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-model-capabilities?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端自定义模型属性与推理思考档位配置中心</strong><br>
+  <em>逐模型推理思考档位 · Vision 多模态声明 · 提供方一键禁用/恢复 · Models 设置页无缝扩展 · 零重启热生效</em>
+</p>
+
+为 DeepSeek Harness (DSH) Web GUI 与官方桌面客户端的自定义提供方声明逐模型推理档位：为自定义模型目录里的每个模型声明它支持哪些思考档位、每档实际发送的取值，直接在 Models 设置页上可视化编辑。官方 pi-ai 设置命名空间一直就承载这个字段，而 0.1.7-alpha.1 的 Models 页已自带模型输入类型编辑——本插件负责的是设置页仍未提供的推理档位编辑与提供方快速启闭入口。
 
 ## 功能
 

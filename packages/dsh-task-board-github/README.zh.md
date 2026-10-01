@@ -1,8 +1,21 @@
-# dsh-task-board-github — 任务看板 GitHub Issues 提供方扩展
+# dsh-task-board-github · DeepSeek Harness (DSH) 任务看板 GitHub Issues 与 PR 自动化同步扩展
 
 [English](README.md) | 中文
 
-DSH Web GUI 任务看板（`@linxin666/dsh-client-ui-task-board`）的外部提供方扩展。它承担看板的 GitHub Issues 一侧：配置仓库中的 issue 被同步为看板卡片，并跟随看板的列流转。扩展默认开启，可在 Web GUI 插件设置的本扩展卡片中关闭。它经 `cordis.patch.yml` 与 profile 机制挂载，不修改 DSH 源码。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-task-board-github?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）任务看板 GitHub Issues 双向同步与自动化 PR 交付扩展</strong><br>
+  <em>Issue 自动转卡片 · 双向状态标签流转 · 自动创建 PR · 智能体交付流水线 · 7 大 Agent 工具</em>
+</p>
+
+面向 DeepSeek Harness (DSH) Web GUI 与官方桌面客户端任务看板（`@linxin666/dsh-task-board`）的官方外部数据提供方扩展。它无缝打通 GitHub Issues 与 DSH 智能体会话流转：自动将配置仓库中指定标签或指派给认证账号的 Issue 同步为看板卡片，驱动 AI Agent 自动编码排查并创建 Pull Request，同时双向同步标签状态。扩展支持可视化开关与凭据管理，通过 `cordis.patch.yml` 与 profile 机制热插拔挂载，零侵入修改 DSH 源码。
 
 ## 功能
 

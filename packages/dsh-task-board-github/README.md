@@ -1,8 +1,21 @@
-# dsh-task-board-github — task board GitHub Issues provider extension
+# dsh-task-board-github · GitHub Issues & PR Synchronization Extension for DSH Task Board
 
 English | [中文](README.zh.md)
 
-An external provider extension for the DSH Web GUI task board (`@linxin666/dsh-client-ui-task-board`). It owns the GitHub Issues side of the board: issues of the configured repositories are synchronized into board cards and follow the board's columns. The extension is enabled by default and can be switched off from its card under the Web GUI plugin settings. It is mounted through `cordis.patch.yml` and the profile mechanism and does not modify DSH source code.
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-task-board-github?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>GitHub Issues & PR Bidirectional Sync Extension for DeepSeek Harness (DSH) Task Board</strong><br>
+  <em>Issue to Task Card · Bidirectional Status Sync · Automated PR Creation · Agent Delivery · 7 Agent Tools</em>
+</p>
+
+An official external provider extension for the DeepSeek Harness (DSH) Web GUI and desktop client task board (`@linxin666/dsh-task-board`). It seamlessly bridges GitHub Issues and automated DSH agent workflows: selected issues from configured repositories are ingested into task cards, driving autonomous agent execution, automatic pull request creation, and bidirectional status synchronization. It features GUI credential controls and mounts via `cordis.patch.yml` and profiles without modifying DSH source code.
 
 ## Features
 

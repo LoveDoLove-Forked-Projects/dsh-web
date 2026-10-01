@@ -1,8 +1,21 @@
-# dsh-usage
+# dsh-usage · DeepSeek Harness (DSH) Token 用量明细、API 余额与成本监控插件
 
 [English](README.md) | 中文
 
-dsh Web GUI 的使用统计插件：多 provider 余额与编程套餐用量检测，外加实时 token 用量台账，并在侧栏「设置」行上方提供紧凑的价格速览卡。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-usage?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端多模型 Token 用量与账单成本监控中心</strong><br>
+  <em>每日 Token 消耗明细 · 多供应商 API 余额查询 · 编程套餐进度追踪 · 峰谷时段成本估算 · Token 银行鲸元券</em>
+</p>
+
+面向 DeepSeek Harness (DSH) Web GUI 与官方桌面客户端的多模型使用统计与成本监控插件：多 provider 余额与编程套餐用量检测，外加实时 Token 用量台账与成本估算，并在侧栏「设置」行上方提供紧凑的价格速览卡。
 
 ## 功能
 

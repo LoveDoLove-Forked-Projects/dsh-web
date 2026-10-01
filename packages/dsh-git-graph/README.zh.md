@@ -1,8 +1,21 @@
-# dsh-git-graph
+# dsh-git-graph · DeepSeek Harness (DSH) 可视化 Git 提交图谱与多 Agent Worktree 隔离插件
 
 [English](README.md) | 中文
 
-外部 dsh Web GUI 插件：**git 分支选择器**与**Git 图谱**面板。分支选择器只在空白会话显示，挂在官方输入选择器行的 context 洞（`conversation.input.selector.context`，session-maybe list 槽位）中，与官方工作区选择胶囊并排。若运行 shell 未声明该槽位（npm SDK rc.6 删除了它），等待 `CONTEXT_FALLBACK_MS` 后回退到 `conversation.input.dock`；在其空白会话 hero 相位，chip 会提升进官方 hero 行，紧贴 agent-preset 座位右侧，采用与官方工作区/预设胶囊一致的透明 28px 胶囊配方和 `--dsw-*` 主题 token。active 会话不提供分支选择控件。git 能力在 host 进程执行（磁盘工作树 `git switch`），UI 在浏览器 React；工作区选择保留官方入口。
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@linxin666/dsh-git-graph?style=flat-square" alt="Version">
+  &nbsp;
+  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+</p>
+
+<p align="center">
+  <strong>DeepSeek Harness（DSH）官方 Web GUI 与桌面客户端专属 Git 可视化与多任务工作区隔离系统</strong><br>
+  <em>交互式 Git 提交图谱 · 空白会话分支快速切换 · Git Worktree 隔离防冲突 · 零侵入代码隔离 · 安全冲突守卫</em>
+</p>
+
+外部 DeepSeek Harness（DSH）Web GUI 与官方桌面客户端插件：**Git 分支选择器**与**交互式 Git 提交历史图谱**面板。分支选择器只在空白会话显示，挂在官方输入选择器行的 context 洞（`conversation.input.selector.context`，session-maybe list 槽位）中，与官方工作区选择胶囊并排。若运行 shell 未声明该槽位（npm SDK rc.6 删除了它），等待 `CONTEXT_FALLBACK_MS` 后回退到 `conversation.input.dock`；在其空白会话 hero 相位，chip 会提升进官方 hero 行，紧贴 agent-preset 座位右侧，采用与官方工作区/预设胶囊一致的透明 28px 胶囊配方和 `--dsw-*` 主题 token。active 会话不提供分支选择控件。Git 能力在 host 进程执行（磁盘工作树 `git switch`），UI 在浏览器 React；工作区选择保留官方入口。
 
 行为对齐 ZCode 的 `GitBranchSwitcher`：可搜索弹层、当前项打勾、「创建并检出新分支… / Git 图谱」底部操作、切换守卫（未解决冲突 / 进行中操作 / 目标分支被其他 worktree 检出）与可读报错。
 
