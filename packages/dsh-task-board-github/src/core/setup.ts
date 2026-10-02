@@ -183,6 +183,11 @@ export function sanitizeRepositoryConfig(value: unknown): GitHubRepoConfig | und
   const config: GitHubRepoConfig = { owner, repository }
   const inclusionLabel = text(raw.inclusionLabel)
   if (inclusionLabel !== undefined) config.inclusionLabel = inclusionLabel
+  // An empty string is meaningful here: it is how the assignee channel is
+  // switched off, so it survives the sanitizer instead of being dropped as
+  // "no value". The inclusion rule reads the field, not its absence.
+  const assignee = text(raw.assignee)
+  if (raw.assignee !== undefined) config.assignee = assignee ?? ''
   const managedLabelPrefix = text(raw.managedLabelPrefix)
   if (managedLabelPrefix !== undefined) config.managedLabelPrefix = managedLabelPrefix
   const prPhaseLabel = text(raw.prPhaseLabel)
