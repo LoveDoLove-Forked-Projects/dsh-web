@@ -23,6 +23,7 @@ dsh Web GUI 的 Host 权威多列任务看板。任务通过真实 DSH 会话执
 
 - 八个模型可见工具 `task_board_list` / `task_board_get` / `task_board_create` / `task_board_update` / `task_board_set_parent` / `task_board_run` / `task_board_manage` / `task_board_schedule` 定义在 `src/host/agent-tools.ts`，经 `ctx.tools.register` 注册。它们只调用同一个 `TaskBoardHostService`（账本 action + 快照），不复制业务规则：fail closed 钉子、权限确认门、子任务深度门禁、运行中任务锁在工具面全部照旧生效。`task_board_manage` 另有 `settle` 动作：把看板已无法观察的运行中卡片（含它辖下的成员 execution）强制结算为 cancelled，原因里记录调用者，卡片回到待办列，供人工/agent 解卡——移动、归档、删除都拒绝运行中的卡片，这是运行中卡片此前唯一的出口。
 - 注册跟随 `enabled` 主开关（关闭时不注册）；工具注册表按可选服务解析而不写入 `inject`，因此运行时不提供注册表的部署仍会挂载看板，只失去工具面（与可选 `llm` 的容忍度一致）。
+- 析构只释放、不重注册：cordis 在 fiber 运行 disposer 前先标记 UNLOADING，届时 `Fiber.effect` 拒绝任何新注册，所以 `setToolsEnabled(false)` 不碰扩展工具注册表（只有启用路径重绑），`syncTools` 也把 `INACTIVE_EFFECT` 视为「宿主正在退场」而不上报——其他拒绝仍按 error 记录。提供方的 `active` 是「看板 x 扩展」这道闸，不是宿主生命周期，两者不可互相推断。
 - 刻意不提供 `confirm-permission`：高于权限基线的绑定只能由人工在界面确认。工具面同样不接受命令、可执行路径或 shell 文本。
 - 工具描述是面向模型的英文文案（含中文触发词），不进 locales 字典；领域拒绝以 `ok:false` 值返回，便于模型自行纠正。
 

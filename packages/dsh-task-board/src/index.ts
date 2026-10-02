@@ -475,12 +475,16 @@ function applyImpl(ctx: Context, config?: Config): void {
   // registry appears late.
   let disposeTools: (() => void) | undefined
   const setToolsEnabled = (active: boolean): void => {
-    host.extensions.setToolRegistry(() => resolveToolRegistry(ctx))
     if (!active) {
+      // Releasing is the whole job on the way down. Rebinding the extension
+      // registry here would re-register every provider tool, and the teardown
+      // path runs this while the fiber is already unloading, so each of those
+      // re-registrations is a request the host can only refuse.
       disposeTools?.()
       disposeTools = undefined
       return
     }
+    host.extensions.setToolRegistry(() => resolveToolRegistry(ctx))
     if (disposeTools !== undefined) return
     const registry = resolveToolRegistry(ctx)
     if (registry === undefined) return
