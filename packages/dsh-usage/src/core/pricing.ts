@@ -12,10 +12,11 @@
  * public holiday is off-peak in full even on a Monday-Friday. All prices
  * here are CNY per million tokens.
  *
- * Public-holiday dates are not derivable from the rule, so they arrive as a
- * caller-supplied calendar (see `PublicHolidayCalendar`); the default is the
- * empty calendar, which prices every Monday-Friday as peak. Whoever supplies
- * real dates owns keeping them current.
+ * Public-holiday dates are not derivable from the rule, so the rule takes them as
+ * a `PublicHolidayCalendar`. The default is the published table in `./holidays.ts`,
+ * covering 2020 through ${HOLIDAY_TABLE_LAST_YEAR}; a caller with newer dates
+ * passes its own. A holiday weekday therefore prices off-peak, which is the half
+ * of the published rule that is easy to get wrong.
  *
  * The published rows are `deepseek-flash` (DeepSeek-V4.1-Flash) and
  * `deepseek-v4-pro` (DeepSeek-V4-Pro-0813). The retired flash ids
@@ -26,6 +27,7 @@
  */
 
 import type { UsageTokenTotals } from './types.ts'
+import { CHINESE_PUBLIC_HOLIDAYS, HOLIDAY_TABLE_LAST_YEAR } from './holidays.ts'
 
 /** One peak window in minutes-of-day, Beijing time. */
 interface PeakWindow {
@@ -92,8 +94,19 @@ export interface PublicHolidayCalendar {
   isPublicHoliday(date: string): boolean
 }
 
-/** The default calendar: no holiday data, so every Monday-Friday prices as peak. */
-const NO_PUBLIC_HOLIDAYS: PublicHolidayCalendar = { isPublicHoliday: () => false }
+/**
+ * The default calendar: the published Chinese public-holiday table, so a holiday
+ * weekday prices off-peak instead of over-reporting at the peak rate. A year the
+ * table does not cover holds no dates and falls back to peak on weekdays, which
+ * is the safe direction to be wrong in: the estimate reads high rather than low.
+ */
+export const CN_PUBLIC_HOLIDAYS: PublicHolidayCalendar = {
+  isPublicHoliday: (date) => {
+    const year = date.slice(0, 4)
+    if (Number(year) > HOLIDAY_TABLE_LAST_YEAR) return false
+    return CHINESE_PUBLIC_HOLIDAYS[year]?.includes(date) ?? false
+  },
+}
 
 /** The Beijing-time `YYYY-MM-DD` calendar day of `ms` (UTC+8 has no DST, so the shift is exact). */
 function beijingDate(ms: number): string {
@@ -122,7 +135,7 @@ function isPeakDay(ms: number, calendar: PublicHolidayCalendar): boolean {
  * shift is exact). `boundaryMs` is the instant the current period ends — the
  * window's close while peaking, the next window's open otherwise.
  */
-export function deepseekPeriodAt(ms: number, calendar: PublicHolidayCalendar = NO_PUBLIC_HOLIDAYS): { peak: boolean; boundaryMs: number } {
+export function deepseekPeriodAt(ms: number, calendar: PublicHolidayCalendar = CN_PUBLIC_HOLIDAYS): { peak: boolean; boundaryMs: number } {
   const shifted = new Date(ms + BEIJING_UTC_OFFSET_MS)
   const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes()
   const current = isPeakDay(ms, calendar) ? withinWindow(minuteOfDay) : undefined
@@ -159,7 +172,7 @@ function priceFor(model: string, atMs: number): ModelPrice {
  * row; ids from other providers never reach this function (the service gates
  * by route family). Rounded to micro-CNY so the ledger stays readable.
  */
-export function deepseekModelSpend(model: string, totals: Readonly<UsageTokenTotals>, atMs: number, calendar: PublicHolidayCalendar = NO_PUBLIC_HOLIDAYS): number {
+export function deepseekModelSpend(model: string, totals: Readonly<UsageTokenTotals>, atMs: number, calendar: PublicHolidayCalendar = CN_PUBLIC_HOLIDAYS): number {
   const price = priceFor(model, atMs)
   const period = deepseekPeriodAt(atMs, calendar)
   const column = period.peak ? 'peak' : 'offPeak'

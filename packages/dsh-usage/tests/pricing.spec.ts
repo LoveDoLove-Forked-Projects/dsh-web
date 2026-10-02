@@ -14,9 +14,10 @@ const FRI_13_00_BJ = Date.UTC(2026, 7, 28, 5, 0) // Friday 13:00 Beijing -> off-
 const FRI_20_00_BJ = Date.UTC(2026, 7, 28, 12, 0) // Friday 20:00 Beijing -> off-peak
 const SAT_10_00_BJ = Date.UTC(2026, 7, 29, 2, 0) // Saturday -> off-peak
 const MON_09_00_BJ = Date.UTC(2026, 7, 31, 1, 0) // Monday 09:00 Beijing -> peak start
-// Synthetic holiday fixtures, not the official 2026 calendar: a Thursday and a
-// Monday that a caller-supplied calendar marks as public holidays. The package
-// ships no holiday table, so the tests own their own two dates.
+// Two real dates from the shipped 2026 table (National Day runs 2026-10-01 to
+// 2026-10-07), which makes them the strongest check that the default calendar
+// is the published one and not an empty stub: a Thursday and a Monday inside a
+// holiday both bill off-peak with no argument at all.
 const HOLIDAY_THU_10_00_BJ = Date.UTC(2026, 9, 1, 2, 0) // Thursday inside a public holiday -> off-peak
 const HOLIDAY_MON_10_00_BJ = Date.UTC(2026, 9, 5, 2, 0) // Monday inside a public holiday -> off-peak
 
@@ -51,14 +52,24 @@ describe('deepseekPeriodAt', () => {
     expect(deepseekPeriodAt(almostNoon)).toEqual({ peak: true, boundaryMs: Date.UTC(2026, 7, 28, 4, 0, 0, 0) })
   })
 
-  it('operator sees a public holiday on a weekday billed off-peak, and no calendar keeps the weekday peak', () => {
-    // Given a calendar marking two weekdays as Chinese public holidays
+  it('operator gets a holiday weekday at off-peak from the shipped table, with no calendar argument', () => {
+    // Given no calendar at all, so the published table is in force
     // When the billing period is read inside the morning window
-    // Then both holiday weekdays read off-peak rather than peak
+    // Then both holiday weekdays read off-peak rather than peak, which is the
+    // half of the published rule that defaults to over-reporting when missed
+    expect(deepseekPeriodAt(HOLIDAY_MON_10_00_BJ).peak).toBe(false)
+    expect(deepseekPeriodAt(HOLIDAY_THU_10_00_BJ).peak).toBe(false)
+    // And a caller-supplied calendar still overrides the table
     expect(deepseekPeriodAt(HOLIDAY_MON_10_00_BJ, PUBLIC_HOLIDAYS).peak).toBe(false)
-    expect(deepseekPeriodAt(HOLIDAY_THU_10_00_BJ, PUBLIC_HOLIDAYS).peak).toBe(false)
-    // And given no calendar at all, the same instant keeps the published windows
-    expect(deepseekPeriodAt(HOLIDAY_MON_10_00_BJ).peak).toBe(true)
+  })
+
+  it('operator keeps a holiday weekday on peak when a caller supplies a calendar that omits it', () => {
+    // Given a calendar that knows only National Day itself
+    // When the Monday after it is read inside the morning window
+    // Then the caller's table wins over the shipped one, so the default stays
+    // overridable rather than baked in
+    const onlyNationalDay: PublicHolidayCalendar = { isPublicHoliday: date => date === '2026-10-01' }
+    expect(deepseekPeriodAt(HOLIDAY_MON_10_00_BJ, onlyNationalDay).peak).toBe(true)
   })
 
   it('operator is pointed at the next weekday morning when a holiday closes the day', () => {
@@ -120,13 +131,14 @@ describe('deepseekModelSpend with a public-holiday calendar', () => {
       .toBe(deepseekModelSpend('deepseek-flash', { ...emptyTotals(), outputTokens: 1_000_000 }, FRI_12_30_BJ))
   })
 
-  it('operator gets half the weekday-holiday estimate that the default calendar prices at peak', () => {
-    // Given one million input tokens on a Monday public holiday
-    // When the flash spend is estimated with the holiday calendar
-    // Then it bills the off-peak row, half what the default calendar charges
+  it('operator stops over-reporting a holiday weekday at twice the real cost', () => {
+    // Given one million input tokens on a Monday inside the National Day holiday
+    // When the flash spend is estimated with no calendar argument
+    // Then the shipped table bills the off-peak row, the amount actually charged
     const millionInput = { ...emptyTotals(), inputTokens: 1_000_000 }
-    expect(deepseekModelSpend('deepseek-flash', millionInput, HOLIDAY_MON_10_00_BJ)).toBeCloseTo(2, 6)
-    expect(deepseekModelSpend('deepseek-flash', millionInput, HOLIDAY_MON_10_00_BJ, PUBLIC_HOLIDAYS)).toBeCloseTo(1, 6)
+    expect(deepseekModelSpend('deepseek-flash', millionInput, HOLIDAY_MON_10_00_BJ)).toBeCloseTo(1, 6)
+    // And the same Monday in an ordinary week still bills the peak row
+    expect(deepseekModelSpend('deepseek-flash', millionInput, MON_09_00_BJ + 3_600_000)).toBeCloseTo(2, 6)
   })
 
   it('operator is charged off-peak on a weekend designated as a workday', () => {
