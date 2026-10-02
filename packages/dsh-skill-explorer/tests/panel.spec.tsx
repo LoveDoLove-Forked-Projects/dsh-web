@@ -94,7 +94,7 @@ async function typeInto(element: HTMLElement, value: string): Promise<void> {
 describe('SkillPanel shell', () => {
   afterEach(() => { document.body.innerHTML = '' })
 
-  it('user opening the panel sees a title header with no back control and no workspace path (#1215, #1742)', async () => {
+  it('user opening the panel sees a title header with no back control and no workspace path (#1215, #1785)', async () => {
     // Given a panel listing one skill
     const api = fakeApi([async () => payload(['demo-skill'])])
     const mount_ = mount(api)
@@ -138,7 +138,7 @@ describe('SkillPanel shell', () => {
     expect(mount_.controller.getSnapshot().panelOpen).toBe(false)
     // And the rendered header offers no close affordance of its own, so the
     // layout is never asked to re-select the conversation from in here
-    // (the click lag of issue #1742 had no other in-page trigger to remove)
+    // (the click lag of issue #1785 had no other in-page trigger to remove)
     const header = mount_.container.querySelector('h2')?.parentElement
     expect(header?.querySelector('button')).toBeNull()
     expect(mount_.container.querySelector('[data-dsh-center-view-back]')).toBeNull()
