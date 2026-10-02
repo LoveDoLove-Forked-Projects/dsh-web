@@ -22,6 +22,8 @@ close, add and session glyphs.
 
 ## Decision
 
+Cards retain multi-line previews and visible metadata rather than a fixed single-line row, which sacrifices readability. Markdown previews are plain text; details use the marked lexer and safe React nodes, with raw HTML and automatic remote images disabled. This presentation does not modify stored task content.
+
 The board's client half owns one interaction and control contract, in
 `src/client/board/`:
 

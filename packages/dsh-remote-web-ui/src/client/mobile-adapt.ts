@@ -311,13 +311,21 @@ const ADAPT_CSS: readonly string[] = [
   // v68: settings modal on mobile — the official panel is a fixed 800px
   // two-column layout (nav + content); switch to a column layout: the
   // section nav becomes a horizontal scrollable row on top.
-  '[class$="_overlay"] [class$="_panel"]{flex-direction:column;max-height:calc(100dvh - 32px)}',
-  '[class$="_overlay"] [class$="_panel"] [class$="_nav"]{flex-direction:row;gap:4px;width:100%;padding:12px 12px 0;overflow-x:auto;overflow-y:hidden}',
-  '[class$="_overlay"] [class$="_panel"] [class$="_navTitle"]{display:none}',
-  '[class$="_overlay"] [class$="_panel"] [class$="_navList"]{flex-direction:row;gap:4px}',
-  '[class$="_overlay"] [class$="_panel"] [class$="_navCell"]{height:34px;padding:0 12px;gap:6px;flex:none;border-radius:10px}',
-  '[class$="_overlay"] [class$="_panel"] [class$="_navLabel"]{font-size:13px}',
-  '[class$="_overlay"] [class$="_panel"] [class$="_content"]{flex:1;min-height:0}',
+  // Scoped to the portrait body class like the suppressions above: these
+  // are the only rules in this array that reshape an official two-column
+  // surface, and the overlay portal is shared with every other dialog.
+  // Unscoped, the tag — which lives in <head> for as long as the layer
+  // is active and is restored by the sync tick after a revert —
+  // collapsed the DESKTOP settings panel into a stacked column (measured
+  // on a real 1440px host: panel flex-direction row -> column, nav 800px
+  // tall -> 236px, content 612px -> 800px wide and pushed below the nav).
+  `body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"]{flex-direction:column;max-height:calc(100dvh - 32px)}`,
+  `body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_nav"]{flex-direction:row;gap:4px;width:100%;padding:12px 12px 0;overflow-x:auto;overflow-y:hidden}`,
+  `body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navTitle"]{display:none}`,
+  `body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navList"]{flex-direction:row;gap:4px}`,
+  `body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navCell"]{height:34px;padding:0 12px;gap:6px;flex:none;border-radius:10px}`,
+  `body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navLabel"]{font-size:13px}`,
+  `body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_content"]{flex:1;min-height:0}`,
 ]
 
 /** Cube glyph for the compact model button (a plain box outline). */

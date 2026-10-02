@@ -67,6 +67,30 @@ describe('GitHub issue inclusion', () => {
     expect(isIssueIncluded(remoteIssue({ labels: [], assignees: [] }), config)).toBe(false)
   })
 
+  it('operator taking unassigned issues collects the ones nobody owns, and still leaves other people\'s alone', () => {
+    // Given a repository whose issues are never assigned to anyone
+    const config = resolveRepoConfig({ owner: 'deepseek-ai', repository: 'dsh', inclusionLabel: 'dsh', assignee: 'zhu1090093659', includeUnassigned: true })
+
+    // When an unassigned issue and an issue assigned to someone else are tested
+    // Then the unassigned one is in, and the other person\'s assignment is
+    // still not ours to take
+    expect(isIssueIncluded(remoteIssue({ labels: ['bug'], assignees: [] }), config)).toBe(true)
+    expect(isIssueIncluded(remoteIssue({ labels: ['bug'], assignees: [{ login: 'someone-else' }] }), config)).toBe(false)
+    // And the other two channels keep working alongside it
+    expect(isIssueIncluded(remoteIssue({ labels: ['dsh'] }), config)).toBe(true)
+    expect(isIssueIncluded(remoteIssue({ labels: [], assignees: [{ login: 'Zhu1090093659' }] }), config)).toBe(true)
+  })
+
+  it('operator leaving the unassigned channel off imports no unassigned issue', () => {
+    // Given a repository configured with only the label and assignee channels
+    const config = resolveRepoConfig({ owner: 'deepseek-ai', repository: 'dsh', inclusionLabel: 'dsh', assignee: 'zhu1090093659' })
+
+    // When the resolved default and an unassigned issue are read
+    // Then the channel defaults to off, so that issue stays out
+    expect(config.includeUnassigned).toBe(false)
+    expect(isIssueIncluded(remoteIssue({ labels: ['bug'], assignees: [] }), config)).toBe(false)
+  })
+
   it('operator reading assignees from either payload shape gets lowercased logins', () => {
     // Given payloads carrying user objects and bare strings
     // When the assignees are read

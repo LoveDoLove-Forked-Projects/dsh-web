@@ -21,7 +21,9 @@ A visual Skill Explorer for DeepSeek Harness (DSH) Web GUI and desktop client: b
 
 - **Sidebar row** "Skill Center" opens a native center-column page — a row in
   the shell's own panel list, beside Plugins, Schedule and the task board —
-  with a tab bar and a back-to-chat control.
+  with a tab bar. The row opens the page, and opening any session (or a new
+  chat) returns the center column to the conversation, exactly like the shell's
+  own Plugins and Schedule pages; the page carries no back control of its own.
 - **Skills tab**: skills grouped by source (system bundled / project
   `.dsh/skills` / project `.agents/skills` / custom directories / user
   `~/.dsh/skills` / user `~/.agents/skills` / runtime registered), with a

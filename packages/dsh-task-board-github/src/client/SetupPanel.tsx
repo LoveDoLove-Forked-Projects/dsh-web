@@ -18,7 +18,7 @@ import type {
   GitHubCredentialStatus,
   GitHubSetupSummary,
 } from '../core/setup.ts'
-import { addRepository, removeRepository } from '../core/setup.ts'
+import { addRepository, removeRepository, updateRepository } from '../core/setup.ts'
 import type { GitHubRepoConfig } from '../core/types.ts'
 import { GitHubSummaryBlock } from './github/sections.tsx'
 import { useGitHubSummary } from './github/summary.ts'
@@ -100,6 +100,15 @@ export function GitHubSetupPanel({ t, api, disabled = false }: GitHubSetupPanelP
       return
     }
     void write(edit.repositories, true)
+  }
+
+  const toggleUnassigned = (repository: GitHubRepoConfig, include: boolean): void => {
+    const edit = updateRepository(repositories, repository.owner + '/' + repository.repository, { includeUnassigned: include })
+    if (!edit.ok) {
+      setRepositoryError(edit.message)
+      return
+    }
+    void write(edit.repositories)
   }
 
   const remove = (repository: GitHubRepoConfig): void => {
@@ -250,10 +259,26 @@ export function GitHubSetupPanel({ t, api, disabled = false }: GitHubSetupPanelP
                   {t('setup.assigneeChip', { login: repository.assignee })}
                 </span>
               )}
+              {repository.includeUnassigned === true && (
+                <span className={css.cardTag} data-dsh-part="github-repository-unassigned">
+                  {t('setup.unassignedChip')}
+                </span>
+              )}
             </span>
             <button
               type="button"
               className={css.ghostButton}
+              data-dsh-part="github-repository-unassigned-toggle"
+              aria-pressed={repository.includeUnassigned === true}
+              disabled={disabled || repositoryBusy}
+              onClick={() => { toggleUnassigned(repository, repository.includeUnassigned !== true) }}
+            >
+              {repository.includeUnassigned === true ? t('setup.unassignedOn') : t('setup.unassignedOff')}
+            </button>
+            <button
+              type="button"
+              className={css.ghostButton}
+              data-dsh-part="github-repository-remove"
               disabled={disabled || repositoryBusy}
               onClick={() => { remove(repository) }}
             >

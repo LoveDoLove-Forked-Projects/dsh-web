@@ -69,7 +69,6 @@ export const ru: Record<string, string> = {
   'list.toggleFailed': 'Не удалось выполнить операцию: {error}',
   'list.when': 'Когда применять: {when}',
   'panel.title': 'Центр навыков',
-  'panel.backToConversation': 'Назад к чату',
   'refresh': 'Обновить',
   'tab.create': 'Создание',
   'tab.edit': 'Редактировать навык',

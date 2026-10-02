@@ -35,6 +35,8 @@
 
 估算仅覆盖 DeepSeek 官方路由——其他渠道转发的流量（ZenMux、SiliconFlow 等）不计价；未识别的 DeepSeek 模型 id 按 flash 档估算。价目表调整前记录的桶保留旧价，因此调价从发布时点起生效，不追溯历史数据。
 
+官方口径对中国法定节假日全天按空闲计费（即使落在周一至周五），落在周六周日的调休上班日同样按空闲计费。因此周末天然就是空闲时段；本包内置国务院办公厅公布的节假日表（`src/core/holidays.ts`，2020 至 2026 年，取自 MIT 许可的 [chinese-holidays-node](https://github.com/bastengao/chinese-holidays-node) 年度数据、只取 `holiday` 条目），法定节假日的工作日按空闲档估算，不再出现约两倍的高估。表中没有的年份（晚于 2026）按公布的峰谷时段处理，即工作日按高峰档——估算偏高而非偏低，是更安全的误差方向。
+
 ## 安装
 
 要求 DSH 0.2.0-rc.2 或更高：插件基于 0.2.0-rc.2 DSH cohort 开发（其设置页即宿主根据插件自身 Config schema 生成的页面），`@deepseek-ai/*` 运行时导入由宿主本体提供。

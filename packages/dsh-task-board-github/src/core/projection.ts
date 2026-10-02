@@ -137,19 +137,27 @@ export function issueAssignees(issue: GitHubIssuePayload): string[] {
 /**
  * Whether one issue belongs on the board.
  *
- * Two channels feed the board and either one is enough: the issue carries the
- * repository's inclusion label, or it is assigned to the login the repository
- * configured. The host substitutes the authenticated login for
+ * Three channels feed the board and any one of them is enough: the issue
+ * carries the repository's inclusion label, it is assigned to the login the
+ * repository configured, or the repository opted into issues nobody is
+ * assigned to. The host substitutes the authenticated login for
  * {@link ME_ASSIGNEE} before syncing, so this predicate only ever compares
  * concrete logins.
+ *
+ * The unassigned channel is deliberately narrow: it matches only an issue with
+ * no assignee at all, never one assigned to somebody else. A repository that
+ * turns it on keeps taking its labeled and self-assigned issues, and gains the
+ * unassigned backlog; it does not start taking other people's assignments.
  * @param issue - the remote issue.
  * @param config - the repository configuration (its assignee already resolved).
  * @returns true when the issue is included.
  */
 export function isIssueIncluded(issue: GitHubIssuePayload, config: ResolvedGitHubRepoConfig): boolean {
   if (extractLabelNames(issue).includes(config.inclusionLabel)) return true
+  const assignees = issueAssignees(issue)
+  if (assignees.length === 0) return config.includeUnassigned
   const assignee = config.assignee
-  return assignee !== undefined && assignee !== '' && issueAssignees(issue).includes(assignee)
+  return assignee !== undefined && assignee !== '' && assignees.includes(assignee)
 }
 
 /**

@@ -327,6 +327,33 @@ describe('startMobileAdapt', () => {
     expect(css).not.toContain('_body"]{gap:6px}')
   })
 
+  it('user in portrait gets the settings-modal column switch gated to the portrait body class', async () => {
+    media.portrait = true
+    media.coarse = true
+    setWidth(390)
+    const start = await freshStart()
+    // Given the layer is installed in a portrait touch viewport, when it
+    // injects the adaptation stylesheet, then the settings-modal column
+    // switch is unreachable without the portrait body class.
+    start()
+    const css = document.querySelector('style[data-plugin-css="dsh-remote-web-ui/mobile-adapt.css"]')?.textContent ?? ''
+    // The v68 settings-modal rules reshape the official two-column panel. The
+    // overlay portal is shared with every other dialog, so an unscoped rule
+    // collapsed the DESKTOP settings panel into a stacked column while the tag
+    // sat in <head>. Each rule must carry the portrait gate.
+    // Parse the sheet into (selector, block) pairs and assert on the selector
+    // ALONE: a substring check would also match the longer gated selectors,
+    // so one reverted rule could hide behind its six scoped siblings.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(m => [m[1]!.trim(), m[2]!] as const)
+    const overlayRules = rules.filter(([selector]) => selector.includes('[class$="_overlay"]'))
+    // The 7 settings-modal rules. The workbench suppression keys on
+    // _overlayLayer (a different portal) and is checked by the test above.
+    expect(overlayRules.length).toBe(7)
+    for (const [selector] of overlayRules) {
+      expect(selector, selector).toMatch(/^body\.dsh-remote-portrait /)
+    }
+  })
+
   it('treats only the application frame as the app frame, not a nested _frame surface', async () => {
     media.portrait = true
     media.coarse = true
