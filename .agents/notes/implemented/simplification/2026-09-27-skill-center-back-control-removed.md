@@ -14,11 +14,12 @@ client `inject`) is what made the control work at all, and the same switching
 path is what the reporter observed as slow.
 
 The control also duplicated an exit the shell already owns. The skill center is a
-native center-column page: its sidebar row (`sidebar.panellist`) toggles it, and
-every session-revealing navigation in the shell — opening a session row, the
-"new chat" button — already calls `selectPanel(null)` to hand the column back to
-the conversation. The shell's own Plugins and Schedule ("automation tasks") pages
-carry no back control, so the skill center's was also the odd one out visually.
+native center-column page: its sidebar row (`sidebar.panellist`) opens it, and
+every session-revealing navigation in the shell — opening a session row, opening a
+workspace, the "new chat" button — already calls `selectPanel(null)` to hand the
+column back to the conversation. The shell's own Plugins and Schedule ("automation
+tasks") pages carry no back control, so the skill center's was also the odd one out
+visually.
 
 ## Decision
 
@@ -29,13 +30,30 @@ it); and the now-unreachable `panel.backToConversation` key is dropped from the
 package's `zh`/`en` dictionaries and from the central `ru` dictionary in
 `dsh-i18n`.
 
-The panel is left and returned exactly as the official pages are: the sidebar row
-opens and closes it, and any session navigation returns the column to the
-conversation. `PanelController.open()`/`close()`/`syncPanelSelection()` are
-unchanged — the controller is still the owner of `panelOpen`, the active tab and
-the editor target, and the layout's `panelInfo` is still reconciled back into it,
-so the row toggle and out-of-band panel switches keep working. `close()` is now
-reached from the row rather than from a header button.
+The panel is opened and returned exactly as the official pages are: the sidebar
+row selects it, and any session navigation returns the column to the conversation.
+`PanelController.open()`/`close()`/`syncPanelSelection()` are unchanged — the
+controller is still the owner of `panelOpen`, the active tab and the editor target,
+and the layout's `panelInfo` is still reconciled back into it, so out-of-band panel
+switches keep working.
+
+## How the panel is left
+
+The sidebar row is a **select**, not a toggle: `SidebarRoot`'s `PanelRow` calls
+`selectPanel(id)`, which the shell wires straight to `ctx.layout.selectPanel(id)`
+(`ui-sidebar/src/client/index.ts:70-73`). Clicking the active row therefore writes the
+same panel id again and the center column stays on the skill center — it is a
+re-select, not a close. The exit paths that do return the column to the conversation
+are the shell's own:
+
+- opening any session row (`navigation.openSession` → `replaceMain(..., 'reveal')`);
+- opening a workspace (`openWorkspace` → `replaceMain(..., 'reveal')`);
+- the sidebar's "new chat" button (`startSession` → `replaceMain(..., 'reveal')`).
+
+All three end in `this.ctx.layout.selectPanel(null)`. Switching to any other panel
+row (Plugins, Schedule, the task board) also leaves the skill center, through the
+layout rather than the plugin. So no exit depends on the removed control, and the
+same set of exits is what the official Plugins and Schedule pages have.
 
 dsh-ssh and dsh-task-board keep their own back controls: their sessions are
 host-owned resources (an SSH terminal, a running task) and the reporter did not
@@ -70,8 +88,15 @@ controls still carry the marker it targets.
   remains observable when switching between panels or rows.
 - `panel.backToConversation` is no longer a key in the `dsh-skill-explorer`
   namespace. It survives in the ssh namespace, which still uses it.
-- `controller.close()` has no in-page caller left; the sidebar row's toggle and
-  the `panelInfo` reconciliation remain the two ways the panel opens and closes.
+- `controller.close()` and `controller.open()` have no caller left: the sidebar row
+  selects a panel rather than closing one, and session navigation goes through the
+  shell, so nothing in production asks the controller to open or close the panel
+  any more. `syncPanelSelection()` still runs — `src/client/index.ts` feeds it the
+  layout's `panelInfo`, which is how the controller learns the panel opened. The
+  methods stay on the controller because the panel's open state is still the
+  controller's to report, and `toggle()` still routes between the two; that
+  `open`/`close` now have no external caller is a property of the family pattern,
+  not a defect, because the task board's controller is driven the same way.
 
 ## Testing
 
@@ -79,7 +104,11 @@ controls still carry the marker it targets.
   `[data-dsh-center-view-back]` node or back label is rendered, and that the
   page offers no in-page close affordance.
 - `tests/panel-state.spec.ts` keeps pinning the layout handshake, the
-  controller-owned tab and editor target, and the referentially stable snapshot.
-- `pnpm --filter @linxin666/dsh-client-ui-skill-explorer test` (122 passed),
+  controller-owned tab and editor target, and the referentially stable snapshot,
+  and adds the exit contract: a `panelInfo` reconciliation in both directions
+  must leave the layout's selection list empty, so the plugin can never be the
+  thing that re-selects the conversation. Mutation-checked — making
+  `syncPanelSelection` push the selection back fails that case.
+- `pnpm --filter @linxin666/dsh-client-ui-skill-explorer test` (123 passed),
   `pnpm i18n:check` (15 namespaces, 1296 keys in zh/en/ru parity),
   `pnpm docs:check`, `pnpm typecheck`, and `pnpm libs:check` pass.
