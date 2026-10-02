@@ -25330,7 +25330,7 @@ window.__ModuleLoader__.load({
 			"terminal.ready": "终端已连接（{alias}）",
 			"terminal.exited": "终端已退出（{alias}）",
 			"terminal.error": "终端错误：{error}",
-			"terminal.noWebSocket": "当前页面不支持 WebSocket（应用外壳只转发 HTTP），请改用浏览器打开的 Web 界面使用终端。",
+			"terminal.noWebSocket": "当前页面不支持 WebSocket（应用外壳没有可连接的本地主机地址），请改用浏览器打开的 Web 界面使用终端。",
 			"terminal.auth.title": "二次身份验证 (2FA / 交互式认证)",
 			"terminal.auth.submit": "提交验证码",
 			"terminal.auth.cancel": "取消",
@@ -25486,7 +25486,7 @@ window.__ModuleLoader__.load({
 			"terminal.ready": "Terminal connected ({alias})",
 			"terminal.exited": "Terminal exited ({alias})",
 			"terminal.error": "Terminal error: {error}",
-			"terminal.noWebSocket": "This page cannot carry a WebSocket (the application shell forwards HTTP only). Open the Web UI in a browser to use the terminal.",
+			"terminal.noWebSocket": "This page cannot carry a WebSocket (the application shell published no local host address to reach). Open the Web UI in a browser to use the terminal.",
 			"terminal.auth.title": "Two-Factor Authentication (2FA)",
 			"terminal.auth.submit": "Submit Code",
 			"terminal.auth.cancel": "Cancel",
@@ -25668,23 +25668,71 @@ window.__ModuleLoader__.load({
 		* The WebSocket URL the terminal route is reached at, or undefined when this
 		* page cannot carry one.
 		*
-		* A page delivered by an application on this machine (the official DSH
-		* Desktop shell serves its Web GUI from `dsh-app://app/`) has no WebSocket
-		* transport: its scheme handler forwards HTTP requests to the local host but
-		* cannot upgrade a socket, so `ws://app/...` never connects and the terminal
-		* reports "connection error" (issue #1744). Every other page is a web page and
-		* resolves the socket against its own origin, exactly as before.
+		* A web page resolves the socket against its own origin, exactly as before.
 		*
-		* A blank authority is treated the same as an application scheme: there is
-		* nothing to dial, and the caller gets the actionable reason instead of a
-		* socket that can only fail.
+		* A page delivered by an application on this machine (the official DSH Desktop
+		* shell serves its Web GUI from `dsh-app://app/`) cannot carry a socket on its
+		* own scheme: the protocol handler forwards HTTP to the local Host but has no
+		* upgrade to forward. That is exactly the case the official transport hook
+		* covers — the shell publishes `__DSH_TRANSPORT__.streamBaseUrl`, the loopback
+		* authority of the Host it owns and already forwards every other request to
+		* (issue #1744). The socket is therefore dialed there instead, with the `ws`/
+		* `wss` scheme derived from that base, which is what the shell's
+		* `onBeforeSendHeaders` hook expects to see before it attaches its
+		* authority-bound credential.
+		*
+		* The base is used only on an application-delivered page. A web page that
+		* somehow carries the hook (the remote channel grants `ownsHost` to a paired
+		* LAN page, and that page is fenced behind a pairing channel) keeps resolving
+		* against its own origin, so this cannot reroute gated traffic onto a host the
+		* page is not entitled to reach. A blank authority is treated the same as an
+		* application scheme with no base: there is nothing to dial, and the caller gets
+		* the actionable reason instead of a socket that can only fail.
 		*
 		* @param location - the page location to read.
 		* @param search - the query string carrying `alias` or `session`.
+		* @param streamBaseUrl - `__DSH_TRANSPORT__.streamBaseUrl`, when the shell published one.
 		* @returns the absolute `ws:`/`wss:` URL, or undefined when the page cannot carry one.
 		*/
-		function terminalSocketUrl(location, search) {
+		function terminalSocketUrl(location, search, streamBaseUrl) {
 			if (WEB_PAGE_PROTOCOLS.includes(location.protocol)) return (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + SSH_API.terminal + search;
+			const base = hostAuthorityOf(streamBaseUrl);
+			if (base === void 0) return void 0;
+			return (base.protocol === "https:" ? "wss" : "ws") + "://" + base.authority + SSH_API.terminal + search;
+		}
+		/**
+		* The authority and scheme of a shell-owned Host base, or undefined when the
+		* value is absent, unparsable, or not a network origin this Host can serve
+		* (an application scheme could only resolve back to the page that has no
+		* socket transport in the first place).
+		* @param base - the raw `streamBaseUrl` as published by the transport hook.
+		*/
+		function hostAuthorityOf(base) {
+			if (base === void 0 || base === "") return void 0;
+			let url;
+			try {
+				url = new URL(base);
+			} catch {
+				return;
+			}
+			if (url.protocol !== "http:" && url.protocol !== "https:") return void 0;
+			if (url.username !== "" || url.password !== "") return void 0;
+			if (url.host === "") return void 0;
+			return {
+				protocol: url.protocol,
+				authority: url.host
+			};
+		}
+		/**
+		* The shell-owned Host authority the page is told to reach, read from the
+		* official transport hook. The global is written by the shell before any boot
+		* entry runs, so it is absent on every page it does not own.
+		* @param globals - the global object to read (defaults to the real one).
+		* @returns the published base URL, or undefined when the page carries none.
+		*/
+		function transportStreamBaseUrl(globals = globalThis) {
+			const published = globals.__DSH_TRANSPORT__?.streamBaseUrl;
+			return typeof published === "string" ? published : void 0;
 		}
 		/**
 		* Schemes a network page can be delivered with. Every other scheme belongs to
@@ -25948,7 +25996,7 @@ window.__ModuleLoader__.load({
 			}
 			/** One terminal socket over either an alias (open) or a session id (attach). */
 			terminalSocket(search) {
-				const target = terminalSocketUrl(window.location, search);
+				const target = terminalSocketUrl(window.location, search, transportStreamBaseUrl());
 				if (target === void 0) return failedTerminal(tt$1("terminal.noWebSocket"));
 				let socket;
 				try {
@@ -45926,24 +45974,44 @@ window.__ModuleLoader__.load({
 		function withinWindow(minuteOfDay) {
 			return PEAK_WINDOWS.find((window) => minuteOfDay >= window.from && minuteOfDay < window.to);
 		}
+		/** The default calendar: no holiday data, so every Monday-Friday prices as peak. */
+		const NO_PUBLIC_HOLIDAYS = { isPublicHoliday: () => false };
+		/** The Beijing-time `YYYY-MM-DD` calendar day of `ms` (UTC+8 has no DST, so the shift is exact). */
+		function beijingDate(ms) {
+			const shifted = new Date(ms + BEIJING_UTC_OFFSET_MS);
+			const month = `${shifted.getUTCMonth() + 1}`.padStart(2, "0");
+			const day = `${shifted.getUTCDate()}`.padStart(2, "0");
+			return `${shifted.getUTCFullYear()}-${month}-${day}`;
+		}
+		/**
+		* Whether `ms` falls on a peak-eligible Beijing day: Monday-Friday that is
+		* not a public holiday. A Saturday or Sunday is never eligible, including on
+		* an adjusted workday — the provider counts the calendar day, not the
+		* working schedule.
+		*/
+		function isPeakDay(ms, calendar) {
+			const weekday = new Date(ms + BEIJING_UTC_OFFSET_MS).getUTCDay();
+			if (weekday < 1 || weekday > 5) return false;
+			return !calendar.isPublicHoliday(beijingDate(ms));
+		}
 		/**
 		* The DeepSeek billing period at `ms`, plus when it next flips. The clock is
 		* Beijing time regardless of the host timezone (UTC+8 has no DST, so a fixed
 		* shift is exact). `boundaryMs` is the instant the current period ends — the
 		* window's close while peaking, the next window's open otherwise.
 		*/
-		function deepseekPeriodAt(ms) {
+		function deepseekPeriodAt(ms, calendar = NO_PUBLIC_HOLIDAYS) {
 			const shifted = new Date(ms + BEIJING_UTC_OFFSET_MS);
-			const weekday = shifted.getUTCDay();
 			const minuteOfDay = shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-			const current = weekday >= 1 && weekday <= 5 ? withinWindow(minuteOfDay) : void 0;
+			const current = isPeakDay(ms, calendar) ? withinWindow(minuteOfDay) : void 0;
 			if (current !== void 0) return {
 				peak: true,
 				boundaryMs: ms + (current.to - minuteOfDay) * 6e4 - shifted.getUTCSeconds() * 1e3 - shifted.getUTCMilliseconds()
 			};
 			for (let dayOffset = 0; dayOffset < 8; dayOffset += 1) {
-				const day = new Date(ms + BEIJING_UTC_OFFSET_MS + dayOffset * 864e5);
-				if (day.getUTCDay() < 1 || day.getUTCDay() > 5) continue;
+				const dayStartMs = ms + dayOffset * 864e5;
+				if (!isPeakDay(dayStartMs, calendar)) continue;
+				const day = new Date(dayStartMs + BEIJING_UTC_OFFSET_MS);
 				const realDayStart = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()) - BEIJING_UTC_OFFSET_MS;
 				for (const window of PEAK_WINDOWS) {
 					if (dayOffset === 0 && window.from <= minuteOfDay) continue;

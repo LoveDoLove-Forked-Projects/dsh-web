@@ -35,6 +35,8 @@ Today's spend is an estimate priced at fold time from the published DeepSeek pea
 
 It covers the official DeepSeek routes only — relay traffic billed elsewhere (ZenMux, SiliconFlow, ...) stays unpriced — and unknown DeepSeek model ids take the flash-class row. Buckets recorded before a price change keep the old pricing, so a price-book update is reflected from the moment it ships, not retroactively.
 
+The published rule bills a Chinese public holiday entirely off-peak even on a Monday-Friday, and bills an adjusted workday falling on a Saturday or Sunday off-peak too. Weekends are therefore already off-peak by construction, but this package ships no holiday calendar, so a public-holiday weekday is still estimated at the peak row. A holiday day can read up to about twice the real spend; every other day follows the published windows.
+
 ## Install
 
 Requires DSH 0.2.0-rc.2 or later: the plugin is developed against the 0.2.0-rc.2 DSH cohort (its settings page is the Host-generated page of the plugin's own Config schema) and its `@deepseek-ai/*` runtime imports are provided by the host itself.
