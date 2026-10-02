@@ -153,6 +153,126 @@ describe('collectSkills', () => {
   })
 })
 
+describe('invocation policy resolution (#1204)', () => {
+  const INVOCATION_TMP = join(TMP, 'invocation')
+  const INVOCATION_PROJ = join(INVOCATION_TMP, 'proj')
+  const INVOCATION_HOME = join(INVOCATION_TMP, 'home')
+
+  function writeInvocationFixtures(): void {
+    write(join(INVOCATION_PROJ, '.git', 'keep'), '')
+    // Declares neither user-invocable nor disable-model-invocation: the
+    // official rule is "omitted means allowed".
+    write(
+      join(INVOCATION_PROJ, '.dsh', 'skills', 'plain', 'SKILL.md'),
+      '---\nname: plain\ndescription: no invocation fields\n---\n# body\n',
+    )
+    write(
+      join(INVOCATION_PROJ, '.dsh', 'skills', 'model-off', 'SKILL.md'),
+      '---\nname: model-off\ndescription: model invocation disabled\ndisable-model-invocation: true\n---\n# body\n',
+    )
+    write(
+      join(INVOCATION_PROJ, '.dsh', 'skills', 'user-off', 'SKILL.md'),
+      '---\nname: user-off\ndescription: user invocation disabled\nuser-invocable: false\n---\n# body\n',
+    )
+  }
+
+  const collectWith = async (registrySkills: RegistrySkill[]) => {
+    const { skills } = await collectSkills({
+      cwd: INVOCATION_PROJ,
+      projectRoots: [INVOCATION_PROJ],
+      customSkillDirs: [],
+      dshHome: INVOCATION_HOME,
+      agentsHome: join(INVOCATION_TMP, 'agents'),
+      registry: { snapshot: async () => ({ skills: registrySkills, complete: true }) },
+    })
+    return Object.fromEntries(skills.map((s) => [s.name, s]))
+  }
+
+  it('operator sees a skill stay invocable when its frontmatter omits both invocation fields', async () => {
+    // Given a skill file declaring only name and description, and a registry
+    // that contributes nothing
+    writeInvocationFixtures()
+    // When the skill center collects the roots
+    const byName = await collectWith([])
+    // Then it is reported as invocable on both surfaces (omitted means allowed)
+    expect(byName['plain'].modelInvocable).toBe(true)
+    expect(byName['plain'].userInvocable).toBe(true)
+    rmSync(INVOCATION_TMP, { recursive: true, force: true })
+  })
+
+  it('operator sees explicit invocation fields honored from frontmatter', async () => {
+    // Given skills that disable exactly one surface each
+    writeInvocationFixtures()
+    // When the skill center collects the roots
+    const byName = await collectWith([])
+    // Then only the declared surface is denied
+    expect(byName['model-off'].modelInvocable).toBe(false)
+    expect(byName['model-off'].userInvocable).toBe(true)
+    expect(byName['user-off'].modelInvocable).toBe(true)
+    expect(byName['user-off'].userInvocable).toBe(false)
+    rmSync(INVOCATION_TMP, { recursive: true, force: true })
+  })
+
+  it('operator sees registry entries without a policy leave the parsed frontmatter untouched', async () => {
+    // Given scanned skills plus registry candidates that carry no invocation
+    // policy at all (the official registry accepts an undefined policy)
+    writeInvocationFixtures()
+    // When the skill center merges the registry over the scan
+    const byName = await collectWith([
+      { name: 'plain', description: 'registry', source: 'project-dsh', provider: 'filesystem' },
+      { name: 'model-off', description: 'registry', source: 'project-dsh', provider: 'filesystem' },
+      { name: 'user-off', description: 'registry', source: 'project-dsh', provider: 'filesystem' },
+    ])
+    // Then the frontmatter values survive instead of being replaced by a default
+    expect(byName['plain'].modelInvocable).toBe(true)
+    expect(byName['plain'].userInvocable).toBe(true)
+    expect(byName['model-off'].modelInvocable).toBe(false)
+    expect(byName['user-off'].userInvocable).toBe(false)
+    rmSync(INVOCATION_TMP, { recursive: true, force: true })
+  })
+
+  it('operator sees an explicit registry policy refine an existing entry', async () => {
+    // Given a scanned skill and a registry candidate stating a real policy
+    writeInvocationFixtures()
+    // When the skill center merges them
+    const byName = await collectWith([
+      {
+        name: 'plain',
+        description: 'registry',
+        source: 'project-dsh',
+        provider: 'filesystem',
+        invocation: { modelInvocable: false, userInvocable: true },
+      },
+    ])
+    // Then the stated policy wins over the parsed default
+    expect(byName['plain'].modelInvocable).toBe(false)
+    expect(byName['plain'].userInvocable).toBe(true)
+    rmSync(INVOCATION_TMP, { recursive: true, force: true })
+  })
+
+  it('operator sees registry-only skills default to invocable when no policy is stated', async () => {
+    // Given bundled skills with no editable file, one silent and one denied
+    writeInvocationFixtures()
+    // When the skill center serves the bundled group
+    const byName = await collectWith([
+      { name: 'bundled-bare', description: 'no policy', source: 'bundled', provider: 'orca' },
+      {
+        name: 'bundled-denied',
+        description: 'explicitly denied',
+        source: 'bundled',
+        provider: 'orca',
+        invocation: { modelInvocable: false, userInvocable: false },
+      },
+    ])
+    // Then the silent one is invocable and the denied one is not
+    expect(byName['bundled-bare'].modelInvocable).toBe(true)
+    expect(byName['bundled-bare'].userInvocable).toBe(true)
+    expect(byName['bundled-denied'].modelInvocable).toBe(false)
+    expect(byName['bundled-denied'].userInvocable).toBe(false)
+    rmSync(INVOCATION_TMP, { recursive: true, force: true })
+  })
+})
+
 describe('cross-root precedence', () => {
   it('project wins over custom wins over user, deterministically across repeated scans', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'skill-explorer-prec-'))

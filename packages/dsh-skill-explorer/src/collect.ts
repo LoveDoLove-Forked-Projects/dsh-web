@@ -234,8 +234,14 @@ function serializeRegistry(skill: RegistrySkill): SkillEntry {
     // no path here — otherwise the panel would show toggle/delete controls
     // that always answer 404.
     path: undefined,
-    modelInvocable: skill.invocation?.modelInvocable ?? false,
-    userInvocable: skill.invocation?.userInvocable ?? false,
+    // Official invocation semantics: an omitted policy permits both surfaces.
+    // dsh-skill register() defaults to { modelInvocable: true,
+    // userInvocable: true }, and the filesystem provider resolves omitted
+    // frontmatter the same way, so a registry candidate that carries no
+    // invocation (validateInvocation() accepts undefined) means allowed,
+    // never denied.
+    modelInvocable: skill.invocation?.modelInvocable ?? true,
+    userInvocable: skill.invocation?.userInvocable ?? true,
   }
 }
 
@@ -320,8 +326,13 @@ export async function collectSkills(options: CollectOptions): Promise<CollectRes
         } else {
           if (serialized.whenToUse !== undefined) existing.whenToUse = serialized.whenToUse
           if (serialized.provider !== undefined) existing.provider = serialized.provider
-          existing.modelInvocable = serialized.modelInvocable
-          existing.userInvocable = serialized.userInvocable
+          // Only let the registry refine invocation when it actually states a
+          // policy. scanSkillRoot() already resolved the file frontmatter with
+          // the official rule (omitted => allowed), so overwriting it with the
+          // serialized default would re-introduce the false-negative that made
+          // every skill render as not invocable.
+          if (skill.invocation?.modelInvocable !== undefined) existing.modelInvocable = skill.invocation.modelInvocable
+          if (skill.invocation?.userInvocable !== undefined) existing.userInvocable = skill.invocation.userInvocable
         }
       }
     } catch {
