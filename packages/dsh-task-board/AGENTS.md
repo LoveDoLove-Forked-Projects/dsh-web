@@ -26,6 +26,15 @@ dsh Web GUI 的 Host 权威多列任务看板。任务通过真实 DSH 会话执
 - 刻意不提供 `confirm-permission`：高于权限基线的绑定只能由人工在界面确认。工具面同样不接受命令、可执行路径或 shell 文本。
 - 工具描述是面向模型的英文文案（含中文触发词），不进 locales 字典；领域拒绝以 `ok:false` 值返回，便于模型自行纠正。
 
+## 外部提供方扩展契约
+
+- 看板声明三个子席位 `task-board.detail.section`（props `{ task, dispatch }`）、`task-board.settings.section`（props `{ dispatch }`）、`task-board.card.decoration`（props `{ task }`）；注册组件在 `register` 选项声明 `children` 并在组件内用 `renderSlot` 消费，经内部 React context 穿透到详情页、设置卡与卡片；跨包扩展只在自己包内同形 `declare module` 声明这些键，不得 value import 看板。看板不再 import 提供方：`src/tool-surface.ts` 是 `scripts/sync-shared.mjs` 生成的副本，其中 `task-board-github` 键是家族 tool-section 顺序表的插件 id 键，不是 import、不是依赖、不是能力穿透，不计入「看板不再认识 GitHub」的判据。
+- host 与 client 各发布一份 cordis 服务 `taskBoard`，API 版本常量为 `TASK_BOARD_API_VERSION = 1`；provider 按该常量协商，版本不匹配即可见拒绝，且不影响看板继续服务。
+- provider 只见宿主能力面 `tasks.{ list, get, create, patchContent, setStatus, linked }`、`integration.{ read, write }`、`events.{ onStatusChanged, onExecutionSettled, onTaskDeleted }`、`publish`、`registerTool`，以及客户端能力面 `dispatch` / `registerVisibility` / `subscribe` / `snapshot`；`HostTaskLedger` 不进服务面。
+- 载荷不透明：`TaskRecord.integrations` 是 `Record<string, unknown>`，只校验纯 JSON 对象且单条不超过 64KiB；协议只有泛化的 `{ kind: "extension-action", extensionId, action, taskId?, payload? }`；快照只有 `extensions?: Record<string, unknown>`；不做账本 schema 迁移，远端语义的归一化不再被看板核心引用。
+- 不变量由看板上收执行：`patchContent` 复用 `canEditTaskContent`（执行过或已归档的卡内容冻结）、`setStatus` 走既有列与权限门禁、事件回调 try/catch 隔离且绝不打断执行；远端身份的索引归 provider，看板不提供 `findTaskByGitHubIdentity` 或 `updateTaskIntegrations`。
+- 开关三态：loader 行禁用（需重启，最重）> 扩展 `enabled`（volatile，默认 true，即时惰性：停轮询、停写回、注销工具、撤下详情区与徽章，不清数据）> 看板总开关；扩展的设置区块必须保持可达（它是重新开启的地方），只收放其中的配置表单。契约全文见 [Agent Note](../../.agents/notes/proposed/architecture/2026-09-30-task-board-extension-contract.md)。
+
 ## 电源保护
 
 - `preventIdleSleep` 默认 `false`。开启后，全部 DSH running session、任一已启用 cron 或未知 session 状态都构成持锁理由；仅在已确认无运行会话且无计划时释放。
