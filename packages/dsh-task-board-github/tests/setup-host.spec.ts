@@ -225,6 +225,18 @@ describe('GitHub repository writes', () => {
     }])
   })
 
+  it('operator turning the unassigned channel on survives the write, so the next sync can use it', async () => {
+    // Given a writable settings document
+    const settings = settingsSurface('web-ui-task-board-github')
+    const { setup } = setupOf({ settings })
+
+    // When a repository is written with the unassigned channel on
+    const stored = await setup.writeRepositories([{ owner: 'deepseek-ai', repository: 'dsh-web', includeUnassigned: true }])
+
+    // Then the boolean reaches the document rather than being dropped
+    expect(stored).toEqual([{ owner: 'deepseek-ai', repository: 'dsh-web', includeUnassigned: true }])
+  })
+
   it('operator saving a list that names the same repository twice is refused', async () => {
     // Given a list carrying a duplicate under two spellings
     const settings = settingsSurface('web-ui-task-board-github')

@@ -79,10 +79,12 @@ export interface GitHubRepositoryCheck {
   defaultBranch?: string
   /** Whether the repository is private to the authenticated account. */
   private?: boolean
-  /** Open issues the board would take (inclusion label or assignment), when they could be counted. */
+  /** Open issues the board would take (inclusion label, assignment, or no assignee), when they could be counted. */
   openIssues?: number
   /** Assignee login the check matched on, when the repository configures one. */
   assignee?: string
+  /** Whether the repository also takes issues that carry no assignee. */
+  includeUnassigned?: boolean
 }
 
 /** Outcome of one live connection test. */
@@ -197,6 +199,7 @@ export function sanitizeRepositoryConfig(value: unknown): GitHubRepoConfig | und
   if (typeof raw.pollingIntervalMs === 'number' && Number.isFinite(raw.pollingIntervalMs) && raw.pollingIntervalMs >= 0) {
     config.pollingIntervalMs = Math.floor(raw.pollingIntervalMs)
   }
+  if (typeof raw.includeUnassigned === 'boolean') config.includeUnassigned = raw.includeUnassigned
   if (typeof raw.prCreationEnabled === 'boolean') config.prCreationEnabled = raw.prCreationEnabled
   if (typeof raw.closeIssueOnMerge === 'boolean') config.closeIssueOnMerge = raw.closeIssueOnMerge
   if (raw.draftPrPolicy === 'draft' || raw.draftPrPolicy === 'ready') config.draftPrPolicy = raw.draftPrPolicy
@@ -250,6 +253,11 @@ export interface RepositoryOptions {
    * account. An empty string clears the channel.
    */
   assignee?: string
+  /**
+   * Whether issues with no assignee at all are included too; false is the
+   * default and only a boolean may set it.
+   */
+  includeUnassigned?: boolean
   /** Base branch pull requests target. */
   baseBranch?: string
   /** Whether the extension may open pull requests. */
@@ -279,6 +287,7 @@ function withOptions(base: GitHubRepoConfig, options: RepositoryOptions): GitHub
     if (assignee === '') delete next.assignee
     else next.assignee = assignee
   }
+  if (options.includeUnassigned !== undefined) next.includeUnassigned = options.includeUnassigned
   if (options.baseBranch !== undefined && options.baseBranch.trim() !== '') next.baseBranch = options.baseBranch.trim()
   if (options.prCreationEnabled !== undefined) next.prCreationEnabled = options.prCreationEnabled
   if (options.pollingIntervalMs !== undefined && Number.isFinite(options.pollingIntervalMs) && options.pollingIntervalMs >= 0) {

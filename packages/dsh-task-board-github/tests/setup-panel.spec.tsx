@@ -188,12 +188,29 @@ describe('GitHub setup panel', () => {
     // When the operator removes one of them
     const rows = Array.from(container.querySelectorAll('[data-dsh-part="github-repository"]'))
     expect(rows).toHaveLength(2)
-    const removeButtons = Array.from(rows[1]!.querySelectorAll('button'))
-    await act(async () => { removeButtons[0]!.click() })
+    const remove = rows[1]!.querySelector('[data-dsh-part="github-repository-remove"]') as HTMLButtonElement
+    await act(async () => { remove.click() })
 
     // Then only the other repository is stored
     expect(calls).toContain('writeRepositories')
     expect(list()).toEqual([{ owner: 'deepseek-ai', repository: 'dsh-web' }])
+  })
+
+  it('operator collecting an unassigned backlog flips the channel on the row it clicked', async () => {
+    // Given one configured repository that does not yet take unassigned issues
+    const { api, list } = apiDouble([{ owner: 'deepseek-ai', repository: 'dsh-web' }])
+    const container = await renderPanel(api)
+
+    // When the operator presses that row's take-unassigned button
+    const toggle = container.querySelector('[data-dsh-part="github-repository-unassigned-toggle"]') as HTMLButtonElement
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    await act(async () => { toggle.click() })
+
+    // Then the stored repository carries the flag and the row says so
+    expect(list()).toEqual([{ owner: 'deepseek-ai', repository: 'dsh-web', includeUnassigned: true }])
+    const after = container.querySelector('[data-dsh-part="github-repository-unassigned-toggle"]') as HTMLButtonElement
+    expect(after.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('[data-dsh-part="github-repository-unassigned"]')?.textContent).toBe(zh['setup.unassignedChip'])
   })
 
   it('operator testing the connection sees the authenticated account and each repository check', async () => {

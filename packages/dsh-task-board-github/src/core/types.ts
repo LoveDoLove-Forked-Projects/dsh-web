@@ -97,6 +97,12 @@ export interface GitHubRepoConfig {
    * it carries the inclusion label OR is assigned to this login.
    */
   assignee?: string
+  /**
+   * Whether issues with no assignee at all are included. Off by default, so a
+   * repository keeps importing only the issues its other channels select until
+   * this is turned on deliberately.
+   */
+  includeUnassigned?: boolean
   /** Prefix for DSH-owned labels (default: 'dsh:'). */
   managedLabelPrefix?: string
   /** Status-to-label mappings. */
@@ -122,6 +128,8 @@ export interface ResolvedGitHubRepoConfig {
   readonly inclusionLabel: string
   /** Resolved inclusion assignee (lowercased login), or undefined when none is configured. */
   readonly assignee?: string
+  /** Whether issues carrying no assignee at all are included. */
+  readonly includeUnassigned: boolean
   readonly managedLabelPrefix: string
   readonly stateLabels: Required<GitHubStateLabels>
   readonly prPhaseLabel: string
@@ -149,6 +157,7 @@ export function resolveRepoConfig(raw: GitHubRepoConfig): ResolvedGitHubRepoConf
     repository: raw.repository.trim(),
     inclusionLabel: (raw.inclusionLabel ?? DEFAULT_INCLUSION_LABEL).trim(),
     ...(assigneeOf(raw.assignee) === undefined ? {} : { assignee: assigneeOf(raw.assignee)! }),
+    includeUnassigned: raw.includeUnassigned === true,
     managedLabelPrefix: prefix,
     stateLabels: {
       backlog: raw.stateLabels?.backlog ?? `${prefix}state:backlog`,

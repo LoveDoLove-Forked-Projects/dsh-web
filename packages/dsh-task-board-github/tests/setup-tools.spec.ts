@@ -120,6 +120,19 @@ describe('GitHub setup tools', () => {
     expect(list()).toEqual([{ owner: 'deepseek-ai', repository: 'dsh-web', assignee: '@me' }])
   })
 
+  it("operator's agent can switch the unassigned channel on in one update call", async () => {
+    // Given a configured repository
+    const { setup, list } = setupDouble([{ owner: 'deepseek-ai', repository: 'dsh-web' }])
+    const tool = toolOf(buildSetupTools(setup), 'task_board_github_repositories')
+
+    // When it is updated to also take unassigned issues
+    const result = await run(tool, { action: 'update', repository: 'deepseek-ai/dsh-web', includeUnassigned: true })
+
+    // Then the stored entry carries the flag
+    expect(result.ok).toBe(true)
+    expect(list()).toEqual([{ owner: 'deepseek-ai', repository: 'dsh-web', includeUnassigned: true }])
+  })
+
   it('operator\'s agent removing a repository drops exactly that entry', async () => {
     // Given two configured repositories
     const { setup, list } = setupDouble([{ owner: 'deepseek-ai', repository: 'dsh-web' }, { owner: 'other', repository: 'thing' }])

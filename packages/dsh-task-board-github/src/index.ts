@@ -147,6 +147,8 @@ export interface GitHubRepoConfigInput {
   inclusionLabel?: string
   /** Login whose assigned issues are included too; `@me` means this host's account. */
   assignee?: string
+  /** Whether issues assigned to nobody are included too. */
+  includeUnassigned?: boolean
   /** Prefix of the labels this extension manages itself. */
   managedLabelPrefix?: string
   /** GitHub labels mapped onto the board columns. */
@@ -171,6 +173,7 @@ const GitHubRepoConfigSchema = z.object({
   repository: z.string(),
   inclusionLabel: z.string().default('dsh'),
   assignee: z.string().default(''),
+  includeUnassigned: z.boolean().default(false),
   managedLabelPrefix: z.string().default('dsh:'),
   stateLabels: z.object({
     backlog: z.string().default('dsh:state:backlog'),

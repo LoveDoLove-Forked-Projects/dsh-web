@@ -14803,6 +14803,7 @@ window.__ModuleLoader__.load({
 				if (assignee === "") delete next.assignee;
 				else next.assignee = assignee;
 			}
+			if (options.includeUnassigned !== void 0) next.includeUnassigned = options.includeUnassigned;
 			if (options.baseBranch !== void 0 && options.baseBranch.trim() !== "") next.baseBranch = options.baseBranch.trim();
 			if (options.prCreationEnabled !== void 0) next.prCreationEnabled = options.prCreationEnabled;
 			if (options.pollingIntervalMs !== void 0 && Number.isFinite(options.pollingIntervalMs) && options.pollingIntervalMs >= 0) next.pollingIntervalMs = Math.floor(options.pollingIntervalMs);
@@ -14855,6 +14856,36 @@ window.__ModuleLoader__.load({
 			return {
 				ok: true,
 				repositories: list.filter((entry) => identityOf(entry) !== key).map((entry) => ({ ...entry }))
+			};
+		}
+		/**
+		* Change optional fields of one configured repository.
+		* @param list - the current list.
+		* @param input - the repository text.
+		* @param options - the fields to change.
+		* @returns the new list, or the reason nothing changed.
+		*/
+		function updateRepository(list, input, options) {
+			const parsed = parseRepositoryInput(input);
+			if (parsed === void 0) return {
+				ok: false,
+				code: "repository-invalid",
+				message: "\"" + input.trim() + "\" is not a GitHub repository"
+			};
+			if (Object.keys(options).length === 0) return {
+				ok: false,
+				code: "nothing-to-update",
+				message: "name at least one field to change"
+			};
+			const key = identityOf(parsed);
+			if (!list.some((entry) => identityOf(entry) === key)) return {
+				ok: false,
+				code: "repository-absent",
+				message: repositorySlug(parsed) + " is not configured"
+			};
+			return {
+				ok: true,
+				repositories: list.map((entry) => identityOf(entry) === key ? withOptions(entry, options) : { ...entry })
 			};
 		}
 		//#endregion
@@ -15028,11 +15059,14 @@ window.__ModuleLoader__.load({
 			"setup.assignee": "指派账号",
 			"setup.assigneeChip": "指派 {login}",
 			"setup.assigneePlaceholder": "@me 或登录名",
+			"setup.unassignedChip": "含无指派",
+			"setup.unassignedOn": "已含无指派",
+			"setup.unassignedOff": "收无指派",
 			"setup.inclusionLabel": "纳入标签",
 			"setup.inclusionLabelPlaceholder": "标签（默认 dsh）",
 			"setup.repositoriesCount": "已配置 {count} 个仓库：",
 			"setup.repositoriesEmpty": "还没有同步任何仓库。",
-			"setup.repositoriesHint": "带纳入标签、或指派给指定账号（@me 表示本机账号）的 issue 会同步成看板卡片；这里的修改立即生效，无需重启。状态标签映射、PR 草稿策略、轮询间隔等高级项仍可在 profile patch 里声明。",
+			"setup.repositoriesHint": "带纳入标签、指派给指定账号（@me 表示本机账号），或开启「收无指派」后完全没人指派的 issue 会同步成看板卡片；这里的修改立即生效，无需重启。状态标签映射、PR 草稿策略、轮询间隔等高级项仍可在 profile patch 里声明。",
 			"setup.repositoryAdd": "添加",
 			"setup.repositoryLabel": "仓库",
 			"setup.repositoryPlaceholder": "owner/repo，或粘贴 GitHub 链接",
@@ -15113,11 +15147,14 @@ window.__ModuleLoader__.load({
 			"setup.assignee": "Inclusion assignee",
 			"setup.assigneeChip": "assigned to {login}",
 			"setup.assigneePlaceholder": "@me or a login",
+			"setup.unassignedChip": "includes unassigned",
+			"setup.unassignedOn": "Taking unassigned",
+			"setup.unassignedOff": "Take unassigned",
 			"setup.inclusionLabel": "Inclusion label",
 			"setup.inclusionLabelPlaceholder": "Label (default dsh)",
 			"setup.repositoriesCount": "{count} repositories configured:",
 			"setup.repositoriesEmpty": "No repository is synchronized yet.",
-			"setup.repositoriesHint": "Issues carrying the inclusion label, or assigned to the configured login (@me means this host account), become board cards. Changes here apply immediately, with no restart. Advanced knobs (state-label mapping, draft-PR policy, polling interval, ...) stay declarable in the profile patch.",
+			"setup.repositoriesHint": "Issues carrying the inclusion label, assigned to the configured login (@me means this host account), or — for a repository taking unassigned issues — assigned to nobody at all, become board cards. Changes here apply immediately, with no restart. Advanced knobs (state-label mapping, draft-PR policy, polling interval, ...) stay declarable in the profile patch.",
 			"setup.repositoryAdd": "Add",
 			"setup.repositoryLabel": "Repository",
 			"setup.repositoryPlaceholder": "owner/repo, or paste a GitHub link",
@@ -15820,6 +15857,14 @@ window.__ModuleLoader__.load({
 				}
 				write(edit.repositories, true);
 			};
+			const toggleUnassigned = (repository, include) => {
+				const edit = updateRepository(repositories, repository.owner + "/" + repository.repository, { includeUnassigned: include });
+				if (!edit.ok) {
+					setRepositoryError(edit.message);
+					return;
+				}
+				write(edit.repositories);
+			};
 			const remove = (repository) => {
 				const edit = removeRepository(repositories, repository.owner + "/" + repository.repository);
 				if (!edit.ok) {
@@ -15996,31 +16041,51 @@ window.__ModuleLoader__.load({
 							repositories.map((repository) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: github_module_css_default.setupRow,
 								"data-dsh-part": "github-repository",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									className: github_module_css_default.setupRepository,
-									children: [
-										repository.owner,
-										"/",
-										repository.repository,
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: github_module_css_default.cardTag,
-											children: repository.inclusionLabel ?? "dsh"
-										}),
-										repository.assignee !== void 0 && repository.assignee !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: github_module_css_default.cardTag,
-											"data-dsh-part": "github-repository-assignee",
-											children: t("setup.assigneeChip", { login: repository.assignee })
-										})
-									]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: github_module_css_default.ghostButton,
-									disabled: disabled || repositoryBusy,
-									onClick: () => {
-										remove(repository);
-									},
-									children: t("setup.repositoryRemove")
-								})]
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: github_module_css_default.setupRepository,
+										children: [
+											repository.owner,
+											"/",
+											repository.repository,
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: github_module_css_default.cardTag,
+												children: repository.inclusionLabel ?? "dsh"
+											}),
+											repository.assignee !== void 0 && repository.assignee !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: github_module_css_default.cardTag,
+												"data-dsh-part": "github-repository-assignee",
+												children: t("setup.assigneeChip", { login: repository.assignee })
+											}),
+											repository.includeUnassigned === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: github_module_css_default.cardTag,
+												"data-dsh-part": "github-repository-unassigned",
+												children: t("setup.unassignedChip")
+											})
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: github_module_css_default.ghostButton,
+										"data-dsh-part": "github-repository-unassigned-toggle",
+										"aria-pressed": repository.includeUnassigned === true,
+										disabled: disabled || repositoryBusy,
+										onClick: () => {
+											toggleUnassigned(repository, repository.includeUnassigned !== true);
+										},
+										children: repository.includeUnassigned === true ? t("setup.unassignedOn") : t("setup.unassignedOff")
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: github_module_css_default.ghostButton,
+										"data-dsh-part": "github-repository-remove",
+										disabled: disabled || repositoryBusy,
+										onClick: () => {
+											remove(repository);
+										},
+										children: t("setup.repositoryRemove")
+									})
+								]
 							}, repository.owner + "/" + repository.repository)),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: github_module_css_default.setupRow,

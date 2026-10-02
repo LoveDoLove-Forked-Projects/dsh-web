@@ -131,6 +131,7 @@ function buildRepositoriesTool(setup: GitHubSetup): ToolDefinition {
       repository: { type: 'string', description: 'Repository to act on: owner/repo, a GitHub URL, or an SSH remote. Required by add, remove and update.' },
       inclusionLabel: { type: 'string', description: 'Issue label that opts an issue into the board (default dsh).' },
       assignee: { type: 'string', description: 'Login whose assigned issues are included too; use @me for the account the host is authenticated as, or an empty string to turn the channel off. Trivial filters such as "assigned to me" belong here.' },
+      includeUnassigned: { type: 'boolean', description: 'Whether issues assigned to nobody are included too; set it on repositories whose issues are never assigned. It never pulls in issues assigned to other people.' },
       baseBranch: { type: 'string', description: 'Base branch pull requests target (default main).' },
       prCreationEnabled: { type: 'boolean', description: 'Whether the extension may open pull requests for completed cards.' },
       pollingIntervalMs: { type: 'number', description: 'Background polling interval in milliseconds (default 300000; 0 disables polling).' },
@@ -145,6 +146,7 @@ function buildRepositoriesTool(setup: GitHubSetup): ToolDefinition {
       // An explicit empty string is meaningful here: it turns the assignee
       // channel off without dropping the repository.
       if (typeof args.assignee === 'string') options.assignee = args.assignee.trim()
+      if (typeof args.includeUnassigned === 'boolean') options.includeUnassigned = args.includeUnassigned
       if (typeof args.baseBranch === 'string' && args.baseBranch.trim() !== '') options.baseBranch = args.baseBranch.trim()
       if (typeof args.prCreationEnabled === 'boolean') options.prCreationEnabled = args.prCreationEnabled
       if (typeof args.pollingIntervalMs === 'number' && Number.isFinite(args.pollingIntervalMs) && args.pollingIntervalMs >= 0) {
