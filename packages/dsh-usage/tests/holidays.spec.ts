@@ -3,7 +3,7 @@ import { CHINESE_PUBLIC_HOLIDAYS, HOLIDAY_TABLE_LAST_YEAR } from '../src/core/ho
 import { CN_PUBLIC_HOLIDAYS } from '../src/core/pricing.ts'
 
 describe('the published Chinese public-holiday table', () => {
-  it('covers contiguous years with no gaps and no duplicate dates', () => {
+  it('operator reads a table whose coverage is contiguous and free of duplicate dates', () => {
     // Given every year the table ships
     const years = Object.keys(CHINESE_PUBLIC_HOLIDAYS).map(Number).sort((a, b) => a - b)
 
@@ -20,7 +20,7 @@ describe('the published Chinese public-holiday table', () => {
     }
   })
 
-  it('carries only well-formed Beijing calendar days', () => {
+  it('operator looks up a date that every entry round-trips as a real calendar day', () => {
     // Given every date in the table
     const all = Object.values(CHINESE_PUBLIC_HOLIDAYS).flat()
 
@@ -34,7 +34,7 @@ describe('the published Chinese public-holiday table', () => {
     }
   })
 
-  it('lists no adjusted workday, because the provider counts the calendar day', () => {
+  it('operator gets a designated Saturday answered off-peak, because the provider counts the calendar day', () => {
     // Given the 2026 arrangement, which designates 2026-10-10 a Saturday working day
     // When the table is asked about it
     // Then it is absent: the rule bills a weekend off-peak in full regardless
@@ -44,7 +44,7 @@ describe('the published Chinese public-holiday table', () => {
     expect(CN_PUBLIC_HOLIDAYS.isPublicHoliday('2026-10-01')).toBe(true)
   })
 
-  it('prices a year it does not cover as an ordinary weekday rather than failing', () => {
+  it('operator prices an uncovered year as an ordinary weekday rather than failing', () => {
     // Given a year beyond the table
     // When the calendar is asked about an ordinary Monday in it
     // Then it declines the day, so the estimate stays on the published
