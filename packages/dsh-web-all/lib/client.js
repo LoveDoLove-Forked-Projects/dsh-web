@@ -23018,13 +23018,13 @@ window.__ModuleLoader__.load({
 			`body.${ACTIVE_CLASS} [data-dsh-plugin=\"pet\"],`,
 			`body.${ACTIVE_CLASS} [data-dsh-plugin=\"usage\"]{display:none !important}`,
 			`body.${ACTIVE_CLASS} [class$=\"_overlayLayer\"] [class$=\"_workbench\"]{display:none !important}`,
-			"[class$=\"_overlay\"] [class$=\"_panel\"]{flex-direction:column;max-height:calc(100dvh - 32px)}",
-			"[class$=\"_overlay\"] [class$=\"_panel\"] [class$=\"_nav\"]{flex-direction:row;gap:4px;width:100%;padding:12px 12px 0;overflow-x:auto;overflow-y:hidden}",
-			"[class$=\"_overlay\"] [class$=\"_panel\"] [class$=\"_navTitle\"]{display:none}",
-			"[class$=\"_overlay\"] [class$=\"_panel\"] [class$=\"_navList\"]{flex-direction:row;gap:4px}",
-			"[class$=\"_overlay\"] [class$=\"_panel\"] [class$=\"_navCell\"]{height:34px;padding:0 12px;gap:6px;flex:none;border-radius:10px}",
-			"[class$=\"_overlay\"] [class$=\"_panel\"] [class$=\"_navLabel\"]{font-size:13px}",
-			"[class$=\"_overlay\"] [class$=\"_panel\"] [class$=\"_content\"]{flex:1;min-height:0}"
+			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"]{flex-direction:column;max-height:calc(100dvh - 32px)}`,
+			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_nav"]{flex-direction:row;gap:4px;width:100%;padding:12px 12px 0;overflow-x:auto;overflow-y:hidden}`,
+			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navTitle"]{display:none}`,
+			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navList"]{flex-direction:row;gap:4px}`,
+			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navCell"]{height:34px;padding:0 12px;gap:6px;flex:none;border-radius:10px}`,
+			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navLabel"]{font-size:13px}`,
+			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_content"]{flex:1;min-height:0}`
 		];
 		/** Cube glyph for the compact model button (a plain box outline). */
 		const CUBE_ICON = "<path d=\"M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z\"/><path d=\"m3.3 7 8.7 5 8.7-5\"/><path d=\"M12 22V12\"/>";
@@ -25674,7 +25674,7 @@ window.__ModuleLoader__.load({
 		* shell serves its Web GUI from `dsh-app://app/`) cannot carry a socket on its
 		* own scheme: the protocol handler forwards HTTP to the local Host but has no
 		* upgrade to forward. That is exactly the case the official transport hook
-		* covers — the shell publishes `__DSH_TRANSPORT__.streamBaseUrl`, the loopback
+		* covers - the shell publishes `__DSH_TRANSPORT__.streamBaseUrl`, the loopback
 		* authority of the Host it owns and already forwards every other request to
 		* (issue #1744). The socket is therefore dialed there instead, with the `ws`/
 		* `wss` scheme derived from that base, which is what the shell's
@@ -25686,8 +25686,8 @@ window.__ModuleLoader__.load({
 		* LAN page, and that page is fenced behind a pairing channel) keeps resolving
 		* against its own origin, so this cannot reroute gated traffic onto a host the
 		* page is not entitled to reach. A blank authority is treated the same as an
-		* application scheme with no base: there is nothing to dial, and the caller gets
-		* the actionable reason instead of a socket that can only fail.
+		* application scheme with no base: there is nothing to dial, and the caller
+		* gets the actionable reason instead of a socket that can only fail.
 		*
 		* @param location - the page location to read.
 		* @param search - the query string carrying `alias` or `session`.
