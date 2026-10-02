@@ -961,6 +961,35 @@ window.SKIN_MANIFEST = {
       }
     },
     {
+      "id": "xinghai-heart",
+      "name": "星海之心",
+      "nameEn": "Heart of the Starry Sea",
+      "author": "stushansusu",
+      "tagline": "深海星图 · 星蓝 × 暖金 · 点状密星场 · 低饱和电影光",
+      "description": "星海之心：背景是用户 2026-10-01 交付的视频 —— 一片深蓝的星海从纯黑里一点一点亮起来，满场段是密集的点状星（p99.5 以上的亮点 400-580 个、中位尺寸只有 2px）加一处亮核。配色全部从画面逐帧实测量出来 —— 面板取「夜」#04163A 那一带的深处 #081A3C，正文取最亮 1% #9ACAE6 提亮后的 #E9F2FB，牌子取星蓝 #2960A9 与亮星 #60A0D2 之间的 #4FA6E8。全片 hue 有 76.9% 落在 210-240、R−B ≈ −46，**暖色像素占 0.000%**，所以强调色 暖金 #F2C46A 只能来自界面 —— 它只给「活着」的地方：当前行、聚焦中的输入卡、链接、悬停的图标、新会话的四角括号。语言是「深海的星图：冷的是海，暖的是心」：面全是薄玻璃（背后永远是正在发亮的星海），骨架是 1px 星蓝细线，全屏唯一的实心是新会话那颗星蓝到暖金的按钮。**暗色专用**，左上角品牌行换成「星海之心」。",
+      "accent": "#4FA6E8",
+      "preview": {
+        "light": "assets/skins/xinghai-heart/preview/light.jpg",
+        "dark": "assets/skins/xinghai-heart/preview/dark.jpg"
+      },
+      "contributes": {
+        "stylesheet": "skin.css",
+        "patches": "patches.css",
+        "backgroundMedia": {
+          "light": {
+            "type": "video",
+            "src": "assets/skins/xinghai-heart/assets/xinghai-heart-loop.mp4",
+            "scrim": "linear-gradient(180deg, rgba(3,8,26,0) 0%, rgba(3,8,26,0) 54%, rgba(3,8,26,0.12) 72%, rgba(3,8,26,0.30) 88%, rgba(3,8,26,0.38) 100%), linear-gradient(90deg, rgba(3,8,26,0.01) 0%, rgba(3,8,26,0.06) 16%, rgba(3,8,26,0.20) 30%, rgba(3,8,26,0.24) 100%)"
+          },
+          "dark": {
+            "type": "video",
+            "src": "assets/skins/xinghai-heart/assets/xinghai-heart-loop.mp4",
+            "scrim": "linear-gradient(180deg, rgba(3,8,26,0) 0%, rgba(3,8,26,0) 54%, rgba(3,8,26,0.12) 72%, rgba(3,8,26,0.30) 88%, rgba(3,8,26,0.38) 100%), linear-gradient(90deg, rgba(3,8,26,0.01) 0%, rgba(3,8,26,0.06) 16%, rgba(3,8,26,0.20) 30%, rgba(3,8,26,0.24) 100%)"
+          }
+        }
+      }
+    },
+    {
       "id": "crt-phosphor",
       "name": "磷光 CRT",
       "nameEn": "Phosphor CRT",
