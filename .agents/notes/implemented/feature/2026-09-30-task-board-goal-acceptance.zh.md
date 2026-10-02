@@ -14,6 +14,7 @@ Status: implemented
 
 - **门禁。** 监听器挂在官方「工具执行前」生命周期（`ctx.on('tools/pre-execute')`），只处理 `action: 'complete'` 的 `update_goal`。调用所在的会话经 `HostExecutionLedger.findOpenExecutionBySession` 解析为看板的未结算 execution；该 execution 已有通过记录才放行，否则返回反馈，调用根本到不了 goal 服务。看板从不要求 agent 自证，任何提示词措辞也绕不过这道门。
 - **算法。** `src/core/verification.ts` 在与裁判提示词相关处逐字对齐 verifier 的默认最终验收：`DEFAULT_CRITERIA` 的三项 coding 判据（Specification Adherence、Output Match、Error Signal Detection）、20 级 A–T 量表及其 `<score_A>`/`<score_B>` 标签契约、不可信证据边界、候选 B 为 `EMPTY_WORK_BASELINE`、每项两轮且奇数轮交换 A/B、单轮分数映射回调用方槽位后按判据取平均，以及通过规则 `score > baseline && score >= 0.65 && 每项 >= 0.65`（`sessionAccepted`）。评分走 explicit-tag 通道，因为官方 DSH adapter 不暴露 token logprobs：verifier 偏好的 logprob 通道需要公开 SDK 不具备的能力，故本部署支持的通道就是标签回退，并如实记录所用通道。
+- **派发。** 每一次单次裁判请求都经 `src/host/llm-dispatch.ts`，以 `prepareCall(config).stream(request)`——官方 agent loop 自己使用的、绑定注册代的入口——开启流，仅在运行时根本不提供 `prepareCall` 时回退到公开的 `llm.stream(options)`。公开方法只是一个普通可变实例属性：第三方 provider 插件把它替换成自己的 `llm/stream` 监听器签名 `(options, next)` 后，每一次验收都抛出 `TypeError: next(...) is not a function or its return value is not async iterable`，被 runner 在两次重试后记为「裁判请求失败」异常。在 `llm/stream` 上注册的插件经这条 prepared 派发路径仍会被调用；看板只是不再依赖一个插件可以合法替换的属性。
 - **证据。** 裁判看到的是本次 execution 的组合目标，以及该会话自身事件日志中从 `startedAt` 起的窗口——带参数的工具调用、工具结果（含错误标记）、assistant 文本、goal 轮次标记与团队消息——并按 verifier 的脱敏规则处理，逐条与总量封顶、保留最新文本并报告截断。不把看板自身的记账当作工作证明；复用会话只贡献本次 execution 启动之后的事件。若部署会记录工作区变更，则宿主自身对本次运行「改了磁盘上什么」的记录（文件清单与增删行数、逐文件的有界对比）会作为提示词的参考上下文块渲染，并计入其分隔 token，因此只在自述里描述过的补丁、或事后被再次编辑的文件，无法冒充已应用的改动；不提供该服务的部署、或读取失败，都退化为只判轨迹，而不是让验收失败。
 - **额度。** 每个 EXECUTION 两次质量验收 + 两次异常，记录在 execution 记录上（`ExecutionRecord.verification`，账本 schema v5）。键是 execution 而不是 goal id：agent 无法新建 goal 重置额度；重复完成调用、跨入下一 goal 轮次、插件重载与宿主重启都复用同一周期。重跑或一次定时触发是新的 execution，各自计数。
 - **异常。** 超时、鉴权失败、裁判回答无法解析、裁判路由不可解析都记为 `exception` 尝试，与质量判定分开，不消耗质量额度，有界收敛，且绝不静默通过。
@@ -44,5 +45,5 @@ Status: implemented
 
 ## Testing
 
-- `tests/goal-verification-gate.spec.ts`（23 个场景）：首次验收通过、失败后修复通过、第二次失败收口并冻结额度、并发完成共享一次验收、重跑获得新额度、额度跨宿主重启保留、无法解析回答与裁判路由抛错分别记异常且各自有界、goal 不可用与 teammate 成员不受门禁、实时设置变更后仍由冻结契约判定、两轮交换与取平均、会话复用证据隔离、强度回退、路由不可解析、调用已取消、已结算 execution，损坏的存储块、宿主工作区变更证据进入裁判、该证据在对比读取失败时降级、部署不记录变更时的纯轨迹提示词，以及仅在存在宿主证据时才出现参考上下文块。
+- `tests/goal-verification-gate.spec.ts`（27 个场景）：首次验收通过、失败后修复通过、第二次失败收口并冻结额度、并发完成共享一次验收、重跑获得新额度、额度跨宿主重启保留、无法解析回答与裁判路由抛错分别记异常且各自有界、goal 不可用与 teammate 成员不受门禁、实时设置变更后仍由冻结契约判定、两轮交换与取平均、会话复用证据隔离、强度回退、路由不可解析、调用已取消、已结算 execution，损坏的存储块、宿主工作区变更证据进入裁判、该证据在对比读取失败时降级、部署不记录变更时的纯轨迹提示词，仅在存在宿主证据时才出现参考上下文块，第三方插件把公开 `llm.stream` 替换成其 waterfall 监听器签名后验收仍能得出判定，以及运行时没有 `prepareCall` 时保留公开方法回退。
 - `tests/goal-verification-service.spec.ts`（17 个场景）：契约在 Prompt 之前冻结并绑定、开关关闭、`goalRun: false`、`/goal` 被拒、显式路由配不支持档位、定时运行、解析后的选项路由，以及结算规则（goal 完成但无通过记录判失败、暂停 goal 判失败、projection 读取失败判失败、通过记录结算为完成、已收口周期无需再巡检即结算、单回合任务按历史判定、v5 之前的 execution 不被追溯、开关只影响之后的执行、会话复用携带新 execution 自己的契约）。

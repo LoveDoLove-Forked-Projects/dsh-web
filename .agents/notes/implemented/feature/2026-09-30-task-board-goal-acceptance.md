@@ -45,6 +45,19 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   verifier prefers needs a capability the public SDK does not carry, so this
   deployment's supported channel is the tag fallback and the recorded channel
   says so.
+- **Dispatch.** Every one-shot judge request goes through
+  `src/host/llm-dispatch.ts`, which opens the stream with
+  `prepareCall(config).stream(request)` — the registration-bound entry point
+  the official agent loop itself uses — and falls back to the public
+  `llm.stream(options)` only when the runtime exposes no `prepareCall`. The
+  public method is an ordinary mutable instance property: a third-party provider
+  plugin that replaced it with its `llm/stream` listener signature
+  `(options, next)` made every acceptance raise
+  `TypeError: next(...) is not a function or its return value is not async
+  iterable`, which the runner recorded as a request anomaly after its two
+  retries. A plugin registering on `llm/stream` is still invoked through the
+  prepared dispatch; the board simply no longer depends on a property a plugin
+  may legitimately replace.
 - **Evidence.** The judge sees the execution's composed objective and the
   session's own event log windowed from the execution's `startedAt` — tool
   calls with their arguments, tool results (including their error flags),
@@ -166,7 +179,7 @@ verifier's default acceptance ALGORITHM rather than the verifier.
 
 ## Testing
 
-- `tests/goal-verification-gate.spec.ts` (23 scenarios): pass on the first
+- `tests/goal-verification-gate.spec.ts` (27 scenarios): pass on the first
   acceptance, fail-then-repair, second-failure closure with a frozen budget, a
   concurrent completion pair sharing one acceptance, a fresh budget on a rerun,
   the budget surviving a Host restart, an unparseable answer and a thrown judge
@@ -176,8 +189,11 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   isolation, effort fallback, an unresolvable route, a cancelled call, a settled
   execution, a malformed stored block, the host's workspace-change evidence
   reaching the judge, that evidence degrading when a comparison read fails, a
-  trajectory-only prompt when the deployment records no changes, and the
-  reference-context block appearing only when there is host evidence.
+  trajectory-only prompt when the deployment records no changes, the
+  reference-context block appearing only when there is host evidence, an
+  acceptance that still reaches a verdict when a third-party plugin replaced the
+  public `llm.stream` with its waterfall-listener signature, and the public
+  method kept as the fallback for a runtime that exposes no `prepareCall`.
 - `tests/goal-verification-service.spec.ts` (17 scenarios): the contract
   frozen and bound before the prompt, the switch off, `goalRun: false`, a
   refused `/goal`, an explicit route with an unsupported level, a scheduled
