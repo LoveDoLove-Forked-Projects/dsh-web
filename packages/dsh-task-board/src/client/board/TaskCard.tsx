@@ -7,7 +7,7 @@
  * card on the board. The per-card onClick is built with a stable task reference
  * by the board, so the memo boundary is effective.
  */
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import type { TaskRecord } from '../../core/tasks.ts'
 import { executionLabel, hasOpenExecution, tagTone } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
@@ -15,6 +15,7 @@ import { useTaskBoardSeats } from '../seats.tsx'
 import { IconClock, IconSession } from './icons.tsx'
 import { verificationRunningKey } from './status-key.ts'
 import css from '../board.module.css'
+import { markdownToPlainText } from './task-markdown.tsx'
 
 /**
  * Built formatters, keyed by time zone ('' = the browser's own). Constructing
@@ -88,6 +89,8 @@ function TaskCardInner({
   const { cardDecoration } = useTaskBoardSeats()
   const latest = task.executions[task.executions.length - 1]
   const runs = task.executions.length
+  const summary = useMemo(() => markdownToPlainText(task.title) || task.title, [task.title])
+  const excerpt = useMemo(() => markdownToPlainText(task.description), [task.description])
   const archived = task.archivedAt !== undefined
   // The lock is an open execution, not the column: a card parked in 'running'
   // by hand stays draggable, and an executing card never is.
@@ -109,9 +112,10 @@ function TaskCardInner({
         event.dataTransfer.effectAllowed = 'move'
       } : undefined}
       onClick={onClick}
-      title={task.description !== '' ? task.description : task.title}
+      aria-label={[summary, !archived && pending ? t('board.pending') : '', !archived && busy ? t(runningKey ?? 'detail.result.running') : '', subtasksFailed > 0 ? t('card.subtasksFailed', { count: String(subtasksFailed) }) : ''].filter(Boolean).join(' · ')}
+      title={[summary, excerpt, `${t('board.updated')} ${formatHostTimestamp(task.updatedAt, timeZone)}`].filter(Boolean).join('\n')}
     >
-      <span className={css.cardTitle}>{task.title}</span>
+      <span className={css.cardTitle}>{summary}</span>
       {task.tags !== undefined && task.tags.length > 0 && (
         <span className={css.cardTags}>
           {task.tags.map(tag => (
@@ -128,7 +132,7 @@ function TaskCardInner({
           ))}
         </span>
       )}
-      {task.description !== '' && <span className={css.cardExcerpt}>{task.description}</span>}
+      {excerpt !== '' && <span className={css.cardExcerpt}>{excerpt}</span>}
       <span className={css.cardMeta}>
         {isSubtask && (
           <span className={css.cardSubtask} data-dsh-part="subtask-badge">{t('card.subtask')}</span>
