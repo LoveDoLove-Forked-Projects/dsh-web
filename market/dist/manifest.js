@@ -1201,35 +1201,6 @@ window.SKIN_MANIFEST = {
       }
     },
     {
-      "id": "meridian",
-      "name": "子午线",
-      "nameEn": "DeepSeek-Meridian",
-      "author": "LOrz-3",
-      "tagline": "DeepSeek 男性形象 · 服饰与配色可切换",
-      "description": "DeepSeek 男性形象皮肤，可切换不同风格服饰（骑士／西装／盛夏／甜点师／主治），可切换为 Claude 与 GPT 配色。安装一次即可在侧栏左下切换，选择记忆在本机。",
-      "accent": "#2b4bd8",
-      "preview": {
-        "light": "assets/skins/meridian/preview/light.jpg",
-        "dark": "assets/skins/meridian/preview/dark.jpg"
-      },
-      "contributes": {
-        "stylesheet": "skin.css",
-        "patches": "patches.css",
-        "backgroundMedia": {
-          "light": {
-            "type": "image",
-            "src": "assets/skins/meridian/assets/background-knight-light.jpg",
-            "scrim": "linear-gradient(rgba(244, 246, 251, 0.16), rgba(244, 246, 251, 0.30))"
-          },
-          "dark": {
-            "type": "image",
-            "src": "assets/skins/meridian/assets/background-knight-dark.jpg",
-            "scrim": "linear-gradient(rgba(10, 18, 48, 0.28), rgba(10, 18, 48, 0.45))"
-          }
-        }
-      }
-    },
-    {
       "id": "wallpaper-exclusive",
       "name": "壁纸专属",
       "nameEn": "Wallpaper Exclusive",
