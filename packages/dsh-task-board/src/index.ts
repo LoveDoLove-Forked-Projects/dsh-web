@@ -22,7 +22,8 @@ import { parseTaskDraft, TaskParseError } from './host-ai.ts'
 import { TASK_PERMISSIONS, isTaskPermission, type TaskPermission } from './core/tasks.ts'
 import { DEFAULT_SUBTASK_DEPTH, SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from './core/subtask.ts'
 import { DEFAULT_SESSION_PERMISSION } from './core/handover.ts'
-import { buildTaskBoardTools } from './host/agent-tools.ts'
+import { buildTaskBoardTools, TASK_BOARD_TOOL_NAMES } from './host/agent-tools.ts'
+import { PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from './tool-surface.ts'
 import { makeTaskBoardRoutes } from './host-routes.ts'
 import { TASK_BOARD_SERVICE_NAME, type TaskBoardExtension } from './core/extension.ts'
 import { mountOnce } from './mount-once.ts'
@@ -30,8 +31,8 @@ import { createGoalVerificationGate, type GoalFace } from './host/verification-g
 import { normalizeCatalog, type ModelCatalogView, type VerificationSettings } from './core/verification.ts'
 import { probeWorkspaceChanges } from './host/workspace-evidence.ts'
 
-/** Order of the announcement section within the tool-guidance band. */
-const SECTION_ORDER = 200
+/** Order of the announcement section within the shared tool-guidance band. */
+const SECTION_ORDER = PLUGIN_TOOL_SECTION_ORDERS['task-board']
 
 /** Default environment variable holding the authenticated proxy token. */
 export const DEFAULT_PROXY_TOKEN_ENV = 'DSH_TASK_BOARD_PROXY_TOKEN'
@@ -227,6 +228,13 @@ export function resolveProxyAccess(config: Config | undefined, env: NodeJS.Proce
 /** The registry face the agent tools register into. */
 interface AgentToolRegistry {
   register(definition: ToolDefinition): () => void
+  /** Scoped lookup; present on the real registry, absent on a stub that only registers. */
+  get?(name: string, scope?: unknown): unknown
+}
+
+/** The lookup half of a resolved registry, when it exposes one. */
+function lookupOf(registry: AgentToolRegistry | undefined): { get: (name: string, scope?: unknown) => unknown } | undefined {
+  return registry !== undefined && typeof registry.get === 'function' ? { get: registry.get.bind(registry) } : undefined
 }
 
 /**
@@ -598,7 +606,11 @@ function applyImpl(ctx: Context, config?: Config): void {
     disposeSection = ctx.systemPrompt.section({
       name: 'plugin:task-board',
       order: SECTION_ORDER,
-      text: TASK_BOARD_GUIDANCE,
+      // The announcement names the task_board_* tools, so it renders only while
+      // at least one of them is reachable: a runtime that serves no tool
+      // registry, or a restriction that withholds them, must not leave guidance
+      // telling the model to call tools this session cannot see.
+      text: visibleToolText(lookupOf(resolveToolRegistry(ctx)), TASK_BOARD_TOOL_NAMES, TASK_BOARD_GUIDANCE),
     })
   }
 

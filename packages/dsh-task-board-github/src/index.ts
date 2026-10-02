@@ -24,6 +24,7 @@ import { resolveGitHubToken } from './host/credentials.ts'
 import { makeGitHubSetupRoutes } from './host/routes.ts'
 import { createGitHubSetup } from './host/setup.ts'
 import { mountOnce } from './mount-once.ts'
+import { PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from './tool-surface.ts'
 
 /**
  * npm identity shared by every install source of this package. The host
@@ -42,7 +43,18 @@ export const DRAFT_PR_POLICIES = ['draft', 'ready'] as const
 export type DraftPrPolicy = (typeof DRAFT_PR_POLICIES)[number]
 
 /** Order of this extension's announcement section, just after the board's. */
-const SECTION_ORDER = 210
+const SECTION_ORDER = PLUGIN_TOOL_SECTION_ORDERS['task-board-github']
+
+/** The seven agent-tool names this extension's announcement describes. */
+const GITHUB_TOOL_NAMES = [
+  'task_board_github_setup',
+  'task_board_github_repositories',
+  'task_board_github_list',
+  'task_board_github_get',
+  'task_board_github_refresh',
+  'task_board_github_create_pr',
+  'task_board_github_link_pr',
+] as const
 
 /**
  * Model-facing announcement: what the extension does, what it never does with
@@ -258,7 +270,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** The slice of the system-prompt service this extension announces through. */
 interface SystemPromptFace {
-  section(spec: { name: string; order: number; text: string }): () => void
+  section(spec: { name: string; order: number; text: string | ((context: { scope?: unknown }) => string) }): () => void
 }
 
 /**
@@ -268,6 +280,29 @@ interface SystemPromptFace {
  * @param ctx - host context.
  * @returns the service, or undefined.
  */
+/** The lookup face of the tool registry, when this deployment serves one. */
+interface ToolLookupFace {
+  get(name: string, scope?: unknown): unknown
+}
+
+/**
+ * Resolve the optional tool registry's scoped lookup. The extension registers
+ * its tools through the board, so the tools land in the same global layer this
+ * reads; a deployment without the registry simply keeps the announcement.
+ * @param ctx - the host plugin context.
+ * @returns the lookup, or undefined when none is served.
+ */
+function resolveToolLookup(ctx: Context): ToolLookupFace | undefined {
+  try {
+    const get = (ctx as { get?: (name: string) => unknown }).get
+    if (typeof get !== 'function') return undefined
+    const tools = get.call(ctx, 'tools') as ToolLookupFace | undefined
+    return tools !== undefined && typeof tools.get === 'function' ? tools : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function resolveSystemPrompt(ctx: Context): SystemPromptFace | undefined {
   try {
     const get = (ctx as { get?: (name: string) => unknown }).get
@@ -357,7 +392,11 @@ function applyImpl(ctx: Context, config?: Config): void {
             disposeSection = systemPrompt.section({
               name: 'plugin:task-board-github',
               order: SECTION_ORDER,
-              text: GITHUB_GUIDANCE,
+              // The announcement names the task_board_github_* tools, so it
+              // renders only while at least one is reachable: a board whose
+              // tool surface is off, or a restriction that withholds them, must
+              // not leave guidance for tools this session cannot see.
+              text: visibleToolText(resolveToolLookup(ctx), GITHUB_TOOL_NAMES, GITHUB_GUIDANCE),
             })
           } catch {
             // A refused section costs the announcement only.

@@ -85,7 +85,7 @@ export function buildSetupTools(setup: GitHubSetup | undefined): ToolDefinition[
 function buildSetupTool(setup: GitHubSetup): ToolDefinition {
   return defineTool({
     name: 'task_board_github_setup',
-    description: 'Configure the task board GitHub Issues integration: read the setup status, store or clear the GitHub token, and run a live connection test against GitHub. The token is stored host-side in the harness credential store and is never returned by any tool. Because a token passed as an argument becomes part of this conversation, prefer asking the user to paste it in the extension settings card when they can reach it. Triggers: setup github, configure github token, github 配置, 设置 github token, 测试 github 连接.',
+    description: 'Configure the task board GitHub Issues integration: read the setup status, store or clear the GitHub token, and run a live connection test against GitHub. The token is stored host-side in the harness credential store and is never returned by any tool. Because a token passed as an argument becomes part of this conversation, prefer asking the user to paste it in the extension settings card when they can reach it.',
     parameters: {
       action: { type: 'string', required: true, enum: ['status', 'set-token', 'clear-token', 'test'], description: 'status reads the current configuration; set-token stores the token; clear-token removes it; test calls GitHub.' },
       token: { type: 'string', description: 'GitHub token to store; required by set-token. It becomes part of this conversation.' },
@@ -125,7 +125,7 @@ function buildSetupTool(setup: GitHubSetup): ToolDefinition {
 function buildRepositoriesTool(setup: GitHubSetup): ToolDefinition {
   return defineTool({
     name: 'task_board_github_repositories',
-    description: 'Read and edit the repositories the GitHub Issues integration synchronizes with the task board. An issue is included when it carries the inclusion label or is assigned to the configured assignee. A repository is written to the plugin configuration as soon as the call returns, so no restart is needed. Triggers: github repositories, add github repo, 配置 github 仓库, 添加 github 仓库, github 同步仓库, 指派给我的 issue 上板.',
+    description: 'Read and edit the repositories the GitHub Issues integration synchronizes with the task board. An issue is included when it carries the inclusion label or is assigned to the configured assignee. A repository is written to the plugin configuration as soon as the call returns, so no restart is needed.',
     parameters: {
       action: { type: 'string', required: true, enum: ['list', 'add', 'remove', 'update'], description: 'list reads the configured repositories; add, remove and update rewrite the list.' },
       repository: { type: 'string', description: 'Repository to act on: owner/repo, a GitHub URL, or an SSH remote. Required by add, remove and update.' },
@@ -180,7 +180,7 @@ function describeSetupError(error: unknown): string {
 function buildListTool(service: GitHubSyncService): ToolDefinition {
   return defineTool({
     name: 'task_board_github_list',
-    description: 'List task board cards associated with GitHub issues, with their remote issue state, remote labels, and pull request metadata. Triggers: github list, github tasks, 列出github任务, github issue列表.',
+    description: 'List task board cards associated with GitHub issues, with their remote issue state, remote labels, and pull request metadata.',
     parameters: {
       owner: { type: 'string', description: 'Filter by repository owner.' },
       repository: { type: 'string', description: 'Filter by repository name.' },
@@ -197,13 +197,15 @@ function buildListTool(service: GitHubSyncService): ToolDefinition {
       })
       return json({ tasks: filtered.map(task => githubTaskSummary(task)) })
     },
+    // Pure projection of the in-memory index: safe to overlap with sibling calls.
+    isConcurrencySafe: () => true,
   })
 }
 
 function buildGetTool(service: GitHubSyncService): ToolDefinition {
   return defineTool({
     name: 'task_board_github_get',
-    description: 'Get full GitHub integration details for a task board card, including remote issue title, body, labels, pull request details, and synchronization state. Triggers: github get, github issue, 查看github任务, issue详情.',
+    description: 'Get full GitHub integration details for a task board card, including remote issue title, body, labels, pull request details, and synchronization state.',
     parameters: {
       taskId: { type: 'string', description: 'Task ID on the board.' },
       owner: { type: 'string', description: 'Repository owner (used with repository and issueNumber).' },
@@ -247,13 +249,15 @@ function buildGetTool(service: GitHubSyncService): ToolDefinition {
         },
       })
     },
+    // Reads the in-memory index and fixture metadata only.
+    isConcurrencySafe: () => true,
   })
 }
 
 function buildRefreshTool(service: GitHubSyncService): ToolDefinition {
   return defineTool({
     name: 'task_board_github_refresh',
-    description: 'Trigger synchronization between GitHub issues/pull requests and the task board for a task, a repository, or all configured repositories. Triggers: github refresh, github sync, 刷新github, 同步github.',
+    description: 'Trigger synchronization between GitHub issues/pull requests and the task board for a task, a repository, or all configured repositories.',
     parameters: {
       taskId: { type: 'string', description: 'Specific task ID to refresh.' },
       owner: { type: 'string', description: 'Repository owner to refresh.' },
@@ -287,7 +291,7 @@ function buildRefreshTool(service: GitHubSyncService): ToolDefinition {
 function buildCreatePrTool(service: GitHubSyncService): ToolDefinition {
   return defineTool({
     name: 'task_board_github_create_pr',
-    description: 'Create a GitHub Pull Request for a task board card linked to a GitHub issue. Verifies that the head branch exists on remote, creates the PR, records PR metadata, and adds the PR phase label to the issue. Does not run shell commands. Triggers: github create pr, 创建PR, 开PR, pull request.',
+    description: 'Create a GitHub Pull Request for a task board card linked to a GitHub issue. Verifies that the head branch exists on remote, creates the PR, records PR metadata, and adds the PR phase label to the issue. Does not run shell commands.',
     parameters: {
       taskId: { type: 'string', required: true, description: 'Task ID linked to a GitHub issue.' },
       headBranch: { type: 'string', required: true, description: 'Remote head branch containing the changes (must already exist on remote).' },
@@ -325,7 +329,7 @@ function buildCreatePrTool(service: GitHubSyncService): ToolDefinition {
 function buildLinkPrTool(service: GitHubSyncService): ToolDefinition {
   return defineTool({
     name: 'task_board_github_link_pr',
-    description: 'Link an existing GitHub Pull Request to a task board card linked to a GitHub issue, updating PR metadata and managed phase labels. Triggers: github link pr, 关联PR, 绑定PR.',
+    description: 'Link an existing GitHub Pull Request to a task board card linked to a GitHub issue, updating PR metadata and managed phase labels.',
     parameters: {
       taskId: { type: 'string', required: true, description: 'Task ID linked to a GitHub issue.' },
       pullRequestNumber: { type: 'number', required: true, description: 'Pull request number on GitHub.' },

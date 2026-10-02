@@ -23,7 +23,7 @@ The board was operable only from its Web GUI. The Host already owned the ledger,
 
 ### Registration and failure tolerance
 
-- Registration follows the `enabled` master switch: a disabled board answers no tool call, and switching the board off disposes the tool registrations on the same commit path that toggles the announcement.
+- Registration follows the `enabled` master switch: a disabled board answers no tool call, and switching the board off disposes the tool registrations on the same commit path that toggles the announcement. The announcement itself is rendered by `visibleToolText` and stays empty unless at least one `task_board_*` tool is reachable — see [family tool-surface conventions](2026-10-02-family-tool-surface-conventions.md).
 - The tool registry is resolved as an optional service instead of being listed in `inject`, mirroring how the optional `llm` service is resolved: a deployment whose runtime serves no registry still mounts the whole board and loses only the tool surface. Where the runtime offers scoped injection, a late-arriving registry is followed through it.
 - Tool calls drive the Host service in process rather than the browser HTTP fence, so there is no second transport to keep in sync; the service's own active flag and the ledger gates remain the only authorities.
 

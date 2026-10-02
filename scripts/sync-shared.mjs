@@ -104,6 +104,18 @@ const MANIFEST = [
     targets: ['packages/dsh-git-graph/src/host/git-runner.ts'],
   },
   {
+    // Tool-surface conventions: the prompt-section order band, the
+    // visibility-gated guidance provider, and the per-agent scoped install
+    // lifecycle shared by every package that registers model-facing tools.
+    file: 'tool-surface.ts',
+    source: 'shared/host/tool-surface.ts',
+    targets: [
+      'packages/dsh-ssh/src/tool-surface.ts',
+      'packages/dsh-task-board/src/tool-surface.ts',
+      'packages/dsh-task-board-github/src/tool-surface.ts',
+    ],
+  },
+  {
     file: 'legacy-migration.ts',
     source: 'shared/host/legacy-migration.ts',
     targets: [

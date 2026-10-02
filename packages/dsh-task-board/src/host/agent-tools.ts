@@ -260,7 +260,6 @@ function buildSetParentTool(host: TaskBoardToolHost): ToolDefinition {
       'Pass an empty parentId to detach.',
       'The Host refuses the link when the parent is unknown or archived, when the moved task is one of its own descendants, when the resulting depth exceeds the deployment subtask limit (default one level, maximum three), or while the task has an unsettled execution (its link may still be a running cascade parent pointer).',
       'Running a task runs its whole subtree concurrently; a parent card settles only after its own turn and every direct subtask settle.',
-      'Triggers: 任务看板, task board, 看板, 子任务, subtask, 关联任务, link task, 解除关联, detach.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'The task whose parent link changes.' },
@@ -294,7 +293,6 @@ function buildRunTool(host: TaskBoardToolHost): ToolDefinition {
       'A card whose effective permission is above the deployment session default is refused with confirmation-required until a HUMAN confirms the binding in the board UI; this tool cannot confirm it.',
       'A card whose task carries teamRun instead starts ONE Team Lead session and the Host spawns a teammate per subtask inside it, so those cards run as an Agent Team rather than as independent sessions; that mode needs the deployment Agent Teams service and is refused when it is missing.',
       'Executions consume real API quota. Sessions are created asynchronously, so read their ids and outcomes back with task_board_get.',
-      'Triggers: 任务看板, task board, 看板, 执行任务, run task, 重新执行, rerun, 子任务, subtask.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'The task to run; running a root task runs its whole subtree.' },
@@ -344,7 +342,6 @@ function buildManageTool(host: TaskBoardToolHost): ToolDefinition {
       'settle force-closes the open execution of a card the board can no longer observe (a stuck running card) and records it cancelled with the caller as the reason, so the card returns to the todo column and can be run again.',
       'archive takes the whole subtask tree off the board and is refused while any member has an unsettled execution; restore brings the task, its ancestors and its subtree back; delete removes one card and is refused while it still has subtasks (detach or delete them first) or while it runs.',
       'It cannot confirm a permission binding: the confirmation gate is a human act performed in the board UI.',
-      'Triggers: 任务看板, task board, 看板, 归档, archive, 删除任务, delete task, 移动任务, move task, 标记进行中, mark in progress, 标记完成, mark done, 标记失败, mark failed, 卡住, stuck, 强制结算, settle.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'The task to act on.' },
@@ -396,7 +393,6 @@ function buildScheduleTool(host: TaskBoardToolHost): ToolDefinition {
       'A due scheduled task runs the same cascade a manual run does, so a root task runs its whole subtask tree.',
       'A schedule whose tree contains an unconfirmed above-default permission is refused and rolls to its next occurrence; the reason is reported in the list board summary as schedulerError.',
       'Missed occurrences during Host downtime are skipped, never queued; a task that is already running skips its occurrence.',
-      'Triggers: 任务看板, task board, 看板, 定时任务, schedule, cron, 每天执行.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'The task whose schedule changes.' },
@@ -449,7 +445,6 @@ function buildListTool(host: TaskBoardToolHost): ToolDefinition {
       'Filters: status column, parentId (direct subtasks), rootsOnly, tag, free-text query, and archived inclusion.',
       'Returns each task id, title, column, parent/subtask link, execution targets, schedule and latest run outcome, plus the board summary (revision, time zone, subtask depth limit, session-default permission).',
       'Use task_board_get for one task in full, task_board_create to add work, and task_board_run to execute it.',
-      'Triggers: 任务看板, task board, 看板, 子任务, subtask, task list, 定时任务, scheduled task.',
     ].join(' '),
     parameters: {
       status: { type: 'string', enum: ['backlog', 'todo', 'running', 'done', 'failed'], description: 'Only cards in this column.' },
@@ -495,7 +490,6 @@ function buildGetTool(host: TaskBoardToolHost): ToolDefinition {
     description: [
       'Read one task board card in full: prompt, description, labels, column, parent link, direct subtasks, execution targets, schedule, permission gate state, and the last ten execution attempts with their session ids and outcomes.',
       'Use it before running or editing a card, and after a run to read the settled outcome.',
-      'Triggers: 任务看板, task board, 看板, 子任务, subtask, task detail.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'Task id, as reported by task_board_list or task_board_create.' },
@@ -519,7 +513,6 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
       'A subtask inherits every execution target it does not override (workspace, agent preset, permission, model) from its parent, and inherits the parent human permission confirmation together with an inherited binding.',
       'The deployment caps subtask depth (default one level, maximum three): a subtask of a subtask is refused unless the board is configured deeper.',
       'The task lands in the todo column and does NOT run; call task_board_run to execute it.',
-      'Triggers: 任务看板, task board, 看板, 新建任务, create task, 子任务, subtask, 定时任务.',
     ].join(' '),
     parameters: {
       title: { type: 'string', required: true, description: 'Short display title (one line).' },
@@ -598,7 +591,6 @@ function buildUpdateTool(host: TaskBoardToolHost): ToolDefinition {
       'Only the fields you pass change; pass an empty string to clear a target, or an empty labels array to clear the labels.',
       'Title, description and prompt freeze once the task has started executing; the execution targets stay editable because they only affect future runs.',
       'Changing the pinned permission re-arms the permission confirmation gate.',
-      'Triggers: 任务看板, task board, 看板, 修改任务, edit task, 子任务, 标签, tags.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'Task id to edit.' },

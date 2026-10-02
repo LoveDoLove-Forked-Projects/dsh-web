@@ -23,7 +23,7 @@ Status: implemented
 
 ### Registration and failure tolerance
 
-- 注册跟随 `enabled` 主开关：看板关闭时不响应任何工具调用，关闭动作在切换公告的同一条提交路径上释放工具注册。
+- 注册跟随 `enabled` 主开关：看板关闭时不响应任何工具调用，关闭动作在切换公告的同一条提交路径上释放工具注册。公告本身由 `visibleToolText` 渲染，只有至少一个 `task_board_*` 工具可读时才非空——见[家族工具面约定](2026-10-02-family-tool-surface-conventions.zh.md)。
 - 工具注册表按可选服务解析而不写入 `inject`，与可选 `llm` 的解析方式一致：运行时不提供注册表的部署仍会挂载整个看板，只失去工具面。运行时提供作用域注入时，晚到的注册表会通过它被跟进。
 - 工具调用经进程内服务而非浏览器 HTTP 栅栏驱动 Host，因此不存在需要同步的第二条传输通道；服务自身的 active 标志与账本门禁仍是唯一权威。
 

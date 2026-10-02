@@ -36,7 +36,8 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // shared source and its spec remain in this repository. The plugin-card seat
   // copy has three consumers: the GitHub extension renders inside the board's
   // own settings card now, so it carries no card of its own.
-  assert.equal(entries.length, 105)
+  // tool-surface.ts adds three host copies (ssh, task-board, task-board-github).
+  assert.equal(entries.length, 108)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
   assert.equal(clientTrio.length, 44)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
@@ -77,6 +78,7 @@ test('checkSync detects drift and applySync repairs it', async () => {
     await writeFile(join(hostDir, 'legacy-migration.ts'), 'export const legacy = 1' + String.fromCharCode(10))
     await writeFile(join(hostDir, 'run-guarded.ts'), 'export const guard2 = 1' + String.fromCharCode(10))
     await writeFile(join(hostDir, 'console-output.ts'), 'export const capture = 1' + String.fromCharCode(10))
+    await writeFile(join(hostDir, 'tool-surface.ts'), 'export const surface = 1' + String.fromCharCode(10))
     const targetDir = join(root, 'packages', 'dsh-task-board', 'src', 'client')
     await mkdir(targetDir, { recursive: true })
     await writeFile(join(targetDir, 'settings-form.ts'), renderCopy('export const bad = 2' + String.fromCharCode(10), 'settings-form.ts', 'shared/client/settings/settings-form.ts'))
