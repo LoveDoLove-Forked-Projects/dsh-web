@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
@@ -77,6 +78,21 @@ function runCheck(dir) {
   return spawnSync(process.execPath, ['scripts/market-build', '--check'], { cwd: dir, encoding: 'utf8' })
 }
 
+/** sha256 of every file under a tree, keyed by path relative to it. */
+function treeDigest(root) {
+  const out = {}
+  const walk = (abs, base) => {
+    for (const name of readdirSync(abs).sort()) {
+      const p = join(abs, name)
+      const rel = base ? base + '/' + name : name
+      if (statSync(p).isDirectory()) walk(p, rel)
+      else out[rel] = createHash('sha256').update(readFileSync(p)).digest('hex')
+    }
+  }
+  walk(root, '')
+  return out
+}
+
 test('clean checkout (no shell dist) passes market-build --check', (t) => {
   if (!hasInputs) return t.skip(SKIP_REASON)
   const dir = fixture()
@@ -84,6 +100,34 @@ test('clean checkout (no shell dist) passes market-build --check', (t) => {
     const result = runCheck(dir)
     assert.equal(result.status, 0, result.stderr)
     assert.match(result.stdout, /dist up to date/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+/**
+ * Without the vendored shell build, a full build must not damage the committed
+ * try-on tree: emit() preserves tryon/ across the dist rewrite and emitTryon()
+ * returns early. The early-return message says "left as-is" precisely because
+ * the tree survives — an earlier wording ("not emitted") read as if the build
+ * had deleted it (2026-10-02).
+ */
+test('full build without the shell dist leaves the committed tryon tree intact', (t) => {
+  if (!hasInputs) return t.skip(SKIP_REASON)
+  const dir = fixture()
+  try {
+    const before = treeDigest(join(dir, 'market', 'dist', 'tryon'))
+    assert.ok(Object.keys(before).length > 0, 'fixture must carry a committed tryon tree')
+    const result = spawnSync(process.execPath, ['scripts/market-build'], { cwd: dir, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    // The notice is a console.warn, so it lands on stderr.
+    assert.match(result.stderr, /tryon\/ left as-is/)
+    assert.deepEqual(treeDigest(join(dir, 'market', 'dist', 'tryon')), before)
+    // No preserve directory may be left behind by the rewrite.
+    assert.deepEqual(
+      readdirSync(dir).filter((name) => name.startsWith('.tryon-preserve-')),
+      [],
+    )
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

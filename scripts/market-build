@@ -716,7 +716,12 @@ function zipStore(files) {
 function emitTryon(outDir, skins) {
   const tryonDir = path.join(outDir, 'tryon')
   if (!fs.existsSync(TRYON_SHELL_DIR) || !fs.existsSync(path.join(TRYON_SHELL_DIR, 'index.html'))) {
-    console.warn('market-build: market/shell/dist missing; tryon/ not emitted')
+    // A tree without the vendored shell build (a clean checkout, CI) keeps the
+    // committed tryon/ untouched: emit() preserves it across the dist rewrite,
+    // and --check verifies it against its own hash manifest. Say "left as-is"
+    // rather than "not emitted" — the tracked tryon/ is still there, and the
+    // earlier wording read as if the build had removed it.
+    console.warn('market-build: market/shell/dist missing; tryon/ left as-is (build market/shell first to refresh it)')
     return
   }
   fs.rmSync(tryonDir, { recursive: true, force: true })
