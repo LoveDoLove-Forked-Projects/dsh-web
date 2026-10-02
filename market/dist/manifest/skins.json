@@ -2271,6 +2271,65 @@
       }
     },
     {
+      "id": "crt-phosphor",
+      "name": "磷光 CRT",
+      "nameEn": "Phosphor CRT",
+      "author": "lemonhall",
+      "rank": 61,
+      "tagline": "P1 磷光绿 · 扫描线与余晖辉光 · 全界面等宽字体 · 电子管暗角",
+      "description": "把整个 DSH Web GUI 伪装成一台老式 CRT 磷光显示器：全界面换成等宽字体与 P1 绿字黑底，叠加扫描线、屏幕暗角、字面余晖辉光与轻微闪烁，标题带色差边缘；背景是同一座夜之城，经本地处理转成磷光绿双色调并烘焙了 halation 光晕与扫描线。",
+      "tags": [
+        "crt",
+        "terminal",
+        "phosphor",
+        "green",
+        "retro",
+        "monospace"
+      ],
+      "version": "0.1.0",
+      "accent": "#3dff9e",
+      "preview": {
+        "light": "assets/skins/crt-phosphor/preview/light.jpg",
+        "dark": "assets/skins/crt-phosphor/preview/dark.jpg"
+      },
+      "files": [
+        "README.md",
+        "README.zh.md",
+        "assets/FUSION-PIXEL-OFL.txt",
+        "assets/NOTICE.md",
+        "assets/fusion-pixel-12px-monospaced.woff2",
+        "assets/licenses/ark-pixel-OFL.txt",
+        "assets/licenses/cubic-11-OFL.txt",
+        "assets/licenses/galmuri-LICENSE.txt",
+        "assets/lucy-signal-left.webp",
+        "assets/lucy-signal-right.webp",
+        "assets/scene-dark.webp",
+        "assets/scene-light.webp",
+        "patches.css",
+        "preview/dark.jpg",
+        "preview/light.jpg",
+        "skin.css",
+        "skin.json"
+      ],
+      "repo": "https://github.com/lemonhall/dsh-skin-crt",
+      "contributes": {
+        "stylesheet": "skin.css",
+        "patches": "patches.css",
+        "backgroundMedia": {
+          "light": {
+            "type": "image",
+            "src": "assets/skins/crt-phosphor/assets/scene-light.webp",
+            "scrim": "linear-gradient(rgba(0, 22, 12, 0.10) 0%, rgba(0, 18, 10, 0.16) 60%, rgba(0, 14, 8, 0.24) 100%)"
+          },
+          "dark": {
+            "type": "image",
+            "src": "assets/skins/crt-phosphor/assets/scene-dark.webp",
+            "scrim": "linear-gradient(rgba(0, 10, 5, 0.26) 0%, rgba(0, 8, 4, 0.34) 60%, rgba(0, 6, 3, 0.44) 100%)"
+          }
+        }
+      }
+    },
+    {
       "id": "furina",
       "name": "芙宁娜",
       "nameEn": "Furina",
@@ -2639,6 +2698,43 @@
           "entry": "hooks.mjs",
           "apiVersion": "x-org.linxin666.skin-center/v1alpha1"
         }
+      }
+    },
+    {
+      "id": "black-gold-vip",
+      "name": "黑金 VIP",
+      "nameEn": "Black Gold VIP",
+      "author": "silicon-sbt",
+      "rank": 103,
+      "tagline": "黑金会员卡品牌的左上角 · 金属金字标 · 金属金大鲸鱼",
+      "description": "只给品牌标识上色：左上角品牌区做成会员卡（渐变金属边框、卡面打光、缓慢掠光），品牌字标与开始会话页大鲸鱼用五档金属金（Chroma.js 的 lch 插值生成），HARNESS 徽标改为绶带。双主题自适应——浅色用暖金卡（象牙底 + 深金标 + 黑底金字绶带），深色用黑金卡（近黑底 + 亮金标 + 金底黑字绶带）。不声明任何 --dsw-* token、不改布局结构、不替换组件，悬停摆尾动画保留。纯 CSS：金属渐变由 data-URI SVG 蒙版 + CSS 渐变实现（未用 hooks，用户皮肤的 hooks 需审核故不可用）。",
+      "tags": [
+        "black",
+        "gold",
+        "brand",
+        "logo",
+        "metal",
+        "css-only"
+      ],
+      "version": "2.0.0",
+      "accent": "#c9a227",
+      "preview": {
+        "light": "assets/skins/black-gold-vip/preview/light.png",
+        "dark": "assets/skins/black-gold-vip/preview/dark.png"
+      },
+      "files": [
+        "README.md",
+        "README.zh.md",
+        "patches.css",
+        "preview/dark.png",
+        "preview/light.png",
+        "skin.css",
+        "skin.json"
+      ],
+      "repo": "https://github.com/zhu1090093659/dsh-skins/tree/main/skins/black-gold-vip",
+      "contributes": {
+        "stylesheet": "skin.css",
+        "patches": "patches.css"
       }
     },
     {

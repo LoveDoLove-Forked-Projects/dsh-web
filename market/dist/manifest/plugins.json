@@ -1628,6 +1628,32 @@
       "npm": "dsh-widgets",
       "category": "ui",
       "subcategory": "panel"
+    },
+    {
+      "id": "dsh-novel-writer",
+      "name": "网文写作工作台",
+      "rank": 128,
+      "nameEn": "Novel Writing Workbench",
+      "author": "siweina",
+      "description": "给中文网文作者的本地写作工作台：动笔前一次调用取齐上一章承接口、本章大纲、人物卡、待回收伏笔与用语规范；写完按六维文笔基线与原著波动带量化自检，诊断结果排成带原句行号的改稿待办；跨章可查伏笔埋设跨度、人物连续缺席与大纲偏离。句式、情感与语义全部用随包分发的 24MB 中文模型在本机推理，零 API 花费、正文不出本机；18 个工具，同一套能力也可作为 MCP 服务器给 Claude Desktop / Cursor 使用。",
+      "descriptionEn": "A local workbench for Chinese web-novel writers: one call before drafting gathers the previous chapter's hand-off, the current outline, related character cards, unresolved plot threads and the world's language rules; after drafting, a six-dimension prose baseline derived from the source drives a quantified self-check that becomes a prioritised revision plan with original line numbers; across chapters it reports plot-thread spans, characters missing for too long and outline drift. Sentence, emotion and semantic analysis all run on a bundled 24MB Chinese model on-device — zero API cost, the manuscript never leaves the machine; 18 tools, and the same capabilities ship as an MCP server for Claude Desktop / Cursor.",
+      "repo": "https://github.com/siweina/dsh-novel-writer",
+      "npm": "dsh-novel-writer",
+      "category": "knowledge",
+      "subcategory": "reading"
+    },
+    {
+      "id": "dsh-screen-capture-record-desktop",
+      "name": "录屏与截图",
+      "rank": 129,
+      "nameEn": "Screen Capture & Record",
+      "author": "Link-h1j",
+      "description": "把「说不清」的界面问题变成能直接发给模型的视频 / 图片证据，减少人机沟通的来回损耗：在输入框工具条的「听写」左边加「录屏」「截图」两个按钮。截图：弹出选区浮层（拖动框选 / 单击整屏 / Enter 确认 / Esc 取消），选中的画面直接进附件，拖完框选手一松就能用画笔 / 矩形 / 箭头 / 文字标注，只在选区内生效。录屏：点一下先选「录哪一个」（整个桌面 / 某台显示器 / 某个窗口——跟着窗口移动改大小 / 自定义区域拖框，都带缩略图），再点一下结束（Esc 亦可），产出一个 .webm 视频并自动进附件；抽帧交给会话里的 agent 做。抓屏在宿主进程完成 —— 桌面壳禁用了 getDisplayMedia，浏览器端拿不到流。录屏需要本机 Python 3 + Pillow 与一个带 libvpx 的 ffmpeg（起录前会做能力预检，缺什么会直接说清怎么补，可用 DSH_CAPTURE_PYTHON / DSH_CAPTURE_FFMPEG 指定路径）；截图只需要 PowerShell。仅支持 Windows。",
+      "descriptionEn": "Turns a hard-to-describe UI problem into footage the model can actually look at, cutting the back-and-forth of human-agent communication: adds Record and Capture buttons to the composer toolbar, left of the dictation button. Capture opens a region overlay (drag to select, click for full screen, Enter to confirm, Esc to cancel) and attaches the selection to the message; the annotation toolbar (pen / rectangle / arrow / text) shows up the moment you release the drag and only paints inside the selection. Record first asks what to record (whole desktop / a monitor / a window that is followed as it moves or resizes / a custom region, each with a thumbnail), then stops on a second click (Esc also stops) and produces a single .webm attached to the message; frame extraction is left to the agent in the session. Screen grabbing runs in the host process because the desktop shell disables getDisplayMedia, so the renderer can never obtain a stream. Recording needs a local Python 3 with Pillow plus an ffmpeg built with libvpx; both are probed before recording starts and the error names exactly what to install, and DSH_CAPTURE_PYTHON / DSH_CAPTURE_FFMPEG can point at them explicitly. Capture needs only PowerShell. Windows only.",
+      "repo": "https://github.com/Link-h1j/dsh-screen-capture-record-desktop",
+      "npm": "dsh-screen-capture-record-desktop",
+      "category": "tools",
+      "subcategory": "dev"
     }
   ]
 }
