@@ -1654,6 +1654,19 @@
       "npm": "dsh-screen-capture-record-desktop",
       "category": "tools",
       "subcategory": "dev"
+    },
+    {
+      "id": "dsh-as-aistudio",
+      "name": "AI Studio",
+      "rank": 130,
+      "nameEn": "AI Studio",
+      "author": "DDDMUC",
+      "description": "把一轮对话变成可以反复打磨的 prompt playground：就地改一句提示词并回滚重问、对某条回复原位重跑、把不该留下的一轮从模型上下文删掉、并让发出的提示词按 Markdown 渲染。自包含安装，一个包内置全部四个组件（编辑并重跑、原位重跑、删除该轮、Markdown 气泡），插件列表里只显示 AI Studio 一行；四个组件仍是各自独立的 npm 包，单独安装时各自出现在列表里。设置 > 插件 > AI Studio 面板如实报告每个组件的实际状态（已安装 / 已挂载 / 版本）。",
+      "descriptionEn": "Turn one turn into a prompt playground you can keep revising: rewrite a prompt in place and roll the conversation back to just before it, regenerate a reply from the same prompt while later turns survive, remove a turn from the model context, and render sent prompts as Markdown. Self-contained - one package bundles all four components (edit and re-run, re-run in place, delete this turn, Markdown bubble) and the plugin list shows a single AI Studio row; each component is still its own independent npm package and appears as its own row when installed standalone. The Settings > Plugins > AI Studio panel reports what each component is actually doing (installed / mounted / version).",
+      "repo": "https://github.com/DDDMUC/dsh-as-aistudio",
+      "npm": "dsh-as-aistudio",
+      "category": "tools",
+      "subcategory": "context"
     }
   ]
 }
