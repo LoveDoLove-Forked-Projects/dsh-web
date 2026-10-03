@@ -136,14 +136,16 @@ function findingKey(attempt: VerificationAttempt, index: number): string {
  */
 export function VerificationReport({ verification }: { verification: ExecutionVerification }) {
   const phase = verificationPhase(verification)
-  if (phase === 'off' && verification.contract.enabled === false) return null
+  if (phase === 'off' && verification.contract.enabled === false && verification.applicability !== 'skipped') return null
   const totals = verificationTotals(verification)
   const route = verification.contract.route
   const applicabilityKey: TaskBoardKey | undefined = verification.applicability === 'disabled'
     ? 'verify.applicability.disabled'
-    : verification.applicability === 'goal-unavailable'
-      ? 'verify.applicability.goalUnavailable'
-      : verification.applicability === 'team-member' ? 'verify.applicability.teamMember' : undefined
+    : verification.applicability === 'skipped'
+      ? 'verify.applicability.skipped'
+      : verification.applicability === 'goal-unavailable'
+        ? 'verify.applicability.goalUnavailable'
+        : verification.applicability === 'team-member' ? 'verify.applicability.teamMember' : undefined
   return (
     <div className={css.executionTimes}>
       <span className={css.executionBadge} data-result={phase === 'passed' ? 'succeeded' : phase === 'failed' ? 'failed' : undefined}>

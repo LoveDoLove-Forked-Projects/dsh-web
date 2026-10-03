@@ -60,6 +60,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   // Checked by default: a new task starts its runs with dsh's built-in /goal
   // unless the user opts out here. A duplicate keeps the original card's choice.
   const [goalRun, setGoalRun] = useState(initialTask?.goalRun ?? true)
+  const [skipVerification, setSkipVerification] = useState(initialTask?.skipVerification ?? false)
   const [scheduleEnabled, setScheduleEnabled] = useState(initialTask?.schedule?.enabled ?? false)
   const [scheduleCron, setScheduleCron] = useState(initialTask?.schedule?.cron ?? '')
   // '' means "follow the Host zone" (store no zone), which is the default a
@@ -188,6 +189,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
       model: model === '' ? undefined : model,
       ...(reuseSession ? { reuseSession: true } : {}),
       ...(goalRun ? {} : { goalRun: false }),
+      ...(skipVerification ? { skipVerification: true } : {}),
       ...(tagList.length > 0 ? { tags: tagList } : {}),
       schedule: scheduleEnabled
         ? { enabled: true, cron: scheduleCron.trim(), ...(scheduleZone === '' ? {} : { timeZone: scheduleZone }) }
@@ -470,6 +472,16 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
           <span>{t('exec.goalRun')}</span>
         </label>
         <p className={css.detailText}>{t('exec.goalRunHint')}</p>
+
+        <label className={css.scheduleToggle}>
+          <input
+            type="checkbox"
+            checked={skipVerification}
+            onChange={event => { setSkipVerification(event.target.checked) }}
+          />
+          <span>{t('exec.skipVerification')}</span>
+        </label>
+        <p className={css.detailText}>{t('exec.skipVerificationHint')}</p>
       </CollapsibleSection>
 
       <CollapsibleSection

@@ -188,7 +188,7 @@ function harness(overrides: {
 }
 
 /** Seed one plain task. */
-function seed(ledger: HostTaskLedger, input: { id: string, goalRun?: boolean, schedule?: { enabled: boolean, cron: string } } = { id: 'task-a' }): void {
+function seed(ledger: HostTaskLedger, input: { id: string, goalRun?: boolean, skipVerification?: boolean, schedule?: { enabled: boolean, cron: string } } = { id: 'task-a' }): void {
   ledger.applyRequest('seed-' + input.id, {
     kind: 'create',
     id: input.id,
@@ -197,6 +197,7 @@ function seed(ledger: HostTaskLedger, input: { id: string, goalRun?: boolean, sc
       description: '',
       prompt: 'do work',
       ...(input.goalRun === undefined ? {} : { goalRun: input.goalRun }),
+      ...(input.skipVerification === undefined ? {} : { skipVerification: input.skipVerification }),
       ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
     },
   })
@@ -243,6 +244,36 @@ describe('goal acceptance at execution start', () => {
     const execution = executionOf(h)
     expect(execution.verification?.contract.enabled).toBe(false)
     expect(execution.verification?.applicability).toBe('disabled')
+  })
+
+  it('user whose card checks Skip acceptance sees the gate off with its own reason', async () => {
+    // Given: the board-wide switch ON, but this card opted out
+    const h = harness()
+    seed(h.ledger, { id: 'task-a', skipVerification: true })
+
+    // When: the user runs the card
+    h.service.apply('run-1', { kind: 'run', taskId: 'task-a' })
+    await settleMicrotasks()
+
+    // Then: nothing is enforced, and the record names the CARD, not the switch.
+    const execution = executionOf(h)
+    expect(execution.verification?.contract.enabled).toBe(false)
+    expect(execution.verification?.applicability).toBe('skipped')
+  })
+
+  it('user opting a card back in sees the board-wide switch decide again', async () => {
+    // Given: the same card with the opt-out cleared
+    const h = harness()
+    seed(h.ledger, { id: 'task-a' })
+
+    // When: the user runs the card
+    h.service.apply('run-1', { kind: 'run', taskId: 'task-a' })
+    await settleMicrotasks()
+
+    // Then: the gate is enforced exactly as on a card that never touched it.
+    const execution = executionOf(h)
+    expect(execution.verification?.contract.enabled).toBe(true)
+    expect(execution.verification?.applicability).toBe('enforced')
   })
 
   it('user whose task pins a single plain turn sees no enforcement', async () => {
@@ -448,6 +479,21 @@ describe('goal acceptance at settlement', () => {
     await h.timer.poll()
 
     // Then: no acceptance is required of a non-goal execution.
+    expect(executionOf(h).result).toBe('succeeded')
+  })
+
+  it('user whose card skipped acceptance sees the turn verdict settle it', async () => {
+    // Given: a goal-form run on a card that opted out
+    const h = harness()
+    seed(h.ledger, { id: 'task-a', skipVerification: true })
+    h.service.apply('run-1', { kind: 'run', taskId: 'task-a' })
+    await settleMicrotasks()
+    expect(executionOf(h).verification?.applicability).toBe('skipped')
+
+    // When: the poll observes its completed turn
+    await h.timer.poll()
+
+    // Then: the card settles on the historical verdict, with no pass record.
     expect(executionOf(h).result).toBe('succeeded')
   })
 

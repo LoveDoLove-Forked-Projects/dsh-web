@@ -363,12 +363,13 @@ export interface ExecutionVerification {
   inFlight?: boolean
   /**
    * Why this execution may not settle as succeeded without a pass record:
-   * `disabled` when the switch was off at start, `goal-unavailable` when the
-   * run never became a goal run (so no completion gate could ever fire), and
-   * `team-member` for a teammate execution (the Lead's acceptance covers the
-   * team's aggregated evidence).
+   * `disabled` when the switch was off at start, `skipped` when the CARD opted
+   * out of the gate (`TaskRecord.skipVerification`), `goal-unavailable` when
+   * the run never became a goal run (so no completion gate could ever fire),
+   * and `team-member` for a teammate execution (the Lead's acceptance covers
+   * the team's aggregated evidence).
    */
-  applicability: 'enforced' | 'disabled' | 'goal-unavailable' | 'team-member'
+  applicability: 'enforced' | 'disabled' | 'skipped' | 'goal-unavailable' | 'team-member'
   /** Set when the cycle is spent and the execution must fail. */
   failedReason?: string
   failedAt?: number
@@ -568,7 +569,7 @@ export function normalizeVerification(value: unknown): ExecutionVerification | u
     effortFallback = { requested: fallback.requested, ...(fallback.resolved === undefined ? {} : { resolved: fallback.resolved }) }
   }
   const applicability = row.applicability
-  if (applicability !== 'enforced' && applicability !== 'disabled' && applicability !== 'goal-unavailable' && applicability !== 'team-member') return undefined
+  if (applicability !== 'enforced' && applicability !== 'disabled' && applicability !== 'skipped' && applicability !== 'goal-unavailable' && applicability !== 'team-member') return undefined
   const attempts: VerificationAttempt[] = []
   if (!Array.isArray(row.attempts)) return undefined
   for (const entry of row.attempts) {

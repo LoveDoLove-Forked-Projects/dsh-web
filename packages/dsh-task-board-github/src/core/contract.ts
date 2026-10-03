@@ -57,6 +57,11 @@ export interface TaskBoardTaskDraft {
   status?: TaskStatus
   /** Parent card id, when the provider materializes a subtask. */
   parentId?: string
+  /**
+   * Workspace the execution must run in. Absent leaves the board's own
+   * inheritance rules in charge.
+   */
+  workspaceId?: string
 }
 
 /** Options of {@link TaskBoardTasksFace.create}. */

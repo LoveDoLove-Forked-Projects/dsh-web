@@ -86,7 +86,7 @@ describe('GitHub extension master switch', () => {
     const extension = provider({ enabled: () => live, backend, timers: recorder.timers })
     board.admit(extension)
     expect(board.isActive('github')).toBe(true)
-    expect(board.toolNames).toHaveLength(5)
+    expect(board.toolNames).toHaveLength(7)
     expect(recorder.armed).toEqual([{ kind: 'interval', delay: 300_000 }])
 
     // When the operator turns the switch off and the board re-applies its gate

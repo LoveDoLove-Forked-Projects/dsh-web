@@ -306,6 +306,20 @@ export interface TaskRecord {
    */
   goalRun?: boolean
   /**
+   * Run this task's goal executions WITHOUT the board's acceptance gate.
+   *
+   * Absent means INHERIT: the execution's applicability is decided by the
+   * board-wide `goalVerification` switch frozen at start, exactly as a card
+   * that never touched this option behaves. Only an explicit `true` opts the
+   * card out, and the execution records `applicability: 'disabled'` so the
+   * report says plainly that nothing certified this run.
+   *
+   * The opt-out is per execution, not per run: flipping it never rewrites the
+   * verdict rule of an execution already open, and a rerun or a scheduled
+   * occurrence reads the card's current value when it freezes its contract.
+   */
+  skipVerification?: boolean
+  /**
    * Frozen context snapshot for a continuation card; absent on plain tasks.
    * Sanitized before it enters the ledger (redaction, slash-command taint,
    * 8 KiB per-field cap) by the protocol gate and re-normalized on load.
@@ -400,6 +414,11 @@ export interface NewTaskInput {
    * default (goal run); an explicit false requests a single plain turn.
    */
   goalRun?: boolean
+  /**
+   * Run this task's goal executions without the acceptance gate; absent
+   * inherits the board-wide `goalVerification` switch.
+   */
+  skipVerification?: boolean
   /**
    * Optional scheduled-run rule requested at creation time (the new-task
    * dialog): an enable flag, a 5-field cron expression, and the IANA zone its
@@ -546,6 +565,10 @@ export function createTask(input: NewTaskInput, now: number, id: string): TaskRe
     // touched the option (and every card written before the field existed)
     // keeps starting its runs with /goal.
     goalRun: input.goalRun === false ? false : undefined,
+    // Default OFF: only an explicit true is stored, so a card that never
+    // touched the option inherits the board-wide acceptance switch exactly as
+    // every card written before the field existed does.
+    skipVerification: input.skipVerification === true ? true : undefined,
     ...(input.freeze === undefined ? {} : { freeze: freezeOf(input.freeze, now) }),
     ...(input.handover === undefined ? {} : { handover: { ...input.handover, bundledAt: now } }),
     ...(tags === undefined ? {} : { tags }),

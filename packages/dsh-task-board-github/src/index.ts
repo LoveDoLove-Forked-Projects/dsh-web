@@ -20,6 +20,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { resolveTaskBoardHostFace } from './core/contract.ts'
 import { createGitHubExtension } from './host/extension.ts'
+import { probeWorkspaceRegistry } from './host/workspace-registry.ts'
 import { resolveGitHubToken } from './host/credentials.ts'
 import { makeGitHubSetupRoutes } from './host/routes.ts'
 import { createGitHubSetup } from './host/setup.ts'
@@ -45,7 +46,7 @@ export type DraftPrPolicy = (typeof DRAFT_PR_POLICIES)[number]
 /** Order of this extension's announcement section, just after the board's. */
 const SECTION_ORDER = PLUGIN_TOOL_SECTION_ORDERS['task-board-github']
 
-/** The seven agent-tool names this extension's announcement describes. */
+/** The nine agent-tool names this extension's announcement describes. */
 const GITHUB_TOOL_NAMES = [
   'task_board_github_setup',
   'task_board_github_repositories',
@@ -54,13 +55,15 @@ const GITHUB_TOOL_NAMES = [
   'task_board_github_refresh',
   'task_board_github_create_pr',
   'task_board_github_link_pr',
+  'task_board_github_comment',
+  'task_board_github_close_issue',
 ] as const
 
 /**
  * Model-facing announcement: what the extension does, what it never does with
  * remote text, and the words that name it.
  */
-export const GITHUB_GUIDANCE = '本机已安装 dsh-task-board-github 扩展（DSH Web GUI 任务看板的 GitHub Issues 提供方）：把带包含标签的 GitHub issue 同步为看板卡片，并把卡片的列变化写回 issue 上由本扩展管理的标签；另注册 task_board_github_* agent 工具（list/get/refresh/create_pr/link_pr），随看板总开关与本扩展开关一起收放。GitHub 凭据只在宿主进程从环境变量读取，绝不进入浏览器、设置卡或模型可见载荷；远端 issue 文本只作为卡片内容，绝不进入 promptPrefix、权限或工作区身份。用户提到「GitHub 任务 / GitHub issue / 同步 GitHub / 关联 PR / 创建 PR」时即指本扩展，请据此协作。'
+export const GITHUB_GUIDANCE = '本机已安装 dsh-task-board-github 扩展（DSH Web GUI 任务看板的 GitHub Issues 提供方）：把带包含标签的 GitHub issue 同步为看板卡片，并把卡片的列变化写回 issue 上由本扩展管理的标签；另注册 task_board_github_* agent 工具（list/get/refresh/create_pr/link_pr/comment/close_issue），随看板总开关与本扩展开关一起收放。GitHub 凭据只在宿主进程从环境变量读取，绝不进入浏览器、设置卡或模型可见载荷；远端 issue 文本只作为卡片内容，绝不进入 promptPrefix、权限或工作区身份。用户提到「GitHub 任务 / GitHub issue / 同步 GitHub / 关联 PR / 创建 PR」时即指本扩展，请据此协作。'
 
 /** GitHub labels one repository maps onto the board columns. */
 export interface GitHubStateLabels {
@@ -441,6 +444,7 @@ function applyImpl(ctx: Context, config?: Config): void {
           token,
           tokenEnv: next.tokenEnv,
           enabled: () => settings().enabled,
+          workspaceRegistry: () => probeWorkspaceRegistry(ctx),
           setup,
         }))
         return () => { providerLive = false; dispose() }

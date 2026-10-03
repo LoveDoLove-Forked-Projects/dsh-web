@@ -18,6 +18,7 @@ import type { HostTimerFace } from '../core/timers.ts'
 import type { ExecutionRecord, TaskRecord, TaskStatus } from '../core/task-record.ts'
 import type { TaskBoardExtensionHost } from '../core/contract.ts'
 import {
+  GITHUB_COMMENT_MAX_CHARS,
   ME_ASSIGNEE,
   normalizeGitHubMetadata,
   readTaskGitHubMetadata,
@@ -34,7 +35,17 @@ import {
   materializeTaskFromIssue,
   reconcileIssueWithTask,
 } from '../core/projection.ts'
+import { workspaceIdForRepository, type WorkspaceMatchCandidate } from '../core/workspace-match.ts'
 import { GitHubApiClient } from './client.ts'
+
+/**
+ * The optional host workspace registry the provider infers an issue's checkout
+ * from. Resolved structurally and read at use time: a deployment that serves
+ * none simply pins nothing, which is the pre-existing behavior.
+ */
+export interface WorkspaceRegistryFace {
+  list(): readonly WorkspaceMatchCandidate[]
+}
 
 export interface GitHubSyncServiceOptions {
   /** The capability face the board hands the extension while it is enabled. */
@@ -43,6 +54,11 @@ export interface GitHubSyncServiceOptions {
   repositories?: GitHubRepoConfig[]
   timers?: HostTimerFace
   now?: () => number
+  /**
+   * The optional host workspace registry. Absent leaves every synchronized
+   * card on the board's own workspace inheritance rules.
+   */
+  workspaceRegistry?: () => WorkspaceRegistryFace | undefined
 }
 
 const DEFAULT_TIMERS: HostTimerFace = {
@@ -67,6 +83,7 @@ export class GitHubSyncService {
   readonly repositories: ResolvedGitHubRepoConfig[]
   private readonly timers: HostTimerFace
   private readonly now: () => number
+  private readonly workspaceRegistry: (() => WorkspaceRegistryFace | undefined) | undefined
   private pollTimer: (() => void) | undefined
   private stopped = false
   private syncing = false
@@ -81,6 +98,31 @@ export class GitHubSyncService {
     this.repositories = (options.repositories ?? []).map(resolveRepoConfig)
     this.timers = options.timers ?? DEFAULT_TIMERS
     this.now = options.now ?? Date.now
+    this.workspaceRegistry = options.workspaceRegistry
+  }
+
+  /**
+   * The workspace an issue from one repository should be pinned to.
+   *
+   * Resolved per materialization, not once at start: a user who adds a
+   * checkout after the extension mounted must still get correctly pinned
+   * cards. A registry that is absent, throws, or lists nothing leaves the pin
+   * empty, which is the board's own inheritance behavior rather than a guess.
+   *
+   * @param repository - the GitHub repository name.
+   * @returns the workspace id, or undefined when the rule does not match.
+   */
+  workspaceIdFor(repository: string): string | undefined {
+    const registry = this.workspaceRegistry?.()
+    if (registry === undefined) return undefined
+    let workspaces: readonly WorkspaceMatchCandidate[]
+    try {
+      workspaces = registry.list()
+    } catch {
+      return undefined
+    }
+    if (!Array.isArray(workspaces)) return undefined
+    return workspaceIdForRepository(repository, workspaces)
   }
 
   /**
@@ -211,6 +253,11 @@ export class GitHubSyncService {
     const payload = this.payloadOf(next)
     const metadata = readTaskGitHubMetadata(next)
     if (previous === undefined) {
+      // An issue's checkout is a property of its repository, not of whoever
+      // happens to be looking at the board: without this pin the card lands on
+      // the most recently used workspace, which is the wrong project whenever
+      // the user works on more than one. Unmatched stays empty by design.
+      const workspaceId = this.workspaceIdFor(metadata?.repository ?? '')
       const created = this.host.tasks.create(
         {
           title: next.title,
@@ -218,6 +265,7 @@ export class GitHubSyncService {
           prompt: next.prompt,
           status: next.status,
           ...(next.parentId === undefined ? {} : { parentId: next.parentId }),
+          ...(workspaceId === undefined ? {} : { workspaceId }),
         },
         {
           ...(payload === undefined ? {} : { payload }),
@@ -413,6 +461,87 @@ export class GitHubSyncService {
       this.writePayload(task.id, { lastSyncError: message })
       return { ok: false, error: message }
     }
+  }
+
+  /**
+   * Resolve the repository a task's issue lives in, or throw the reason it
+   * cannot be written to. Every outbound write goes through here so a
+   * misconfigured repository or a missing credential is reported once, in one
+   * wording, instead of as a raw API error.
+   */
+  private writeTarget(taskId: string): { gh: GitHubTaskMetadata; config: ResolvedGitHubRepoConfig } {
+    const task = this.host.tasks.get(taskId)
+    const gh = this.metadataOf(task)
+    if (task === undefined || gh === undefined) {
+      throw new Error('task is not linked to a GitHub issue')
+    }
+    const config = this.findRepoConfig(gh.owner, gh.repository)
+    if (config === undefined) {
+      throw new Error(`repository ${gh.owner}/${gh.repository} is not configured`)
+    }
+    if (!this.client.hasCredential()) {
+      throw new Error('no GitHub API credential available')
+    }
+    return { gh, config }
+  }
+
+  /**
+   * Post one comment on a task's issue.
+   *
+   * The body is bounded here rather than at the REST layer: an agent that
+   * pastes a whole transcript into a comment is making a mistake the user
+   * would have to undo on GitHub, so the call is refused instead of truncated
+   * into something the agent did not write.
+   *
+   * @param taskId - the task whose issue receives the comment.
+   * @param body - the Markdown comment body.
+   * @returns the created comment's number and URL.
+   */
+  async postComment(taskId: string, body: string): Promise<{ id: number; url: string }> {
+    const text = body.trim()
+    if (text === '') throw new Error('a comment needs a non-empty body')
+    if (text.length > GITHUB_COMMENT_MAX_CHARS) {
+      throw new Error(`the comment body is ${text.length} characters; the limit is ${GITHUB_COMMENT_MAX_CHARS}`)
+    }
+    const { gh, config } = this.writeTarget(taskId)
+    const comment = await this.client.createComment(config.owner, config.repository, gh.issueNumber, text)
+    this.writePayload(taskId, { lastSyncedAt: this.now(), lastSyncError: undefined })
+    return { id: comment.id, url: comment.html_url }
+  }
+
+  /**
+   * Close a task's issue.
+   *
+   * Guarded: an issue closes only once the card's pull request is MERGED. A
+   * successful local run is not a reviewed change, and closing the issue from
+   * it would strand a reviewer with no place to push back. The same guard the
+   * merge-driven automatic closure uses applies to the agent-initiated one, so
+   * the two paths can never disagree about when the work landed.
+   *
+   * @param taskId - the task whose issue is closed.
+   * @returns the issue number and its new state.
+   */
+  async closeIssue(taskId: string): Promise<{ issueNumber: number; state: 'closed' }> {
+    const { gh, config } = this.writeTarget(taskId)
+    if (gh.remoteState === 'closed') return { issueNumber: gh.issueNumber, state: 'closed' }
+    const pullRequest = gh.pullRequest
+    if (pullRequest === undefined) {
+      throw new Error(`issue #${gh.issueNumber} has no linked pull request, so there is no merged work to close it with`)
+    }
+    // Trust the remote over the cached flag: a PR merged since the last sync
+    // must not be reported as unmerged just because the card is stale.
+    const live = await this.client.getPullRequest(config.owner, config.repository, pullRequest.number)
+    const merged = live.merged === true || pullRequest.state === 'merged'
+    if (!merged) {
+      throw new Error(`pull request #${pullRequest.number} is not merged yet, so the issue stays open`)
+    }
+    await this.client.updateIssue(config.owner, config.repository, gh.issueNumber, { state: 'closed' })
+    this.writePayload(taskId, {
+      remoteState: 'closed',
+      lastSyncedAt: this.now(),
+      lastSyncError: undefined,
+    })
+    return { issueNumber: gh.issueNumber, state: 'closed' }
   }
 
   /** Write back local status changes to GitHub state labels. Never throws. */

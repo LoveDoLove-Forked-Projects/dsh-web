@@ -4954,6 +4954,7 @@ window.__ModuleLoader__.load({
 				reuseSession: input.reuseSession === true ? true : void 0,
 				teamRun: input.teamRun === true ? true : void 0,
 				goalRun: input.goalRun === false ? false : void 0,
+				skipVerification: input.skipVerification === true ? true : void 0,
 				...input.freeze === void 0 ? {} : { freeze: freezeOf(input.freeze, now) },
 				...input.handover === void 0 ? {} : { handover: {
 					...input.handover,
@@ -5937,6 +5938,7 @@ window.__ModuleLoader__.load({
 				if ("reuseSession" in patch) next.reuseSession = patch.reuseSession === true ? true : void 0;
 				if ("teamRun" in patch) next.teamRun = patch.teamRun === true ? true : void 0;
 				if ("goalRun" in patch) next.goalRun = patch.goalRun === false ? false : void 0;
+				if ("skipVerification" in patch) next.skipVerification = patch.skipVerification === true ? true : void 0;
 				if (workspaceId !== void 0 || "workspaceId" in patch) next.workspaceId = workspaceId;
 				if (mode !== void 0 || "mode" in patch) next.mode = mode;
 				if (permission !== void 0 || "permission" in patch) next.permission = permission;
@@ -7026,7 +7028,7 @@ window.__ModuleLoader__.load({
 				};
 			}
 			const applicability = row.applicability;
-			if (applicability !== "enforced" && applicability !== "disabled" && applicability !== "goal-unavailable" && applicability !== "team-member") return void 0;
+			if (applicability !== "enforced" && applicability !== "disabled" && applicability !== "skipped" && applicability !== "goal-unavailable" && applicability !== "team-member") return void 0;
 			const attempts = [];
 			if (!Array.isArray(row.attempts)) return void 0;
 			for (const entry of row.attempts) {
@@ -7189,6 +7191,7 @@ window.__ModuleLoader__.load({
 			if (record.hidden !== void 0 && typeof record.hidden !== "boolean") return false;
 			if (record.reuseSession !== void 0 && typeof record.reuseSession !== "boolean") return false;
 			if (record.goalRun !== void 0 && typeof record.goalRun !== "boolean") return false;
+			if (record.skipVerification !== void 0 && typeof record.skipVerification !== "boolean") return false;
 			if (!Array.isArray(record.executions)) return false;
 			for (const execution of record.executions) {
 				if (typeof execution !== "object" || execution === null) return false;
@@ -7311,6 +7314,7 @@ window.__ModuleLoader__.load({
 				task.permission = isTaskPermission(row.permission) ? row.permission : void 0;
 				task.reuseSession = row.reuseSession === true ? true : void 0;
 				task.goalRun = row.goalRun === false ? false : void 0;
+				task.skipVerification = row.skipVerification === true ? true : void 0;
 				task.freeze = normalizeFreeze(row.freeze);
 				task.handover = normalizeHandover(row.handover);
 				task.tags = normalizeTags(row.tags);
@@ -7624,6 +7628,8 @@ window.__ModuleLoader__.load({
 			"exec.reuseSessionHint": "开启后，本任务的后续执行在上一次会话里继续（该会话空闲且仍存在时），不再每次新建对话；每次复用时都会重新应用上面钉住的权限与模型。",
 			"exec.goalRun": "以 dsh 内置的 /goal 开始执行任务",
 			"exec.goalRunHint": "默认开启：执行时把任务目标作为持久目标交给 dsh 内置的 /goal，会话会自动续跑多轮，直到 agent 标记目标完成；看板在该目标真正结束后才结算本次执行。关闭则只执行一轮普通对话。",
+			"exec.skipVerification": "跳过本任务的验收",
+			"exec.skipVerificationHint": "默认关闭：勾选后本任务以 goal 形式执行时不再拦截 update_goal 标记完成，也不要求通过验收；执行记录会标注「该卡片跳过验收」。仅对之后新开的执行生效，验收总开关关闭时本项无意义。",
 			"detail.executionSettings": "执行设置",
 			"exec.hint": "执行时生效：工作区决定执行会话落在哪个工作区；Agent 预设决定会话的组合（工具面与提示词段）；权限经 /permission 命令应用到会话。留空则继承部署默认。",
 			"settings.title": "任务看板",
@@ -7712,6 +7718,7 @@ window.__ModuleLoader__.load({
 			"verify.finalFailure": "判定依据：{reason}",
 			"verify.applicability.disabled": "本次执行启动时验收开关关闭，按原有回合判定结算。",
 			"verify.applicability.goalUnavailable": "本次执行未成为 goal 执行（/goal 被拒绝或不可用），验收未强制执行。",
+			"verify.applicability.skipped": "该任务卡勾选了「跳过验收」，本次执行未经验收判定。",
 			"verify.applicability.teamMember": "团队执行成员：由 Lead 的团队汇总证据统一验收。",
 			"verify.effortFallback": "推理强度回退：{requested} → {resolved}",
 			"verify.thresholdValue": "{value}%",
@@ -7960,6 +7967,8 @@ window.__ModuleLoader__.load({
 			"exec.reuseSessionHint": "When on, later runs continue in the previous session (when that session is idle and still exists) instead of starting a new conversation each time; the pinned permission and model above are re-applied on every reuse.",
 			"exec.goalRun": "Start the run with dsh's built-in /goal",
 			"exec.goalRunHint": "On by default: the run arms dsh built-in /goal with the task objective, so the session keeps working automatic continuation rounds until the agent marks the goal complete, and the board settles the execution only when that goal really ends. Off: one plain turn.",
+			"exec.skipVerification": "Skip acceptance for this task",
+			"exec.skipVerificationHint": "Off by default: when checked, a goal-form run of this task no longer gates update_goal on a passing acceptance, and the execution record is marked as skipped. It applies only to executions started afterwards, and means nothing while the board-wide acceptance switch is off.",
 			"detail.executionSettings": "Execution Settings",
 			"exec.hint": "Applied when the task runs: the workspace decides where the execution session lands; the agent preset composes the session (tool face and prompt sections); the permission is applied through the /permission command. Blank inherits the deployment default.",
 			"settings.title": "Task Board",
@@ -8048,6 +8057,7 @@ window.__ModuleLoader__.load({
 			"verify.finalFailure": "Verdict basis: {reason}",
 			"verify.applicability.disabled": "Acceptance was off when this execution started; it settles on the historical verdict.",
 			"verify.applicability.goalUnavailable": "This execution never became a goal run (/goal was refused or unavailable), so acceptance was not enforced.",
+			"verify.applicability.skipped": "This card checked Skip acceptance, so the execution was never judged.",
 			"verify.applicability.teamMember": "Team member: the Lead team-summary evidence is accepted as one execution.",
 			"verify.effortFallback": "Reasoning effort fallback: {requested} → {resolved}",
 			"verify.thresholdValue": "{value}%",
@@ -10996,6 +11006,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const inheritedPermission = parentTask === void 0 ? void 0 : effectiveTaskPermission(parentTask);
 			const [reuseSession, setReuseSession] = (0, react.useState)(initialTask?.reuseSession ?? false);
 			const [goalRun, setGoalRun] = (0, react.useState)(initialTask?.goalRun ?? true);
+			const [skipVerification, setSkipVerification] = (0, react.useState)(initialTask?.skipVerification ?? false);
 			const [scheduleEnabled, setScheduleEnabled] = (0, react.useState)(initialTask?.schedule?.enabled ?? false);
 			const [scheduleCron, setScheduleCron] = (0, react.useState)(initialTask?.schedule?.cron ?? "");
 			const [scheduleZone, setScheduleZone] = (0, react.useState)(initialTask?.schedule?.timeZone ?? "");
@@ -11098,6 +11109,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					model: model === "" ? void 0 : model,
 					...reuseSession ? { reuseSession: true } : {},
 					...goalRun ? {} : { goalRun: false },
+					...skipVerification ? { skipVerification: true } : {},
 					...tagList.length > 0 ? { tags: tagList } : {},
 					schedule: scheduleEnabled ? {
 						enabled: true,
@@ -11429,6 +11441,20 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 								className: board_module_css_default.detailText,
 								children: t$5("exec.goalRunHint")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: board_module_css_default.scheduleToggle,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									type: "checkbox",
+									checked: skipVerification,
+									onChange: (event) => {
+										setSkipVerification(event.target.checked);
+									}
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("exec.skipVerification") })]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: board_module_css_default.detailText,
+								children: t$5("exec.skipVerificationHint")
 							})
 						]
 					}),
@@ -12159,10 +12185,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		*/
 		function VerificationReport({ verification }) {
 			const phase = verificationPhase(verification);
-			if (phase === "off" && verification.contract.enabled === false) return null;
+			if (phase === "off" && verification.contract.enabled === false && verification.applicability !== "skipped") return null;
 			const totals = verificationTotals(verification);
 			const route = verification.contract.route;
-			const applicabilityKey = verification.applicability === "disabled" ? "verify.applicability.disabled" : verification.applicability === "goal-unavailable" ? "verify.applicability.goalUnavailable" : verification.applicability === "team-member" ? "verify.applicability.teamMember" : void 0;
+			const applicabilityKey = verification.applicability === "disabled" ? "verify.applicability.disabled" : verification.applicability === "skipped" ? "verify.applicability.skipped" : verification.applicability === "goal-unavailable" ? "verify.applicability.goalUnavailable" : verification.applicability === "team-member" ? "verify.applicability.teamMember" : void 0;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: board_module_css_default.executionTimes,
 				children: [
@@ -12435,6 +12461,21 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: board_module_css_default.detailText,
 						children: t$5("exec.goalRunHint")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: board_module_css_default.scheduleToggle,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							type: "checkbox",
+							checked: task.skipVerification === true,
+							disabled: pending,
+							onChange: (event) => {
+								controller.updateTask(task.id, { skipVerification: event.target.checked });
+							}
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("exec.skipVerification") })]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.detailText,
+						children: t$5("exec.skipVerificationHint")
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 						className: board_module_css_default.scheduleToggle,

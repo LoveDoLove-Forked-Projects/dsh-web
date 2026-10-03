@@ -224,6 +224,8 @@ export const zh = {
   'exec.reuseSessionHint': '开启后，本任务的后续执行在上一次会话里继续（该会话空闲且仍存在时），不再每次新建对话；每次复用时都会重新应用上面钉住的权限与模型。',
   'exec.goalRun': '以 dsh 内置的 /goal 开始执行任务',
   'exec.goalRunHint': '默认开启：执行时把任务目标作为持久目标交给 dsh 内置的 /goal，会话会自动续跑多轮，直到 agent 标记目标完成；看板在该目标真正结束后才结算本次执行。关闭则只执行一轮普通对话。',
+  'exec.skipVerification': '跳过本任务的验收',
+  'exec.skipVerificationHint': '默认关闭：勾选后本任务以 goal 形式执行时不再拦截 update_goal 标记完成，也不要求通过验收；执行记录会标注「该卡片跳过验收」。仅对之后新开的执行生效，验收总开关关闭时本项无意义。',
   'detail.executionSettings': '执行设置',
   'exec.hint': '执行时生效：工作区决定执行会话落在哪个工作区；Agent 预设决定会话的组合（工具面与提示词段）；权限经 /permission 命令应用到会话。留空则继承部署默认。',
   // 插件设置卡片（settings.plugin.item 席位）。
@@ -313,6 +315,7 @@ export const zh = {
   'verify.finalFailure': '判定依据：{reason}',
   'verify.applicability.disabled': '本次执行启动时验收开关关闭，按原有回合判定结算。',
   'verify.applicability.goalUnavailable': '本次执行未成为 goal 执行（/goal 被拒绝或不可用），验收未强制执行。',
+  'verify.applicability.skipped': '该任务卡勾选了「跳过验收」，本次执行未经验收判定。',
   'verify.applicability.teamMember': '团队执行成员：由 Lead 的团队汇总证据统一验收。',
   'verify.effortFallback': '推理强度回退：{requested} → {resolved}',
   'verify.thresholdValue': '{value}%',
@@ -564,6 +567,8 @@ export const en: Record<keyof typeof zh, string> = {
   'exec.reuseSessionHint': 'When on, later runs continue in the previous session (when that session is idle and still exists) instead of starting a new conversation each time; the pinned permission and model above are re-applied on every reuse.',
   'exec.goalRun': "Start the run with dsh's built-in /goal",
   'exec.goalRunHint': 'On by default: the run arms dsh built-in /goal with the task objective, so the session keeps working automatic continuation rounds until the agent marks the goal complete, and the board settles the execution only when that goal really ends. Off: one plain turn.',
+  'exec.skipVerification': 'Skip acceptance for this task',
+  'exec.skipVerificationHint': 'Off by default: when checked, a goal-form run of this task no longer gates update_goal on a passing acceptance, and the execution record is marked as skipped. It applies only to executions started afterwards, and means nothing while the board-wide acceptance switch is off.',
   'detail.executionSettings': 'Execution Settings',
   'exec.hint': 'Applied when the task runs: the workspace decides where the execution session lands; the agent preset composes the session (tool face and prompt sections); the permission is applied through the /permission command. Blank inherits the deployment default.',
   // Plugin settings card (the `settings.plugin.item` seat).
@@ -653,6 +658,7 @@ export const en: Record<keyof typeof zh, string> = {
   'verify.finalFailure': 'Verdict basis: {reason}',
   'verify.applicability.disabled': 'Acceptance was off when this execution started; it settles on the historical verdict.',
   'verify.applicability.goalUnavailable': 'This execution never became a goal run (/goal was refused or unavailable), so acceptance was not enforced.',
+  'verify.applicability.skipped': 'This card checked Skip acceptance, so the execution was never judged.',
   'verify.applicability.teamMember': 'Team member: the Lead team-summary evidence is accepted as one execution.',
   'verify.effortFallback': 'Reasoning effort fallback: {requested} → {resolved}',
   'verify.thresholdValue': '{value}%',

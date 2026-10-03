@@ -102,6 +102,26 @@ verifier's default acceptance ALGORITHM rather than the verifier.
 - **Team runs.** Acceptance applies to the Lead execution, whose session
   evidence is the team summary; a teammate execution is recorded as a
   `team-member` and is not independently accepted.
+- **Per-card opt-out.** `TaskRecord.skipVerification` opts ONE card out of the
+  gate. Absent means inherit: the execution resolves the same contract it always
+  did from the board-wide `goalVerification` switch, so a card that never
+  touched the option is unchanged. An explicit `true` resolves the contract from
+  an OFF switch instead, and the execution is recorded as a distinct
+  `applicability: 'skipped'` rather than reusing `disabled`: the report must be
+  able to say WHICH of the two turned the gate off, and a report that renders
+  nothing at all would let a user read "the board switch is off" into a card
+  they themselves opted out. Only the explicit `true` is persisted (mirroring
+  `goalRun`, which persists only its explicit `false`), the option appears in
+  the new-task form and the task detail beside the other card-level execution
+  switches, and it is exposed on `task_board_create` / `task_board_update`
+  like every other card option. It is an execution-time decision, not a
+  per-run one: the contract is frozen at launch, so flipping the checkbox
+  never rewrites the rule judging a run already open, and a rerun or a
+  scheduled occurrence reads the card's current value.
+  `ExecutionVerification.applicability` therefore carries five values, and the
+  field-level normalizer accepts the new one; a record written by an older
+  build still parses, and a block naming an unknown value is still dropped
+  (fail closed, as before).
 - **Interface.** The settings card gains a task-acceptance section (switch on by
   default, judge model, reasoning level, and the resolved configuration), the
   running column shows executing / verifying / fixing, and each execution row
@@ -142,6 +162,21 @@ verifier's default acceptance ALGORITHM rather than the verifier.
 - **Automatic rubric selection.** Deferred: the first version judges with the
   coding criteria only, and the settings copy says the section is aimed at
   engineering tasks.
+- **Reuse `disabled` for the card opt-out instead of adding an applicability
+  value.** Rejected: `disabled` already means "the board switch was off at
+  start", and the report renders nothing for it. Collapsing the two would make
+  a self-service opt-out indistinguishable from a deployment that is not
+  running the gate at all, which is the opposite of what a reader needs.
+- **A tri-state card option (default / forced / skipped) that overrides the
+  board switch.** Rejected as more surface than the requirement asks: the
+  board switch is the deployment-wide policy and a card can only decline to
+  take part in it, never to re-arm a gate the user turned off. A card that
+  wants the gate on while the switch is off is answered by turning the switch
+  on.
+- **An agent-facing tool to request acceptance instead of a card option.**
+  Rejected on the same grounds the option itself is allowed: the point of the
+  opt-out is that a PERSON decided this card is not worth six judge requests
+  per attempt, so it is a card field a person ticks, not a model parameter.
 - **A new `data-dsh-part` value for the report.** The part enum is owned by
   the cross-repository semantic-attribute contract, so the report reuses the
   execution row's existing markup instead of extending that enum.
@@ -176,6 +211,15 @@ verifier's default acceptance ALGORITHM rather than the verifier.
 - The gate deliberately does not touch plain chat, a task pinned to
   `goalRun: false`, or a run whose `/goal` was refused: those are not goal
   executions, and their records say which case applies.
+- A card that opted out is a COST decision the user makes per card, and it is
+  recorded as such: `skipVerification` travels through the legacy import the
+  way `goalRun` does (a user restoring their own board keeps their per-card
+  execution preferences), while the per-execution `verification` block is
+  still stripped on import, so no imported card can arrive already accepted.
+  The ledger stays at v5: an optional card field absent from every existing
+  row is exactly the additive change the v5 migration already describes, and
+  bumping the version for it would make every deployment migrate a document
+  whose shape did not change.
 
 ## Testing
 
@@ -202,4 +246,14 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   record settles done, a closed cycle settles without another inspection, a
   plain-turn run settles historically, a pre-feature execution is not
   retroactively enforced, the switch only affects later executions, and session
-  reuse carries a new execution's own contract).
+  reuse carries a new execution's own contract), plus the per-card opt-out: a
+  checked card freezing an off contract with its own `skipped` reason, an
+  unchecked card still enforced, and a skipped execution settling on the
+  historical verdict.
+- `tests/goal-verification-view.spec.tsx`: a skipped execution renders a report
+  that says the CARD skipped acceptance and never claims a pass, while an
+  execution whose switch was off still renders nothing at all.
+- `tests/protocol.spec.ts` and the task-record round trips cover the field
+  itself: only an explicit `true` is stored, a hand-edited `false` normalizes
+  back to inheriting, the action gate accepts it on create and update, and the
+  legacy import carries it while still stripping the acceptance block.

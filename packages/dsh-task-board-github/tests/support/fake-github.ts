@@ -43,6 +43,8 @@ export class FakeGitHubBackend {
   networkFailure = false
   /** How many HTTP calls reached the stand-in. */
   requests = 0
+  /** Comment bodies posted through the stand-in, in arrival order. */
+  comments: Array<{ issueNumber: number, body: string }> = []
 
   fetch: typeof fetch = async (input, init) => {
     this.requests += 1
@@ -94,6 +96,12 @@ export class FakeGitHubBackend {
       return this.branches.includes(branchName)
         ? json({ name: branchName, commit: { sha: 'abc1234' } })
         : new Response('Branch not found', { status: 404 })
+    }
+    const commentMatch = pathname.match(/\/issues\/(\d+)\/comments$/)
+    if (commentMatch && method === 'POST') {
+      const body = JSON.parse(String(init?.body)) as { body: string }
+      this.comments.push({ issueNumber: Number(commentMatch[1]), body: body.body })
+      return json({ id: this.comments.length, html_url: `https://github.com/deepseek-ai/dsh/issues/${String(commentMatch[1])}#issuecomment-${String(this.comments.length)}`, body: body.body }, 201)
     }
     if (pathname.includes('/pulls') && method === 'POST') {
       const body = JSON.parse(String(init?.body)) as { draft?: boolean, head: string, base: string }

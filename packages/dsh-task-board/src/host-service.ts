@@ -441,12 +441,21 @@ export class TaskBoardHostService {
       }
       // Freeze this execution's acceptance contract BEFORE the session is
       // prompted: a settings change made while the run is in flight must not
-      // retrofit the rule that will judge it.
-      const contract = resolveContract(this.verificationSettings(), await this.verificationCatalog())
+      // retrofit the rule that will judge it. A card that opted out resolves the
+      // same contract from an OFF switch: the board-wide switch decides the
+      // default, the card decides this execution, and both are read here.
+      const settings = this.verificationSettings()
+      // The card's opt-out is a DISTINCT reason, not the board switch: the
+      // report must be able to say which of the two turned the gate off.
+      const skippedBy: ExecutionVerification['applicability'] = opened.task.skipVerification === true ? 'skipped' : 'disabled'
+      const contract = resolveContract(
+        { ...settings, enabled: settings.enabled && opened.task.skipVerification !== true },
+        await this.verificationCatalog(),
+      )
       const initial: ExecutionVerification = {
         contract,
         attempts: [],
-        applicability: team ? 'team-member' : contract.enabled ? 'goal-unavailable' : 'disabled',
+        applicability: team ? 'team-member' : !contract.enabled ? skippedBy : 'goal-unavailable',
       }
       this.ledger.setVerification(opened.task.id, opened.execution.id, initial)
       let attached: string | undefined
@@ -462,7 +471,7 @@ export class TaskBoardHostService {
         onGoalArmed: (armed) => {
           this.setApplicability(opened.task.id, opened.execution.id, team
             ? 'team-member'
-            : !contract.enabled ? 'disabled' : armed ? 'enforced' : 'goal-unavailable')
+            : !contract.enabled ? skippedBy : armed ? 'enforced' : 'goal-unavailable')
         },
       })
       if (attached === undefined) this.ledger.attachSession(opened.task.id, opened.execution.id, sessionId)

@@ -11,7 +11,7 @@ import { GitHubApiClient } from '../src/host/client.ts'
 import { GitHubSyncService } from '../src/host/service.ts'
 import { buildGitHubTools } from '../src/host/tools.ts'
 import { FakeBoard } from './support/fake-board.ts'
-import { FakeGitHubBackend } from './support/fake-github.ts'
+import { FakeGitHubBackend, issueFixture } from './support/fake-github.ts'
 
 /** Admit a stub provider and hand back the capability face the board gives it. */
 function faceOf(board: FakeBoard): TaskBoardExtensionHost {
@@ -50,7 +50,7 @@ async function runTool(tool: ToolDefinition, args: Record<string, unknown>): Pro
 }
 
 describe('GitHub agent tools', () => {
-  it('operator sees the five GitHub tools contributed by the provider alone', () => {
+  it('operator sees the seven GitHub tools contributed by the provider alone', () => {
     // Given a board holding no GitHub card and a provider with no repository
     const board = new FakeBoard()
     const service = new GitHubSyncService({ host: faceOf(board), repositories: [] })
@@ -58,13 +58,15 @@ describe('GitHub agent tools', () => {
     // When the provider's tool set is read
     const names = buildGitHubTools(service).map(tool => tool.name)
 
-    // Then it contributes exactly its five narrowly-scoped tools
+    // Then it contributes exactly its seven narrowly-scoped tools
     expect(names).toEqual([
       'task_board_github_list',
       'task_board_github_get',
       'task_board_github_refresh',
       'task_board_github_create_pr',
       'task_board_github_link_pr',
+      'task_board_github_comment',
+      'task_board_github_close_issue',
     ])
   })
 
@@ -172,6 +174,99 @@ describe('GitHub agent tools', () => {
     const refreshed = await runTool(refreshTool, { taskId: 'task-40' })
     // Then the refresh is accepted
     expect(refreshed.ok).toBe(true)
+  })
+
+  it('operator posts a completion comment on the issue behind a card', async () => {
+    // Given a card linked to a configured repository's issue
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    const service = new GitHubSyncService({
+      host: faceOf(board),
+      client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
+      repositories: [{ owner: 'deepseek-ai', repository: 'dsh', inclusionLabel: 'dsh' }],
+    })
+    board.seed({ id: 'task-50', title: 'dsh issue 50', integrations: githubIntegration('deepseek-ai', 'dsh', 50) })
+    const commentTool = findTool(buildGitHubTools(service), 'task_board_github_comment')
+
+    // When the model reports what it did
+    const posted = await runTool(commentTool, { taskId: 'task-50', body: 'Fixed in #7; the parser now rejects a trailing slash.' })
+
+    // Then the comment reaches the issue verbatim and its URL comes back
+    expect(posted.ok).toBe(true)
+    expect(backend.comments).toEqual([{ issueNumber: 50, body: 'Fixed in #7; the parser now rejects a trailing slash.' }])
+    expect((posted.comment as { url: string }).url).toContain('issuecomment-')
+
+    // And an empty body is refused rather than posted as a blank comment
+    const empty = await runTool(commentTool, { taskId: 'task-50', body: '   ' })
+    expect(empty.ok).toBe(false)
+    expect(backend.comments).toHaveLength(1)
+
+    // And a body past the length ceiling is refused instead of truncated into
+    // something the model did not write
+    const huge = await runTool(commentTool, { taskId: 'task-50', body: 'x'.repeat(16_001) })
+    expect(huge.ok).toBe(false)
+    expect(backend.comments).toHaveLength(1)
+  })
+
+  it('operator closing an issue is gated on a merged pull request', async () => {
+    // Given a card whose pull request is still open
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.issues = [issueFixture(60, ['dsh'])]
+    backend.pulls = [{
+      number: 9,
+      html_url: 'https://github.com/deepseek-ai/dsh/pull/9',
+      state: 'open',
+      head: { ref: 'feature' },
+      base: { ref: 'dev' },
+    }]
+    const service = new GitHubSyncService({
+      host: faceOf(board),
+      client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
+      repositories: [{ owner: 'deepseek-ai', repository: 'dsh', inclusionLabel: 'dsh' }],
+    })
+    const integration = githubIntegration('deepseek-ai', 'dsh', 60)
+    ;(integration.github as Record<string, unknown>).pullRequest = { number: 9, url: 'https://github.com/deepseek-ai/dsh/pull/9', state: 'open' }
+    board.seed({ id: 'task-60', title: 'dsh issue 60', integrations: integration })
+    const closeTool = findTool(buildGitHubTools(service), 'task_board_github_close_issue')
+
+    // When the model asks to close it while the PR is open
+    const refused = await runTool(closeTool, { taskId: 'task-60' })
+
+    // Then the issue stays open and the refusal names the real reason
+    expect(refused.ok).toBe(false)
+    expect(refused.code).toBe('pr-not-merged')
+    expect(backend.stateOf(60)).toBe('open')
+
+    // And once the PR is merged, closing succeeds
+    backend.pulls[0]!.state = 'closed'
+    backend.pulls[0]!.merged = true
+    const closed = await runTool(closeTool, { taskId: 'task-60' })
+    expect(closed.ok).toBe(true)
+    expect(closed.state).toBe('closed')
+    expect(backend.stateOf(60)).toBe('closed')
+  })
+
+  it('operator closing a card with no pull request is refused', async () => {
+    // Given a card that never opened one
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.issues = [issueFixture(70, ['dsh'])]
+    const service = new GitHubSyncService({
+      host: faceOf(board),
+      client: new GitHubApiClient({ token: 'test-token', fetch: backend.fetch }),
+      repositories: [{ owner: 'deepseek-ai', repository: 'dsh', inclusionLabel: 'dsh' }],
+    })
+    board.seed({ id: 'task-70', title: 'dsh issue 70', integrations: githubIntegration('deepseek-ai', 'dsh', 70) })
+    const closeTool = findTool(buildGitHubTools(service), 'task_board_github_close_issue')
+
+    // When the model asks to close it
+    const refused = await runTool(closeTool, { taskId: 'task-70' })
+
+    // Then it is refused: a local run is not merged work
+    expect(refused.ok).toBe(false)
+    expect(refused.code).toBe('no-linked-pr')
+    expect(backend.stateOf(70)).toBe('open')
   })
 
   it('operator refreshing an unconfigured board is refused instead of hitting GitHub', async () => {

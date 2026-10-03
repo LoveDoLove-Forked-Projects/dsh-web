@@ -50,6 +50,16 @@ Both rules live in the framework-free `src/core/workspace-target.ts` and read a
 structural subset of the SDK `Workspace` entity, so the browser program compiles
 them without an SDK value import.
 
+The most-recently-used fallback is a LAST resort, not an answer: it is correct
+only when the card has no better fact. A card materialized by the GitHub
+extension has one — its repository — and the extension now uses it, pinning the
+card to the workspace whose directory name matches through its own pure rule
+(`packages/dsh-task-board-github/src/core/workspace-match.ts`, recorded in that
+package's own note). The board is unchanged by that: an extension that pins a
+workspace simply arrives with one, and a card that does is still covered by the
+two rules above. Both agree on what a pin MEANS; they never contend over who
+may set it.
+
 ## Testing
 
 - `tests/workspace-target.spec.ts` — session ownership, recency selection, ties,

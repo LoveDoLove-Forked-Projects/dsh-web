@@ -73,6 +73,7 @@ function isTaskRecordShape(value: unknown): value is Omit<TaskRecord, 'status'> 
   if (record.hidden !== undefined && typeof record.hidden !== 'boolean') return false
   if (record.reuseSession !== undefined && typeof record.reuseSession !== 'boolean') return false
   if (record.goalRun !== undefined && typeof record.goalRun !== 'boolean') return false
+  if (record.skipVerification !== undefined && typeof record.skipVerification !== 'boolean') return false
   if (!Array.isArray(record.executions)) return false
   for (const execution of record.executions) {
     if (typeof execution !== 'object' || execution === null) return false
@@ -221,6 +222,9 @@ export function parseLedger(raw: string | null): TaskRecord[] {
     // The goal opt-in is stored only when it is OFF: absent means the default
     // (start each run with /goal), so a hand-edited true normalizes back to it.
     task.goalRun = row.goalRun === false ? false : undefined
+    // The acceptance opt-out is stored only when it is ON: absent inherits the
+    // board-wide switch, so a hand-edited false normalizes back to inherit.
+    task.skipVerification = row.skipVerification === true ? true : undefined
     task.freeze = normalizeFreeze(row.freeze)
     task.handover = normalizeHandover(row.handover)
     // Tags are repaired field by field like the schedule: a malformed entry is

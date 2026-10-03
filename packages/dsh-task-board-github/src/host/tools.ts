@@ -61,6 +61,8 @@ export function buildGitHubTools(service: GitHubSyncService): ToolDefinition[] {
     buildRefreshTool(service),
     buildCreatePrTool(service),
     buildLinkPrTool(service),
+    buildCommentTool(service),
+    buildCloseIssueTool(service),
   ]
 }
 
@@ -323,6 +325,55 @@ function buildCreatePrTool(service: GitHubSyncService): ToolDefinition {
           return refused('branch-not-found', message)
         }
         return refused('create-pr-failed', message)
+      }
+    },
+  })
+}
+
+
+function buildCommentTool(service: GitHubSyncService): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_comment',
+    description: 'Post one comment on the GitHub issue behind a task board card. Use it to report what was done, link the pull request, or state why the task was closed without a fix. The body is Markdown and must stay under the length limit. Does not run shell commands.',
+    parameters: {
+      taskId: { type: 'string', required: true, description: 'Task ID linked to a GitHub issue.' },
+      body: { type: 'string', required: true, description: 'Markdown comment body to post. Must be non-empty and under the length limit; a transcript belongs in the card, not in a comment.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      try {
+        const comment = await service.postComment(args.taskId, args.body)
+        return json({ ok: true, comment })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return refused(message.includes('not linked') ? 'not-github-task' : 'comment-failed', message)
+      }
+    },
+  })
+}
+
+function buildCloseIssueTool(service: GitHubSyncService): ToolDefinition {
+  return defineTool({
+    name: 'task_board_github_close_issue',
+    description: 'Close the GitHub issue behind a task board card, once the work has actually landed. Refused unless the card has a linked pull request that is MERGED: a passing local run is not a reviewed change. Does not run shell commands.',
+    parameters: {
+      taskId: { type: 'string', required: true, description: 'Task ID linked to a GitHub issue.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    async execute(args) {
+      try {
+        const closed = await service.closeIssue(args.taskId)
+        return json({ ok: true, ...closed })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const code = message.includes('not linked')
+          ? 'not-github-task'
+          : message.includes('not merged')
+            ? 'pr-not-merged'
+            : message.includes('no linked pull request')
+              ? 'no-linked-pr'
+              : 'close-issue-failed'
+        return refused(code, message)
       }
     },
   })

@@ -41,6 +41,11 @@ export interface TaskRecord {
   updatedAt: number
   /** Parent card id, when this card is a subtask. */
   parentId?: string
+  /**
+   * Workspace the execution must run in, when the card pins one. Read-only
+   * here: a provider sets it by pinning it on the draft it creates with.
+   */
+  workspaceId?: string
   /** True for a card the board keeps off the board view. */
   hidden?: boolean
   /** Instant the card was archived (ms epoch), absent while it is live. */

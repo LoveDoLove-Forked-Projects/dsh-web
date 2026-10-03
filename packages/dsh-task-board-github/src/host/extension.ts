@@ -15,6 +15,7 @@ import {
   type TaskBoardExtensionHost,
 } from '../core/contract.ts'
 import type { HostTimerFace } from '../core/timers.ts'
+import type { WorkspaceRegistryFace } from './service.ts'
 import { GITHUB_EXTENSION_ID, type GitHubRepoConfig } from '../core/types.ts'
 import { GitHubApiClient } from './client.ts'
 import { GitHubSyncService } from './service.ts'
@@ -38,6 +39,11 @@ export interface GitHubExtensionOptions {
   tokenEnv?: string
   timers?: HostTimerFace
   now?: () => number
+  /**
+   * The optional host workspace registry, resolved lazily. Absent leaves every
+   * synchronized card on the board's own workspace inheritance rules.
+   */
+  workspaceRegistry?: () => WorkspaceRegistryFace | undefined
   /**
    * Volatile master switch, read at use time by the board's registry. Absent
    * means enabled, which is the schema default.
@@ -85,6 +91,7 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
       repositories: options.repositories,
       timers: options.timers,
       now: options.now,
+      workspaceRegistry: options.workspaceRegistry,
     })
     return service
   }

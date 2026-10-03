@@ -17,6 +17,15 @@
  */
 export const GITHUB_EXTENSION_ID = 'github'
 
+/**
+ * Longest comment body the extension will transmit to an issue.
+ *
+ * GitHub's own limit is 65536 characters; this is deliberately lower. A
+ * comment that long is a transcript, not a report, and the agent should hand
+ * back a verdict with a link instead.
+ */
+export const GITHUB_COMMENT_MAX_CHARS = 16_000
+
 /** First-class pull request metadata stored on a task. */
 export interface GitHubPullRequestMetadata {
   /** Pull request number on GitHub. */
@@ -282,6 +291,15 @@ export interface GitHubIssuePayload {
   assignees?: Array<{ login?: string } | string> | null
   updated_at: string
   pull_request?: unknown
+}
+
+/** Wire payload for one issue comment returned by the GitHub REST API. */
+export interface GitHubCommentPayload {
+  id: number
+  /** HTML URL of the comment, safe to hand back to the agent. */
+  html_url: string
+  /** Comment body as stored on GitHub. */
+  body?: string | null
 }
 
 /** Wire payload for a GitHub pull request returned by the GitHub REST API. */

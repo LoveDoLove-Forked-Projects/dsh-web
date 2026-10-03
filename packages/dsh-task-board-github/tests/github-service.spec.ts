@@ -31,7 +31,7 @@ function faceOf(board: FakeBoard): TaskBoardExtensionHost {
 function makeService(
   board: FakeBoard,
   backend: FakeGitHubBackend,
-  options: { repositories?: GitHubRepoConfig[]; now?: () => number; timers?: HostTimerFace; token?: string } = {},
+  options: { repositories?: GitHubRepoConfig[]; now?: () => number; timers?: HostTimerFace; token?: string; workspaces?: Array<{ id: string, path?: string, name?: string }> } = {},
 ): GitHubSyncService {
   return new GitHubSyncService({
     host: faceOf(board),
@@ -39,6 +39,9 @@ function makeService(
     repositories: options.repositories ?? [REPO],
     now: options.now ?? (() => 100),
     ...(options.timers === undefined ? {} : { timers: options.timers }),
+    ...(options.workspaces === undefined
+      ? {}
+      : { workspaceRegistry: () => ({ list: () => options.workspaces ?? [] }) }),
   })
 }
 
@@ -391,5 +394,72 @@ describe('GitHub sync service', () => {
     expect(summary.repositories).toHaveLength(1)
     expect(summary.repositories[0]?.owner).toBe('deepseek-ai')
     expect(JSON.stringify(summary)).not.toContain('super-secret-token')
+  })
+
+  it('operator sees a synchronized issue pinned to the checkout of the same name', async () => {
+    // Given a deployment holding two checkouts, one of which is this repository
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.issues = [issueFixture(80, ['dsh'])]
+    const service = makeService(board, backend, {
+      workspaces: [{ id: 'ws-dsh', path: '/home/dev/code/dsh' }, { id: 'ws-web', path: '/home/dev/code/dsh-web' }],
+    })
+
+    // When the sync materializes the card
+    await service.syncAll()
+
+    // Then it is pinned to the matching checkout, not to the most recent one
+    const card = cards(board).find(candidate => readTaskGitHubMetadata(candidate)?.issueNumber === 80)
+    expect(card?.workspaceId).toBe('ws-dsh')
+  })
+
+  it('operator whose checkout is named differently sees no pin rather than a wrong one', async () => {
+    // Given a deployment whose checkouts do not match the repository name
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.issues = [issueFixture(81, ['dsh'])]
+    const service = makeService(board, backend, {
+      workspaces: [{ id: 'ws-a', path: '/home/dev/work/harness' }, { id: 'ws-b', path: '/home/dev/work/site' }],
+    })
+
+    // When the sync materializes the card
+    await service.syncAll()
+
+    // Then nothing is pinned: an unmatched repository keeps the board's own
+    // inheritance rules instead of being sent to a lookalike project
+    const card = cards(board).find(candidate => readTaskGitHubMetadata(candidate)?.issueNumber === 81)
+    expect(card?.workspaceId).toBeUndefined()
+  })
+
+  it('operator with two checkouts of the same project sees no pin, because the choice is theirs', async () => {
+    // Given an ambiguous deployment
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.issues = [issueFixture(82, ['dsh'])]
+    const service = makeService(board, backend, {
+      workspaces: [{ id: 'ws-one', path: '/home/dev/personal/dsh' }, { id: 'ws-two', path: '/home/dev/work/dsh' }],
+    })
+
+    // When the sync materializes the card
+    await service.syncAll()
+
+    // Then neither is chosen
+    const card = cards(board).find(candidate => readTaskGitHubMetadata(candidate)?.issueNumber === 82)
+    expect(card?.workspaceId).toBeUndefined()
+  })
+
+  it('operator on a deployment with no workspace registry is unaffected', async () => {
+    // Given a service wired with no registry at all
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.issues = [issueFixture(83, ['dsh'])]
+    const service = makeService(board, backend)
+
+    // When the sync materializes the card
+    await service.syncAll()
+
+    // Then the card was still materialized, and it simply carries no pin
+    const card = cards(board).find(candidate => readTaskGitHubMetadata(candidate)?.issueNumber === 83)
+    expect([card?.title, card?.workspaceId]).toEqual(['Issue 83', undefined])
   })
 })

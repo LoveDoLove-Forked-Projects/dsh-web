@@ -183,6 +183,16 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
       <label className={css.scheduleToggle}>
         <input
           type="checkbox"
+          checked={task.skipVerification === true}
+          disabled={pending}
+          onChange={event => { controller.updateTask(task.id, { skipVerification: event.target.checked }) }}
+        />
+        <span>{t('exec.skipVerification')}</span>
+      </label>
+      <p className={css.detailText}>{t('exec.skipVerificationHint')}</p>
+      <label className={css.scheduleToggle}>
+        <input
+          type="checkbox"
           checked={task.teamRun === true}
           disabled={pending || !teamRunAvailable}
           onChange={event => { controller.updateTask(task.id, { teamRun: event.target.checked }) }}

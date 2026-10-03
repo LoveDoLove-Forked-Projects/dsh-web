@@ -176,4 +176,23 @@ describe('goal acceptance view', () => {
     // Then: nothing claims the run was verified.
     expect(text).toBe('')
   })
+
+  it('user whose card skipped acceptance sees a report that says so', () => {
+    // Given: an execution whose CARD opted out of the gate
+    const block: ExecutionVerification = {
+      ...verification(),
+      attempts: [],
+      applicability: 'skipped',
+      contract: { enabled: false, modelSource: 'inherit', preset: 'coding', threshold: 0.65 },
+    }
+
+    // When: the report renders
+    const text = render(<VerificationReport verification={block} />)
+
+    // Then: the run is NOT claimed verified, but the reason is visible and it
+    // names the card rather than the board-wide switch.
+    expect(text).not.toBe('')
+    expect(text).toContain('该任务卡勾选了「跳过验收」')
+    expect(text).not.toContain('通过')
+  })
 })

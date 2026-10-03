@@ -268,7 +268,7 @@ export class FakeBoard {
 
   private createTask(
     extensionId: string,
-    draft: { title: string; description: string; prompt: string; status?: TaskStatus; parentId?: string },
+    draft: { title: string; description: string; prompt: string; status?: TaskStatus; parentId?: string; workspaceId?: string },
     options?: { payload?: TaskBoardExtensionPayload; hidden?: boolean },
   ): TaskRecord {
     const task: TaskRecord = {
@@ -281,6 +281,7 @@ export class FakeBoard {
       updatedAt: this.now(),
       executions: [],
       ...(draft.parentId === undefined ? {} : { parentId: draft.parentId }),
+      ...(draft.workspaceId === undefined ? {} : { workspaceId: draft.workspaceId }),
       ...(options?.hidden === true ? { hidden: true } : {}),
       ...(options?.payload === undefined ? {} : { integrations: { [extensionId]: options.payload } }),
     }

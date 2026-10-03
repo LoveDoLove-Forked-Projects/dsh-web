@@ -9,7 +9,7 @@
  * @module dsh-task-board-github/host/client
  */
 
-import type { GitHubIssuePayload, GitHubPullRequestPayload } from '../core/types.ts'
+import type { GitHubCommentPayload, GitHubIssuePayload, GitHubPullRequestPayload } from '../core/types.ts'
 
 export class GitHubApiError extends Error {
   constructor(
@@ -142,6 +142,22 @@ export class GitHubApiClient {
   ): Promise<GitHubIssuePayload> {
     const endpoint = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${issueNumber}`
     return await this.request<GitHubIssuePayload>(endpoint, { method: 'PATCH', body: patch })
+  }
+
+  /**
+   * Post one comment on an issue (or a PR: the REST endpoint is shared).
+   *
+   * The body is sent verbatim. The caller is responsible for what it puts
+   * there; the extension only bounds the length it will transmit.
+   */
+  async createComment(
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    body: string,
+  ): Promise<GitHubCommentPayload> {
+    const endpoint = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${issueNumber}/comments`
+    return await this.request<GitHubCommentPayload>(endpoint, { method: 'POST', body: { body } })
   }
 
   /** Replace all labels on an issue. */
