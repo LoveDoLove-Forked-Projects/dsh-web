@@ -4,8 +4,6 @@
 export const zh = {
   'entry.label': '远程访问',
   'mobile.whale.open': '打开侧边栏',
-  'mobile.composer.pickModel': '选择模型',
-  'mobile.composer.pickEffort': '选择推理等级',
   'title': '远程访问',
   'subtitle': '通过手机或另一台电脑配对，远程使用同一份 Web 界面（官方界面 + 移动端适配）',
   'card.title': '设备配对',
@@ -135,8 +133,6 @@ export type SettingsCardKey = RemoteKey
 export const en = {
   'entry.label': 'Remote access',
   'mobile.whale.open': 'Open sidebar',
-  'mobile.composer.pickModel': 'Pick model',
-  'mobile.composer.pickEffort': 'Pick reasoning effort',
   'title': 'Remote access',
   'subtitle': 'Pair a phone or another computer to share the same Web GUI (official UI + mobile adaptation)',
   'card.title': 'Pair a device',

@@ -24904,8 +24904,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		const zh$7 = {
 			"entry.label": "远程访问",
 			"mobile.whale.open": "打开侧边栏",
-			"mobile.composer.pickModel": "选择模型",
-			"mobile.composer.pickEffort": "选择推理等级",
 			"title": "远程访问",
 			"subtitle": "通过手机或另一台电脑配对，远程使用同一份 Web 界面（官方界面 + 移动端适配）",
 			"card.title": "设备配对",
@@ -25026,8 +25024,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		const en$7 = {
 			"entry.label": "Remote access",
 			"mobile.whale.open": "Open sidebar",
-			"mobile.composer.pickModel": "Pick model",
-			"mobile.composer.pickEffort": "Pick reasoning effort",
 			"title": "Remote access",
 			"subtitle": "Pair a phone or another computer to share the same Web GUI (official UI + mobile adaptation)",
 			"card.title": "Pair a device",
@@ -25850,12 +25846,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		const STYLE_SELECTOR = `style[data-plugin-css="${ADAPT_CSS_ID}"]`;
 		/** Whale button id. */
 		const WHALE_ID = "dshRemoteWhale";
-		/** Compact picker: synthesized model button id. */
-		const MODEL_BTN_ID = "dshRemoteModelPick";
-		/** Compact picker: synthesized effort button id. */
-		const EFFORT_BTN_ID = "dshRemoteEffortPick";
-		/** Body class while the compact picker buttons are wired. */
-		const COMPACT_CLASS = "dsh-remote-compact-picker";
 		/** Body class while the header actions are seated in the tabs row. */
 		const HEADER_SEATED_CLASS = "dsh-remote-header-seated";
 		/**
@@ -25864,16 +25854,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* reserving the space with padding.
 		*/
 		const HEADER_RESERVE_VAR = "--dsh-remote-header-actions-reserve";
-		/** Locale-dependent fast path for the official picker cells (zh/en). */
-		const PICKER_CELL_PATTERN = {
-			model: /模型|Model/,
-			effort: /推理等级|Reasoning|Effort/i
-		};
-		/** Position of each drill cell among the sheet's chevron cells. */
-		const DRILL_INDEX = {
-			model: 0,
-			effort: 1
-		};
 		/**
 		* The official application frame. The layout column classes are the anchor:
 		* `_frame` is shared by unrelated official components (the chat turn rail,
@@ -25949,12 +25929,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"[class$=\"_composerSeat\"]{transform:none !important}",
 			"[class$=\"_composerSeat\"] [class$=\"_menu\"]{position:fixed !important;left:8px !important;right:8px !important;top:auto !important;bottom:calc(8px + env(safe-area-inset-bottom)) !important;width:auto !important;max-width:none !important;max-height:70dvh !important;overflow-y:auto !important;z-index:2147482000}",
 			"[class$=\"_composerSeat\"] [class$=\"_menu\"] [class$=\"_cell\"]{height:44px;min-height:44px;font-size:13px}",
-			`body.${COMPACT_CLASS} [class$="_composerSeat"] [class$="_trailing"] [class$="_trigger"]:has([class$="_triggerEffort"]){display:none}`,
-			`body.${COMPACT_CLASS} [class$="_composerSeat"] [class$="_trailing"]{flex-basis:auto;position:static;min-height:0;padding:0;width:0}`,
-			`body.${COMPACT_CLASS} [class$="_composerSeat"] [class$="_trailing"] > [class$="_root"]:has([class$="_track"]){right:44px}`,
-			`#${MODEL_BTN_ID},#${EFFORT_BTN_ID}{width:26px;height:32px;min-width:26px;padding:0;border-radius:9px;background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;margin-left:4px}`,
-			`#${MODEL_BTN_ID} svg,#${EFFORT_BTN_ID} svg{width:16px;height:16px;display:block}`,
-			`#${MODEL_BTN_ID}:active,#${EFFORT_BTN_ID}:active{opacity:.7}`,
 			"[class$=\"_composerSeat\"] [data-slot=\"conversation.composer.dock\"] [class$=\"_root\"]{font-size:10px;white-space:normal;word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left;line-height:13px;letter-spacing:-0.2px;padding-left:0;padding-right:0}",
 			"[class$=\"_scrollBody\"] [class$=\"_root\"]{font-size:13px}",
 			"[class*=\"_bubble\"][role=\"tooltip\"]{display:none}",
@@ -25981,10 +25955,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_navLabel"]{font-size:13px}`,
 			`body.${ACTIVE_CLASS} [class$="_overlay"] [class$="_panel"] [class$="_content"]{flex:1;min-height:0}`
 		];
-		/** Cube glyph for the compact model button (a plain box outline). */
-		const CUBE_ICON = "<path d=\"M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z\"/><path d=\"m3.3 7 8.7 5 8.7-5\"/><path d=\"M12 22V12\"/>";
-		/** Level glyph for the compact effort button (three rising bars). */
-		const LEVELS_ICON = "<path d=\"M4 6h16\"/><path d=\"M7 12h10\"/><path d=\"M10 18h4\"/>";
 		/** The DeepSeek fish glyph (the official brand mark path). */
 		const FISH_PATH = "M22.9168 1.43018C22.6713 1.31018 22.5658 1.53918 22.4223 1.65519C22.3733 1.69269 22.3318 1.74169 22.2903 1.78669C21.9317 2.1697 21.5127 2.42121 20.9657 2.39121C20.1657 2.34621 19.4827 2.59771 18.8787 3.20973C18.7502 2.45521 18.3236 2.0047 17.6746 1.71569C17.3351 1.56568 16.9916 1.41518 16.7536 1.08867C16.5876 0.856163 16.5421 0.597155 16.4591 0.341647C16.4061 0.187643 16.3536 0.0301382 16.1761 0.00363739C15.9836 -0.0263635 15.9081 0.135141 15.8326 0.270145C15.5306 0.822162 15.4136 1.43018 15.4251 2.0462C15.4516 3.43174 16.0366 4.53527 17.1991 5.3203C17.3311 5.4103 17.3651 5.5003 17.3236 5.63181C17.2441 5.90231 17.1501 6.16482 17.0671 6.43533C17.0141 6.60784 16.9351 6.64584 16.7501 6.57033C16.1121 6.30383 15.5611 5.90931 15.074 5.4328C14.2475 4.63328 13.5 3.75075 12.568 3.05973C12.349 2.89822 12.13 2.74822 11.9034 2.60522C10.9524 1.68169 12.028 0.923165 12.277 0.833162C12.5375 0.739159 12.3675 0.41615 11.5259 0.42015C10.6844 0.42365 9.91439 0.705658 8.93286 1.08117C8.78935 1.13767 8.63835 1.17867 8.48384 1.21267C7.59332 1.04367 6.66829 1.00617 5.70226 1.11517C3.88321 1.31768 2.43016 2.1777 1.36213 3.64575C0.0790928 5.4103 -0.222916 7.41536 0.146595 9.50642C0.535106 11.7105 1.66014 13.535 3.38869 14.9616C5.18125 16.4406 7.24581 17.1657 9.60138 17.0266C11.0319 16.9441 12.6245 16.7526 14.421 15.2321C14.874 15.4576 15.3496 15.5476 16.1381 15.6151C16.7456 15.6716 17.3306 15.5851 17.7836 15.4911C18.4931 15.3411 18.4441 14.6841 18.1876 14.5636C16.1081 13.595 16.5646 13.9891 16.1496 13.67C17.2061 12.42 18.8202 10.1979 19.3182 7.17235C19.3672 6.83834 19.4297 6.36783 19.4222 6.09732C19.4182 5.93231 19.4562 5.86831 19.6447 5.84931C20.1657 5.78931 20.6712 5.64681 21.1357 5.3913C22.4833 4.65528 23.0268 3.44624 23.1548 1.9972C23.1738 1.77569 23.1508 1.54668 22.9168 1.43018Z";
 		/**
@@ -26069,7 +26039,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				active = false;
 				unseatHeaderActions();
 				restoreRowDrag();
-				removeCompactPicker();
 				document.body.classList.remove(ACTIVE_CLASS);
 				document.body.classList.remove(RAIL_HIDDEN_CLASS);
 				document.querySelector(`style[data-plugin-css="${ADAPT_CSS_ID}"]`)?.remove();
@@ -26127,79 +26096,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					window.clearInterval(whaleTimer);
 					whaleTimer = null;
 				}
-			}
-			/**
-			* Compact picker (v79): a phone row cannot fit the desktop text triggers,
-			* so the model/effort entries become two icon buttons in the trailing
-			* row. Both forward to the official picker trigger (its menu renders as
-			* the bottom sheet) and then drill straight into the asked cell — model
-			* list or effort list — so one tap lands on the list, matching the
-			* cube-model / brain-effort mapping. The official context ring next to
-			* the send button keeps its own semantics untouched.
-			*/
-			function removeCompactPicker() {
-				document.body.classList.remove(COMPACT_CLASS);
-				document.getElementById(MODEL_BTN_ID)?.remove();
-				document.getElementById(EFFORT_BTN_ID)?.remove();
-			}
-			function drillIntoPicker(kind) {
-				const trigger = document.querySelector("[class$=\"_composerSeat\"] [class$=\"_trailing\"] [class$=\"_trigger\"]:has([class$=\"_triggerEffort\"])");
-				if (trigger === null) return;
-				trigger.click();
-				let tries = 0;
-				const tapCell = () => {
-					tries += 1;
-					const cells = Array.from(document.querySelectorAll("[class$=\"_composerSeat\"] [class$=\"_menu\"] [class$=\"_cell\"]"));
-					const byLabel = cells.find((c) => PICKER_CELL_PATTERN[kind].test(c.textContent ?? ""));
-					const drillable = cells.filter((c) => c.querySelector("[class*=\"_cellChevron\"], [class*=\"_chevron\"]"));
-					const cell = byLabel ?? drillable[DRILL_INDEX[kind]];
-					if (cell !== void 0) {
-						cell.click();
-						return;
-					}
-					if (tries < 8) window.setTimeout(tapCell, 150);
-				};
-				window.setTimeout(tapCell, 150);
-			}
-			function makeCompactButton(id, title, icon, kind) {
-				const btn = document.createElement("button");
-				btn.id = id;
-				btn.type = "button";
-				btn.dataset.dshPlugin = "remote-web-ui";
-				btn.title = title;
-				btn.setAttribute("aria-label", title);
-				btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
-				btn.addEventListener("click", () => {
-					drillIntoPicker(kind);
-				});
-				return btn;
-			}
-			function syncCompactPicker() {
-				if (!active) return;
-				const tools = nodeOf("[class$=\"_composerSeat\"] [class$=\"_tools\"]");
-				const trigger = tools?.parentElement?.querySelector("[class$=\"_triggerEffort\"]")?.parentElement;
-				if (tools === null || trigger === null) {
-					removeCompactPicker();
-					return;
-				}
-				if (document.getElementById(MODEL_BTN_ID) === null) tools.appendChild(makeCompactButton(MODEL_BTN_ID, surfaceText("mobile.composer.pickModel", "Pick model"), CUBE_ICON, "model"));
-				if (document.getElementById(EFFORT_BTN_ID) === null) tools.appendChild(makeCompactButton(EFFORT_BTN_ID, surfaceText("mobile.composer.pickEffort", "Pick reasoning effort"), LEVELS_ICON, "effort"));
-				for (const [id, key, fallback] of [[
-					MODEL_BTN_ID,
-					"mobile.composer.pickModel",
-					"Pick model"
-				], [
-					EFFORT_BTN_ID,
-					"mobile.composer.pickEffort",
-					"Pick reasoning effort"
-				]]) {
-					const btn = document.getElementById(id);
-					if (btn === null) continue;
-					const label = surfaceText(key, fallback);
-					btn.title = label;
-					btn.setAttribute("aria-label", label);
-				}
-				document.body.classList.add(COMPACT_CLASS);
 			}
 			/**
 			* The official sidebar toggle in the logo row. The row's own `_toggle` class
@@ -26490,7 +26386,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				disableRowDrag();
 				seatHeaderActions();
 				alignActionsText();
-				syncCompactPicker();
 			}
 			function seatHeaderActions() {
 				if (!active) return;

@@ -50,8 +50,6 @@ export const ru: Record<string, string> = {
   'lan.pendingRestart': 'Изменение привязки вступит в силу после перезапуска dsh web.',
   'lan.untouched': 'Переключатель ещё не использовался: патч профиля будет записан только после первого включения.',
   'lan.urls': 'Адреса локальной сети: {urls}',
-  'mobile.composer.pickEffort': 'Выберите уровень рассуждений',
-  'mobile.composer.pickModel': 'Выберите модель',
   'mobile.whale.open': 'Открыть боковую панель',
   'pair.dockerHint': 'В среде Docker или обратного прокси скопируйте этот токен для прямого ввода на устройстве.',
   'pair.expired': 'Срок действия QR-кода истёк — обновите его',

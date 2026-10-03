@@ -318,11 +318,12 @@ describe('startMobileAdapt', () => {
     // portal layer hosts the settings modal, which must stay reachable.
     expect(css).toContain('[class$="_overlayLayer"] [class$="_workbench"]{display:none !important}')
     expect(css).not.toContain('[class$="_overlayLayer"]{display:none')
-    // The compact picker: icon entries for model/effort inline in the tools
-    // row (parallel to the permission trigger); the trailing line collapses.
-    expect(css).toContain('body.dsh-remote-compact-picker [class$="_composerSeat"] [class$="_trailing"] [class$="_trigger"]')
-    expect(css).toContain('body.dsh-remote-compact-picker [class$="_composerSeat"] [class$="_trailing"]{flex-basis:auto;position:static;min-height:0;padding:0;width:0}')
-    expect(css).toContain('#dshRemoteModelPick,#dshRemoteEffortPick{width:26px;height:32px')
+    // The v79 compact picker is removed: the portrait composer keeps the
+    // official text trigger, so no synthesized button ids and no
+    // compact-picker body class may reappear in the sheet.
+    expect(css).not.toContain('dsh-remote-compact-picker')
+    expect(css).not.toContain('dshRemoteModelPick')
+    expect(css).not.toContain('dshRemoteEffortPick')
     // The dsh-LAN _body gap compaction must stay out: it clips message text.
     expect(css).not.toContain('_body"]{gap:6px}')
   })
@@ -552,7 +553,7 @@ describe('startMobileAdapt', () => {
     expect(document.documentElement.style.getPropertyValue('--dsh-remote-header-actions-reserve')).toBe('')
   })
 
-  it('drills into the picker sheet by structure when the cell labels are localized', async () => {
+  it('injects no compact picker buttons into the composer tools row', async () => {
     vi.useFakeTimers()
     try {
       media.portrait = true
@@ -560,45 +561,24 @@ describe('startMobileAdapt', () => {
       setWidth(390)
       const start = await freshStart()
       start()
+      // Given a composer seat whose trailing trigger the removed compact picker
+      // used to wire against, when the sync tick runs, then the tools row stays
+      // free of the synthesized model/effort icon buttons and the body carries
+      // no compact-picker gate.
       const seat = document.createElement('div')
       seat.className = 'app_composerSeat'
       const tools = document.createElement('div')
       tools.className = 'x_tools'
       const trailing = document.createElement('div')
       trailing.className = 'x_trailing'
-      // The official trigger carries the `_trigger` class and wraps the
-      // `_triggerEffort` marker (the layer forwards to it, then drills).
       trailing.innerHTML = '<div class="x_trigger"><div class="x_triggerEffort"></div></div>'
       seat.append(tools, trailing)
       document.body.appendChild(seat)
-      await vi.advanceTimersByTimeAsync(600)
-      const modelBtn = document.getElementById('dshRemoteModelPick')
-      const effortBtn = document.getElementById('dshRemoteEffortPick')
-      expect(modelBtn).not.toBeNull()
-      expect(effortBtn).not.toBeNull()
-      // A localized (ru) sheet: no zh/en label matches, so the chevron-cell
-      // order is the anchor — model first, effort second.
-      const menu = document.createElement('div')
-      menu.className = 'x_menu'
-      const clicks: number[] = []
-      const cells = ['Модель', 'Уровень рассуждений'].map((label, index) => {
-        const cell = document.createElement('button')
-        cell.className = 'x_cell'
-        cell.textContent = label
-        const chevron = document.createElement('svg')
-        chevron.setAttribute('class', 'x_cellChevron')
-        cell.appendChild(chevron)
-        cell.addEventListener('click', () => { clicks.push(index) })
-        menu.appendChild(cell)
-        return cell
-      })
-      seat.appendChild(menu)
-      modelBtn!.click()
-      await vi.advanceTimersByTimeAsync(400)
-      expect(clicks).toEqual([0])
-      effortBtn!.click()
-      await vi.advanceTimersByTimeAsync(400)
-      expect(clicks).toEqual([0, 1])
+      await vi.advanceTimersByTimeAsync(1200)
+      expect(document.getElementById('dshRemoteModelPick')).toBeNull()
+      expect(document.getElementById('dshRemoteEffortPick')).toBeNull()
+      expect(tools.querySelectorAll('button')).toHaveLength(0)
+      expect(document.body.classList.contains('dsh-remote-compact-picker')).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -620,26 +600,11 @@ describe('startMobileAdapt', () => {
       // Wire the seat the way the plugin apply does once ctx.locale is bound.
       const labels: Record<string, string> = {
         'mobile.whale.open': 'Открыть боковую панель',
-        'mobile.composer.pickModel': 'Выбрать модель',
-        'mobile.composer.pickEffort': 'Выбрать уровень рассуждений',
       }
       adapt!.translate = (key) => labels[key] ?? key
-      // A composer seat so the compact picker mounts on the next tick.
-      const seat = document.createElement('div')
-      seat.className = 'app_composerSeat'
-      const tools = document.createElement('div')
-      tools.className = 'x_tools'
-      const trailing = document.createElement('div')
-      trailing.className = 'x_trailing'
-      trailing.innerHTML = '<div class="x_triggerEffort"></div>'
-      seat.appendChild(tools)
-      seat.appendChild(trailing)
-      document.body.appendChild(seat)
       await vi.advanceTimersByTimeAsync(600)
       expect(whale?.title).toBe(labels['mobile.whale.open'])
       expect(whale?.getAttribute('aria-label')).toBe(labels['mobile.whale.open'])
-      expect(document.getElementById('dshRemoteModelPick')?.title).toBe(labels['mobile.composer.pickModel'])
-      expect(document.getElementById('dshRemoteEffortPick')?.title).toBe(labels['mobile.composer.pickEffort'])
     } finally {
       vi.useRealTimers()
     }
