@@ -53508,7 +53508,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"caps.error.routeExists": "该提供方已存在新配置，无法恢复存档；请先移除现有配置再启用。",
 			"caps.error.partialEnable": "已启用，但清理存档失败：{error}",
 			"caps.error.baseProfile": "该提供方在组合层也声明了配置，禁用无法让它下线，因此不提供此操作。",
-			"caps.error.unavailable": "无法切换：未找到插件的存档设置项。"
+			"caps.error.unavailable": "无法切换：未找到插件的存档设置项。",
+			"caps.seat.conflict": "「模型能力」面板未挂载：模型卡片的扩展插槽已被插件 {plugin} 占用，同一插槽只渲染一个扩展区。该插件卸载后本面板自动恢复。",
+			"caps.seat.unknownPlugin": "其他插件"
 		};
 		/** English copy (full key parity with zh). */
 		const en = {
@@ -53557,7 +53559,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"caps.error.routeExists": "The provider already has a newer configuration; the archive cannot be restored. Remove the current configuration first, then enable.",
 			"caps.error.partialEnable": "Enabled, but clearing the archive failed: {error}",
 			"caps.error.baseProfile": "The composition layer also declares this provider, so disabling cannot take it down; the action is not offered.",
-			"caps.error.unavailable": "Cannot toggle: the plugin archive settings entry is not served."
+			"caps.error.unavailable": "Cannot toggle: the plugin archive settings entry is not served.",
+			"caps.seat.conflict": "The Model capabilities panel is not mounted: another plugin ({plugin}) holds the provider-card extension seat, which renders one extension area per provider card. The panel returns as soon as that plugin is unloaded.",
+			"caps.seat.unknownPlugin": "another plugin"
 		};
 		/**
 		* Active dictionary, picked by the document language at call time (the same
@@ -54233,11 +54237,12 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		}
 		/**
 		* Render the disabled-provider archive.
-		* @param props - the injected settings face and refresh bus.
-		* @returns the footer area, or nothing while the archive is empty.
+		* @param props - the injected settings face, refresh bus and card-seat claim status.
+		* @returns the footer area, the card-collision notice on its own, or nothing while neither applies.
 		*/
 		function DisabledProvidersFooter(props) {
-			const { settings, refresh } = props;
+			const { settings, refresh, cardSeat } = props;
+			const claim = (0, react.useSyncExternalStore)(cardSeat.subscribe, cardSeat.getSnapshot);
 			const [stash, setStash] = (0, react.useState)({});
 			const [llmView, setLlmView] = (0, react.useState)(void 0);
 			const [known, setKnown] = (0, react.useState)(false);
@@ -54267,7 +54272,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				settings
 			]);
 			const routes = Object.keys(stash).filter((route) => !routeLive(llmView, route)).sort((a, b) => a.localeCompare(b));
-			if (!known || routes.length === 0) return null;
+			const archived = known && routes.length > 0;
+			if (!archived && claim.kind !== "conflict") return null;
 			const enable = async (route) => {
 				if (busyRoute !== void 0) return;
 				setBusyRoute(route);
@@ -54297,46 +54303,53 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				"data-dsh-plugin": "model-capabilities",
 				"data-dsh-part": "disabled-footer",
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: capabilities_module_css_default.archiveTitle,
-						children: t("caps.footer.title")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
-						className: capabilities_module_css_default.archiveRows,
-						children: routes.map((route) => {
-							const entry = stash[route];
-							const name = entry.displayName !== void 0 && entry.displayName.length > 0 ? entry.displayName : route;
-							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-								className: capabilities_module_css_default.archiveRow,
-								"data-dsh-part": "disabled-row",
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: capabilities_module_css_default.modelId,
-										children: name
-									}),
-									name !== route ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: capabilities_module_css_default.modelName,
-										children: route
-									}) : null,
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: capabilities_module_css_default.spacer }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: capabilities_module_css_default.ghost,
-										"data-dsh-part": "enable",
-										disabled: busyRoute !== void 0,
-										onClick: () => {
-											enable(route);
-										},
-										children: busyRoute === route ? t("caps.busy.enabling") : t("caps.action.enable")
-									})
-								]
-							}, route);
+					claim.kind === "conflict" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: capabilities_module_css_default.failed,
+						role: "alert",
+						children: t("caps.seat.conflict", { plugin: claim.occupant ?? t("caps.seat.unknownPlugin") })
+					}) : null,
+					archived ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: capabilities_module_css_default.archiveTitle,
+							children: t("caps.footer.title")
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+							className: capabilities_module_css_default.archiveRows,
+							children: routes.map((route) => {
+								const entry = stash[route];
+								const name = entry.displayName !== void 0 && entry.displayName.length > 0 ? entry.displayName : route;
+								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+									className: capabilities_module_css_default.archiveRow,
+									"data-dsh-part": "disabled-row",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: capabilities_module_css_default.modelId,
+											children: name
+										}),
+										name !== route ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: capabilities_module_css_default.modelName,
+											children: route
+										}) : null,
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: capabilities_module_css_default.spacer }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: capabilities_module_css_default.ghost,
+											"data-dsh-part": "enable",
+											disabled: busyRoute !== void 0,
+											onClick: () => {
+												enable(route);
+											},
+											children: busyRoute === route ? t("caps.busy.enabling") : t("caps.action.enable")
+										})
+									]
+								}, route);
+							})
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: capabilities_module_css_default.hint,
+							children: t("caps.footer.hint")
 						})
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: capabilities_module_css_default.hint,
-						children: t("caps.footer.hint")
-					}),
+					] }) : null,
 					failure !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: capabilities_module_css_default.failed,
 						role: "alert",
@@ -54344,6 +54357,155 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					}) : null
 				]
 			});
+		}
+		//#endregion
+		//#region ../dsh-model-capabilities/src/client/provider-card-seat.ts
+		/**
+		* The Models page's provider-card seat claim for the pi-ai adapter family.
+		*
+		* `settings.models.provider-card` is a KEYED slot: the Models page dispatches
+		* one extension area per provider settings namespace, and a cell renders
+		* exactly one entry. The core registry refuses a second registration into an
+		* occupied cell (same key, same priority) by throwing — the right default, but
+		* it makes the loser of a collision silently invisible unless it reports the
+		* refusal. Two unrelated plugins that both extend pi-ai provider cards (this
+		* one and a third-party auth plugin, for example) therefore cannot both
+		* render, and the reporter must be able to see that.
+		*
+		* This module owns that outcome so it is never a silent blank:
+		*
+		* - a refused claim is classified and reported (console plus a status the
+		*   Models page renders), naming the registrant that holds the cell;
+		* - the claim is retried on every change to that slot, so disabling the
+		*   occupying plugin restores this panel without a DSH restart;
+		* - the retry subscription lives inside the injected declaration's lifetime,
+		*   so fiber unload and declaration collapse both release it.
+		*
+		* The panel deliberately keeps the default priority rather than picking a
+		* distinct one: entries sharing a cell at DIFFERENT priorities coexist on the
+		* ledger but only the lowest renders, which would replace a loud collision
+		* with a silent shadowing of the other plugin.
+		*
+		* The shared tree has no client-SDK dependency, so this module reads its
+		* context through the structural shape below; callers pass the plugin's own
+		* `ctx`.
+		* @module @linxin666/dsh-client-ui-model-capabilities/client/provider-card-seat
+		*/
+		/** The Models page seat this plugin fills for pi-ai provider cards. */
+		const PROVIDER_CARD_SEAT = "settings.models.provider-card";
+		/** The adapter-family settings namespace whose cards carry the panel. */
+		const PI_AI_PROVIDER_CARD_KEY = "llm-pi-ai";
+		/**
+		* The registry's diagnostics label of whoever holds the pi-ai cell.
+		*
+		* Best-effort by design: a registry that refuses the inspection still lets the
+		* refusal be reported, just without the occupant's name.
+		* @param ctx - client context owning the registry.
+		* @returns the occupant's label, or undefined when unknown or absent.
+		*/
+		function providerCardOccupant(ctx) {
+			let entries;
+			try {
+				entries = ctx.slots.entries(PROVIDER_CARD_SEAT);
+			} catch {
+				return;
+			}
+			for (const entry of entries) {
+				const view = entry;
+				if (view?.options?.key === "llm-pi-ai") return view.registrant;
+			}
+		}
+		/**
+		* Claim the pi-ai provider-card cell: report a refusal instead of swallowing
+		* it, and take the cell back as soon as it is released.
+		* @param ctx - client context (its slot registry owns the cell).
+		* @param seat - the panel contribution.
+		* @returns observable claim status for a user-visible notice.
+		*/
+		function claimProviderCardSeat(ctx, seat) {
+			let status = { kind: "unclaimed" };
+			const listeners = /* @__PURE__ */ new Set();
+			/** Publish a status change to every subscriber (stable reference between them). */
+			const publish = (next) => {
+				if (next.kind === status.kind && (next.kind !== "conflict" || next.occupant === (status.kind === "conflict" ? status.occupant : void 0))) return;
+				status = next;
+				for (const listener of [...listeners]) listener();
+			};
+			/** Report a refused claim instead of leaving the panel silently missing. */
+			const reportRefusal = (occupant, error) => {
+				const holder = occupant === void 0 ? "another plugin" : `"${occupant}"`;
+				try {
+					console.error(`[dsh-model-capabilities] provider-card slot "${PROVIDER_CARD_SEAT}" key "${PI_AI_PROVIDER_CARD_KEY}" is held by ${holder}, so the model capabilities panel is not rendered; disable that plugin to restore it`, error);
+				} catch {}
+			};
+			/** One attempt at the cell; its disposer, or undefined when refused. */
+			const tryClaim = () => {
+				try {
+					const unregister = ctx.slots.register({
+						name: PROVIDER_CARD_SEAT,
+						key: PI_AI_PROVIDER_CARD_KEY,
+						...seat.inject === void 0 ? {} : { inject: seat.inject }
+					}, seat.component);
+					publish({ kind: "claimed" });
+					return () => {
+						unregister();
+						publish({ kind: "unclaimed" });
+					};
+				} catch (error) {
+					const occupant = providerCardOccupant(ctx);
+					reportRefusal(occupant, error);
+					publish({
+						kind: "conflict",
+						occupant
+					});
+					return;
+				}
+			};
+			/**
+			* Wait for the occupant to release the cell, then claim it. The registry
+			* notifies per mutation, so a claim that is still refused simply waits for
+			* the next change; nothing polls.
+			*
+			* The `claiming` latch is required, not defensive: the registry emits that
+			* notification synchronously from inside `register`, so without it the
+			* claim would re-enter itself while its own entry is being written and
+			* collide with the entry it is writing.
+			*/
+			const watchForReleasedCell = () => {
+				if (typeof ctx.slots.subscribe !== "function") return () => {};
+				let stopped = false;
+				let claiming = false;
+				let claimed;
+				let unsubscribe = () => {};
+				const claim = () => {
+					if (stopped || claiming || claimed !== void 0) return;
+					claiming = true;
+					const release = tryClaim();
+					claiming = false;
+					if (release === void 0) return;
+					claimed = release;
+					unsubscribe();
+				};
+				unsubscribe = ctx.slots.subscribe(PROVIDER_CARD_SEAT, claim);
+				return () => {
+					stopped = true;
+					unsubscribe();
+					claimed?.();
+					publish({ kind: "unclaimed" });
+				};
+			};
+			ctx.slots.inject(PROVIDER_CARD_SEAT, () => tryClaim() ?? watchForReleasedCell());
+			return {
+				subscribe(listener) {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				getSnapshot() {
+					return status;
+				}
+			};
 		}
 		//#endregion
 		//#region ../dsh-model-capabilities/src/client/settings-face.ts
@@ -54429,22 +54591,12 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					return () => {};
 				}
 			}, "dsh-model-capabilities: document events");
-			ctx.slots.inject("settings.models.provider-card", () => {
-				try {
-					const unregister = ctx.slots.register({
-						name: "settings.models.provider-card",
-						key: "llm-pi-ai",
-						inject: () => ({
-							settings,
-							refresh
-						})
-					}, CapabilitiesPanel);
-					return () => {
-						unregister();
-					};
-				} catch {
-					return () => {};
-				}
+			const cardSeat = claimProviderCardSeat(ctx, {
+				component: CapabilitiesPanel,
+				inject: () => ({
+					settings,
+					refresh
+				})
 			});
 			ctx.slots.inject("settings.models.footer", () => {
 				try {
@@ -54453,13 +54605,17 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						id: "ui-model-capabilities",
 						inject: () => ({
 							settings,
-							refresh
+							refresh,
+							cardSeat
 						})
 					}, DisabledProvidersFooter);
 					return () => {
 						unregister();
 					};
-				} catch {
+				} catch (error) {
+					try {
+						console.error("[dsh-model-capabilities] the Models page footer slot refused the disabled-provider listing", error);
+					} catch {}
 					return () => {};
 				}
 			});
