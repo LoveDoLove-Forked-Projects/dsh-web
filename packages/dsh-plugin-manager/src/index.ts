@@ -19,8 +19,13 @@ import { findDshBinary, CliGateway, type NativePluginManager } from './host/gate
 import { profileExists, resolveProfile, type LaunchedProfile } from './host/profile.ts'
 import { makeGatewayRoutes } from './host/routes.ts'
 
-/** Stable cordis plugin name (matches cordis.patch.yml insert id). */
-export const name = 'ui-plugin-manager'
+/**
+ * Stable cordis plugin name (matches this package's own cordis.patch.yml
+ * insert id). It must not repeat an id another bundle already claims: the
+ * loader keeps one entry per id, so a shared id would also give two host
+ * halves one cordis plugin name.
+ */
+export const name = 'ui-plugin-manager-update-check'
 
 /** Services the gateway needs — the web server seam. */
 export const inject = ['webServer']

@@ -13,6 +13,15 @@ packages/AGENTS.md 的全局/包级规则。
   `declare module` 重新声明（跨包禁止 value import，与家族卡片复用
   `plugins.bundle.config` 的做法一致）。宿主交付的 `PluginPageSubject`（`bundle` / `row` /
   `item`）是契约观察，不是 import。
+- **行 id 不与官方行重叠，`name` 保持恰好等于包名**：本包独立安装的行 id 是
+  `ui-plugin-manager-update-check`；官方 `@deepseek-ai/dsh-web-app` 的 `ui-plugin-manager`
+  归官方插件页（唯一注册 `sidebar.panellist` 的半区），两行必须并存——loader 同 id 后来者胜
+  且不报错，重叠时侧栏「插件」入口与整个插件管理页静默消失（#1794）。行的 `name` 必须恰好是
+  `@linxin666/dsh-client-ui-plugin-manager`：`dsh-client-modules` 只把浏览器半区挂在说明符等于
+  包名的那一行上，改成家族子路径只挂 host 半区。host 半区的 cordis 插件名（`src/index.ts`）与
+  行 id 同名，`LOCKED_ENTRY_IDS` 同时收录该独立行 id 与家族行 `web-ui-plugin-manager`；本包
+  不变量由 `tests/bundle-row-id.spec.ts` 固定。聚合侧的家族行 id 与子路径 `plugin-manager` 由聚合
+  清单的 `familyIds:` 映射钉住，不随本包独立行改名（见 dsh-web-all/AGENTS.md）。
 - **列表级工具条只能插进官方页面的 chrome**：官方「插件」页不为「已安装」标题声明席位（它的
   扩展点是 `plugins.detail.*`、`plugins.item`、`plugins.bundle.config`、`plugins.row.config`
   与 `plugins.bundle.activation`），因此工具条由 `plugin-toolbar-mount.tsx` 直接插进
