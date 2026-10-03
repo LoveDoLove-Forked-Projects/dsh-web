@@ -122,7 +122,7 @@ function judgeLlm(options: {
       })()
       yield { type: 'text-delta', index: 0, text }
       yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 1 } }
-      yield { type: 'finish', reason: 'stop' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
     })()
   })
 }
@@ -246,7 +246,7 @@ describe('goal acceptance gate', () => {
           : '<score_A> T </score_A>\n<score_B> ' + grade + ' </score_B>'
         return (async function * () {
           yield { type: 'text-delta', index: 0, text }
-          yield { type: 'finish', reason: 'stop' }
+          yield { type: 'finish', reason: { kind: 'stop' } }
         })()
       }),
       goal: goalDouble('active'),
@@ -361,7 +361,7 @@ describe('goal acceptance gate', () => {
         return (async function * () {
           await new Promise<void>(resolve => { resolveCall = resolve })
           yield { type: 'text-delta', index: 0, text: workInA ? '<score_A> A </score_A>\n<score_B> T </score_B>' : '<score_A> T </score_A>\n<score_B> A </score_B>' }
-          yield { type: 'finish', reason: 'stop' }
+          yield { type: 'finish', reason: { kind: 'stop' } }
         })()
       }),
       goal: goalDouble('active'),

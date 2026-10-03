@@ -83,6 +83,7 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   answer and an unresolvable judge route are recorded as `exception` attempts
   separately from quality verdicts, never consume the quality budget, are
   bounded, and never pass silently.
+- **Judge recovery.** Terminal events use the SDK `FinishReason.kind` object, including structured errors and cancellation; a failed or truncated stream never supplies a quality verdict, even if it contains score tags. Each criterion request has at most three attempts. Initial requests and retries use a fixed output cap of 16384 tokens without changing the frozen reasoning effort; empty, truncated, or malformed answers retry within that same cap. Authentication and cancellation stop immediately, while transient request failures retain bounded retries. Usage includes every billed attempt and propagates incomplete accounting. This handles reasoning models consuming the initial cap before visible scores without weakening the rubric or resetting the execution budget.
 - **Freeze.** `HostExecutionRunner.launch` reports when `/goal` was armed, and
   the service freezes the contract BEFORE the prompt is queued: the judge route
   resolved from the live settings against the host model catalog default

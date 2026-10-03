@@ -7,7 +7,7 @@
  * thresholds, budgets, caps) comes from `../core/verification.ts`, which mirrors
  * the installed dsh-llm-verifier 0.8.4 default final acceptance.
  */
-import { createUserMessage, type LlmRuntime } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type FinishReason, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { openOneShotStream } from './llm-dispatch.ts'
 import { createHash } from 'node:crypto'
 import {
@@ -43,7 +43,7 @@ export const VERIFICATION_MAX_FINDINGS_PER_CALL = 3
 export const VERIFICATION_MAX_FINDINGS = 6
 /** One judge request's ceiling and its retry budget. */
 export const VERIFICATION_CALL_TIMEOUT_MS = 120_000
-export const VERIFICATION_MAX_TOKENS = 4_096
+export const VERIFICATION_MAX_TOKENS = 16_384
 export const VERIFICATION_TEMPERATURE = 0.2
 export const VERIFICATION_REQUEST_ATTEMPTS = 3
 
@@ -320,7 +320,7 @@ async function judgeOnce(
       )
       let text = ''
       usage.calls += 1
-      let finishReason: string | undefined
+      let finishReason: FinishReason | undefined
       for await (const chunk of stream) {
         const row = chunk as unknown as Record<string, unknown>
         if (row.type === 'text-delta' && typeof row.text === 'string') text += row.text
@@ -330,28 +330,41 @@ async function judgeOnce(
           usage.outputTokens += typeof reported.outputTokens === 'number' ? reported.outputTokens : 0
           usage.reasoningTokens += typeof reported.reasoningTokens === 'number' ? reported.reasoningTokens : 0
         } else if (row.type === 'finish') {
-          finishReason = typeof row.reason === 'string' ? row.reason : undefined
+          finishReason = chunk.type === 'finish' ? chunk.reason : undefined
         }
       }
-      if (finishReason === 'max-tokens') {
-        throw new VerificationError('parse', 'the judge answer hit the output ceiling and carries no usable verdict', usage)
+      if (signal.aborted) throw new VerificationError('aborted', 'the acceptance was cancelled', usage)
+      if (timeout.signal.aborted) throw new VerificationError('timeout', 'the judge request timed out', usage)
+      if (finishReason?.kind === 'error' || finishReason?.kind === 'aborted') {
+        const failure = finishReason.failure
+        const message = redact([failure.code, failure.status, failure.message].filter(value => value !== undefined).join(': '), VERIFICATION_REDACT_PATTERNS).slice(0, 2_000)
+        const kind = finishReason.kind === 'aborted' ? 'aborted'
+          : failure.status === 401 || failure.status === 403 ? 'auth' : 'request'
+        throw new VerificationError(kind, message, usage)
       }
-      if (text.trim() === '') throw new VerificationError('parse', 'the judge returned an empty answer', usage)
+      if (finishReason?.kind === 'max-tokens') {
+        throw new VerificationError('parse', 'the judge answer hit the output ceiling (' + VERIFICATION_MAX_TOKENS + ' tokens) and carries no usable verdict', usage)
+      }
+      if (text.trim() === '') {
+        throw new VerificationError('parse', 'the judge returned an empty answer', usage)
+      }
+      try {
+        extractScore(text, 'score_A')
+        extractScore(text, 'score_B')
+      } catch {
+        throw new VerificationError('parse', 'the judge answer did not contain valid score_A and score_B A-T scores', usage)
+      }
       return { text, usage }
     } catch (error) {
       lastError = error
-      if (error instanceof VerificationError && (error.kind === 'parse' || error.kind === 'aborted')) {
-        if (error.kind === 'aborted') throw error
-        // A truncated or unusable answer was already billed; one retry is worth
-        // it, and the end of the budget is reported as an anomaly, never as a
-        // quality verdict.
-      }
+      if (error instanceof VerificationError && (error.kind === 'aborted' || error.kind === 'auth')) throw error
       if (signal.aborted) throw new VerificationError('aborted', 'the acceptance was cancelled', usage)
       if (timeout.signal.aborted) {
         lastError = new VerificationError('timeout', 'the judge request timed out after ' + Math.round(VERIFICATION_CALL_TIMEOUT_MS / 1000) + 's', usage)
       }
-      if (attempt + 1 >= VERIFICATION_REQUEST_ATTEMPTS || !retryable(lastError)) break
-      usage.usageIncomplete = true
+      const parseFailure = lastError instanceof VerificationError && lastError.kind === 'parse'
+      if (attempt + 1 >= VERIFICATION_REQUEST_ATTEMPTS || (!parseFailure && !retryable(lastError))) break
+      if (!parseFailure) usage.usageIncomplete = true
       await new Promise(resolve => { setTimeout(resolve, 500 * (attempt + 1)) })
     } finally {
       clearTimeout(timer)
@@ -416,6 +429,7 @@ export async function runAcceptance(input: {
         const answer = await judgeOnce(input.llm, input.route, prompt, input.signal)
         const scoreA = extractScore(answer.text, 'score_A')
         const scoreB = extractScore(answer.text, 'score_B')
+        if (answer.usage.usageIncomplete === true) usage.usageIncomplete = true
         usage.calls += answer.usage.calls
         usage.inputTokens += answer.usage.inputTokens
         usage.outputTokens += answer.usage.outputTokens
