@@ -2,7 +2,7 @@
 /**
  * The task-board settings card as an operator meets it: the card's own topics
  * are nested disclosure cards (the board and its runtime behavior, task
- * acceptance) beside the provider seat the GitHub Issues integration
+ * acceptance) beside the provider seat an external integration
  * contributes into, and every one of them starts collapsed.
  */
 import { act } from 'react'
@@ -62,7 +62,7 @@ function cardState(): TaskBoardSettingsCardState {
   }
 }
 
-/** The label the stand-in provider card carries (the real one is the GitHub Issues section). */
+/** The label the stand-in provider card carries (the real one is a provider section). */
 const PROVIDER_CARD_LABEL = 'Provider section'
 
 /** Render-ready props for the card: a fixed snapshot, an inert form, and optionally the provider seat. */

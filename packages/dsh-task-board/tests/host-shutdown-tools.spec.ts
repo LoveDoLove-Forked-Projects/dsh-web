@@ -174,10 +174,10 @@ describe('board teardown releasing the tool surface', () => {
   it('operator stopping dsh web releases every provider tool without asking the host to register anything', () => {
     // Given a running board carrying two providers' tools, all registered
     const live = mountBoard()
-    live.admit(provider('github', ['github_list', 'github_get']))
+    live.admit(provider('reports', ['reports_list', 'reports_get']))
     live.admit(provider('other', ['other_run']))
     const whileRunning = [...live.registered]
-    expect(whileRunning).toEqual(expect.arrayContaining(['github_list', 'github_get', 'other_run']))
+    expect(whileRunning).toEqual(expect.arrayContaining(['reports_list', 'reports_get', 'other_run']))
 
     // When the operator stops the process and the mount effect's disposer runs
     live.unload()
@@ -191,16 +191,16 @@ describe('board teardown releasing the tool surface', () => {
   it('operator who re-enables the board after a provider restart sees its tools registered again', () => {
     // Given a board that released a provider's tools on the way down
     const live = mountBoard()
-    live.admit(provider('github', ['github_list']))
+    live.admit(provider('reports', ['reports_list']))
     live.unload()
 
     // When the board is mounted again over the same runtime
     const restarted = mountBoard()
-    restarted.admit(provider('github', ['github_list']))
+    restarted.admit(provider('reports', ['reports_list']))
 
     // Then the tools register against the live fiber, so the teardown did not
     // leave the provider permanently unable to hold a tool
-    expect(restarted.registered).toContain('github_list')
+    expect(restarted.registered).toContain('reports_list')
     expect(restarted.refused).toEqual([])
     restarted.unload()
   })
@@ -221,7 +221,7 @@ describe('provider tool registration against a shutting-down host', () => {
         return () => {}
       },
     }))
-    registry.registerExtension(provider('github', ['github_list']))
+    registry.registerExtension(provider('reports', ['reports_list']))
     expect(reports).toEqual([])
 
     // When a rebind arrives after the host started unloading
@@ -250,11 +250,11 @@ describe('provider tool registration against a shutting-down host', () => {
     }))
 
     // When the provider starts and offers its tool
-    registry.registerExtension(provider('github', ['github_list']))
+    registry.registerExtension(provider('reports', ['reports_list']))
 
     // Then the refusal is reported, because it is not the host going away: every
     // line the board printed names this tool's registration, and there is one
-    const failures = reports.filter(report => report.message === '[dsh-task-board] extension "github" tool "github_list" registration failed')
+    const failures = reports.filter(report => report.message === '[dsh-task-board] extension "reports" tool "reports_list" registration failed')
     expect(reports).toEqual(failures)
     expect(failures.length).toBeGreaterThan(0)
     registry.dispose()

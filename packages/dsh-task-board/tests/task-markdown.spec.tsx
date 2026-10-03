@@ -5,7 +5,7 @@ import { TaskMarkdown, markdownToPlainText } from '../src/client/board/task-mark
 
 describe('Task Markdown presentation', () => {
   it('user reads headings, lists, emphasis, code and tables instead of delimiters', () => {
-    // Given a GitHub-style task description.
+    // Given a Markdown task description.
     const source = '## Heading\n\n**Strong** and *emphasis*\n\n- [x] Complete\n- [ ] Pending\n\n```ts\nconst value = 1\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |'
     // When rendered in task details.
     const html = renderToStaticMarkup(<TaskMarkdown source={source} />)

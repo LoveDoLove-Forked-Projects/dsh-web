@@ -111,7 +111,7 @@ describe('real cordis fiber shutdown', () => {
 
     // When a provider contributes three tools while the fiber is still live,
     // and the fiber is then disposed the way a Ctrl+C shutdown does
-    published[0]?.registerExtension?.(provider('github', ['github_list', 'github_get', 'github_refresh']))
+    published[0]?.registerExtension?.(provider('reports', ['reports_list', 'reports_get', 'reports_refresh']))
     const reported: string[] = []
     const originalError = console.error
     console.error = (...args: unknown[]) => { reported.push(args.map(value => String(value)).join(' ')) }
