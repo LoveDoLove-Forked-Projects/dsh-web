@@ -23,6 +23,10 @@ Status: implemented
    **部分被取代（#1744，2026-10-02）。** 拒绝 socket 对页面而言是对的，对外壳却是错的：桌面外壳已经通过 `__DSH_TRANSPORT__.streamBaseUrl` 公布可达的 Host authority 并改写其 WebSocket 握手，终端改为拨向那里，而不是在产品自家客户端上把操作者引向死路。`WEB_PAGE_PROTOCOLS` 仍用于判定页面，只是不再终结整个判断。见[终端改拨外壳自有的 Host](2026-10-02-ssh-terminal-dials-shell-owned-host.zh.md)。
 4. **命中面止于列表起点，而非舞台接缝（#1743）**：`orca-link` 宽屏 `::before` 的高度改为 `calc(var(--orca-stage, 300px) - 174px)`，使 `58 + (stage - 174) = stage - 116` 恰好落在 `nav` 自己的 `margin-top` 上；右下角标记随之移动。绘制的小人仍占满整个舞台，被裁短的只有命中面。
 5. **背景层要的是层叠上下文根，不是 z-index（#1745 A / #1746）**：皮肤给根元素上了不透明底色，宿主的 `backgroundMedia` 层（z-index: -2，append 到 body）因此不再向 canvas 传播，转而以「元素背景」身份绘制，排在负 z 图层之后——整层被压掉并非合成器问题。`body { isolation: isolate }` 让 body 成为层叠上下文根，底色退回第一步、`-2` 层回到第二步，同时该层仍位于立绘舞台（z-index 0）之下、正文面板之上；不改动 z-index，因为抬到 0 会盖住会话界面。此规则必须写在 `body` 上：skin-center 的 `/patches` 管线会给每条选择器前缀 `html[data-dsh-skin="<id>"] `，写 `:root` 会编译成永不匹配的选择器。
+
+   **推广为逐皮肤的通用要求（2026-10-03）。** 触发条件不是 maid-atelier 的画风，而是任何自带皮肤表给 body 上不透明底色的皮肤，因此该规则属于每一个声明了 `contributes.backgroundMedia` 的皮肤，而不是某一个皮肤：cyber-night 的 `skin.css` 带有 `body[data-ds-dark-theme] { background-color: #04060d }`，它的插画在 Windows 桌面端正是因此不可见，而网页版正常。maid-atelier 与 cyber-night 现在都带上这一对规则，各自在 dsh-skins 仓库有守护用例（`tests/maid-atelier-patches.spec.ts`、`tests/cyber-night-patches.spec.ts`），钉住声明本身、它们必须所在的层，以及 `/patches` 变换为它们生成的作用域选择器。该仓库中有 40 个皮肤声明了 `contributes.backgroundMedia`；其余 38 个是否也给自己的 body 上不透明底色、从而以同样方式压掉插画，尚未查清——对已发布样式表的扫描在 last-exile、porco-rosso、white-snake 中至少发现了不透明的 `body` 规则，但该条件既可由字面声明也可经 token 继承，所以这只是线索而非结论。
+
+   **Windows 的 frame 是第二个、彼此独立的障碍（#1763）。** 桌面外壳把 `--dsw-specific-sidebar-fill`（90% 不透明）画在整窗 frame 元素上。该 frame 自身就是层叠上下文，无论 body 怎么处理，它都排在所有负 z 后代之后绘制；单靠 `body { isolation: isolate }` 并不能让插画在那里出现。`[class*="_frame"] { background: transparent !important }` 把它清空；`_frame` 后缀既匹配外壳的 CSS-Module 哈希（如 `ZTP-Xa_frame`），又不像 `:root` 那样会被 `/patches` 前缀管线吃掉。两个皮肤现在都带上这一对。你补充建议的彻底方案（Windows 分支的 frame 底色改用 `--dsw-alias-bg-base` 而非 `--dsw-specific-sidebar-fill`）此处未采用：它要改的是本仓并不拥有的宿主 CSS，且会顺带一并解决 #1763 讨论中提到的「背景遮挡滑块方向反」。
 6. **收起宽度 0 是合法状态（#1745 B）**：`applySidebarWidth` 的 `width <= 0` 早退改为 `width < 0`。官方 Windows 桌面实现的 `collapsedWidth` 在 `data-windows-titlebar` 下就是 0（56 属于另一种形态），早退因此让 `--maid-sidebar-width` 与 `data-maid-sidebar-size` 冻结在上一个展开值。
 7. **标题栏装饰优先用官方稳定属性（#1745 C）**：`decorateTitlebarBrand` 先看 `html[data-windows-titlebar]` 并取 `.frame`，再回落到哈希类名查找。桌面版外壳不提供可匹配的类名，网页版两者都没有。
 
@@ -33,9 +37,11 @@ Status: implemented
 - 桌面客户端的 SSH 终端页会明确说明本页无法承载 WebSocket 并指向浏览器，而不是笼统的 `connection error`。
 - ORCA LINK 宽屏下插件列表的每一行都重新可点，新建会话的舞台命中区只覆盖真正的空白带。
 - maid-atelier 的宫殿背景在桌面端重新可见；侧栏收起态归位；桌面端标题栏品牌装饰改由官方属性锚定。
+- maid-atelier 与 cyber-night 现在都带上同一对声明，在 Windows 桌面宿主中保持插画可见。`[class*="_frame"]` 在网页宿主中无对应元素，因而是惰性的，网页版渲染不变。其他既声明了 `contributes.backgroundMedia` 又给 body 上不透明底色的皮肤仍需补上这一对，在补上之前，它们的插画在 Windows 桌面端依然被压掉。
 
 ## 覆盖缺口
 
 - #1743 的几何在 jsdom 中不可验证（无布局），断言针对的是浏览器会应用的声明与两者的实际几何关系；真实逐帧点击仍需复现环境验证。
 - #1745 / #1746 的 `isolation: isolate` 方向由报告者在同款宿主上实测有效（`z-index: -2` 层恢复出图、正文未被覆盖、立绘正常），本仓按该读数落地，未再单独复现。
+- cyber-night 复用同一对规则的落地，由声明层、变换后的选择器，以及 Windows frame 夹具下的 jsdom 层叠结果三处钉住；把修复前样式表放回去时，10 条断言中有 7 条失败。**本次会话仍无法复现 Electron 合成器**——在跑的是网页版宿主，它在改动前后都正常渲染 cyber-night 的插画——所以 Windows 端的可见结果仍依据 #1745/#1746 与 #1763 的桌面端实测，而非本地复现。
 - #1751/#1754 的回归用例断言的是放置与机制规则（哪些函数触碰 patch 文件与防火墙、延期是否走 `runDetached`，以及 `tests/detached-work.spec.ts` 中「裸 `setImmediate` 确实继承事务、`runDetached` 不继承」）。两者都不是由真实设置保存驱动的真实 HMR 事务端到端复现。
