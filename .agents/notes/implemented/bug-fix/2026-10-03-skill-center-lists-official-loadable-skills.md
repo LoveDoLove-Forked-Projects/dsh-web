@@ -122,5 +122,7 @@ the official registry does not offer to a host-plane reader. The boundary is doc
 discards is absent; the shared name guard matches the official grammar on accept and reject
 samples; a runtime registration outranks a same-name user skill; a project skill still outranks a
 same-name bundled candidate and keeps its editable path; and the reserved `.system` directory is
-never listed. The full package suite passes (133 tests) and the new cases fail against the
-pre-fix `collect.ts`.
+never listed. `tests/routes.spec.ts` adds the write-boundary case: the create route refuses
+`bad-`, `bad--name` and `a-`, names the panel's former grammar accepted and the registry rejects.
+The full package suite passes (134 tests), and each new case fails against the pre-fix source it
+covers.
