@@ -422,12 +422,16 @@ function applyImpl(ctx: Context, config?: Config): void {
       teardownProvider()
       return
     }
-    // The credential is re-resolved on every sync: reading the store is cheap,
-    // and a token rotated behind this process (the Models page, a hand-edited
-    // store) must reach the next request instead of the copy read at activation.
+    // A token resolved HERE is only a fallback for a mount with no credential
+    // seam: the service resolves the live one per pass, which is what keeps an
+    // activation-time read that raced the credential store from deciding
+    // anything. A token that is absent must not enter the mount key at all —
+    // keying on `null` latched the provider in place with no token, and since
+    // a pre-existing credential never fires `reference-updated`, nothing ever
+    // revisited that decision.
     const resolved = await resolveGitHubToken(ctx, next.tokenEnv)
     if (disposed) return
-    const desired = JSON.stringify({ tokenEnv: next.tokenEnv, token: resolved ?? null, repositories: next.repositories })
+    const desired = JSON.stringify({ tokenEnv: next.tokenEnv, repositories: next.repositories })
     if (desired === mounted) return
     teardownProvider()
     token = resolved
@@ -453,6 +457,10 @@ function applyImpl(ctx: Context, config?: Config): void {
           tokenEnv: next.tokenEnv,
           enabled: () => settings().enabled,
           workspaceRegistry: () => probeWorkspaceRegistry(ctx),
+          // Resolved PER PASS by the service, never captured here: reading it
+          // during activation races the credential store and mounts the
+          // provider with nothing, which no restart clears.
+          credential: async () => resolveGitHubToken(ctx, settings().tokenEnv),
           onService: service => { liveService = service },
           setup,
         }))

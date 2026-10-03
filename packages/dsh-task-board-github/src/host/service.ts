@@ -64,6 +64,18 @@ export interface GitHubSyncServiceOptions {
    * Never awaited, and a throw from it never reaches the pass.
    */
   onPass?: () => void
+  /**
+   * Resolves the live GitHub token, credential store first.
+   *
+   * Resolved once per PASS, not once at activation. The store is an async host
+   * service that may not be serving when this row activates, and a token read
+   * that races it yields nothing: the provider then mounts unauthenticated and,
+   * because re-resolution only happened on a `credentials/reference-updated`
+   * event that a pre-existing credential never fires, stays that way for the
+   * life of the host. A pass runs long after activation, by which time the
+   * store answers, so resolving here is what makes the first poll work.
+   */
+  credential?: () => Promise<string | undefined>
 }
 
 const DEFAULT_TIMERS: HostTimerFace = {
@@ -90,6 +102,7 @@ export class GitHubSyncService {
   private readonly now: () => number
   private readonly workspaceRegistry: (() => WorkspaceRegistryFace | undefined) | undefined
   private readonly onPass: (() => void) | undefined
+  private readonly credential: (() => Promise<string | undefined>) | undefined
   private pollTimer: (() => void) | undefined
   private stopped = false
   /** In-flight pass, with the instant it opened: a stale one is taken over. */
@@ -113,6 +126,23 @@ export class GitHubSyncService {
     this.now = options.now ?? Date.now
     this.workspaceRegistry = options.workspaceRegistry
     this.onPass = options.onPass
+    this.credential = options.credential
+  }
+
+  /**
+   * Put the live token on the client before a pass uses it.
+   *
+   * A store that cannot be read is swallowed on purpose: it must not throw
+   * out of the pass, and the pass then reports a missing credential through
+   * its ordinary error path instead.
+   */
+  private async refreshCredential(): Promise<void> {
+    if (this.credential === undefined) return
+    try {
+      this.client.setToken(await this.credential())
+    } catch {
+      // Leave the client on whatever it already had.
+    }
   }
 
   /**
@@ -362,6 +392,22 @@ export class GitHubSyncService {
     this.inFlight = { since: now }
     let totalSynced = 0
     const errors: string[] = []
+
+    // The live token, taken per pass. Reading it once at activation raced the
+    // credential store and mounted the provider with nothing, which is why a
+    // restart reproduced the failure instead of clearing it.
+    await this.refreshCredential()
+    if (!this.client.hasCredential()) {
+      // One reason for the whole pass, not one per repository: the same cause
+      // reported seven times reads as seven problems.
+      const message = 'no GitHub API credential available (the harness credential store could not be read for '
+        + this.repositories[0]?.owner + '/' + (this.repositories[0]?.repository ?? '?')
+        + ' and no GITHUB_TOKEN / GH_TOKEN is set in the environment)'
+      this.lastSyncErrors = [message]
+      this.consecutiveEmptySyncs += 1
+      this.inFlight = undefined
+      return { synced: 0, errors: [message] }
+    }
 
     try {
       for (const repo of this.repositories) {

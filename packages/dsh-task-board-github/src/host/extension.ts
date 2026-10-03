@@ -53,6 +53,11 @@ export interface GitHubExtensionOptions {
    */
   onService?: (service: GitHubSyncService | undefined) => void
   /**
+   * Resolves the live GitHub token. Preferred over `token`, which stays only
+   * as the fallback for a mount that has no credential seam.
+   */
+  credential?: () => Promise<string | undefined>
+  /**
    * Volatile master switch, read at use time by the board's registry. Absent
    * means enabled, which is the schema default.
    */
@@ -105,6 +110,7 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
       repositories: options.repositories,
       timers: options.timers,
       now: options.now,
+      credential: options.credential,
       workspaceRegistry: options.workspaceRegistry,
     })
     return service

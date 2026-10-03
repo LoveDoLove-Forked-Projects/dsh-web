@@ -138,6 +138,61 @@ describe('background sync health', () => {
   })
 })
 
+describe('credential timing', () => {
+  it('operator whose store is not up yet at activation still syncs on the next pass', async () => {
+    // Given: a credential store that answers nothing on the first read — the
+    // start-order race — and the real token afterwards
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    backend.issues = [issueFixture(1, ['dsh'])]
+    let reads = 0
+    const service = new GitHubSyncService({
+      host: faceOf(board),
+      // No ambient token: the only credential is the one the seam hands over.
+      client: new GitHubApiClient({ token: undefined, env: {} , fetch: backend.fetch }),
+      repositories: [REPO],
+      now: () => 100,
+      credential: async () => {
+        reads += 1
+        return reads === 1 ? undefined : 'live-token'
+      },
+    })
+
+    // When: the first pass runs before the store is serving, and the second
+    // after it is
+    const first = await service.syncAll()
+    const second = await service.syncAll()
+
+    // Then: the first reports the missing credential once rather than once per
+    // repository, and the second authenticates on its own
+    expect([first.synced, first.errors.length]).toEqual([0, 1])
+    expect(second.synced).toBe(1)
+    expect(service.syncHealth().lastSyncAt).toBe(100)
+  })
+
+  it('operator with no credential anywhere sees one reason, not one per repository', async () => {
+    // Given: three repositories and a seam that never yields a token
+    const board = new FakeBoard()
+    const backend = new FakeGitHubBackend()
+    const service = new GitHubSyncService({
+      host: faceOf(board),
+      client: new GitHubApiClient({ token: undefined, env: {}, fetch: backend.fetch }),
+      repositories: [REPO, { ...REPO, repository: 'other' }, { ...REPO, repository: 'third' }],
+      now: () => 100,
+      credential: async () => undefined,
+    })
+
+    // When: a pass runs
+    const result = await service.syncAll()
+
+    // Then: one cause is named once, and it says where the store was looked up
+    expect(result.errors).toHaveLength(1)
+    expect(result.errors[0]).toContain('no GitHub API credential available')
+    expect(result.errors[0]).toContain('deepseek-ai/dsh')
+    expect(service.syncHealth().lastSyncAt).toBeUndefined()
+  })
+})
+
 describe('request ceiling', () => {
   afterEach(() => {
     vi.useRealTimers()

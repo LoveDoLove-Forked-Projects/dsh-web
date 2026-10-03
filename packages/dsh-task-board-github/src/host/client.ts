@@ -77,6 +77,8 @@ export class GitHubApiClient {
   private readonly explicitToken?: string
   private readonly env: Record<string, string | undefined>
   private readonly requestTimeoutMs: number
+  /** Token supplied by the owner per pass; wins over the configured value. */
+  private liveToken: string | undefined
 
   constructor(options: GitHubClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? 'https://api.github.com').replace(/\/+$/, '')
@@ -87,8 +89,23 @@ export class GitHubApiClient {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   }
 
+  /**
+   * Replace the token this client authenticates with.
+   *
+   * The credential store is ASYNC, so a client cannot read it inside the
+   * synchronous request path. It is resolved by the owner once per pass and
+   * handed in here, which is what lets a client that was built before the
+   * store came up authenticate on the next pass instead of never.
+   * @param token - the live token, or undefined to fall back to the configured
+   * value and the environment.
+   */
+  setToken(token: string | undefined): void {
+    this.liveToken = token !== undefined && token.trim() !== '' ? token.trim() : undefined
+  }
+
   /** Resolve effective GitHub token. Returns undefined when none is configured. */
   getToken(): string | undefined {
+    if (this.liveToken !== undefined) return this.liveToken
     if (this.explicitToken !== undefined && this.explicitToken.trim() !== '') {
       return this.explicitToken.trim()
     }
