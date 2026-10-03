@@ -305,6 +305,18 @@ describe('create', () => {
     expect(status()).toBe(400)
   })
 
+  it('operator cannot create a skill under a name the panel grammar and the registry once disagreed on', async () => {
+    // Given names the panel's former grammar accepted and the official
+    // registry rejects (trailing, doubled and single-trailing hyphens)
+    for (const name of ['bad-', 'bad--name', 'a-']) {
+      const { res, status } = response()
+      // When the operator tries to create a skill under that name
+      await find(ROUTES.create)!.handler(request(ROUTES.create, 'POST', { body: { root: 'user', name, description: 'x', content: 'y', cwd: PROJ } }), res)
+      // Then it is refused, so the route cannot author a skill that never loads
+      expect(status()).toBe(400)
+    }
+  })
+
   it('rejects oversized content with 400', async () => {
     const { res, status } = response()
     await find(ROUTES.create)!.handler(request(ROUTES.create, 'POST', { body: { root: 'user', name: 'big-skill', description: 'x', content: 'x'.repeat(64 * 1024 + 1), cwd: PROJ } }), res)
