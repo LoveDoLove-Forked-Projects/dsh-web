@@ -700,6 +700,22 @@ body[data-ds-dark-theme] [role="menu"][class$="_menu"]:has([class$="_groupTitle"
   height: 30px;
 }
 
+/* The skin replaces this button's whole surface with the DSH wordmark, so the
+   mark IS the control's image and every highlight on the control belongs on
+   the mark. The host button, however, is the full-width `wide` row control
+   (216px at the 280px sidebar) and runs under the LINK ACTIVE chip, which the
+   row owns and the click does not: a selection frame painted on the host box
+   -- the global `:focus-visible` outline -- therefore wrapped empty row space
+   and a chip that is not part of the button, a highlight nearly twice the
+   width of the image it belongs to. The mark's box is declared once here and
+   read by both the wordmark and its frame, so the two cannot drift apart. */
+[data-orca-logo-row] {
+  --orca-mark-x: 4px;
+  --orca-mark-y: 15px;
+  --orca-mark-w: 118px;
+  --orca-mark-h: 30px;
+}
+
 .orca-ch-dshWordmark {
   z-index: 1;
   color: #11151b;
@@ -707,14 +723,50 @@ body[data-ds-dark-theme] [role="menu"][class$="_menu"]:has([class$="_groupTitle"
   pointer-events: none;
   transform-origin: 0 0;
   filter: blur(.18px);
-  width: 118px;
-  height: 30px;
+  width: var(--orca-mark-w, 118px);
+  height: var(--orca-mark-h, 30px);
   transition: opacity .13s ease-in, transform .16s cubic-bezier(.4, 0, 1, 1), filter .13s ease-in;
   display: block;
   position: absolute;
-  top: 15px;
-  left: 4px;
+  top: var(--orca-mark-y, 15px);
+  left: var(--orca-mark-x, 4px);
   transform: scale(.28);
+}
+
+/* The mark's own selection frame, anchored to the row exactly where the
+   wordmark is anchored, so the highlight is the image's box and nothing
+   else. Corner brackets carry the skin's stage-frame language; the faint
+   inset rule closes the box without a second line competing with the mark.
+
+   The frame is an absolutely positioned box, so it paints in the positioned
+   layer ABOVE the in-flow brand button and would swallow the click; it opts
+   out of the pointer, and the brand button keeps every pixel of its own hit
+   area. It is the row's first button -- the shell's New Session control, the
+   same element the collapsed-rail rules above already name positionally --
+   rather than the brand attribute, so this rule cannot be mistaken for one
+   that disables the button itself. */
+body[data-orca-sidebar-wide] [data-orca-logo-row]:has(> button:first-of-type:is(:hover, :focus-visible)):before {
+  content: "";
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--orca-blue) 14%, transparent);
+  background: linear-gradient(var(--orca-blue), var(--orca-blue)) left top / 12px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left top / 1px 12px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right top / 12px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right top / 1px 12px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left bottom / 12px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left bottom / 1px 12px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right bottom / 12px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right bottom / 1px 12px no-repeat;
+  opacity: .5;
+  transition: opacity .16s;
+  position: absolute;
+  top: var(--orca-mark-y);
+  left: var(--orca-mark-x);
+  width: var(--orca-mark-w);
+  height: var(--orca-mark-h);
+}
+
+body[data-orca-sidebar-wide] [data-orca-logo-row]:has(> button:first-of-type:focus-visible):before {
+  opacity: 1;
+}
+
+/* The host outline is the mismatched box: drop it on this control so the only
+   frame around the mark is the one sized to it. */
+body[data-orca-sidebar-wide] [data-orca-link-brand]:focus-visible {
+  outline: none;
 }
 
 body[data-orca-sidebar-wide] .orca-ch-dshWordmark {
