@@ -5,14 +5,15 @@
  */
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { selectedTaskOf, type BoardController } from '../../core/controller.ts'
-import { COLUMNS, MANUAL_STATUSES, canMoveTask, collectKnownTags, hasOpenExecution, tagTone, type TaskRecord } from '../../core/tasks.ts'
+import { COLUMNS, MANUAL_STATUSES, canMoveTask, collectKnownTags, hasOpenExecution, tagTone, type TaskRecord, type TaskStatus } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
 import css from '../board.module.css'
-import { IconChevronLeft, IconPlus } from './icons.tsx'
+import { IconChevronLeft, IconCompactRows, IconExpandRows, IconPlus } from './icons.tsx'
 import { NewTaskModal } from './NewTaskModal.tsx'
 import { usePresence } from './overlay.tsx'
 import { STATUS_KEY } from './status-key.ts'
 import { TagManagerModal } from './TagManagerModal.tsx'
+import { cardTimeline, groupByRecency, readCompactColumns, RECENCY_KEY, writeCompactColumns, type RecencyGroup } from './card-view.ts'
 import { TaskCard } from './TaskCard.tsx'
 import { TaskDetail } from './TaskDetail.tsx'
 
@@ -82,11 +83,13 @@ export function matchesTagFilter(task: TaskRecord, selected: readonly string[]):
  * re-renders only when its own task changes — not when a sibling card status,
  * the filter, or the selection moves.
  */
-const MemoTaskCard = memo(function MemoTaskCard({ task, pending, timeZone, onOpen, subtaskCount, isSubtask, subtasksDone, subtasksRunning, subtasksFailed }: {
+const MemoTaskCard = memo(function MemoTaskCard({ task, pending, timeZone, onOpen, onOpenSession, compact, subtaskCount, isSubtask, subtasksDone, subtasksRunning, subtasksFailed }: {
   task: TaskRecord
   pending: boolean
   timeZone?: string
   onOpen: (id: string) => void
+  onOpenSession: (sessionId: string) => void
+  compact: boolean
   subtaskCount: number
   isSubtask: boolean
   subtasksDone: number
@@ -100,6 +103,8 @@ const MemoTaskCard = memo(function MemoTaskCard({ task, pending, timeZone, onOpe
       pending={pending}
       timeZone={timeZone}
       onClick={onClick}
+      onOpenSession={onOpenSession}
+      compact={compact}
       subtaskCount={subtaskCount}
       isSubtask={isSubtask}
       subtasksDone={subtasksDone}
@@ -108,6 +113,15 @@ const MemoTaskCard = memo(function MemoTaskCard({ task, pending, timeZone, onOpe
     />
   )
 })
+
+/** Settled columns whose cards group by recency and fold the oldest group. */
+const GROUPED_COLUMNS: readonly TaskStatus[] = ['done', 'failed']
+
+/** Cards a grouped column renders before the oldest group folds. */
+export const COLUMN_FOLD_THRESHOLD = 30
+
+/** Column key of the archive view in the fold-open set. */
+const ARCHIVE_COLUMN = 'archived'
 
 /** Board component; subscribes to the controller snapshot. */
 export function TaskBoard({ controller }: { controller: BoardController }) {
@@ -123,6 +137,11 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
   // the header switch reveals the flat view. A text or label filter re-enables
   // them automatically, so searching a subtask title still finds it.
   const [hideSubtasks, setHideSubtasks] = useState(true)
+  // Density is a per-column browser preference: the long settled column starts
+  // compact, and each column header toggles its own density.
+  const [compactColumns, setCompactColumns] = useState<TaskStatus[]>(() => readCompactColumns(globalThis.localStorage))
+  // Grouped columns whose folded "earlier" group the user expanded this visit.
+  const [unfolded, setUnfolded] = useState<string[]>([])
   const [showNew, setShowNew] = useState(false)
   const [showTagManager, setShowTagManager] = useState(false)
   // Project partition (#1536): '' means "all projects". A selected project
@@ -204,6 +223,68 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
       : [...current, name])
   }, [])
   const openTask = useCallback((id: string): void => { controller.openTask(id) }, [controller])
+  const openSession = useCallback((sessionId: string): void => { controller.openSession(sessionId) }, [controller])
+  const toggleCompact = useCallback((status: TaskStatus): void => {
+    setCompactColumns(current => {
+      const next = current.includes(status) ? current.filter(entry => entry !== status) : [...current, status]
+      writeCompactColumns(globalThis.localStorage, next)
+      return next
+    })
+  }, [])
+  const timeZone = snapshot.host?.scheduler.timeZone
+  const now = Date.now()
+  const renderCard = (task: TaskRecord, compact: boolean) => (
+    <MemoTaskCard
+      key={task.id}
+      task={task}
+      pending={snapshot.pendingTaskIds.includes(task.id)}
+      timeZone={timeZone}
+      onOpen={openTask}
+      onOpenSession={openSession}
+      compact={compact}
+      subtaskCount={subtaskCounts.get(task.id) ?? 0}
+      isSubtask={task.parentId !== undefined}
+      subtasksDone={subtaskRollup.get(task.id)?.done ?? 0}
+      subtasksRunning={subtaskRollup.get(task.id)?.running ?? 0}
+      subtasksFailed={subtaskRollup.get(task.id)?.failed ?? 0}
+    />
+  )
+  /**
+   * Settled cards in recency groups, newest first. A column longer than the
+   * fold threshold folds its oldest group behind a disclosure, so a column of
+   * a hundred finished issues opens on what happened lately; a text or label
+   * search never folds, because a match hidden behind a fold reads as no match.
+   */
+  const renderGrouped = (columnKey: string, tasks: TaskRecord[], compact: boolean, archived: boolean) => {
+    const buckets = groupByRecency(tasks, task => cardTimeline(task, archived).at, now, timeZone)
+    const foldable = !searchActive && tasks.length > COLUMN_FOLD_THRESHOLD && buckets.length > 1
+    const open = unfolded.includes(columnKey)
+    return buckets.map(bucket => {
+      const folded = foldable && bucket.group === buckets[buckets.length - 1]!.group && !open
+      return (
+        <div key={bucket.group} className={css.cardGroup} data-dsh-part="card-group" data-group={bucket.group}>
+          <div className={css.cardGroupHeader}>
+            <span>{t(RECENCY_KEY[bucket.group as RecencyGroup])}</span>
+            <span className={css.cardGroupCount}>{bucket.items.length}</span>
+            {foldable && bucket.group === buckets[buckets.length - 1]!.group && (
+              <button
+                type="button"
+                className={css.linkButton}
+                data-dsh-part="card-group-toggle"
+                aria-expanded={!folded}
+                onClick={() => {
+                  setUnfolded(current => current.includes(columnKey) ? current.filter(entry => entry !== columnKey) : [...current, columnKey])
+                }}
+              >
+                {folded ? t('board.group.expand', { count: String(bucket.items.length) }) : t('board.group.collapse')}
+              </button>
+            )}
+          </div>
+          {!folded && bucket.items.map(task => renderCard(task, compact))}
+        </div>
+      )
+    })
+  }
 
   return (
     <div className={css.board} data-dsh-taskboard-board="" data-dsh-plugin="task-board">
@@ -391,20 +472,7 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
               <span className={css.columnCount}>{visible.length}</span>
             </header>
             <div className={css.cards}>
-              {visible.map(task => (
-                <MemoTaskCard
-                  key={task.id}
-                  task={task}
-                  pending={snapshot.pendingTaskIds.includes(task.id)}
-                  timeZone={snapshot.host?.scheduler.timeZone}
-                  onOpen={openTask}
-                  subtaskCount={subtaskCounts.get(task.id) ?? 0}
-                  isSubtask={task.parentId !== undefined}
-                  subtasksDone={subtaskRollup.get(task.id)?.done ?? 0}
-                  subtasksRunning={subtaskRollup.get(task.id)?.running ?? 0}
-                  subtasksFailed={subtaskRollup.get(task.id)?.failed ?? 0}
-                />
-              ))}
+              {renderGrouped(ARCHIVE_COLUMN, visible, false, true)}
               {visible.length === 0 && (
                 <div className={css.columnEmpty}>{tagFilter.length > 0 ? t('board.tagEmpty') : t('archive.empty')}</div>
               )}
@@ -416,6 +484,8 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
             // Every manually reachable column accepts a drop; `running`
             // never does, because only the runner opens an execution.
             const isManualDropTarget = MANUAL_STATUSES.includes(column.status)
+            const compact = compactColumns.includes(column.status)
+            const grouped = GROUPED_COLUMNS.includes(column.status)
             return (
               <section
                 key={column.status}
@@ -440,22 +510,21 @@ export function TaskBoard({ controller }: { controller: BoardController }) {
                   <span className={css.statusDot} data-status={column.status} aria-hidden="true" />
                   <h3 className={css.columnTitle}>{t(STATUS_KEY[column.status])}</h3>
                   <span className={css.columnCount}>{tasks.length}</span>
+                  <button
+                    type="button"
+                    className={css.densityToggle}
+                    data-dsh-part="density-toggle"
+                    data-active={compact ? 'true' : undefined}
+                    aria-pressed={compact}
+                    title={compact ? t('board.density.comfortable') : t('board.density.compact')}
+                    aria-label={compact ? t('board.density.comfortable') : t('board.density.compact')}
+                    onClick={() => { toggleCompact(column.status) }}
+                  >
+                    {compact ? <IconExpandRows size={13} /> : <IconCompactRows size={13} />}
+                  </button>
                 </header>
                 <div className={css.cards}>
-                  {tasks.map(task => (
-                    <MemoTaskCard
-                      key={task.id}
-                      task={task}
-                      pending={snapshot.pendingTaskIds.includes(task.id)}
-                      timeZone={snapshot.host?.scheduler.timeZone}
-                      onOpen={openTask}
-                      subtaskCount={subtaskCounts.get(task.id) ?? 0}
-                      isSubtask={task.parentId !== undefined}
-                      subtasksDone={subtaskRollup.get(task.id)?.done ?? 0}
-                      subtasksRunning={subtaskRollup.get(task.id)?.running ?? 0}
-                      subtasksFailed={subtaskRollup.get(task.id)?.failed ?? 0}
-                    />
-                  ))}
+                  {grouped ? renderGrouped(column.status, tasks, compact, false) : tasks.map(task => renderCard(task, compact))}
                   {tasks.length === 0 && (
                     <div className={css.columnEmpty}>{tagFilter.length > 0 ? t('board.tagEmpty') : t('board.empty')}</div>
                   )}

@@ -1,5 +1,6 @@
 import { Fragment, createElement, useMemo, type ReactNode } from 'react'
 import { Lexer, type Token, type Tokens } from 'marked'
+import { EMPTY_FIELD, HEADING_COLON, SUMMARY_HEADING } from '../../core/issue-form.ts'
 import css from './task-markdown.module.css'
 
 function safeHref(value: string): string | undefined {
@@ -25,6 +26,38 @@ function plain(tokens: Token[], separator = ''): string {
 /** Readable summary without changing the task source or creating DOM HTML. */
 export function markdownToPlainText(source: string): string {
   return plain(Lexer.lex(source, { gfm: true }), ' ').replace(/\s+/g, ' ').trim()
+}
+
+
+/**
+ * Card excerpt: the plain text a reader can tell cards apart by.
+ *
+ * Issue-form bodies open with identical boilerplate (a duplicate-search
+ * checkbox, a plugin field, an issue-type field), so the plain-text prefix of
+ * every synced card read the same. The excerpt drops section headings, lists
+ * made only of checkboxes, raw HTML, rules and empty-field placeholders; when a
+ * summary-like section exists its body wins. A description that loses
+ * everything to those rules falls back to its full plain text, so no card goes
+ * blank. The stored description is never changed.
+ * @param source - the task description (Markdown).
+ */
+export function markdownExcerpt(source: string): string {
+  const blocks: string[] = []
+  const summary: string[] = []
+  let inSummary = false
+  for (const token of Lexer.lex(source, { gfm: true })) {
+    if (token.type === 'heading') {
+      inSummary = SUMMARY_HEADING.test(plain([token]).replace(HEADING_COLON, '').trim())
+      continue
+    }
+    if (token.type === 'space' || token.type === 'html' || token.type === 'hr' || token.type === 'def') continue
+    if (token.type === 'list' && (token as Tokens.List).items.every(item => item.task)) continue
+    const text = plain([token], ' ').replace(/\s+/g, ' ').trim()
+    if (text === '' || EMPTY_FIELD.test(text)) continue
+    ;(inSummary ? summary : blocks).push(text)
+  }
+  const picked = (summary.length > 0 ? summary : blocks).join(' ').trim()
+  return picked === '' ? markdownToPlainText(source) : picked
 }
 
 function renderTokens(tokens: Token[]): ReactNode {

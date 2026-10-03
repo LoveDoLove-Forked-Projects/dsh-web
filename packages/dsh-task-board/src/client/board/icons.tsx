@@ -63,6 +63,21 @@ export function IconSession(props: BoardIconProps): ReactElement {
   )
 }
 
+/** Switch a column to single-line cards. */
+export function IconCompactRows(props: BoardIconProps): ReactElement {
+  return <Glyph {...props}><path d="M3 4.5h10M3 8h10M3 11.5h10" /></Glyph>
+}
+
+/** Switch a column back to full cards. */
+export function IconExpandRows(props: BoardIconProps): ReactElement {
+  return (
+    <Glyph {...props}>
+      <rect x="2.6" y="2.6" width="10.8" height="4.4" rx="1.2" />
+      <rect x="2.6" y="9" width="10.8" height="4.4" rx="1.2" />
+    </Glyph>
+  )
+}
+
 /** A scheduled run: the recurrence mark on a card. */
 export function IconClock(props: BoardIconProps): ReactElement {
   return (

@@ -321,17 +321,41 @@ export function GitHubDetailSection({ task, dispatch }: TaskBoardDetailSectionPr
   )
 }
 
-/** The card-decoration seat: a compact issue reference on linked cards. */
+/** Only an http(s) issue URL becomes a link; anything else stays plain text. */
+function safeIssueHref(value: string): string | undefined {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The card-decoration seat: a compact issue reference on linked cards. It
+ * renders as an inline chip in the card's meta row and links to the issue in a
+ * new tab; the board ignores clicks that land on a link, so following the
+ * issue never also opens the task detail.
+ */
 export function GitHubCardDecoration({ task }: { task: TaskRecord }) {
   const metadata = readTaskGitHubMetadata(task)
   if (metadata === undefined) return null
+  const reference = `${metadata.owner}/${metadata.repository}#${String(metadata.issueNumber)}`
+  const href = safeIssueHref(metadata.issueUrl)
+  const label = `#${String(metadata.issueNumber)}`
+  if (href === undefined) {
+    return <span className={css.cardSchedule} data-dsh-part="github-badge" title={reference}>{label}</span>
+  }
   return (
-    <span
-      className={css.cardSchedule}
+    <a
+      className={`${css.cardSchedule} ${css.cardLink}`}
       data-dsh-part="github-badge"
-      title={`${metadata.owner}/${metadata.repository}#${String(metadata.issueNumber)}`}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={t('card.openIssue', { reference })}
     >
-      #{metadata.issueNumber}
-    </span>
+      {label}
+    </a>
   )
 }

@@ -29,7 +29,7 @@
 - **九个模型可见工具**：七个同步与回写工具（`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`、`task_board_github_comment`、`task_board_github_close_issue`）加两个配置工具（`task_board_github_setup`、`task_board_github_repositories`），经看板的 `registerTool` 能力登记，因此随「看板总开关 × 本扩展开关」一起收放。
 - **回写 issue**：`task_board_github_comment` 在 issue 上发一条 Markdown 评论（正文非空且不超过 16000 字符，超长直接拒绝而不是截断成模型没写过的样子）。`task_board_github_close_issue` 关闭 issue，但**只在卡片关联的 PR 已合并时**才放行——本地跑通不等于改动已被评审，这条护栏与「PR 合并自动关闭」共用同一个判据，两条路径不会对「工作是否落地」产生分歧。
 - **自动识别工作区**：同步建卡时按**仓库名**匹配本机工作区目录名（大小写不敏感，`.`/`_`/`-` 视为同一分隔符，POSIX 与 Windows 路径都认），匹配到就把 `workspaceId` 钉在卡片上——多项目并行时 issue 不会被丢进「最近使用」的那个仓库。**匹配不上就不钉**：相似名字（`dsh-web` vs `dsh-web-old`）、子串、以及同一个项目存在两份检出时都判为未匹配，卡片退回看板自己的继承规则，绝不猜。宿主不提供工作区注册表时本项整体不生效。
-- **两个看板席位**：任务详情中的 issue / 标签 / Pull Request 区域，以及紧凑的 `#<issueNumber>` 卡片徽章。仓库与凭据摘要改在本扩展自己的设置卡中渲染，紧邻决定其行为的开关。
+- **两个看板席位**：任务详情中的 issue / 标签 / Pull Request 区域，以及卡片 meta 行内的 `#<issueNumber>` 徽章（Issue 地址为 http(s) 时是在新标签页打开 Issue 的链接，点击不会同时打开任务详情）。仓库与凭据摘要改在本扩展自己的设置卡中渲染，紧邻决定其行为的开关。
 - **一个开关门禁两侧**：默认开启。关闭后即停止轮询、停止回写、解除事件订阅与工具登记、清空已发布摘要并撤下全部席位——无需重挂载插件行，也不触碰已存储的卡片。
 - **登记面归看板所有，且与加载顺序无关**：扩展向看板的提供方席位登记，且不 import 看板内部实现，因此可作为独立包构建、发布与加载。两侧半区都经 cordis 依赖作用域等待看板的提供方服务，因此看板先于或后于本插件行激活都可以：服务一被提供，席位与 provider 登记就出现；服务撤走即自动释放。
 - **凭据只在 Host 侧处理**：令牌由宿主解析——先查 DSH 凭据库（与 Models 页存 API Key 是同一处），再查 `tokenEnv` 指定的环境变量，最后查 `GH_TOKEN`。设置卡与配置工具只写入一次，任何响应、快照或工具结果都不携带令牌值。远端 issue 文本只作为卡片内容与提供方元数据存储，绝不进入权限、工作区身份或 `promptPrefix`。

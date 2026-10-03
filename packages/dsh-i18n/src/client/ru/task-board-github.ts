@@ -6,6 +6,7 @@
  */
 
 export const ru: Record<string, string> = {
+  'card.openIssue': 'Открыть {reference} на GitHub',
   'common.cancel': 'Отмена',
   'detail.baseBranch': 'Целевая ветка (Base)',
   'detail.createPr': 'Создать PR',

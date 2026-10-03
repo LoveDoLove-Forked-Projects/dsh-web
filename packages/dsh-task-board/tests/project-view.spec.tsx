@@ -99,7 +99,7 @@ function buttonWith(root: HTMLElement, label: string): HTMLButtonElement {
 }
 
 function cards(container: HTMLElement): Element[] {
-  return [...container.querySelectorAll('button[data-dsh-part="card"]')]
+  return [...container.querySelectorAll('article[data-dsh-part="card"]')]
 }
 
 const projects = [

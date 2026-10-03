@@ -258,10 +258,39 @@ describe('GitHub UI integration', () => {
     // When the card-decoration seat renders it
     const container = render(<GitHubCardDecoration task={task} />)
 
-    // Then the badge carries the issue reference and its full title
+    // Then the badge is an inline link to the issue that opens in a new tab
     const badge = container.querySelector('[data-dsh-part="github-badge"]')
     expect(badge?.textContent).toBe('#1758')
-    expect(badge?.getAttribute('title')).toBe('deepseek-ai/dsh-web#1758')
+    expect(badge?.tagName).toBe('A')
+    expect(badge?.getAttribute('href')).toBe('https://github.com/deepseek-ai/dsh-web/issues/1758')
+    expect(badge?.getAttribute('target')).toBe('_blank')
+    expect(badge?.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(badge?.getAttribute('title')).toContain('deepseek-ai/dsh-web#1758')
+  })
+
+  it('operator sees a plain badge, never a link, when the stored issue URL is not http(s)', () => {
+    // Given a card whose stored issue URL uses a script scheme
+    const task = fakeTask({
+      integrations: {
+        github: {
+          provider: 'github',
+          owner: 'deepseek-ai',
+          repository: 'dsh-web',
+          issueNumber: 1759,
+          issueUrl: 'javascript:alert(1)',
+          remoteLabels: ['dsh'],
+        },
+      },
+    })
+
+    // When the card-decoration seat renders it
+    const container = render(<GitHubCardDecoration task={task} />)
+
+    // Then the badge stays text with the reference as its title
+    const badge = container.querySelector('[data-dsh-part="github-badge"]')
+    expect(badge?.tagName).toBe('SPAN')
+    expect(badge?.getAttribute('href')).toBeNull()
+    expect(badge?.getAttribute('title')).toBe('deepseek-ai/dsh-web#1759')
   })
 
   it('operator sees the extension settings card report the published repositories and credential state', () => {

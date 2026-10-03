@@ -81,6 +81,7 @@ export const zh = {
   'summary.credentialMissing': 'Host 凭据：未检测到（请设置 GITHUB_TOKEN 环境变量，或用 tokenEnv 指定变量名）',
   'summary.notRunning': '扩展当前未运行：打开开关后才会显示同步状态。',
 
+  'card.openIssue': '在 GitHub 打开 {reference}',
   'detail.title': 'GitHub Issue',
   'detail.state.open': '开启',
   'detail.state.closed': '已关闭',
@@ -178,6 +179,7 @@ export const en: Record<keyof typeof zh, string> = {
   'summary.credentialMissing': 'Host credential: None detected (set the GITHUB_TOKEN environment variable, or name another one with tokenEnv)',
   'summary.notRunning': 'The extension is not running: its sync status appears once the switch is on.',
 
+  'card.openIssue': 'Open {reference} on GitHub',
   'detail.title': 'GitHub Issue',
   'detail.state.open': 'Open',
   'detail.state.closed': 'Closed',

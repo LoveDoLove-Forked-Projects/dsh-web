@@ -130,7 +130,7 @@ describe('TaskBoard card drag-and-drop status changes (#1195)', () => {
     await act(async () => { root.render(<TaskBoard controller={controller} />) })
 
     const cardOf = (title: string) => Array.from(
-      container.querySelectorAll('button[data-dsh-part="card"]'),
+      container.querySelectorAll('article[data-dsh-part="card"]'),
     ).find(card => card.textContent?.includes(title))
 
     // Then only the executing and the pending card refuse the drag
@@ -323,5 +323,43 @@ describe('TaskBoard panel page lifecycle & interaction (#506, #1233)', () => {
     expect(backButton).not.toBeNull()
     await act(async () => { backButton.click() })
     expect(closed).toBe(1)
+  })
+})
+
+describe('TaskBoard settled-column density and recency groups', () => {
+  const settledRun = (endedAt: number) => ({ id: 'e-' + String(endedAt), sessionId: 's', startedAt: endedAt - 1, endedAt, result: 'succeeded' as const, error: undefined })
+
+  it('operator sees a long done column compact, grouped, with the oldest group folded until expanded', async () => {
+    // Given 31 done cards: one settled now and thirty settled a month ago, and no saved density
+    globalThis.localStorage?.removeItem('dsh.taskBoard.compactColumns.v1')
+    const now = Date.now()
+    const old = now - 30 * 24 * 60 * 60 * 1000
+    const tasks = [
+      task({ id: 'fresh', title: 'Fresh card', status: 'done', executions: [settledRun(now)] }),
+      ...Array.from({ length: 30 }, (_, index) => task({ id: 'old-' + String(index), title: 'Old card ' + String(index), status: 'done', executions: [settledRun(old - index)] })),
+    ]
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    roots.push(root)
+    await act(async () => { root.render(<TaskBoard controller={fakeController({ tasks })} />) })
+    const done = container.querySelector('section[data-status="done"]')!
+    const cards = () => [...done.querySelectorAll('article[data-dsh-part="card"]')]
+
+    // When the board renders
+    // Then the done column starts compact, shows the recent group and folds the earlier one
+    expect(cards().map(card => card.getAttribute('data-compact'))).toEqual(['true'])
+    expect([...done.querySelectorAll('[data-dsh-part="card-group"]')].map(group => group.getAttribute('data-group'))).toEqual(['today', 'earlier'])
+    const toggle = done.querySelector<HTMLButtonElement>('[data-dsh-part="card-group-toggle"]')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    // When the operator expands the folded group and switches the column to full cards
+    await act(async () => { toggle.click() })
+    await act(async () => { done.querySelector<HTMLButtonElement>('[data-dsh-part="density-toggle"]')!.click() })
+
+    // Then every card renders full-size and the choice is stored
+    expect(cards()).toHaveLength(31)
+    expect(cards().every(card => card.getAttribute('data-compact') === null)).toBe(true)
+    expect(globalThis.localStorage?.getItem('dsh.taskBoard.compactColumns.v1')).toBe('[]')
   })
 })
