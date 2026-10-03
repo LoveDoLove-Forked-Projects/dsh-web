@@ -47373,6 +47373,13 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"usage.current": "当前",
 			"usage.today": "今日用量",
 			"usage.today.cost": "今日消费（估算）",
+			"usage.day.label": "查看日期",
+			"usage.day.today": "今日",
+			"usage.day.title": "{date} 用量",
+			"usage.day.cost": "当日消费（估算）",
+			"usage.day.empty": "该日没有用量记录",
+			"usage.day.loading": "正在加载该日用量…",
+			"usage.day.error": "该日用量加载失败：{error}",
 			"usage.peak.on": "DeepSeek 高峰时段：计价 ×2，{time} 结束",
 			"usage.peak.off": "DeepSeek 空闲时段：计价为高峰一半，{time} 进入高峰",
 			"usage.calls": "{n} 次调用",
@@ -47407,6 +47414,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"usage.bank.spend.observed": "官方余额实测花费 ¥{cost}（自 {since} 起）",
 			"usage.bank.spend.estimated": "消费估算：约 ¥{cost}",
 			"usage.bank.window": "统计窗口 {from} ~ {to}",
+			"usage.bank.windowAll": "全部保留期",
 			"usage.bank.save": "保存图片",
 			"usage.bank.share": "分享",
 			"usage.bank.drawError": "票券生成失败：{error}",
@@ -47431,6 +47439,13 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"usage.current": "Current",
 			"usage.today": "Today",
 			"usage.today.cost": "Today spend (estimated)",
+			"usage.day.label": "Day",
+			"usage.day.today": "Today",
+			"usage.day.title": "Usage · {date}",
+			"usage.day.cost": "Day spend (estimated)",
+			"usage.day.empty": "No usage recorded on this day",
+			"usage.day.loading": "Loading that day…",
+			"usage.day.error": "Failed to load that day: {error}",
 			"usage.peak.on": "DeepSeek peak hours: 2x pricing, ends {time}",
 			"usage.peak.off": "DeepSeek off-peak: half of peak pricing, peak returns {time}",
 			"usage.calls": "{n} calls",
@@ -47465,6 +47480,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"usage.bank.spend.observed": "Spent ¥{cost} observed on the official balance (watching since {since})",
 			"usage.bank.spend.estimated": "Estimated spend: about ¥{cost}",
 			"usage.bank.window": "Window {from} - {to}",
+			"usage.bank.windowAll": "All retained days",
 			"usage.bank.save": "Save image",
 			"usage.bank.share": "Share",
 			"usage.bank.drawError": "Failed to render the voucher: {error}",
@@ -47490,7 +47506,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-usage/src/client/usage.module.css.mjs
-		const css$2 = ".cvtkAW_section{color:inherit;flex-direction:column;gap:16px;display:flex}.cvtkAW_header{justify-content:space-between;align-items:center;gap:12px;display:flex}.cvtkAW_currentProvider{opacity:.75;font-size:13px}.cvtkAW_refreshBtn{appearance:none;color:inherit;font:inherit;cursor:pointer;opacity:.85;background:0 0;border:1px solid;border-radius:8px;padding:4px 12px;font-size:12px;transition:opacity .12s,background-color .12s}.cvtkAW_refreshBtn:hover:not(:disabled){opacity:1;background:color-mix(in srgb, currentColor 8%, transparent)}.cvtkAW_refreshBtn:disabled{cursor:default;opacity:.5}.cvtkAW_refreshBtn:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_tabs{border-bottom:1px solid color-mix(in srgb, currentColor 14%, transparent);gap:4px;display:flex}.cvtkAW_tab{appearance:none;color:inherit;font:inherit;cursor:pointer;opacity:.65;background:0 0;border:none;border-bottom:2px solid #0000;margin-bottom:-1px;padding:6px 14px;font-size:13px}.cvtkAW_tab:hover{opacity:.9}.cvtkAW_tab:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_tabActive{opacity:1;border-bottom-color:currentColor;font-weight:600}.cvtkAW_card{border:1px solid color-mix(in srgb, currentColor 14%, transparent);border-radius:12px;flex-direction:column;gap:10px;padding:14px 16px;display:flex}.cvtkAW_cardTitle{letter-spacing:.04em;text-transform:uppercase;opacity:.6;font-size:12px;font-weight:600}.cvtkAW_statRow{flex-wrap:wrap;gap:18px;display:flex}.cvtkAW_stat{flex-direction:column;gap:2px;display:flex}.cvtkAW_statValue{font-variant-numeric:tabular-nums;font-size:18px;font-weight:600}.cvtkAW_statLabel{opacity:.6;font-size:11px}.cvtkAW_providerRow{border-top:1px solid color-mix(in srgb, currentColor 8%, transparent);justify-content:space-between;align-items:center;gap:12px;padding:6px 0;font-size:13px;display:flex}.cvtkAW_providerRow:first-of-type{border-top:none}.cvtkAW_providerName{align-items:center;gap:8px;min-width:0;display:flex}.cvtkAW_providerTokens{font-variant-numeric:tabular-nums;opacity:.75;white-space:nowrap}.cvtkAW_providerBalance{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}.cvtkAW_currentBadge{border:1px solid color-mix(in srgb, currentColor 35%, transparent);opacity:.8;border-radius:999px;flex:none;padding:1px 7px;font-size:10px;font-weight:600}.cvtkAW_chart{flex-direction:column;gap:12px;display:flex}.cvtkAW_chartProvider{flex-direction:column;gap:4px;display:flex}.cvtkAW_chartHead{justify-content:space-between;align-items:baseline;gap:10px;font-size:13px;display:flex}.cvtkAW_chartTokens{font-variant-numeric:tabular-nums;opacity:.65;white-space:nowrap;font-size:11px}.cvtkAW_chartBar{background:color-mix(in srgb, currentColor 8%, transparent);border-radius:999px;height:8px;display:block;overflow:hidden}.cvtkAW_chartFill{background:color-mix(in srgb, currentColor 55%, transparent);border-radius:999px;height:100%;transition:width .3s;display:block}.cvtkAW_chartModel{opacity:.8;grid-template-columns:minmax(80px,180px) 1fr auto;align-items:center;gap:8px;padding-left:14px;font-size:11px;display:grid}.cvtkAW_chartModelName{text-overflow:ellipsis;white-space:nowrap;opacity:.8;overflow:hidden}.cvtkAW_chartModelBar{background:color-mix(in srgb, currentColor 6%, transparent);border-radius:999px;height:4px;display:block;overflow:hidden}.cvtkAW_chartModelFill{background:color-mix(in srgb, currentColor 35%, transparent);border-radius:999px;height:100%;transition:width .3s;display:block}.cvtkAW_trendAxis{opacity:.5;font-variant-numeric:tabular-nums;justify-content:space-between;font-size:10px;display:flex}.cvtkAW_muted{opacity:.6;font-size:12px}.cvtkAW_voucherPreview canvas{border-radius:8px;width:100%;height:auto;display:block}.cvtkAW_buttonRow{gap:8px;display:flex}.cvtkAW_errorLine{opacity:.75;font-size:12px}.cvtkAW_planCard{flex-direction:column;gap:8px;display:flex}.cvtkAW_planHead{justify-content:space-between;align-items:baseline;gap:10px;display:flex}.cvtkAW_planName{font-size:14px;font-weight:600}.cvtkAW_windowRow{flex-direction:column;gap:4px;display:flex}.cvtkAW_windowLabel{opacity:.8;font-variant-numeric:tabular-nums;justify-content:space-between;font-size:12px;display:flex}.cvtkAW_bar{background:color-mix(in srgb, currentColor 10%, transparent);border-radius:999px;height:6px;overflow:hidden}.cvtkAW_barFill{background:color-mix(in srgb, currentColor 55%, transparent);border-radius:999px;height:100%;transition:width .3s}.cvtkAW_barWarn{background:#d97706}.cvtkAW_barLow{background:#dc2626}.cvtkAW_resetLine{opacity:.55;font-variant-numeric:tabular-nums;font-size:11px}.cvtkAW_settingsGrid{flex-wrap:wrap;align-items:center;gap:16px;display:flex}.cvtkAW_settingItem{align-items:center;gap:8px;font-size:13px;display:flex}.cvtkAW_settingItem input[type=checkbox]{accent-color:currentColor}.cvtkAW_settingItem input[type=number]{border:1px solid color-mix(in srgb, currentColor 25%, transparent);width:90px;color:inherit;font:inherit;background:0 0;border-radius:6px;padding:3px 8px;font-size:13px}.cvtkAW_settingItem select{border:1px solid color-mix(in srgb, currentColor 25%, transparent);color:inherit;font:inherit;background:0 0;border-radius:6px;padding:3px 8px;font-size:13px}.cvtkAW_settingItem input:focus-visible,.cvtkAW_settingItem select:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_footCard{box-sizing:border-box;background:color-mix(in srgb, currentColor 4%, transparent);width:100%;color:inherit;border:none;border-radius:12px;margin:2px 0 4px;transition:background-color .12s;position:relative}.cvtkAW_footCard:hover{background:var(--dsw-alias-interactive-bg-hover)}.cvtkAW_footCardCollapsed{background:0 0}.cvtkAW_footMain{appearance:none;box-sizing:border-box;width:100%;color:inherit;font:inherit;text-align:left;cursor:pointer;background:0 0;border:none;border-radius:12px;flex-direction:column;gap:4px;padding:8px;display:flex}.cvtkAW_footMain:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_footToggle{appearance:none;width:20px;height:20px;color:inherit;cursor:pointer;opacity:.55;background:0 0;border:none;border-radius:6px;justify-content:center;align-items:center;padding:0;transition:opacity .12s,background-color .12s;display:inline-flex;position:absolute;top:6px;right:6px}.cvtkAW_footCard:hover .cvtkAW_footToggle{opacity:.8}.cvtkAW_footToggle:hover{opacity:1;background:color-mix(in srgb, currentColor 10%, transparent)}.cvtkAW_footToggle:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_footToggle svg{display:block}.cvtkAW_footHead{justify-content:space-between;align-items:baseline;gap:8px;display:flex}.cvtkAW_footTitle{opacity:.65;white-space:nowrap;align-items:center;gap:6px;min-width:0;font-size:12px;display:inline-flex}.cvtkAW_footTitle svg{flex:none;display:block}.cvtkAW_footValue{font-variant-numeric:tabular-nums;white-space:nowrap;margin-right:18px;font-size:15px;font-weight:600}.cvtkAW_footLine{opacity:.7;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap;font-size:11px;overflow:hidden}.cvtkAW_footMeta{opacity:.5;font-variant-numeric:tabular-nums;font-size:10px}.cvtkAW_footCardCollapsed .cvtkAW_footMain{min-height:36px;padding:7px 8px}.cvtkAW_footStrip{white-space:nowrap;align-items:center;gap:6px;padding-right:20px;font-size:12px;display:flex;overflow:hidden}.cvtkAW_footStrip svg{opacity:.65;flex:none;display:block}.cvtkAW_footStripProvider{text-overflow:ellipsis;flex:none;max-width:45%;font-weight:500;overflow:hidden}.cvtkAW_footStripLabel{opacity:.65;text-overflow:ellipsis;overflow:hidden}.cvtkAW_footStripValue{font-variant-numeric:tabular-nums;margin-left:auto;font-weight:600}[data-dsh-frame][data-sidebar-collapsed] .cvtkAW_footCard,[data-sidebar-collapsed] .cvtkAW_footCard{display:none}";
+		const css$2 = ".cvtkAW_section{color:inherit;flex-direction:column;gap:16px;display:flex}.cvtkAW_header{justify-content:space-between;align-items:center;gap:12px;display:flex}.cvtkAW_currentProvider{opacity:.75;font-size:13px}.cvtkAW_refreshBtn{appearance:none;color:inherit;font:inherit;cursor:pointer;opacity:.85;background:0 0;border:1px solid;border-radius:8px;padding:4px 12px;font-size:12px;transition:opacity .12s,background-color .12s}.cvtkAW_refreshBtn:hover:not(:disabled){opacity:1;background:color-mix(in srgb, currentColor 8%, transparent)}.cvtkAW_refreshBtn:disabled{cursor:default;opacity:.5}.cvtkAW_refreshBtn:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_tabs{border-bottom:1px solid color-mix(in srgb, currentColor 14%, transparent);gap:4px;display:flex}.cvtkAW_tab{appearance:none;color:inherit;font:inherit;cursor:pointer;opacity:.65;background:0 0;border:none;border-bottom:2px solid #0000;margin-bottom:-1px;padding:6px 14px;font-size:13px}.cvtkAW_tab:hover{opacity:.9}.cvtkAW_tab:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_tabActive{opacity:1;border-bottom-color:currentColor;font-weight:600}.cvtkAW_card{border:1px solid color-mix(in srgb, currentColor 14%, transparent);border-radius:12px;flex-direction:column;gap:10px;padding:14px 16px;display:flex}.cvtkAW_cardTitle{letter-spacing:.04em;text-transform:uppercase;opacity:.6;font-size:12px;font-weight:600}.cvtkAW_dayPicker{align-items:center;gap:8px;display:flex}.cvtkAW_dayPickerLabel{opacity:.6;font-size:11px}.cvtkAW_daySelect{border:1px solid color-mix(in srgb, currentColor 25%, transparent);color:inherit;font:inherit;font-variant-numeric:tabular-nums;background:0 0;border-radius:6px;padding:3px 8px;font-size:12px}.cvtkAW_daySelect:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_statRow{flex-wrap:wrap;gap:18px;display:flex}.cvtkAW_stat{flex-direction:column;gap:2px;display:flex}.cvtkAW_statValue{font-variant-numeric:tabular-nums;font-size:18px;font-weight:600}.cvtkAW_statLabel{opacity:.6;font-size:11px}.cvtkAW_providerRow{border-top:1px solid color-mix(in srgb, currentColor 8%, transparent);flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;padding:6px 0;font-size:13px;display:flex}.cvtkAW_providerRow:first-of-type{border-top:none}.cvtkAW_providerName{align-items:center;gap:8px;min-width:0;display:flex}.cvtkAW_providerTokens{font-variant-numeric:tabular-nums;opacity:.75;white-space:nowrap}.cvtkAW_providerBalance{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}.cvtkAW_currentBadge{border:1px solid color-mix(in srgb, currentColor 35%, transparent);opacity:.8;border-radius:999px;flex:none;padding:1px 7px;font-size:10px;font-weight:600}.cvtkAW_chart{flex-direction:column;gap:12px;display:flex}.cvtkAW_chartProvider{flex-direction:column;gap:4px;display:flex}.cvtkAW_chartHead{justify-content:space-between;align-items:baseline;gap:10px;font-size:13px;display:flex}.cvtkAW_chartTokens{font-variant-numeric:tabular-nums;opacity:.65;white-space:nowrap;font-size:11px}.cvtkAW_chartBar{background:color-mix(in srgb, currentColor 8%, transparent);border-radius:999px;height:8px;display:block;overflow:hidden}.cvtkAW_chartFill{background:color-mix(in srgb, currentColor 55%, transparent);border-radius:999px;height:100%;transition:width .3s;display:block}.cvtkAW_chartModel{opacity:.8;grid-template-columns:minmax(80px,180px) 1fr auto;align-items:center;gap:8px;padding-left:14px;font-size:11px;display:grid}.cvtkAW_chartModelName{text-overflow:ellipsis;white-space:nowrap;opacity:.8;overflow:hidden}.cvtkAW_chartModelBar{background:color-mix(in srgb, currentColor 6%, transparent);border-radius:999px;height:4px;display:block;overflow:hidden}.cvtkAW_chartModelFill{background:color-mix(in srgb, currentColor 35%, transparent);border-radius:999px;height:100%;transition:width .3s;display:block}.cvtkAW_trendAxis{opacity:.5;font-variant-numeric:tabular-nums;justify-content:space-between;font-size:10px;display:flex}.cvtkAW_muted{opacity:.6;font-size:12px}.cvtkAW_voucherPreview canvas{border-radius:8px;width:100%;height:auto;display:block}.cvtkAW_buttonRow{gap:8px;display:flex}.cvtkAW_errorLine{opacity:.75;font-size:12px}.cvtkAW_planCard{flex-direction:column;gap:8px;display:flex}.cvtkAW_planHead{justify-content:space-between;align-items:baseline;gap:10px;display:flex}.cvtkAW_planName{font-size:14px;font-weight:600}.cvtkAW_windowRow{flex-direction:column;gap:4px;display:flex}.cvtkAW_windowLabel{opacity:.8;font-variant-numeric:tabular-nums;justify-content:space-between;font-size:12px;display:flex}.cvtkAW_bar{background:color-mix(in srgb, currentColor 10%, transparent);border-radius:999px;height:6px;overflow:hidden}.cvtkAW_barFill{background:color-mix(in srgb, currentColor 55%, transparent);border-radius:999px;height:100%;transition:width .3s}.cvtkAW_barWarn{background:#d97706}.cvtkAW_barLow{background:#dc2626}.cvtkAW_resetLine{opacity:.55;font-variant-numeric:tabular-nums;font-size:11px}.cvtkAW_settingsGrid{flex-wrap:wrap;align-items:center;gap:16px;display:flex}.cvtkAW_settingItem{align-items:center;gap:8px;font-size:13px;display:flex}.cvtkAW_settingItem input[type=checkbox]{accent-color:currentColor}.cvtkAW_settingItem input[type=number]{border:1px solid color-mix(in srgb, currentColor 25%, transparent);width:90px;color:inherit;font:inherit;background:0 0;border-radius:6px;padding:3px 8px;font-size:13px}.cvtkAW_settingItem select{border:1px solid color-mix(in srgb, currentColor 25%, transparent);color:inherit;font:inherit;background:0 0;border-radius:6px;padding:3px 8px;font-size:13px}.cvtkAW_settingItem input:focus-visible,.cvtkAW_settingItem select:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_footCard{box-sizing:border-box;background:color-mix(in srgb, currentColor 4%, transparent);width:100%;color:inherit;border:none;border-radius:12px;margin:2px 0 4px;transition:background-color .12s;position:relative}.cvtkAW_footCard:hover{background:var(--dsw-alias-interactive-bg-hover)}.cvtkAW_footCardCollapsed{background:0 0}.cvtkAW_footMain{appearance:none;box-sizing:border-box;width:100%;color:inherit;font:inherit;text-align:left;cursor:pointer;background:0 0;border:none;border-radius:12px;flex-direction:column;gap:4px;padding:8px;display:flex}.cvtkAW_footMain:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_footToggle{appearance:none;width:20px;height:20px;color:inherit;cursor:pointer;opacity:.55;background:0 0;border:none;border-radius:6px;justify-content:center;align-items:center;padding:0;transition:opacity .12s,background-color .12s;display:inline-flex;position:absolute;top:6px;right:6px}.cvtkAW_footCard:hover .cvtkAW_footToggle{opacity:.8}.cvtkAW_footToggle:hover{opacity:1;background:color-mix(in srgb, currentColor 10%, transparent)}.cvtkAW_footToggle:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);outline:none}.cvtkAW_footToggle svg{display:block}.cvtkAW_footHead{justify-content:space-between;align-items:baseline;gap:8px;display:flex}.cvtkAW_footTitle{opacity:.65;white-space:nowrap;align-items:center;gap:6px;min-width:0;font-size:12px;display:inline-flex}.cvtkAW_footTitle svg{flex:none;display:block}.cvtkAW_footValue{font-variant-numeric:tabular-nums;white-space:nowrap;margin-right:18px;font-size:15px;font-weight:600}.cvtkAW_footLine{opacity:.7;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap;font-size:11px;overflow:hidden}.cvtkAW_footMeta{opacity:.5;font-variant-numeric:tabular-nums;font-size:10px}.cvtkAW_footCardCollapsed .cvtkAW_footMain{min-height:36px;padding:7px 8px}.cvtkAW_footStrip{white-space:nowrap;align-items:center;gap:6px;padding-right:20px;font-size:12px;display:flex;overflow:hidden}.cvtkAW_footStrip svg{opacity:.65;flex:none;display:block}.cvtkAW_footStripProvider{text-overflow:ellipsis;flex:none;max-width:45%;font-weight:500;overflow:hidden}.cvtkAW_footStripLabel{opacity:.65;text-overflow:ellipsis;overflow:hidden}.cvtkAW_footStripValue{font-variant-numeric:tabular-nums;margin-left:auto;font-weight:600}[data-dsh-frame][data-sidebar-collapsed] .cvtkAW_footCard,[data-sidebar-collapsed] .cvtkAW_footCard{display:none}";
 		const tagId$2 = "@linxin666/dsh-web-all/packages/dsh-usage/src/client/usage.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
 			const tag = document.createElement("style");
@@ -47519,6 +47535,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"chartTokens": "cvtkAW_chartTokens",
 			"currentBadge": "cvtkAW_currentBadge",
 			"currentProvider": "cvtkAW_currentProvider",
+			"dayPicker": "cvtkAW_dayPicker",
+			"dayPickerLabel": "cvtkAW_dayPickerLabel",
+			"daySelect": "cvtkAW_daySelect",
 			"errorLine": "cvtkAW_errorLine",
 			"footCard": "cvtkAW_footCard",
 			"footCardCollapsed": "cvtkAW_footCardCollapsed",
@@ -48474,6 +48493,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		*/
 		/** Poll cadence while the section is open. */
 		const SECTION_POLL_MS = 1e4;
+		/**
+		* The Token bank's default window: the whole retained ledger. It is a select
+		* value rather than a date, so it can never collide with a day key.
+		*/
+		const BANK_ALL_DAYS = "all";
 		/** Compact token count: 12345 -> 12.3k, 1234567 -> 1.23M. */
 		function formatTokens(value) {
 			if (!Number.isFinite(value) || value <= 0) return "0";
@@ -48627,13 +48651,83 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				})]
 			});
 		}
+		/**
+		* Fetch the day a picker selected, or stay idle for the default window. Today
+		* never fetches: the overview already carries it live, so switching back to
+		* today is instant and keeps counting with the poll. A superseded selection
+		* never lands (the effect cancels), and a failed load reports its own message
+		* instead of leaving the card on a stale day.
+		*/
+		function useDayView(loadDay, date, today) {
+			const [load, setLoad] = (0, react.useState)(void 0);
+			(0, react.useEffect)(() => {
+				if (date === void 0 || date === today) {
+					setLoad((previous) => previous === void 0 ? previous : void 0);
+					return;
+				}
+				let cancelled = false;
+				setLoad({ status: "loading" });
+				loadDay(date).then((view) => {
+					if (!cancelled) setLoad({
+						status: "ready",
+						view
+					});
+				}, (error) => {
+					if (!cancelled) setLoad({
+						status: "error",
+						error: error instanceof Error ? error.message : String(error)
+					});
+				});
+				return () => {
+					cancelled = true;
+				};
+			}, [
+				date,
+				today,
+				loadDay
+			]);
+			return load;
+		}
+		/**
+		* The day picker: today plus every retained day that recorded usage, newest
+		* first (the host serves the list ascending). Without that list (an older host
+		* document) no picker renders and the card stays on its default window.
+		*/
+		function DayPicker(props) {
+			const { value, options, today, leading, onSelect, part } = props;
+			if (options.length === 0) return null;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: usage_module_css_default.dayPicker,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+					className: usage_module_css_default.dayPickerLabel,
+					htmlFor: "dsh-usage-day-" + part,
+					children: t$2("usage.day.label")
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+					id: "dsh-usage-day-" + part,
+					className: usage_module_css_default.daySelect,
+					value,
+					onChange: (event) => {
+						onSelect(event.target.value);
+					},
+					children: [leading !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+						value: leading.value,
+						children: leading.label
+					}), options.map((date) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+						value: date,
+						children: date === today ? t$2("usage.day.today") : date
+					}, date))]
+				})]
+			});
+		}
 		/** The section component; the slot merges the face into these props. */
 		function UsageSectionCard(props) {
-			const { store, poll, refresh, settings } = props;
+			const { store, poll, refresh, loadDay, settings } = props;
 			const ui = (0, react.useSyncExternalStore)(store.subscribe, store.getSnapshot);
 			const settingsSnapshot = settings.getSnapshot();
 			const settingsValue = settingsSnapshot.value ?? {};
 			const [tab, setTab] = (0, react.useState)("usage");
+			const [usageDay, setUsageDay] = (0, react.useState)(void 0);
+			const [bankDay, setBankDay] = (0, react.useState)(void 0);
 			const [refreshing, setRefreshing] = (0, react.useState)(false);
 			const [, bumpSettings] = (0, react.useState)(0);
 			(0, react.useEffect)(() => settings.subscribe(() => bumpSettings((count) => count + 1)), [settings]);
@@ -48662,6 +48756,22 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				};
 			}, [poll, enabled]);
 			const snapshot = ui.snapshot;
+			const todayDate = snapshot?.usage.today.date;
+			const dayOptions = snapshot === null ? [] : [...new Set([todayDate, ...snapshot.usage.availableDays ?? []].filter((date) => date !== void 0))].sort().reverse();
+			const usageSelection = usageDay !== void 0 && dayOptions.includes(usageDay) ? usageDay : void 0;
+			const bankSelection = bankDay !== void 0 && dayOptions.includes(bankDay) ? bankDay : void 0;
+			const selectedDay = usageSelection ?? todayDate;
+			const isToday = selectedDay === todayDate;
+			const usageDayLoad = useDayView(loadDay, usageSelection, todayDate);
+			const bankDayLoad = useDayView(loadDay, bankSelection, todayDate);
+			const day = isToday ? snapshot?.usage.today : usageDayLoad?.view;
+			const bankDayView = bankSelection === void 0 ? void 0 : bankSelection === todayDate ? snapshot?.usage.today : bankDayLoad?.view;
+			const bankWindow = bankSelection === void 0 ? snapshot?.usage.all ?? snapshot?.usage.range : bankDayView === void 0 ? void 0 : {
+				from: bankDayView.date,
+				to: bankDayView.date,
+				totals: bankDayView.totals,
+				providers: bankDayView.providers
+			};
 			const onRefresh = () => {
 				setRefreshing(true);
 				try {
@@ -48686,7 +48796,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const current = snapshot.current;
 			const currentProvider = snapshot.providers.find((provider) => provider.provider === current.provider);
 			const deepseekPeriod = deepseekPeriodAt(Date.now());
-			const deepseekVisible = current.provider !== void 0 && isDeepSeekProviderRoute(current.provider) || snapshot.usage.today.providers.some((row) => isDeepSeekProviderRoute(row.provider));
+			const deepseekVisible = isToday && (current.provider !== void 0 && isDeepSeekProviderRoute(current.provider) || snapshot.usage.today.providers.some((row) => isDeepSeekProviderRoute(row.provider)));
 			const planProviders = snapshot.providers.filter((provider) => isConfigured(provider) && (provider.planSupported === true || provider.planSupported === void 0 && provider.plan !== void 0));
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: usage_module_css_default.section,
@@ -48754,31 +48864,46 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: usage_module_css_default.cardTitle,
-									children: t$2("usage.today")
+									children: isToday ? t$2("usage.today") : t$2("usage.day.title", { date: selectedDay ?? "" })
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(DayPicker, {
+									part: "usage",
+									value: selectedDay ?? "",
+									options: dayOptions,
+									today: todayDate ?? "",
+									onSelect: (date) => {
+										setUsageDay(date === todayDate ? void 0 : date);
+									}
 								}),
 								deepseekVisible && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: usage_module_css_default.muted,
 									"data-dsh-part": "peak-status",
 									children: t$2(deepseekPeriod.peak ? "usage.peak.on" : "usage.peak.off", { time: formatClock$1(deepseekPeriod.boundaryMs) })
 								}),
-								snapshot.usage.today.totals.calls === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								usageDayLoad?.status === "error" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: usage_module_css_default.errorLine,
+									children: t$2("usage.day.error", { error: usageDayLoad.error ?? "" })
+								}) : day === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: usage_module_css_default.muted,
-									children: t$2("usage.noData")
-								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TotalsRow, { totals: snapshot.usage.today.totals }),
-								snapshot.usage.today.totals.cost > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									children: t$2("usage.day.loading")
+								}) : day.totals.calls === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: usage_module_css_default.muted,
+									children: isToday ? t$2("usage.noData") : t$2("usage.day.empty")
+								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TotalsRow, { totals: day.totals }),
+								(day?.totals.cost ?? 0) > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: usage_module_css_default.providerRow,
 									"data-dsh-part": "today-cost",
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: usage_module_css_default.providerName,
-										children: t$2("usage.today.cost")
+										children: isToday ? t$2("usage.today.cost") : t$2("usage.day.cost")
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: usage_module_css_default.providerTokens,
-										children: formatCost(snapshot.usage.today.totals.cost)
+										children: formatCost(day?.totals.cost ?? 0)
 									})]
 								}),
-								snapshot.usage.today.providers.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								(day?.providers.length ?? 0) > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									"data-dsh-part": "provider-list",
-									children: snapshot.usage.today.providers.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									children: (day?.providers ?? []).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: usage_module_css_default.providerRow,
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 											className: usage_module_css_default.providerName,
@@ -48846,10 +48971,24 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						provider,
 						current: current.provider
 					}, provider.provider))),
-					tab === "bank" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(VoucherCard, {
-						window: snapshot.usage.all ?? snapshot.usage.range,
-						observedSpend: snapshot.usage.observedSpend
-					})
+					tab === "bank" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(DayPicker, {
+						part: "bank",
+						value: bankSelection ?? BANK_ALL_DAYS,
+						options: dayOptions,
+						today: todayDate ?? "",
+						leading: {
+							value: BANK_ALL_DAYS,
+							label: t$2("usage.bank.windowAll")
+						},
+						onSelect: (date) => {
+							setBankDay(date === BANK_ALL_DAYS ? void 0 : date);
+						}
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(VoucherCard, {
+						window: bankWindow,
+						observedSpend: bankSelection === void 0 ? snapshot.usage.observedSpend : void 0,
+						loading: bankSelection !== void 0 && bankDayLoad?.status === "loading",
+						...bankDayLoad?.status === "error" ? { error: bankDayLoad.error ?? "" } : {}
+					})] })
 				]
 			});
 		}
@@ -48954,15 +49093,16 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		}
 		/**
 		* The Token 银行 card: the DeepSeek official family's retained-ledger usage
-		* minted onto the whale-yuan note at 1,000,000 tokens per whale yuan. The window
-		* prefers the host's whole-ledger aggregate and falls back to the 30-day
-		* trend when an older host serves no `all`; the spend line prefers the
-		* official balance watch and falls back to the fold-time estimate; the
-		* artwork draw failure degrades to an error line and never takes the
-		* section down.
+		* minted onto the whale-yuan note at 1,000,000 tokens per whale yuan. The
+		* window is the whole retained ledger by default (the host's aggregate,
+		* falling back to the 30-day trend when an older host serves no `all`) or the
+		* single day the user picked; the spend line prefers the official balance
+		* watch (whole window only) and falls back to the fold-time estimate; the
+		* artwork draw failure degrades to an error line and never takes the section
+		* down.
 		*/
 		function VoucherCard(props) {
-			const { window: ledger, observedSpend } = props;
+			const { window: ledger, observedSpend, loading, error } = props;
 			const data = deepseekVoucherData(ledger);
 			const canvasRef = (0, react.useRef)(null);
 			const [drawError, setDrawError] = (0, react.useState)(void 0);
@@ -49020,7 +49160,13 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 					className: usage_module_css_default.cardTitle,
 					children: t$2("usage.bank.title")
-				}), data === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+				}), error !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: usage_module_css_default.errorLine,
+					children: t$2("usage.day.error", { error })
+				}) : loading === true ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: usage_module_css_default.muted,
+					children: t$2("usage.day.loading")
+				}) : data === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 					className: usage_module_css_default.muted,
 					children: t$2("usage.bank.noUsage")
 				}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
@@ -49811,6 +49957,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		}
 		const usageApi = {
 			overview: () => usageFetch("api/dsh-usage/overview", "GET"),
+			day: async (date) => (await usageFetch("api/dsh-usage/day?date=" + encodeURIComponent(date), "GET")).day,
 			refresh: () => usageFetch("api/dsh-usage/refresh", "POST")
 		};
 		/**
@@ -49880,10 +50027,12 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					store.actions.setState("error", error instanceof Error ? error.message : String(error));
 				});
 			};
+			const loadDay = (date) => usageApi.day(date);
 			const face = () => ({
 				store,
 				poll,
 				refresh,
+				loadDay,
 				settings: settingsForm
 			});
 			const disposeFootCard = mountUsageFootCard({

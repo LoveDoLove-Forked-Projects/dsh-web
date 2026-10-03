@@ -20,7 +20,7 @@ import type { BalanceParse, PlanParse } from '../core/adapters.ts'
 import { foldAliasRoutes } from '../core/provider-routes.ts'
 import { deepseekModelSpend } from '../core/pricing.ts'
 import { createLedgerDocument, deserializeLedger, foldUsage, ledgerDayKeys, localDateKey, pruneLedger, summarizeDays, totalTokens } from '../core/ledger.ts'
-import type { BalanceView, CredentialKind, ObservedSpendView, PlanView, ProviderSnapshotState, ProviderSnapshotView, UsageLedgerDocument, UsageOverviewView, UsageTokenTotals } from '../core/types.ts'
+import type { BalanceView, CredentialKind, ObservedSpendView, PlanView, ProviderSnapshotState, ProviderSnapshotView, UsageDayView, UsageLedgerDocument, UsageOverviewView, UsageTokenTotals } from '../core/types.ts'
 import { addTotals, emptyTotals } from '../core/types.ts'
 
 /**
@@ -350,6 +350,9 @@ export class UsageService {
           totals: range.totals,
           providers: range.providers,
         },
+        // Every retained day, not just the trend window: the day picker's
+        // option list reaches back to the oldest day retention still keeps.
+        availableDays: allKeys,
         all: {
           from: allKeys[0] ?? todayKey,
           to: allKeys[allKeys.length - 1] ?? todayKey,
@@ -393,8 +396,19 @@ export class UsageService {
     }
   }
 
+  /**
+   * One retained local day aggregated per provider and model, as the day
+   * route serves it. A day the ledger never held — pruned by retention, or
+   * simply without usage — reads as a zeroed day rather than an error, so a
+   * picker selection that aged out degrades to "no usage" instead of a broken
+   * panel. The route gates the key's shape before it gets here.
+   */
+  day(dateKey: string): UsageDayView {
+    return this.daySummary(dateKey)
+  }
+
   /** One local day aggregated per provider. */
-  private daySummary(dateKey: string): UsageOverviewView['usage']['today'] {
+  private daySummary(dateKey: string): UsageDayView {
     const day = this.ledger.days[dateKey] ?? {}
     const { totals, providers } = summarizeDays([day])
     return { date: dateKey, totals, providers }

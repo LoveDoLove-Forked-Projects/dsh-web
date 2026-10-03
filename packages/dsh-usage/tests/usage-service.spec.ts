@@ -192,6 +192,50 @@ describe('session fold → overview', () => {
   })
 })
 
+describe('one retained day on demand', () => {
+  it('user sees one picked day per provider and model, and a zeroed day for a day without usage', async () => {
+    const dayAt = (daysAgo: number): number => {
+      const date = new Date()
+      date.setDate(date.getDate() - daysAgo)
+      date.setHours(12, 0, 0, 0)
+      return date.getTime()
+    }
+    // Given a persisted ledger holding yesterday under two DeepSeek models and
+    // the day before that under a second provider
+    const doc = createLedgerDocument()
+    foldUsage(doc, dayAt(1), 'deepseek', 'deepseek-v4-pro', { ...emptyTotals(), inputTokens: 900, outputTokens: 100, calls: 2 })
+    foldUsage(doc, dayAt(1), 'deepseek', 'deepseek-flash', { ...emptyTotals(), inputTokens: 50, calls: 1 })
+    foldUsage(doc, dayAt(2), 'kimi-coding', 'k2', { ...emptyTotals(), outputTokens: 300, calls: 3 })
+    writeLedgerFile(JSON.parse(JSON.stringify(doc)).days)
+
+    const { ctx } = makeCtx()
+    const service = new UsageService(ctx, OPTIONS)
+    service.start()
+    const yesterday = localDateKey(dayAt(1))
+    await waitForPersistedLoad(() => {
+      expect(service.overview().usage.availableDays).toContain(yesterday)
+    })
+
+    // When the day route asks for yesterday
+    const day = service.day(yesterday)
+    // Then that day alone is aggregated, heaviest model first, with no other day mixed in
+    expect(day.date).toBe(yesterday)
+    expect(day.totals.inputTokens).toBe(950)
+    expect(day.totals.calls).toBe(3)
+    expect(day.providers.map((row) => row.provider)).toEqual(['deepseek'])
+    expect(day.providers[0]?.models.map((model) => model.model)).toEqual(['deepseek-v4-pro', 'deepseek-flash'])
+    // And the other provider shows up under its own day only
+    expect(service.day(localDateKey(dayAt(2))).providers.map((row) => row.provider)).toEqual(['kimi-coding'])
+    // And a day the ledger never held reads as a zeroed day, not a missing one
+    const empty = service.day(localDateKey(dayAt(3)))
+    expect(empty.totals.calls).toBe(0)
+    expect(empty.providers).toEqual([])
+    // And the picker's option list reaches every retained day, not just the trend window
+    expect(service.overview().usage.availableDays).toEqual([localDateKey(dayAt(2)), yesterday])
+    await service.stop()
+  })
+})
+
 describe('probes and per-fact errors', () => {
   it('probes the balance and reports the snapshot on the overview', async () => {
     const fetchMock = stubFetch((url) => url.includes('api.deepseek.com') ? jsonResponse(BALANCE_BODY) : jsonResponse({}, 404))
