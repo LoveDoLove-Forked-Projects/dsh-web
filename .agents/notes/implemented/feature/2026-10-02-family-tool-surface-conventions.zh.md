@@ -15,7 +15,7 @@ Status: implemented
 
 `shared/host/tool-surface.ts`（由 `scripts/sync-shared.mjs` 同步进 `dsh-ssh`、`dsh-task-board`、`dsh-task-board-github`）持有这三个包共用的两条约定：
 
-- `PLUGIN_TOOL_SECTION_ORDERS` 每包一个 order（`ssh: 150`、`task-board: 200`、`task-board-github: 210`），段落不会再意外撞号，扩展仍排在被它收窄的看板之后。
+- `PLUGIN_TOOL_SECTION_ORDERS` 每个宿主插件一个 order（`ssh: 150`、`task-board: 200`），`EXTENSION_TOOL_SECTION_ORDER`（210）是外部提供方扩展的指导段落排在它所依附插件之后的专用槽位。宿主各自的段落不会再意外撞号，扩展只以自身命名、不写宿主，因此本模块在任何包内的副本都不含提供方 id（见 [Task Board external provider extension contract](../../proposed/architecture/2026-09-30-task-board-extension-contract.md)）。
 - `visibleToolText(tools, names, text)` 返回一个段落提供者：仅当 `names` 中至少一个能经 `tools.get(name, context.scope)` 读到才渲染 `text`。部署不提供注册表时原样渲染（缺注册表不等于能力不可用）；查询被拒也原样渲染（瞬时读失败不该静默丢掉公告）；只有查询成功但一个都读不到才渲染空串。
 
 工具描述里的 21 处 `Triggers:` 全部移除。它们承载的触发词本就已存在于各包自己的 `*_GUIDANCE` 公告（`SSH_GUIDANCE`、`TASK_BOARD_GUIDANCE`、`GITHUB_GUIDANCE`）——那才是「指名本插件的词汇」的既定归属地，因此用户侧的能力发现没有损失，同一份文案也不再付两遍 token。
@@ -44,7 +44,7 @@ SSH 引擎把调用方的 `exec.signal` 经 `SshEngine.exec` / `cluster` 转发�
 
 ## Consequences
 
-- 三个包共用一套「指导文案放哪、何时渲染」的定义，order 值不可能再各自漂移。
+- 三个包共用一套「指导文案放哪、何时渲染」的定义：宿主各自持有自己的 order，扩展段落取家族扩展槽位并排在其宿主之后。
 - 公告不再指名会话够不到的工具。三者 `announceToAgent` 都默认 `false`，因此只影响主动开启的用户。
 - 工具描述不再携带检索关键词；同一份词汇仍在公告里。
 - 被取消的 `ssh_exec` / `ssh_cluster` 调用现在会停掉远端命令，而不是把它留在远端继续跑，也不会被连接池的重连重试重放。

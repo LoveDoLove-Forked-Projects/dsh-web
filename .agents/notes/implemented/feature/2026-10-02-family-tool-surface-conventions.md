@@ -15,7 +15,7 @@ Five plugin packages in this repository register model-facing tools (24 in total
 
 `shared/host/tool-surface.ts` (synced by `scripts/sync-shared.mjs` into `dsh-ssh`, `dsh-task-board` and `dsh-task-board-github`) owns the two conventions these packages share:
 
-- `PLUGIN_TOOL_SECTION_ORDERS` holds one order per package (`ssh: 150`, `task-board: 200`, `task-board-github: 210`), so the sections cannot drift into an accidental tie and the extension still follows the board it narrows.
+- `PLUGIN_TOOL_SECTION_ORDERS` holds one order per host plugin (`ssh: 150`, `task-board: 200`), and `EXTENSION_TOOL_SECTION_ORDER` (210) is the slot an external provider extension's own guidance section takes right after the plugin it extends. Host bands cannot drift into an accidental tie, and an extension names itself rather than its host, so no package's synced copy of this module carries a provider id (see [Task Board external provider extension contract](../../proposed/architecture/2026-09-30-task-board-extension-contract.md)).
 - `visibleToolText(tools, names, text)` returns a section provider that renders `text` only while at least one of `names` is reachable through `tools.get(name, context.scope)`. A deployment serving no registry renders the text unchanged (a missing registry is not proof the capability is unusable), and a refused lookup also renders it (a transient read failure must not silently drop the announcement); only a successful lookup that finds none of the names renders empty.
 
 All 21 `Triggers:` trailers are removed from tool descriptions. The trigger vocabulary they carried already lives in each package's own `*_GUIDANCE` announcement (`SSH_GUIDANCE`, `TASK_BOARD_GUIDANCE`, `GITHUB_GUIDANCE`), which is the documented home for "the words that name this plugin" — so no user-facing capability discovery is lost, and the copy is no longer paid for twice.
@@ -44,7 +44,7 @@ The SSH engine forwards the caller's `exec.signal` through `SshEngine.exec` / `c
 
 ## Consequences
 
-- Three packages share one definition of where their guidance sits and when it renders; the order values can no longer drift apart.
+- Three packages share one definition of where their guidance sits and when it renders; each host band keeps its own order and an extension's section takes the family extension slot after its host.
 - Announcements stop naming tools a session cannot reach. All three default `announceToAgent` to `false`, so this only affects users who opted in.
 - Tool descriptions no longer carry retrieval keywords; the same vocabulary remains in the announcements.
 - A cancelled `ssh_exec` / `ssh_cluster` call now stops the remote command instead of leaving it running, and is never replayed by the pool's reconnect retry.

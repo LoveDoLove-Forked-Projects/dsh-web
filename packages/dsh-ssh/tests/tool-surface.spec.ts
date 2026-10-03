@@ -6,7 +6,7 @@
  * `@deepseek-ai/dsh-tool-subagent`: guidance follows tool visibility.
  */
 import { describe, expect, it } from 'vitest'
-import { PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from '../src/tool-surface.ts'
+import { EXTENSION_TOOL_SECTION_ORDER, PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from '../src/tool-surface.ts'
 
 /** A registry stub whose visibility the test controls by name. */
 function registryWith(visible: readonly string[]) {
@@ -19,16 +19,20 @@ function registryWith(visible: readonly string[]) {
 }
 
 describe('plugin tool section orders', () => {
-  it('operator sees one distinct section order per package, board before its extension', () => {
+  it('operator sees one distinct section order per shared band and an extension slot after its host', () => {
     // Given the shared band
     const orders = PLUGIN_TOOL_SECTION_ORDERS
 
-    // When each package's slot is read
-    // Then every package owns its own order and the extension follows the board
+    // When each host plugin's slot is read
+    // Then every host owns its own order and none of them ties another
     expect(orders.ssh).toBe(150)
     expect(orders['task-board']).toBe(200)
-    expect(orders['task-board-github']).toBe(210)
-    expect(new Set(Object.values(orders)).size).toBe(3)
+    expect(new Set(Object.values(orders)).size).toBe(2)
+
+    // And an extension's own section sits after the plugin it extends, in a slot
+    // no host plugin holds (the extension names itself, never its host)
+    expect(EXTENSION_TOOL_SECTION_ORDER).toBe(210)
+    expect(Object.values(orders) as number[]).not.toContain(EXTENSION_TOOL_SECTION_ORDER)
   })
 })
 

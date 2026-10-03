@@ -24,6 +24,7 @@ Status: proposed
 5. **Wire 与账本**：`TaskRecord.integrations` 改为不透明 `Record<string, unknown>`，只校验为纯 JSON 对象且单条不超过 64 KiB；三个 `github-*` action kind 合并为 `{ kind: "extension-action", extensionId, action, taskId?, payload? }`；快照专用 `github` 字段改为 `extensions?: Record<string, unknown>`。不做账本 schema 迁移。
 6. **不变量上收**：`patchContent` 复用 `canEditTaskContent`（执行过或已归档的卡保留已记录内容）；`setStatus` 走看板既有门禁（运行中锁与手动列规则）；事件回调失败以 try/catch 加记录隔离，绝不打断执行；身份索引归提供方（看板不提供 `findTaskByGitHubIdentity`）。
 7. **开关三态优先级**：loader 行禁用（需重启，最重）高于扩展 `enabled`（volatile，默认 true，即时惰性：停轮询、停写回、注销工具、隐藏席位、不清数据）高于看板总开关（随之静默一切）。
+8. **看板（含共享副本）不出现提供方词汇**：扩展的提示词段落 order 取家族通用的 `EXTENSION_TOOL_SECTION_ORDER` 槽位，排在它所依附的插件之后，而不是 `PLUGIN_TOOL_SECTION_ORDERS` 里的逐包条目。看板同步到的家族 tool-surface 副本因此不含任何提供方名字，`grep -rn github packages/dsh-task-board/src` 为空。这一点部分替代 [Family tool-surface conventions](../../implemented/feature/2026-10-02-family-tool-surface-conventions.md) 记录的逐包 order 表。
 
 ## Context & Efficiency Impact
 

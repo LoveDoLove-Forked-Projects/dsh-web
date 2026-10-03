@@ -25,18 +25,28 @@
  * Prompt-section order for each package's tool guidance.
  *
  * These sit in the family band between the deployment persona and the SDK's
- * `PLAN_POLICY` (500), ordered so a board announcement precedes the extension
- * that narrows it. Values are owned here rather than written per package so the
- * sections cannot drift into an accidental tie.
+ * `PLAN_POLICY` (500). Values are owned here rather than written per package so
+ * the host plugins whose guidance shares one prompt cannot drift into an
+ * accidental tie.
  */
 export const PLUGIN_TOOL_SECTION_ORDERS = {
   ssh: 150,
   'task-board': 200,
-  'task-board-github': 210,
 } as const
 
 /** One plugin id keyed by {@link PLUGIN_TOOL_SECTION_ORDERS}. */
 export type PluginToolSectionId = keyof typeof PLUGIN_TOOL_SECTION_ORDERS
+
+/**
+ * Order of an external provider extension's own guidance section, right after
+ * the band of the plugin it extends.
+ *
+ * An extension names itself, not the plugin it plugs into, so its order stays
+ * out of {@link PLUGIN_TOOL_SECTION_ORDERS}: every package's copy of this module
+ * then carries no provider id. The slot still has one owner and cannot collide
+ * with a host plugin's band.
+ */
+export const EXTENSION_TOOL_SECTION_ORDER = 210
 
 /**
  * The scoped tool lookup a section provider needs: the registry read for one

@@ -28,7 +28,7 @@ import { makeGitHubSetupRoutes } from './host/routes.ts'
 import { createGitHubSetup } from './host/setup.ts'
 import type { GitHubSyncService } from './host/service.ts'
 import { mountOnce } from './mount-once.ts'
-import { PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from './tool-surface.ts'
+import { EXTENSION_TOOL_SECTION_ORDER, visibleToolText } from './tool-surface.ts'
 
 /**
  * npm identity shared by every install source of this package. The host
@@ -47,7 +47,7 @@ export const DRAFT_PR_POLICIES = ['draft', 'ready'] as const
 export type DraftPrPolicy = (typeof DRAFT_PR_POLICIES)[number]
 
 /** Order of this extension's announcement section, just after the board's. */
-const SECTION_ORDER = PLUGIN_TOOL_SECTION_ORDERS['task-board-github']
+const SECTION_ORDER = EXTENSION_TOOL_SECTION_ORDER
 
 /** The nine agent-tool names this extension's announcement describes. */
 const GITHUB_TOOL_NAMES = [
