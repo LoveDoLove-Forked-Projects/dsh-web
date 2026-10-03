@@ -42,8 +42,8 @@ Status: proposed
 
 ## Acceptance criteria
 
-契约测试通过：注册按 id 幂等；`apiVersion` 不匹配以可诊断错误被拒且看板继续服务；看板 x 扩展开关门禁能启动与停止提供方；工具随其注册与注销；一个抛错的事件回调被隔离，健康回调照常运行；`patchContent` 拒绝已执行过的卡；`setStatus` 拒绝运行中的卡；非 JSON 与超限载荷被拒；提供方 action 带着不透明载荷原样路由回来。一个消费全部能力的假 provider 通过，证明契约不是 GitHub 形状。现有六个 `github-*` 套件保持全绿，且 `pnpm --filter @linxin666/dsh-client-ui-task-board typecheck` / `test` / `build` 通过。除提供方自有目录（`src/host/github/**`、`src/core/github/**`、`src/client/github/**`）与 `src/index.ts` 的那一处装配外，看板源码不再出现 GitHub 语义。
+契约测试通过：注册按 id 幂等；`apiVersion` 不匹配以可诊断错误被拒且看板继续服务；看板 x 扩展开关门禁能启动与停止提供方；工具随其注册与注销；一个抛错的事件回调被隔离，健康回调照常运行；`patchContent` 拒绝已执行过的卡；`setStatus` 拒绝运行中的卡；非 JSON 与超限载荷被拒；提供方 action 带着不透明载荷原样路由回来。一个消费全部能力的假 provider 通过，证明契约不是 GitHub 形状。迁移后的 `github-*` 套件归提供方包并保持全绿，且 `pnpm --filter @linxin666/dsh-client-ui-task-board typecheck` / `test` / `build` 通过。看板源码完全不出现提供方词汇——`grep -rn github packages/dsh-task-board/src` 为空——因为家族 tool-section 频段只登记宿主插件，提供方扩展取通用槽位 `EXTENSION_TOOL_SECTION_ORDER` 排在它所依附的插件之后。
 
 ## Risks
 
-客户端席位会随看板自身的面板注册一起塌缩，所以提供方必须在看板每次重新启用时依据 client 镜像重建席位；因此提供方必须把席位注册视为幂等且廉价。不透明 integrations 把提供方校验推给提供方：畸形的提供方载荷不再导致账本行被丢弃，提供方必须在读取时校验自己的条目。`registerVisibility` 谓词会在看板每次渲染时运行，所以谓词必须保持为对任务的廉价纯函数。`src/index.ts`（以及对应的浏览器装配）里的过渡期同包装配必须在提供方包拆分落地时删除；在那之前看板命名空间仍承载提供方的文案，需由提供方包自己的 locale 工作接手。
+客户端席位会随看板自身的面板注册一起塌缩，所以提供方必须在看板每次重新启用时依据 client 镜像重建席位；因此提供方必须把席位注册视为幂等且廉价。不透明 integrations 把提供方校验推给提供方：畸形的提供方载荷不再导致账本行被丢弃，提供方必须在读取时校验自己的条目。`registerVisibility` 谓词会在看板每次渲染时运行，所以谓词必须保持为对任务的廉价纯函数。看板只在注册、看板总开关与工具注册表重绑时重新求值「看板 x 扩展」这道闸；因此自行翻转自己 `enabled` 开关的提供方必须自行释放自己的表面——参考实现正是通过 dispose 掉自己的注册来做到这一点（连同它的工具与已发布摘要一并释放）。
