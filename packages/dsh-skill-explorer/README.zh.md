@@ -37,6 +37,13 @@ DSH Web GUI 与官方桌面客户端的**技能中心**：按来源分级浏览�
 - 数据来自按官方 dsh-skill-filesystem 根约定的文件系统扫描，并与
   `ctx.skills` 注册表（bundled / runtime 条目）合并。本插件不改变 skill 的
   加载/注入语义——纯 GUI 管理层。
+- 只有官方 provider 会加载的技能才被列出：SKILL.md 必须声明非空的 `name`
+  与 `description`，且 name 满足官方技能名文法。被官方 provider 丢弃的文件
+  在面板里同样不出现，面板不会展示模型收不到的技能。
+- 同名技能按官方来源 rank 决出胜者（项目 `.dsh/skills` 100、项目
+  `.agents/skills` 200、运行时 250、自定义目录 300、用户 `~/.dsh/skills`
+  400、用户 `~/.agents/skills` 500、内置 600），因此面板所示与模型所得是
+  同一个技能。
 
 ## 安装
 
@@ -105,6 +112,11 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-skill-explorer
   `.git` 祖先。
 - frontmatter 解析为零依赖轻量实现（块标量、布尔、input 嵌套块）；不支持的
   生僻 YAML 特性以官方 dsh-skill-filesystem 提供方为准。
+- 面板覆盖它扫描的文件系统根，加上 `ctx.skills` 注册表的全局层（bundled 与
+  runtime 条目）。仅通过**某个 agent preset 自己的** `customSkillDirs` 或
+  preset 作用域提供方到达 agent 的技能不在此覆盖范围内，因为面板读取注册表时
+  不带 viewing scope。因此面板里没有的技能，不一定模型也没有：会话能加载什么，
+  以官方 `skill` 工具目录为准。
 - 链接技能不可删除、不可编辑（见安全模型）；启用/禁用对链接技能正常（改写目标
   `SKILL.md` frontmatter）。目录型与「单文件」链接都能正常列出；「单文件」
   符号链接（指向单个 `.md`）在原子改写（rename）时会被替换为一个普通文件

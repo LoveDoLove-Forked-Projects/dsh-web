@@ -34,18 +34,52 @@ export const SOURCE_GROUPS: SourceGroup[] = [
 export const REGISTRY_SOURCE_LEVEL: ReadonlyMap<string, string> = new Map(SOURCE_GROUPS.map((group) => [group.key, group.key]))
 
 /**
- * Filesystem precedence across roots, matching the official rank order
- * (project wins over custom wins over user). Parallel scans finish in
- * arbitrary order, so the winner must be decided by priority comparison,
- * never by whichever readdir happened to resolve last.
+ * The official skill-name grammar.
+ *
+ * One definition serves both this scan and the write routes, so a name the
+ * panel accepts is one the official registry loads: lowercase alphanumeric
+ * segments joined by single hyphens, never a leading, trailing or doubled
+ * hyphen. Mirrors isSkillName in @deepseek-ai/dsh-skill.
  */
-const LEVEL_PRIORITY: ReadonlyMap<string, number> = new Map([
-  ['project-dsh', 0],
-  ['project-agents', 1],
-  ['custom', 2],
-  ['user-dsh', 3],
-  ['user-agents', 4],
+const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/**
+ * Whether a string is a skill name the official registry accepts.
+ * @param name - candidate skill name.
+ * @returns whether it matches the official skill-name grammar.
+ */
+export function isSkillName(name: string): boolean {
+  return SKILL_NAME_PATTERN.test(name)
+}
+
+/**
+ * Official precedence rank per source (lower wins): the values
+ * @deepseek-ai/dsh-skill-filesystem assigns its roots plus the registry's
+ * runtime rank. A duplicate name resolves by this rank across every source the
+ * panel shows, so the entry it displays is the one the model receives. Note
+ * runtime (250) sits between the project roots and the custom root, not last.
+ */
+export const SKILL_SOURCE_RANK: ReadonlyMap<string, number> = new Map([
+  ['project-dsh', 100],
+  ['project-agents', 200],
+  ['runtime', 250],
+  ['custom', 300],
+  ['user-dsh', 400],
+  ['user-agents', 500],
+  ['bundled', 600],
 ])
+
+/** Unknown or foreign sources rank below every known source. */
+const UNKNOWN_SOURCE_RANK = 999
+
+/**
+ * Precedence rank of a display level (see SKILL_SOURCE_RANK).
+ * @param level - a source level key or an other:<source> bucket.
+ * @returns the rank; unknown levels rank last.
+ */
+export function rankOf(level: string): number {
+  return SKILL_SOURCE_RANK.get(level) ?? UNKNOWN_SOURCE_RANK
+}
 
 /** One skill entry as served to the panel. */
 export interface SkillEntry {
@@ -144,6 +178,7 @@ async function scanSkillRoot(
   level: string,
   into: Map<string, SkillEntry>,
   workspaceInfo?: { root: string; name: string; active: boolean },
+  skipSystem = false,
 ): Promise<void> {
   if (!existsSync(root)) return
   let entries
@@ -154,6 +189,9 @@ async function scanSkillRoot(
   }
   for (const entry of entries) {
     const name = entry.name
+    // The official filesystem provider reserves the .system entry under the
+    // user .dsh root for harness-internal bookkeeping and never lists it.
+    if (skipSystem && name === '.system') continue
     let file: string
     let linked = false
     if (entry.isDirectory()) {
@@ -192,20 +230,28 @@ async function scanSkillRoot(
       continue
     }
     const parsed = parseFrontmatter(content)
-    const skillName = parsed.name ?? name.replace(/\.md$/, '')
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(skillName)) continue
-    const priority = LEVEL_PRIORITY.get(level) ?? 99
-    const existing = into.get(skillName)
+    // Official acceptance: a skill file must declare a non-empty name and
+    // description in frontmatter, and that name must satisfy the skill-name
+    // grammar (the official provider's stringField requires length > 0 and
+    // parseSkillFile discards the rest). A file the official provider drops —
+    // missing frontmatter, missing or empty either field, invalid name — is
+    // not a loaded skill, so the panel must not show it; otherwise the panel
+    // lists a skill the model never receives.
+    if (parsed.name === undefined || parsed.name === '') continue
+    if (parsed.description === undefined || parsed.description === '') continue
+    if (!isSkillName(parsed.name)) continue
+    const priority = rankOf(level)
+    const existing = into.get(parsed.name)
     if (existing !== undefined) {
-      const existingPriority = LEVEL_PRIORITY.get(existing.level) ?? 99
+      const existingPriority = rankOf(existing.level)
       if (existingPriority < priority) continue
       if (existingPriority === priority && existing.isActiveWorkspace && !workspaceInfo?.active) {
         continue
       }
     }
-    into.set(skillName, {
-      name: skillName,
-      description: parsed.description ?? '(no description)',
+    into.set(parsed.name, {
+      name: parsed.name,
+      description: parsed.description,
       whenToUse: parsed.whenToUse,
       provider: 'filesystem',
       level,
@@ -280,9 +326,14 @@ export function buildPayload(skills: SkillEntry[], complete: boolean, cwd: strin
 }
 
 /**
- * Collect grouped skills: filesystem scanning (primary) + registry supplement.
- * Filesystem entries win on name conflicts; the registry fills whenToUse and
- * invocation flags, and contributes bundled/runtime entries of its own.
+ * Collect grouped skills: filesystem scanning plus registry supplement.
+ *
+ * Both halves apply the official acceptance rules: a scanned file must declare
+ * name and description and the name must be a valid skill name (see
+ * scanSkillRoot), and a duplicate name resolves by the official source rank
+ * across the scan and the registry, so the entry shown is the one the model
+ * receives. The registry additionally contributes bundled and runtime entries
+ * of its own, and fills whenToUse / invocation flags on a same-rank peer.
  * @param options - collection options.
  * @returns skills and whether the registry snapshot was complete.
  */
@@ -304,7 +355,7 @@ export async function collectSkills(options: CollectOptions): Promise<CollectRes
     scanTasks.push(scanSkillRoot(join(root, '.agents', 'skills'), 'project-agents', byName, wsInfo))
   }
   for (const dir of customSkillDirs ?? []) scanTasks.push(scanSkillRoot(dir, 'custom', byName))
-  scanTasks.push(scanSkillRoot(join(dshHome, 'skills'), 'user-dsh', byName))
+  scanTasks.push(scanSkillRoot(join(dshHome, 'skills'), 'user-dsh', byName, undefined, true))
   scanTasks.push(scanSkillRoot(join(agentsHome, 'skills'), 'user-agents', byName))
   await Promise.all(scanTasks)
 
@@ -323,17 +374,27 @@ export async function collectSkills(options: CollectOptions): Promise<CollectRes
         const serialized = serializeRegistry(skill)
         if (existing === undefined) {
           byName.set(skill.name, serialized)
-        } else {
-          if (serialized.whenToUse !== undefined) existing.whenToUse = serialized.whenToUse
-          if (serialized.provider !== undefined) existing.provider = serialized.provider
-          // Only let the registry refine invocation when it actually states a
-          // policy. scanSkillRoot() already resolved the file frontmatter with
-          // the official rule (omitted => allowed), so overwriting it with the
-          // serialized default would re-introduce the false-negative that made
-          // every skill render as not invocable.
-          if (skill.invocation?.modelInvocable !== undefined) existing.modelInvocable = skill.invocation.modelInvocable
-          if (skill.invocation?.userInvocable !== undefined) existing.userInvocable = skill.invocation.userInvocable
+          continue
         }
+        // The registry outranks a scanned entry of a weaker source, the way
+        // the official registry resolves a duplicate by rank. Without this an
+        // unquestioned filesystem entry would win even when the official
+        // winner is a runtime registration, so the panel would name a different
+        // skill than the model receives.
+        if (rankOf(serialized.level) < rankOf(existing.level)) {
+          byName.set(skill.name, serialized)
+          continue
+        }
+        if (rankOf(serialized.level) > rankOf(existing.level)) continue
+        if (serialized.whenToUse !== undefined) existing.whenToUse = serialized.whenToUse
+        if (serialized.provider !== undefined) existing.provider = serialized.provider
+        // Only let the registry refine invocation when it actually states a
+        // policy. scanSkillRoot() already resolved the file frontmatter with
+        // the official rule (omitted => allowed), so overwriting it with the
+        // serialized default would re-introduce the false-negative that made
+        // every skill render as not invocable.
+        if (skill.invocation?.modelInvocable !== undefined) existing.modelInvocable = skill.invocation.modelInvocable
+        if (skill.invocation?.userInvocable !== undefined) existing.userInvocable = skill.invocation.userInvocable
       }
     } catch {
       // Registry unavailable: the filesystem result still stands.

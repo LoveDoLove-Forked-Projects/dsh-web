@@ -14,7 +14,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { isSkillExplorerAllowed } from './access.ts'
-import { buildPayload, collectSkills, findProjectRoot, overwriteSkillFile, projectSkillRoot, trashSkillFile, userSkillRoot, writeSkillFile, type CollectOptions, type SkillEntry } from './collect.ts'
+import { buildPayload, collectSkills, findProjectRoot, isSkillName, overwriteSkillFile, projectSkillRoot, trashSkillFile, userSkillRoot, writeSkillFile, type CollectOptions, type SkillEntry } from './collect.ts'
 import { parseFrontmatter, setFrontmatterField, stripFrontmatter } from './frontmatter.ts'
 import { readJsonBody, writeJson } from './http.ts'
 
@@ -34,9 +34,6 @@ function queryParam(url: URL, name: string): string | undefined {
   const value = url.searchParams.get(name)
   return value === null ? undefined : value
 }
-
-/** Skill name pattern shared by the routes (kebab-case). */
-const NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
 /** Route family dependencies (tests inject fakes). */
 export interface SkillRoutesDeps {
@@ -162,7 +159,7 @@ export function makeRoutes(ctx: Context, deps: SkillRoutesDeps): WebRoute[] {
           const url = new URL(req.url ?? '/', 'http://x')
           const name = queryParam(url, 'name')
           const path = queryParam(url, 'path')
-          if (name === undefined || !NAME_PATTERN.test(name) || path === undefined || path.trim() === '') {
+          if (name === undefined || !isSkillName(name) || path === undefined || path.trim() === '') {
             writeJson(res, 400, { error: 'expected ?name=<kebab-case>&path=<absolute SKILL.md>' })
             return
           }
@@ -199,7 +196,7 @@ export function makeRoutes(ctx: Context, deps: SkillRoutesDeps): WebRoute[] {
           }
           const payload = body as Record<string, unknown>
           const { name, path, enabled } = payload
-          if (typeof name !== 'string' || !NAME_PATTERN.test(name) || typeof path !== 'string' || path.trim() === '' || typeof enabled !== 'boolean') {
+          if (typeof name !== 'string' || !isSkillName(name) || typeof path !== 'string' || path.trim() === '' || typeof enabled !== 'boolean') {
             writeJson(res, 400, { error: 'expected { name, path, enabled }' })
             return
           }
@@ -242,7 +239,7 @@ export function makeRoutes(ctx: Context, deps: SkillRoutesDeps): WebRoute[] {
             writeJson(res, 400, { error: 'cwd is required (the workspace shown by the panel)' })
             return
           }
-          if (typeof name !== 'string' || !NAME_PATTERN.test(name)) {
+          if (typeof name !== 'string' || !isSkillName(name)) {
             writeJson(res, 400, { error: 'name must be kebab-case (lowercase letters/digits first)' })
             return
           }
@@ -286,7 +283,7 @@ export function makeRoutes(ctx: Context, deps: SkillRoutesDeps): WebRoute[] {
           }
           const payload = body as Record<string, unknown>
           const { name, path, description, whenToUse, content } = payload
-          if (typeof name !== 'string' || !NAME_PATTERN.test(name) || typeof path !== 'string' || path.trim() === '') {
+          if (typeof name !== 'string' || !isSkillName(name) || typeof path !== 'string' || path.trim() === '') {
             writeJson(res, 400, { error: 'expected { name, path, description, content }' })
             return
           }
@@ -334,7 +331,7 @@ export function makeRoutes(ctx: Context, deps: SkillRoutesDeps): WebRoute[] {
           }
           const payload = body as Record<string, unknown>
           const { name, path } = payload
-          if (typeof name !== 'string' || !NAME_PATTERN.test(name) || typeof path !== 'string' || path.trim() === '') {
+          if (typeof name !== 'string' || !isSkillName(name) || typeof path !== 'string' || path.trim() === '') {
             writeJson(res, 400, { error: 'expected { name, path }' })
             return
           }

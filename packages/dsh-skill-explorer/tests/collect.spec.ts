@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync, rmSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { buildPayload, collectSkills, findProjectRoot, writeSkillFile, type RegistrySkill } from '../src/collect.ts'
+import { buildPayload, collectSkills, findProjectRoot, isSkillName, writeSkillFile, type RegistrySkill } from '../src/collect.ts'
 
 const TMP = mkdtempSync(join(tmpdir(), 'skill-explorer-collect-'))
 const PROJ = join(TMP, 'proj')
@@ -20,7 +20,11 @@ function write(path: string, content: string): void {
 
 write(join(PROJ, '.git', 'keep'), '')
 write(join(PROJ, '.dsh', 'skills', 'poc-first', 'SKILL.md'), '---\nname: poc-first\ndescription: 快速 POC 与先找简单方案的工作方式。\n---\n# 正文\n')
-write(join(PROJ, '.dsh', 'skills', 'zebra-skill', 'SKILL.md'), '# 无 frontmatter 的技能\n\n正文。\n')
+// A file with no frontmatter: the official provider discards it, so the panel
+// must not list it (regression input kept deliberately).
+write(join(PROJ, '.dsh', 'skills', 'no-frontmatter', 'SKILL.md'), '# 无 frontmatter 的技能\n\n正文。\n')
+// A file whose frontmatter name violates the official grammar (trailing hyphen).
+write(join(PROJ, '.dsh', 'skills', 'bad-name', 'SKILL.md'), '---\nname: bad-\ndescription: 非法技能名\n---\n')
 write(join(PROJ, '.agents', 'skills', 'agent-proj', 'SKILL.md'), '---\nname: agent-proj\ndescription: 项目 agents 技能\n---\n')
 write(join(HOME, 'skills', 'user-tool', 'SKILL.md'), '---\nname: user-tool\ndescription: 用户级技能\n---\n')
 write(join(AGENTS, 'skills', 'agent-user', 'SKILL.md'), '---\nname: agent-user\ndescription: 用户 agents 技能\n---\n')
@@ -101,7 +105,10 @@ describe('collectSkills', () => {
     expect(byName['poc-first'].level).toBe('project-dsh')
     expect(byName['poc-first'].whenToUse).toBe('注册表的 whenToUse')
     expect(byName['poc-first'].path).toBe(join(PROJ, '.dsh', 'skills', 'poc-first', 'SKILL.md'))
-    expect(byName['zebra-skill'].description).toBe('(no description)')
+    // The panel shows exactly the skills the model receives: a file the
+    // official provider discards (no frontmatter, invalid name) is absent.
+    expect(byName['no-frontmatter']).toBeUndefined()
+    expect(byName['bad-name']).toBeUndefined()
     expect(byName['agent-proj'].level).toBe('project-agents')
     expect(byName['user-tool'].level).toBe('user-dsh')
     expect(byName['agent-user'].level).toBe('user-agents')
@@ -110,7 +117,7 @@ describe('collectSkills', () => {
     expect(byName['computer-use'].provider).toBe('orca')
     expect(byName['embedded-hello'].level).toBe('runtime')
     expect(byName['block-desc'].description).toBe('块标量的 多行描述。')
-    expect(skills.length).toBe(9)
+    expect(skills.length).toBe(8)
   })
 
   it('degrades when the registry snapshot throws', async () => {
@@ -314,6 +321,126 @@ describe('cross-root precedence', () => {
     expect(byName['embedded-hello'].path).toBeUndefined()
     // Filesystem entries keep their scanned path even when the registry merges metadata.
     expect(byName['poc-first'].path).toBe(join(PROJ, '.dsh', 'skills', 'poc-first', 'SKILL.md'))
+  })
+})
+
+describe('official acceptance and precedence (aligned with dsh-skill)', () => {
+  it('operator sees a file the official provider discards left out of the panel', async () => {
+    // Given project roots holding one valid skill, one file without
+    // frontmatter, and one whose frontmatter omits the description
+    const tmp = mkdtempSync(join(tmpdir(), 'skill-explorer-accept-'))
+    const proj = join(tmp, 'proj')
+    write(join(proj, '.git', 'keep'), '')
+    write(join(proj, '.dsh', 'skills', 'good-skill', 'SKILL.md'), '---\nname: good-skill\ndescription: 合法技能\n---\n')
+    write(join(proj, '.dsh', 'skills', 'no-front', 'SKILL.md'), '# 无 frontmatter\n')
+    write(join(proj, '.dsh', 'skills', 'no-desc', 'SKILL.md'), '---\nname: no-desc\n---\n')
+    // When the skill center collects the roots
+    const { skills } = await collectSkills({
+      cwd: proj,
+      projectRoots: [proj],
+      customSkillDirs: [],
+      dshHome: join(tmp, 'home'),
+      agentsHome: join(tmp, 'agents'),
+      registry: { snapshot: async () => ({ skills: [], complete: true }) },
+    })
+    // Then only the officially loadable skill is listed
+    const names = skills.map((s) => s.name)
+    expect(names).toEqual(['good-skill'])
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('operator sees the official skill-name grammar honoured across the routes and the scan', () => {
+    // Given names the official isSkillName accepts and rejects
+    // When the shared guard is consulted
+    // Then it matches the official grammar exactly (no leading/trailing/doubled hyphen)
+    expect(isSkillName('ok-skill')).toBe(true)
+    expect(isSkillName('a')).toBe(true)
+    expect(isSkillName('1x-2y')).toBe(true)
+    expect(isSkillName('a-')).toBe(false)
+    expect(isSkillName('-a')).toBe(false)
+    expect(isSkillName('a--b')).toBe(false)
+    expect(isSkillName('A-b')).toBe(false)
+    expect(isSkillName('a_b')).toBe(false)
+  })
+
+  it('operator sees a runtime registration outrank a scanned user skill of the same name', async () => {
+    // Given a user skill and a same-name runtime candidate the official
+    // registry ranks higher (runtime 250 < user-agents 500)
+    const tmp = mkdtempSync(join(tmpdir(), 'skill-explorer-rank-'))
+    const proj = join(tmp, 'proj')
+    const agents = join(tmp, 'agents')
+    write(join(proj, '.git', 'keep'), '')
+    write(join(agents, 'skills', 'dup-skill', 'SKILL.md'), '---\nname: dup-skill\ndescription: 用户版本\n---\n')
+    // When the skill center merges the registry over the scan
+    const { skills } = await collectSkills({
+      cwd: proj,
+      projectRoots: [proj],
+      customSkillDirs: [],
+      dshHome: join(tmp, 'home'),
+      agentsHome: agents,
+      registry: {
+        snapshot: async () => ({
+          skills: [{ name: 'dup-skill', description: '运行时版本', source: 'runtime', provider: 'runtime' }],
+          complete: true,
+        }),
+      },
+    })
+    // Then the official winner (runtime) is the entry shown
+    const winner = skills.find((s) => s.name === 'dup-skill')
+    expect(winner?.level).toBe('runtime')
+    expect(winner?.description).toBe('运行时版本')
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('operator still sees a scanned project skill outrank a same-name bundled candidate', async () => {
+    // Given a project skill and a same-name bundled candidate the official
+    // registry ranks lower (project-dsh 100 < bundled 600)
+    const tmp = mkdtempSync(join(tmpdir(), 'skill-explorer-rank2-'))
+    const proj = join(tmp, 'proj')
+    write(join(proj, '.git', 'keep'), '')
+    write(join(proj, '.dsh', 'skills', 'dup2-skill', 'SKILL.md'), '---\nname: dup2-skill\ndescription: 项目版本\n---\n')
+    // When the skill center merges the registry over the scan
+    const { skills } = await collectSkills({
+      cwd: proj,
+      projectRoots: [proj],
+      customSkillDirs: [],
+      dshHome: join(tmp, 'home'),
+      agentsHome: join(tmp, 'agents'),
+      registry: {
+        snapshot: async () => ({
+          skills: [{ name: 'dup2-skill', description: '内置版本', source: 'bundled', provider: 'dsh-office' }],
+          complete: true,
+        }),
+      },
+    })
+    // Then the project entry wins and keeps its editable path
+    const winner = skills.find((s) => s.name === 'dup2-skill')
+    expect(winner?.level).toBe('project-dsh')
+    expect(winner?.description).toBe('项目版本')
+    expect(winner?.path).toBe(join(proj, '.dsh', 'skills', 'dup2-skill', 'SKILL.md'))
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('operator never sees the user .dsh .system directory listed', async () => {
+    // Given a user dsh root carrying the reserved .system directory beside a real skill
+    const tmp = mkdtempSync(join(tmpdir(), 'skill-explorer-system-'))
+    const proj = join(tmp, 'proj')
+    const home = join(tmp, 'home')
+    write(join(proj, '.git', 'keep'), '')
+    write(join(home, 'skills', 'real-skill', 'SKILL.md'), '---\nname: real-skill\ndescription: 真实技能\n---\n')
+    write(join(home, 'skills', '.system', 'internal-skill', 'SKILL.md'), '---\nname: internal-skill\ndescription: 内部记录\n---\n')
+    // When the skill center collects the roots
+    const { skills } = await collectSkills({
+      cwd: proj,
+      projectRoots: [proj],
+      customSkillDirs: [],
+      dshHome: home,
+      agentsHome: join(tmp, 'agents'),
+      registry: { snapshot: async () => ({ skills: [], complete: true }) },
+    })
+    // Then only the real skill is listed
+    expect(skills.map((s) => s.name)).toEqual(['real-skill'])
+    rmSync(tmp, { recursive: true, force: true })
   })
 })
 

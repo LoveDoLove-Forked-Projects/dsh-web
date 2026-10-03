@@ -45,6 +45,15 @@ A visual Skill Explorer for DeepSeek Harness (DSH) Web GUI and desktop client: b
   dsh-skill-filesystem root conventions, merged with the `ctx.skills`
   registry (bundled / runtime entries). The plugin never changes the
   skill loading or injection semantics — it is a pure GUI management layer.
+- A skill is listed only when the official provider would load it: its
+  SKILL.md declares a non-empty `name` and `description`, and the name
+  satisfies the official skill-name grammar. A file the official provider
+  discards is absent from the panel too, so the panel never shows a skill the
+  model cannot receive.
+- A duplicate skill name resolves by the official source rank (project
+  `.dsh/skills` 100, project `.agents/skills` 200, runtime 250, custom 300,
+  user `~/.dsh/skills` 400, user `.agents/skills` 500, bundled 600), so
+  the row shown names the same skill the model receives.
 
 ## Install
 
@@ -126,6 +135,13 @@ sidebar.
   (block scalars, booleans, input nested block); exotic YAML features are not
   supported — the official dsh-skill-filesystem provider remains the
   authoritative parser.
+- The panel covers the filesystem roots it scans plus the global layer of the
+  `ctx.skills` registry (bundled and runtime entries). A skill that reaches an
+  agent only through an **agent preset's** own `customSkillDirs` or a
+  preset-scoped provider is outside that coverage, because the panel reads the
+  registry without a viewing scope. A skill absent from the panel is therefore
+  not necessarily absent from the model: the official `skill` tool catalog is
+  the authority on what a session can load.
 - Linked skills cannot be deleted (see the security model); enable/disable works
   normally on them (rewriting the target's `SKILL.md` frontmatter). Both
   directory and single-file links list normally; a single-file link (pointing
