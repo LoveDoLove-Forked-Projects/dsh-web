@@ -131,6 +131,21 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
 }
 
+/* A native select paints its option list itself: it does NOT inherit the
+   control's background, so an unset option background falls back to the
+   browser's own (light) list surface while the option text still inherits the
+   section's light text color — light text on a light list, unreadable on a
+   dark skin. Both the day picker and the settings-row select therefore give
+   their option list one explicit surface/label pair, read from the tokens the
+   platform and the skins ship (a skin that omits the surface token falls back
+   to the platform's, a host with no theme layer to Canvas). Text and
+   background always travel together, per theme half. */
+.daySelect option,
+.settingItem select option {
+  background-color: var(--dsw-alias-bg-multi-select, Canvas);
+  color: var(--dsw-alias-label-primary, CanvasText);
+}
+
 .statRow {
   display: flex;
   flex-wrap: wrap;
