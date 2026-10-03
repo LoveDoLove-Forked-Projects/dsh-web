@@ -320,6 +320,34 @@ body[data-dsh-skin-center] [class*="_button"] {
   }
 }
 
+/* The dock above seats a FIXED-SIZE panel in a fixed corner, so where the
+   dialog lands has no relationship to the viewport it lands in: at 4K a
+   760x680 box in the lower left is a fifth of the screen and reads as
+   dislocated (zhu1090093659/dsh-web#1792). The dock exists for exactly one
+   reason -- a centered dialog would land on the sidebar rail -- so it is kept
+   for exactly as long as that is true, and dropped the moment there is room:
+
+     (100vw - 760px) / 2  >=  rail + gap   =>   100vw >= 1444px
+
+   The rail is --orca-sidebar-width, which the skin's own hook re-measures onto
+   <body>; 326px is the clamp ceiling in skin.css, so 326 + 16 is the widest the
+   rail can ever get and the threshold holds for every measurement, not only a
+   typical one. The bound is deliberately that ceiling: centring late keeps the
+   dock a little longer than strictly necessary, never a moment too early.
+
+   The threshold is expressed in the same CSS pixels as the panel it places,
+   so it holds at any display scaling: a 4K panel at 150% (2560x1440 CSS) and
+   at 200% (1920x1080 CSS) both reach it, while a narrow desktop keeps the
+   dock rather than having its dialog sit on the rail. */
+@media (width >= 1444px) and (height >= 681px) {
+  body[data-orca-settings-open] [class*="_overlay"]:has(> [data-dsh-surface="settings"]),
+  body[data-orca-sidebar-wide] [class*="_overlay"]:has(> [data-dsh-surface="settings"]) {
+    justify-content: center;
+    align-items: center;
+    padding: 18px;
+  }
+}
+
 /* Nav cells live in nav > div.navList (SettingsRoot.tsx). The selected cell is
    anchored on the list so the rule cannot drift onto a cell the list does not
    own, and the skin's square-chrome grammar wins over the shell's rounded
