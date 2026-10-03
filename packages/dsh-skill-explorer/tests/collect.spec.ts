@@ -428,7 +428,11 @@ describe('official acceptance and precedence (aligned with dsh-skill)', () => {
     const home = join(tmp, 'home')
     write(join(proj, '.git', 'keep'), '')
     write(join(home, 'skills', 'real-skill', 'SKILL.md'), '---\nname: real-skill\ndescription: 真实技能\n---\n')
-    write(join(home, 'skills', '.system', 'internal-skill', 'SKILL.md'), '---\nname: internal-skill\ndescription: 内部记录\n---\n')
+    // The reserved entry is a directory literally named .system under the user
+    // root, holding its own SKILL.md at that level — the shape the official
+    // provider's skipSystem guards. Nesting it any deeper would make the case
+    // pass vacuously, because neither reader descends two levels.
+    write(join(home, 'skills', '.system', 'SKILL.md'), '---\nname: internal-skill\ndescription: 内部记录\n---\n')
     // When the skill center collects the roots
     const { skills } = await collectSkills({
       cwd: proj,
