@@ -137,6 +137,7 @@ function buildRepositoriesTool(setup: GitHubSetup): ToolDefinition {
       baseBranch: { type: 'string', description: 'Base branch pull requests target (default main).' },
       prCreationEnabled: { type: 'boolean', description: 'Whether the extension may open pull requests for completed cards.' },
       pollingIntervalMs: { type: 'number', description: 'Background polling interval in milliseconds (default 300000; 0 disables polling).' },
+      analysisModel: { type: 'string', description: 'Qualified provider/model the AI issue analysis uses for this repository\'s cards; an empty string falls back to the card\'s pinned model, then the host default.' },
     },
     output: { schema: { type: 'json' }, render: renderJson },
     async execute(args) {
@@ -154,6 +155,7 @@ function buildRepositoriesTool(setup: GitHubSetup): ToolDefinition {
       if (typeof args.pollingIntervalMs === 'number' && Number.isFinite(args.pollingIntervalMs) && args.pollingIntervalMs >= 0) {
         options.pollingIntervalMs = Math.floor(args.pollingIntervalMs)
       }
+      if (typeof args.analysisModel === 'string') options.analysisModel = args.analysisModel.trim()
       // The same pure edits the settings card runs, so a model and a person
       // adding "deepseek-ai/dsh" produce one stored value.
       const edit = args.action === 'add'

@@ -16,8 +16,15 @@
 
 import type { TaskRecord, TaskStatus } from './task-record.ts'
 import {
+  buildIssuePrompt,
+  fingerprint,
+  isPromptEdited,
+  issueSourceHash,
+} from './prompt.ts'
+import {
   readTaskGitHubMetadata,
   type GitHubIssuePayload,
+  type GitHubPromptAnalysis,
   type ResolvedGitHubRepoConfig,
 } from './types.ts'
 
@@ -161,6 +168,41 @@ export function isIssueIncluded(issue: GitHubIssuePayload, config: ResolvedGitHu
 }
 
 /**
+ * Compose the execution prompt of one issue under one repository
+ * configuration. DSH-managed labels (state and phase labels the provider
+ * writes itself) are left out of the header: they describe the board, not the
+ * work. A stored analysis is included only while its source fingerprint still
+ * matches the issue, so an edited issue never runs with a stale analysis.
+ * @param issue - remote issue facts.
+ * @param config - repository configuration.
+ * @param analysis - the card's stored analysis, if any.
+ * @returns the prompt and its fingerprint.
+ */
+export function composeIssuePrompt(
+  issue: { number: number; html_url: string; title: string; body: string; labels: readonly string[] },
+  config: ResolvedGitHubRepoConfig,
+  analysis?: GitHubPromptAnalysis,
+): { prompt: string; promptHash: string } {
+  const fresh = analysis !== undefined && analysis.sourceHash === issueSourceHash(issue.title, issue.body)
+    ? analysis
+    : undefined
+  const prompt = buildIssuePrompt(
+    {
+      owner: config.owner,
+      repository: config.repository,
+      issueNumber: issue.number,
+      issueUrl: issue.html_url,
+      title: issue.title,
+      body: issue.body,
+      labels: issue.labels.filter(label => !isDshManagedLabel(label, config) && label !== config.inclusionLabel),
+    },
+    { baseBranch: config.baseBranch, prCreationEnabled: config.prCreationEnabled },
+    fresh,
+  )
+  return { prompt, promptHash: fingerprint(prompt) }
+}
+
+/**
  * Reconcile a remote GitHub issue with an existing local task record.
  *
  * - Updates remote metadata (remoteTitle, remoteBody, remoteLabels, remoteState, sync stamps).
@@ -168,8 +210,13 @@ export function isIssueIncluded(issue: GitHubIssuePayload, config: ResolvedGitHu
  *   no longer assigned to the configured login), deactivates the item without
  *   deleting it or its executions.
  * - If it becomes included again, restores the item through the same identity.
- * - Proposes the remote title/description/prompt; the board's content gate keeps
- *   the recorded content of a card that has already executed.
+ * - Proposes the remote title/description and a regenerated execution prompt;
+ *   the board's content gate keeps the recorded content of a card that has
+ *   already executed.
+ * - Keeps a prompt somebody edited: when the card's prompt no longer matches
+ *   the fingerprint of the prompt the provider last generated (or, for a card
+ *   that predates fingerprints, the body it was copied from), the prompt is
+ *   left as it is and no fingerprint is recorded for it.
  */
 export function reconcileIssueWithTask(
   existing: TaskRecord,
@@ -184,12 +231,22 @@ export function reconcileIssueWithTask(
   const remoteBody = issue.body != null ? issue.body.trim() : ''
 
   const remoteUpdatedAt = Date.parse(issue.updated_at)
+  const previous = readTaskGitHubMetadata(existing)
+  const edited = isPromptEdited(existing.prompt, previous?.promptHash, {
+    ...(previous?.remoteTitle === undefined ? {} : { title: previous.remoteTitle }),
+    ...(previous?.remoteBody === undefined ? {} : { body: previous.remoteBody }),
+  })
+  const generated = composeIssuePrompt(
+    { number: issue.number, html_url: issue.html_url, title: remoteTitle, body: remoteBody, labels: remoteLabels },
+    config,
+    previous?.analysis,
+  )
 
   return {
     ...existing,
     title: remoteTitle,
     description: remoteBody,
-    prompt: remoteBody !== '' ? remoteBody : remoteTitle,
+    prompt: edited ? existing.prompt : generated.prompt,
     updatedAt: now,
     integrations: {
       ...existing.integrations,
@@ -207,8 +264,11 @@ export function reconcileIssueWithTask(
         lastSyncedAt: now,
         lastRemoteUpdatedAt: Number.isFinite(remoteUpdatedAt) ? remoteUpdatedAt : undefined,
         lastSyncError: undefined,
-        pullRequest: readTaskGitHubMetadata(existing)?.pullRequest,
+        pullRequest: previous?.pullRequest,
         deactivated: hasInclusion ? undefined : true,
+        // An edited prompt carries no fingerprint, so every later sync keeps
+        // reading it as edited and leaves it alone.
+        promptHash: edited ? undefined : generated.promptHash,
       },
     },
   }
@@ -226,7 +286,10 @@ export function materializeTaskFromIssue(
   const remoteLabels = extractLabelNames(issue)
   const remoteTitle = issue.title.trim()
   const remoteBody = issue.body != null ? issue.body.trim() : ''
-  const prompt = remoteBody !== '' ? remoteBody : remoteTitle
+  const { prompt, promptHash } = composeIssuePrompt(
+    { number: issue.number, html_url: issue.html_url, title: remoteTitle, body: remoteBody, labels: remoteLabels },
+    config,
+  )
   const status = resolveStatusFromLabels(remoteLabels, issue.state, config)
   const remoteUpdatedAt = Date.parse(issue.updated_at)
 
@@ -253,6 +316,7 @@ export function materializeTaskFromIssue(
         remoteLabels,
         lastSyncedAt: now,
         lastRemoteUpdatedAt: Number.isFinite(remoteUpdatedAt) ? remoteUpdatedAt : undefined,
+        promptHash,
       },
     },
   }

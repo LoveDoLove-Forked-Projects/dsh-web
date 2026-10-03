@@ -233,6 +233,8 @@ export function sanitizeRepositoryConfig(value: unknown): GitHubRepoConfig | und
   if (prPhaseLabel !== undefined) config.prPhaseLabel = prPhaseLabel
   const baseBranch = text(raw.baseBranch)
   if (baseBranch !== undefined) config.baseBranch = baseBranch
+  const analysisModel = text(raw.analysisModel)
+  if (analysisModel !== undefined) config.analysisModel = analysisModel
   if (typeof raw.pollingIntervalMs === 'number' && Number.isFinite(raw.pollingIntervalMs) && raw.pollingIntervalMs >= 0) {
     config.pollingIntervalMs = Math.floor(raw.pollingIntervalMs)
   }
@@ -301,6 +303,11 @@ export interface RepositoryOptions {
   prCreationEnabled?: boolean
   /** Background polling interval in milliseconds. */
   pollingIntervalMs?: number
+  /**
+   * Qualified provider/model the issue analysis uses. An empty string clears
+   * it, so the analysis falls back to the card's model and then the host default.
+   */
+  analysisModel?: string
 }
 
 /** Outcome of one list edit: the new list, or why the edit was refused. */
@@ -329,6 +336,11 @@ function withOptions(base: GitHubRepoConfig, options: RepositoryOptions): GitHub
   if (options.prCreationEnabled !== undefined) next.prCreationEnabled = options.prCreationEnabled
   if (options.pollingIntervalMs !== undefined && Number.isFinite(options.pollingIntervalMs) && options.pollingIntervalMs >= 0) {
     next.pollingIntervalMs = Math.floor(options.pollingIntervalMs)
+  }
+  if (options.analysisModel !== undefined) {
+    const analysisModel = options.analysisModel.trim()
+    if (analysisModel === '') delete next.analysisModel
+    else next.analysisModel = analysisModel
   }
   return next
 }

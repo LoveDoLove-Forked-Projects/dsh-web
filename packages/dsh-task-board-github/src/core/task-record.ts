@@ -46,6 +46,12 @@ export interface TaskRecord {
    * here: a provider sets it by pinning it on the draft it creates with.
    */
   workspaceId?: string
+  /**
+   * Qualified provider/model the card pins for its execution, when it pins
+   * one. Read-only here: the provider uses it as the route of the issue
+   * analysis it writes for the card.
+   */
+  model?: string
   /** True for a card the board keeps off the board view. */
   hidden?: boolean
   /** Instant the card was archived (ms epoch), absent while it is live. */

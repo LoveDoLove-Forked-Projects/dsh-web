@@ -190,7 +190,8 @@ describe('GitHub sync service', () => {
     const service = makeService(board, backend)
     await service.syncRepository('deepseek-ai', 'dsh')
     const task = cards(board)[0]!
-    expect(task.prompt).toBe('Initial Prompt Content')
+    const recorded = task.prompt
+    expect(recorded).toContain('Initial Prompt Content')
 
     // And the card has started executing, which is what the board's content
     // gate freezes it on
@@ -205,7 +206,8 @@ describe('GitHub sync service', () => {
     // Then the board refused the content patch: the recorded prompt and title
     // are unchanged while the remote snapshot is recorded as metadata only
     const stored = board.records.get(task.id)!
-    expect(stored.prompt).toBe('Initial Prompt Content')
+    expect(stored.prompt).toBe(recorded)
+    expect(stored.prompt).not.toContain('Changed Remote Body')
     expect(stored.title).toBe('Issue 50')
     expect(readTaskGitHubMetadata(stored)?.remoteTitle).toBe('Changed Title')
     expect(readTaskGitHubMetadata(stored)?.remoteBody).toBe('Changed Remote Body')

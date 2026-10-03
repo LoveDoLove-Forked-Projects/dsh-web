@@ -414,3 +414,46 @@
     flex: 1 1 120px;
   }
 }
+
+/* Execution-prompt panel of the task-detail seat: how the prompt was built,
+   the optional model analysis, and its controls. */
+.promptPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsh-task-tag-border);
+}
+
+.promptPanel .detailMeta {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.promptAnalysis {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--dsh-task-tag-border);
+  border-radius: 8px;
+  background: var(--dsh-task-tag-fill);
+}
+
+.promptList {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.promptNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}

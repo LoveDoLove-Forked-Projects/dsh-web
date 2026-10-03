@@ -29,14 +29,34 @@ import {
   resolveRepoConfig,
 } from '../core/types.ts'
 import {
+  composeIssuePrompt,
   computeLabelWriteBack,
   extractLabelNames,
+  isDshManagedLabel,
   isIssueIncluded,
   materializeTaskFromIssue,
   reconcileIssueWithTask,
 } from '../core/projection.ts'
+import { isPromptEdited, issueSourceHash, type IssuePromptSource } from '../core/prompt.ts'
 import { workspaceIdForRepository, type WorkspaceMatchCandidate } from '../core/workspace-match.ts'
+import { IssueAnalysisError, splitModelRoute, type AnalysisRoute, type IssueAnalyzer } from './analysis.ts'
 import { GitHubApiClient } from './client.ts'
+
+/** Options of one analysis request. */
+export interface AnalysisRequest {
+  /** Qualified provider/model; absent falls back to the repository, the card, then the host default. */
+  model?: string
+  /** Replace a prompt somebody edited by hand. Without it an edited prompt refuses the request. */
+  overwrite?: boolean
+}
+
+/** A refusal of an analysis request, with a stable code the browser can phrase. */
+export class AnalysisRequestError extends Error {
+  constructor(readonly code: 'not-linked' | 'not-configured' | 'frozen' | 'prompt-edited' | 'in-flight' | 'no-model' | 'no-analyzer', message: string) {
+    super(message)
+    this.name = 'AnalysisRequestError'
+  }
+}
 
 /**
  * The optional host workspace registry the provider infers an issue's checkout
@@ -76,6 +96,14 @@ export interface GitHubSyncServiceOptions {
    * store answers, so resolving here is what makes the first poll work.
    */
   credential?: () => Promise<string | undefined>
+  /**
+   * Writes the model analysis a card's prompt may include. Absent (a
+   * deployment with no model service wired) refuses analysis requests while
+   * synchronization keeps working on the templated prompt alone.
+   */
+  analyzer?: IssueAnalyzer
+  /** Resolves the host's default model route (provider/model), when there is one. */
+  defaultModel?: () => Promise<string | undefined>
 }
 
 const DEFAULT_TIMERS: HostTimerFace = {
@@ -117,6 +145,10 @@ export class GitHubSyncService {
   private readonly identityIndex = new Map<string, string>()
   /** Login this credential authenticates as, resolved once for an `@me` inclusion rule. */
   private authenticatedLogin: string | undefined
+  private readonly analyzer: IssueAnalyzer | undefined
+  private readonly defaultModel: (() => Promise<string | undefined>) | undefined
+  /** In-flight analyses by card id, so one card never runs two at once. */
+  private readonly analyses = new Map<string, { controller: AbortController; done: Promise<void> }>()
 
   constructor(options: GitHubSyncServiceOptions) {
     this.host = options.host
@@ -127,6 +159,8 @@ export class GitHubSyncService {
     this.workspaceRegistry = options.workspaceRegistry
     this.onPass = options.onPass
     this.credential = options.credential
+    this.analyzer = options.analyzer
+    this.defaultModel = options.defaultModel
   }
 
   /**
@@ -200,6 +234,7 @@ export class GitHubSyncService {
   start(): void {
     if (this.stopped || this.pollTimer !== undefined) return
     this.reindex()
+    this.clearStalePendingAnalyses()
     const intervals = this.repositories
       .map(r => r.pollingIntervalMs)
       .filter(ms => ms > 0)
@@ -247,6 +282,188 @@ export class GitHubSyncService {
     this.stopped = true
     this.stop()
     this.identityIndex.clear()
+    for (const { controller } of this.analyses.values()) controller.abort()
+    this.analyses.clear()
+  }
+
+  /**
+   * A pending marker is in-memory state written to the card so the browser can
+   * show progress; a host restart loses the request behind it, so a marker
+   * found at start belongs to nobody and is cleared rather than left spinning.
+   */
+  private clearStalePendingAnalyses(): void {
+    for (const { task, payload } of this.host.tasks.linked()) {
+      if (typeof payload.analysisPendingSince !== 'number') continue
+      if (this.analyses.has(task.id)) continue
+      this.writePayload(task.id, { analysisPendingSince: undefined })
+    }
+  }
+
+  /**
+   * The issue facts one card's analysis is written from: the last synchronized
+   * remote snapshot, with DSH-managed labels left out.
+   */
+  private promptSourceOf(gh: GitHubTaskMetadata, config: ResolvedGitHubRepoConfig): IssuePromptSource {
+    return {
+      owner: config.owner,
+      repository: config.repository,
+      issueNumber: gh.issueNumber,
+      issueUrl: gh.issueUrl,
+      title: gh.remoteTitle ?? '',
+      body: gh.remoteBody ?? '',
+      labels: gh.remoteLabels.filter(label => !isDshManagedLabel(label, config) && label !== config.inclusionLabel),
+    }
+  }
+
+  /**
+   * Resolve the model route of one analysis: the request, then the
+   * repository's analysis model, then the card's own pinned model, then the
+   * host default.
+   */
+  private async analysisRoute(task: TaskRecord, config: ResolvedGitHubRepoConfig, requested?: string): Promise<{ route: AnalysisRoute; qualified: string } | undefined> {
+    const candidates: Array<string | undefined> = [requested, config.analysisModel, task.model]
+    for (const candidate of candidates) {
+      const route = splitModelRoute(candidate)
+      if (route !== undefined) return { route, qualified: `${route.provider}/${route.model}` }
+    }
+    let fallback: string | undefined
+    try {
+      fallback = await this.defaultModel?.()
+    } catch {
+      fallback = undefined
+    }
+    const route = splitModelRoute(fallback)
+    return route === undefined ? undefined : { route, qualified: `${route.provider}/${route.model}` }
+  }
+
+  /**
+   * Start one model analysis of a card's issue.
+   *
+   * Validation is synchronous so the caller sees a refusal at once; the model
+   * call itself runs in the background, because it routinely outlives the
+   * board's action channel. Progress is written to the card's payload
+   * (`analysisPendingSince`, then `analysis` or `analysisError`), which the
+   * board broadcasts like any other card change.
+   *
+   * On success the analysis is stored with the fingerprint of the issue it was
+   * written from, and the card's prompt is regenerated to include it — through
+   * the board's content gate, so a card that started executing meanwhile keeps
+   * its recorded prompt.
+   * @param taskId - the card to analyze.
+   * @param request - model route and overwrite consent.
+   * @returns a promise that settles when the background analysis has been recorded.
+   */
+  beginAnalysis(taskId: string, request: AnalysisRequest = {}): Promise<void> {
+    const task = this.host.tasks.get(taskId)
+    const gh = this.metadataOf(task)
+    if (task === undefined || gh === undefined) throw new AnalysisRequestError('not-linked', 'task is not linked to a GitHub issue')
+    const config = this.findRepoConfig(gh.owner, gh.repository)
+    if (config === undefined) throw new AnalysisRequestError('not-configured', `repository ${gh.owner}/${gh.repository} is not configured`)
+    if (this.analyzer === undefined) throw new AnalysisRequestError('no-analyzer', 'this deployment serves no model service for issue analysis')
+    if (task.executions.length > 0 || task.archivedAt !== undefined) {
+      throw new AnalysisRequestError('frozen', 'the card has started executing; its prompt is read-only')
+    }
+    if (request.overwrite !== true && isPromptEdited(task.prompt, gh.promptHash, {
+      ...(gh.remoteTitle === undefined ? {} : { title: gh.remoteTitle }),
+      ...(gh.remoteBody === undefined ? {} : { body: gh.remoteBody }),
+    })) {
+      throw new AnalysisRequestError('prompt-edited', 'the prompt was edited by hand; confirm overwriting it')
+    }
+    if (this.analyses.has(taskId)) throw new AnalysisRequestError('in-flight', 'an analysis is already running for this card')
+
+    const controller = new AbortController()
+    const analyzer = this.analyzer
+    this.writePayload(taskId, { analysisPendingSince: this.now(), analysisError: undefined })
+    const done = (async () => {
+      try {
+        const resolved = await this.analysisRoute(task, config, request.model)
+        if (resolved === undefined) throw new AnalysisRequestError('no-model', 'no model route is configured: pick a model, pin one on the card, or set a host default')
+        const source = this.promptSourceOf(gh, config)
+        const analysis = await analyzer.analyze(source, resolved.route, controller.signal)
+        this.recordAnalysis(taskId, {
+          ...analysis,
+          sourceHash: issueSourceHash(source.title, source.body),
+          model: resolved.qualified,
+          generatedAt: this.now(),
+        })
+      } catch (error) {
+        if (controller.signal.aborted && this.stopped) return
+        const message = error instanceof IssueAnalysisError || error instanceof AnalysisRequestError
+          ? error.message
+          : error instanceof Error ? error.message : String(error)
+        this.writePayload(taskId, { analysisPendingSince: undefined, analysisError: message })
+      } finally {
+        this.analyses.delete(taskId)
+      }
+    })()
+    this.analyses.set(taskId, { controller, done })
+    return done
+  }
+
+  /** Store one finished analysis and regenerate the card's prompt with it. */
+  private recordAnalysis(taskId: string, analysis: NonNullable<GitHubTaskMetadata['analysis']>): void {
+    const task = this.host.tasks.get(taskId)
+    const gh = this.metadataOf(task)
+    if (task === undefined || gh === undefined) return
+    const config = this.findRepoConfig(gh.owner, gh.repository)
+    if (config === undefined) return
+    const generated = composeIssuePrompt(
+      { number: gh.issueNumber, html_url: gh.issueUrl, title: gh.remoteTitle ?? '', body: gh.remoteBody ?? '', labels: gh.remoteLabels },
+      config,
+      analysis,
+    )
+    try {
+      this.host.tasks.patchContent(taskId, { prompt: generated.prompt })
+    } catch {
+      // The card started executing while the model was answering: its recorded
+      // prompt stays, and the analysis is kept for the record only.
+      this.writePayload(taskId, {
+        analysis,
+        analysisPendingSince: undefined,
+        analysisError: 'the card started executing before the analysis finished; its prompt was left unchanged',
+      })
+      return
+    }
+    this.writePayload(taskId, { analysis, promptHash: generated.promptHash, analysisPendingSince: undefined, analysisError: undefined })
+  }
+
+  /**
+   * Drop a card's analysis and regenerate its prompt without it.
+   * @param taskId - the card.
+   * @param overwrite - replace a prompt somebody edited by hand.
+   */
+  clearAnalysis(taskId: string, overwrite = false): void {
+    const task = this.host.tasks.get(taskId)
+    const gh = this.metadataOf(task)
+    if (task === undefined || gh === undefined) throw new AnalysisRequestError('not-linked', 'task is not linked to a GitHub issue')
+    const config = this.findRepoConfig(gh.owner, gh.repository)
+    if (config === undefined) throw new AnalysisRequestError('not-configured', `repository ${gh.owner}/${gh.repository} is not configured`)
+    if (task.executions.length > 0 || task.archivedAt !== undefined) {
+      throw new AnalysisRequestError('frozen', 'the card has started executing; its prompt is read-only')
+    }
+    if (!overwrite && isPromptEdited(task.prompt, gh.promptHash, {
+      ...(gh.remoteTitle === undefined ? {} : { title: gh.remoteTitle }),
+      ...(gh.remoteBody === undefined ? {} : { body: gh.remoteBody }),
+    })) {
+      throw new AnalysisRequestError('prompt-edited', 'the prompt was edited by hand; confirm overwriting it')
+    }
+    const generated = composeIssuePrompt(
+      { number: gh.issueNumber, html_url: gh.issueUrl, title: gh.remoteTitle ?? '', body: gh.remoteBody ?? '', labels: gh.remoteLabels },
+      config,
+    )
+    this.host.tasks.patchContent(taskId, { prompt: generated.prompt })
+    this.writePayload(taskId, { analysis: undefined, analysisError: undefined, promptHash: generated.promptHash })
+  }
+
+  /**
+   * Move a card the analysis judged as needing no change to the backlog, at
+   * the operator's request. The board's own move gates decide.
+   * @param taskId - the card.
+   */
+  moveToBacklog(taskId: string): void {
+    const task = this.host.tasks.get(taskId)
+    if (task === undefined || this.metadataOf(task) === undefined) throw new AnalysisRequestError('not-linked', 'task is not linked to a GitHub issue')
+    this.host.tasks.setStatus(taskId, 'backlog', 'github-analysis')
   }
 
   /**

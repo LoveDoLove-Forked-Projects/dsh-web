@@ -25,6 +25,8 @@
 - **无指派通道**：`includeUnassigned: true` 只认「一个指派人都没有」的 issue，永远不会收走指派给他人的 issue；它适合那种从不指派、只用标签管理 issue 的仓库。
 - **受控回写**：只增删 DSH 自有的状态与阶段标签；仓库自有标签（含纳入标签本身）绝不修改。
 - **执行不可变**：远程标题与正文只在卡片开始执行之前刷新卡片内容。这一判定由看板自己的内容门禁裁定，扩展不再保留第二套“哪些卡片已冻结”的判定。
+- **模板化执行 Prompt，而不是原样转发 issue 正文**：同步来的卡片使用模板生成的 Prompt：写明 issue（仓库、编号、链接、仓库自有标签），固定工作流（先读仓库的 agent 协作说明、在基于 `baseBranch` 的 `issue-<编号>` 分支上实现、运行仓库要求的检查、用 `task_board_github_comment` 回帖、PR 合并前不得关闭 issue、issue 无需改动时回帖说明后结束而不是制造改动），并把 issue 正文原样附在来源声明里，issue 文本无法提前闭合该声明。在任务详情里被手动修改过的 Prompt，之后的同步一律保留；未改动的 Prompt 会跟随 issue 更新，直到卡片开始执行。
+- **可选的 AI 分析**：任务详情席位可以请模型（所选的 `provider/model`，否则依次为仓库的 `analysisModel`、卡片钉住的模型、宿主默认模型）生成结构化分析——目标、步骤、完成标准，以及是否需要改代码。它只作为 Prompt 中标明「模型生成、未经人工审查」的一段，绝不取代原样附上的 issue 正文；分析在宿主后台运行，按其依据的 issue 内容缓存，issue 一变就从 Prompt 中移除；卡片已冻结时拒绝，Prompt 被手动修改过时需显式确认覆盖。判断「无需改代码」时提供一键移到待规划。
 - **无损停用**：issue 不再被选中（标签被移除、且不再指派给配置的登录）时，卡片从活动看板隐藏并保留全部执行记录；重新命中任一通道即恢复同一张卡片。
 - **九个模型可见工具**：七个同步与回写工具（`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`、`task_board_github_comment`、`task_board_github_close_issue`）加两个配置工具（`task_board_github_setup`、`task_board_github_repositories`），经看板的 `registerTool` 能力登记，因此随「看板总开关 × 本扩展开关」一起收放。
 - **回写 issue**：`task_board_github_comment` 在 issue 上发一条 Markdown 评论（正文非空且不超过 16000 字符，超长直接拒绝而不是截断成模型没写过的样子）。`task_board_github_close_issue` 关闭 issue，但**只在卡片关联的 PR 已合并时**才放行——本地跑通不等于改动已被评审，这条护栏与「PR 合并自动关闭」共用同一个判据，两条路径不会对「工作是否落地」产生分歧。
@@ -69,7 +71,7 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board-github
 | `enabled` | `true` | 扩展总开关；设置卡就地写入该字段，两侧半区即时跟随。 |
 | `announceToAgent` | `false` | 需要时开启：开启后扩展向 agent 系统提示注入自身公告。 |
 | `tokenEnv` | `GITHUB_TOKEN` | 令牌解析所用的凭据引用名：凭据库里的存储名，或存放它的环境变量名。 |
-| `repositories` | `[]` | 需要同步的仓库，每项含 `owner`、`repository`、`inclusionLabel`、`assignee`（`@me` 表示本机账号）、`includeUnassigned`（是否连无人指派的 issue 一起收）、`managedLabelPrefix`、`stateLabels`、`prPhaseLabel`、`pollingIntervalMs`、`prCreationEnabled`、`draftPrPolicy`、`closeIssueOnMerge` 与 `baseBranch`。 |
+| `repositories` | `[]` | 需要同步的仓库，每项含 `owner`、`repository`、`inclusionLabel`、`assignee`（`@me` 表示本机账号）、`includeUnassigned`（是否连无人指派的 issue 一起收）、`managedLabelPrefix`、`stateLabels`、`prPhaseLabel`、`pollingIntervalMs`、`prCreationEnabled`、`draftPrPolicy`、`closeIssueOnMerge`、`baseBranch` 与 `analysisModel`（AI issue 分析使用的 `provider/model`；留空则依次回退到卡片钉住的模型与宿主默认模型）。 |
 
 四个键都是 volatile 字段，这正是设置卡、配置工具与 profile patch 都能写入它们的原因：保存后的改动无需重挂载插件行就能到达正在运行的提供方。卡片自身渲染凭据状态、仓库列表与连接测试，数据来自本扩展自己的宿主路由，而这些路由只服务 loopback 请求。运行中的提供方仍会把只读摘要（已配置仓库与凭据有无）发布到看板状态通道，卡片在宿主路由不可达时回退到它。
 

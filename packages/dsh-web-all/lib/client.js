@@ -867,9 +867,9 @@ window.__ModuleLoader__.load({
 		* @module @linxin666/dsh-client-ui-plugin-manager/client
 		*/
 		/** Error text for a caught request or lifecycle failure. */
-		function messageOf$5(error) {
+		function messageOf$6(error) {
 			if (error instanceof AggregateError) {
-				const details = error.errors.map(messageOf$5).join("; ");
+				const details = error.errors.map(messageOf$6).join("; ");
 				return details === "" ? error.message : `${error.message}: ${details}`;
 			}
 			return error instanceof Error ? error.message : String(error);
@@ -937,7 +937,7 @@ window.__ModuleLoader__.load({
 					setFound(items.find((item) => item.id === name));
 					setChecked(true);
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$5(reason) }));
+					setError(t("failed", { reason: messageOf$6(reason) }));
 				}).finally(() => {
 					busyRef.current = false;
 					setBusy(void 0);
@@ -953,7 +953,7 @@ window.__ModuleLoader__.load({
 					setChecked(false);
 					setDirty(true);
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$5(reason) }));
+					setError(t("failed", { reason: messageOf$6(reason) }));
 				}).finally(() => {
 					busyRef.current = false;
 					setBusy(void 0);
@@ -1165,9 +1165,9 @@ window.__ModuleLoader__.load({
 		* @module @linxin666/dsh-client-ui-plugin-manager/client
 		*/
 		/** Error text for a caught request or lifecycle failure. */
-		function messageOf$4(error) {
+		function messageOf$5(error) {
 			if (error instanceof AggregateError) {
-				const details = error.errors.map(messageOf$4).join("; ");
+				const details = error.errors.map(messageOf$5).join("; ");
 				return details === "" ? error.message : `${error.message}: ${details}`;
 			}
 			return error instanceof Error ? error.message : String(error);
@@ -1218,7 +1218,7 @@ window.__ModuleLoader__.load({
 					setChecked(true);
 					setPanel("list");
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$4(reason) }));
+					setError(t("failed", { reason: messageOf$5(reason) }));
 					setPanel("list");
 				}).finally(() => {
 					busyRef.current = false;
@@ -1243,7 +1243,7 @@ window.__ModuleLoader__.load({
 						try {
 							await update(row.id);
 						} catch (reason) {
-							setError(t("failed", { reason: messageOf$4(reason) }));
+							setError(t("failed", { reason: messageOf$5(reason) }));
 							break;
 						}
 						done.push(row.id);
@@ -1265,7 +1265,7 @@ window.__ModuleLoader__.load({
 					setPlan(mode);
 					setPanel("restart");
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$4(reason) }));
+					setError(t("failed", { reason: messageOf$5(reason) }));
 					setPanel("list");
 				}).finally(() => {
 					busyRef.current = false;
@@ -1280,7 +1280,7 @@ window.__ModuleLoader__.load({
 					setPlan(void 0);
 					setPanel("none");
 				}).catch((reason) => {
-					setError(t("failed", { reason: messageOf$4(reason) }));
+					setError(t("failed", { reason: messageOf$5(reason) }));
 				}).finally(() => {
 					busyRef.current = false;
 				});
@@ -3334,7 +3334,7 @@ window.__ModuleLoader__.load({
 			}
 			return fp;
 		}
-		function messageOf$3(reason) {
+		function messageOf$4(reason) {
 			return reason instanceof Error ? reason.message : String(reason);
 		}
 		async function fetchJson(url) {
@@ -3662,7 +3662,7 @@ window.__ModuleLoader__.load({
 						id,
 						dest: err.dest ?? id
 					});
-					else callout(id, t("installFailed", { reason: messageOf$3(err) }));
+					else callout(id, t("installFailed", { reason: messageOf$4(err) }));
 				} finally {
 					setInstalling(null);
 				}
@@ -3711,7 +3711,7 @@ window.__ModuleLoader__.load({
 				}).catch((reason) => {
 					setPluginErrors((prev) => ({
 						...prev,
-						[id]: t("installFailed", { reason: messageOf$3(reason) })
+						[id]: t("installFailed", { reason: messageOf$4(reason) })
 					}));
 				}).finally(() => setInstalling(null));
 			};
@@ -5968,7 +5968,7 @@ window.__ModuleLoader__.load({
 			const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 			return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 		}
-		function messageOf$2(error) {
+		function messageOf$3(error) {
 			return error instanceof Error ? error.message : String(error);
 		}
 		/**
@@ -6487,7 +6487,7 @@ window.__ModuleLoader__.load({
 				try {
 					return this.acceptRemote(await transport.action(action, initiator)) || await this.refreshRemote();
 				} catch (error) {
-					await this.refreshRemote(messageOf$2(error));
+					await this.refreshRemote(messageOf$3(error));
 					return false;
 				}
 			}
@@ -6514,7 +6514,7 @@ window.__ModuleLoader__.load({
 					}
 					return true;
 				} catch (error) {
-					this.transportError = messageOf$2(error);
+					this.transportError = messageOf$3(error);
 					this.notify();
 					return false;
 				}
@@ -6580,7 +6580,7 @@ window.__ModuleLoader__.load({
 					}
 					return true;
 				} catch (error) {
-					this.transportError = preserveError ?? messageOf$2(error);
+					this.transportError = preserveError ?? messageOf$3(error);
 					this.notify();
 					return false;
 				}
@@ -17307,6 +17307,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			if (options.baseBranch !== void 0 && options.baseBranch.trim() !== "") next.baseBranch = options.baseBranch.trim();
 			if (options.prCreationEnabled !== void 0) next.prCreationEnabled = options.prCreationEnabled;
 			if (options.pollingIntervalMs !== void 0 && Number.isFinite(options.pollingIntervalMs) && options.pollingIntervalMs >= 0) next.pollingIntervalMs = Math.floor(options.pollingIntervalMs);
+			if (options.analysisModel !== void 0) {
+				const analysisModel = options.analysisModel.trim();
+				if (analysisModel === "") delete next.analysisModel;
+				else next.analysisModel = analysisModel;
+			}
 			return next;
 		}
 		/**
@@ -17389,6 +17394,96 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			};
 		}
 		//#endregion
+		//#region ../dsh-task-board-github/src/core/prompt.ts
+		/** Bounds a stored analysis is held to, both when parsed and when normalized. */
+		const ANALYSIS_LIMITS = {
+			goal: 600,
+			item: 300,
+			items: 8,
+			notes: 600
+		};
+		/** Collapse any whitespace run (newlines included) into one space. */
+		function oneLine(text) {
+			return text.replace(/\s+/g, " ").trim();
+		}
+		/** Cap a single-line string at a length, marking the cut. */
+		function capped(text, limit) {
+			return text.length <= limit ? text : text.slice(0, limit - 1).trimEnd() + "…";
+		}
+		/**
+		* Stable 32-bit FNV-1a fingerprint of a string, as a versioned hex token.
+		* Not a security primitive: it only tells "the text the provider generated"
+		* from "a text somebody changed", where an accidental collision costs one
+		* missed regeneration.
+		* @param text - the text to fingerprint.
+		* @returns the fingerprint token.
+		*/
+		function fingerprint(text) {
+			let hash = 2166136261;
+			for (let index = 0; index < text.length; index += 1) {
+				hash ^= text.charCodeAt(index);
+				hash = Math.imul(hash, 16777619) >>> 0;
+			}
+			return "f1:" + hash.toString(16).padStart(8, "0");
+		}
+		/**
+		* Fingerprint of the issue content an analysis was written from. An analysis
+		* whose source fingerprint differs from the issue's current one is stale and is
+		* left out of the prompt.
+		* @param title - issue title.
+		* @param body - issue body.
+		* @returns the source fingerprint.
+		*/
+		function issueSourceHash(title, body) {
+			return fingerprint(title.trim() + "\0" + body.trim());
+		}
+		/**
+		* The prompt a card synchronized before the template existed was given: the
+		* issue body, or the title when the body was empty. A card still carrying
+		* exactly that text was never edited by a person and may be upgraded.
+		* @param title - issue title.
+		* @param body - issue body.
+		* @returns the legacy prompt text.
+		*/
+		function legacyIssuePrompt(title, body) {
+			const trimmedBody = body.trim();
+			return trimmedBody !== "" ? trimmedBody : title.trim();
+		}
+		/**
+		* Whether a card's current prompt was changed by somebody after the provider
+		* last generated it.
+		* @param prompt - the card's current prompt.
+		* @param stored - the fingerprint stored with the card, when there is one.
+		* @param legacy - the remote title and body last synchronized, for cards that predate fingerprints.
+		* @returns true when the prompt must be kept as it is.
+		*/
+		function isPromptEdited(prompt, stored, legacy) {
+			if (stored !== void 0) return fingerprint(prompt) !== stored;
+			if (legacy.title === void 0 && legacy.body === void 0) return false;
+			return prompt !== legacyIssuePrompt(legacy.title ?? "", legacy.body ?? "");
+		}
+		/**
+		* Bound and repair an analysis read from a model reply or a stored payload.
+		* @param value - candidate analysis.
+		* @returns the analysis, or undefined when it carries nothing usable.
+		*/
+		function normalizeIssueAnalysis(value) {
+			if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
+			const raw = value;
+			const text = (entry, limit) => typeof entry === "string" ? capped(oneLine(entry), limit) : "";
+			const list = (entry) => Array.isArray(entry) ? entry.map((item) => text(item, ANALYSIS_LIMITS.item)).filter((item) => item !== "").slice(0, ANALYSIS_LIMITS.items) : [];
+			const goal = text(raw.goal, ANALYSIS_LIMITS.goal);
+			if (goal === "") return void 0;
+			const notes = text(raw.notes, ANALYSIS_LIMITS.notes);
+			return {
+				goal,
+				steps: list(raw.steps),
+				acceptance: list(raw.acceptance),
+				needsCodeChange: raw.needsCodeChange !== false,
+				...notes === "" ? {} : { notes }
+			};
+		}
+		//#endregion
 		//#region ../dsh-task-board-github/src/core/types.ts
 		/**
 		* Pure domain types and validation for the GitHub task-board integration.
@@ -17451,6 +17546,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				...typeof gh.pullRequest.baseBranch === "string" && gh.pullRequest.baseBranch !== "" ? { baseBranch: gh.pullRequest.baseBranch } : {},
 				...typeof gh.pullRequest.mergedAt === "number" && Number.isFinite(gh.pullRequest.mergedAt) ? { mergedAt: gh.pullRequest.mergedAt } : {}
 			};
+			const analysis = normalizeStoredAnalysis(gh.analysis);
 			return {
 				provider: "github",
 				owner: gh.owner.trim(),
@@ -17466,7 +17562,31 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				...typeof gh.lastRemoteUpdatedAt === "number" && Number.isFinite(gh.lastRemoteUpdatedAt) ? { lastRemoteUpdatedAt: gh.lastRemoteUpdatedAt } : {},
 				...typeof gh.lastSyncError === "string" && gh.lastSyncError !== "" ? { lastSyncError: gh.lastSyncError } : {},
 				...pullRequest !== void 0 ? { pullRequest } : {},
-				...gh.deactivated === true ? { deactivated: true } : {}
+				...gh.deactivated === true ? { deactivated: true } : {},
+				...typeof gh.promptHash === "string" && gh.promptHash !== "" ? { promptHash: gh.promptHash } : {},
+				...analysis !== void 0 ? { analysis } : {},
+				...typeof gh.analysisPendingSince === "number" && Number.isFinite(gh.analysisPendingSince) ? { analysisPendingSince: gh.analysisPendingSince } : {},
+				...typeof gh.analysisError === "string" && gh.analysisError !== "" ? { analysisError: gh.analysisError } : {}
+			};
+		}
+		/**
+		* Repair one stored analysis: the analysis fields are re-bounded, and the
+		* provenance fields must all be present or the whole entry reads as absent.
+		* @param value - candidate stored analysis.
+		* @returns the repaired analysis, or undefined.
+		*/
+		function normalizeStoredAnalysis(value) {
+			const analysis = normalizeIssueAnalysis(value);
+			if (analysis === void 0) return void 0;
+			const raw = value;
+			if (typeof raw.sourceHash !== "string" || raw.sourceHash === "") return void 0;
+			if (typeof raw.model !== "string" || raw.model === "") return void 0;
+			if (typeof raw.generatedAt !== "number" || !Number.isFinite(raw.generatedAt)) return void 0;
+			return {
+				...analysis,
+				sourceHash: raw.sourceHash,
+				model: raw.model,
+				generatedAt: raw.generatedAt
 			};
 		}
 		/**
@@ -17526,7 +17646,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* Prefixes: `settings.*` is the plugin card (its shared chrome plus this
 		* extension's own switches), `detail.*` is the task-detail seat, `summary.*`
 		* is the repository/credential summary shown by the settings seat and the card,
-		* and `common.*` is shared button copy.
+		* `prompt.*` is the execution-prompt panel of the task-detail seat, and
+		* `common.*` is shared button copy.
 		*/
 		/** Extension copy, key source of truth. */
 		const zh$9 = {
@@ -17619,6 +17740,27 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"detail.linkPrTitle": "关联已有 Pull Request",
 			"detail.prNumberInput": "PR 编号",
 			"detail.deactivated": "该 Issue 在 GitHub 上已移除包含标签，已在看板停用。",
+			"prompt.title": "执行 Prompt",
+			"prompt.templateHint": "执行 Prompt 由模板生成：issue 头信息、执行要求与回写规则固定，issue 原文原样附在来源声明里。AI 分析是可选的一段，只补充目标、步骤与完成标准。",
+			"prompt.edited": "执行 Prompt 已被手动修改：同步不再覆盖它；重新生成需要确认覆盖。",
+			"prompt.frozen": "卡片已开始执行，执行 Prompt 已冻结。",
+			"prompt.analysisNone": "尚未生成 AI 分析。",
+			"prompt.analysisFresh": "AI 分析由 {model} 生成于 {time}，已写入执行 Prompt。",
+			"prompt.analysisStale": "issue 已在 AI 分析之后更新：旧分析已从执行 Prompt 中移除，可重新生成。",
+			"prompt.analysisPending": "正在生成 AI 分析…",
+			"prompt.analysisError": "AI 分析失败：{error}",
+			"prompt.noCodeChange": "模型判断该 issue 不需要改代码（通知或讨论类），可考虑移到待规划，避免执行时为推进目标制造改动。",
+			"prompt.moveBacklog": "移到待规划",
+			"prompt.modelLabel": "分析模型",
+			"prompt.modelPlaceholder": "provider/model，留空则用仓库设置、卡片模型或宿主默认",
+			"prompt.generate": "AI 生成分析",
+			"prompt.regenerate": "重新生成",
+			"prompt.overwrite": "覆盖并重新生成",
+			"prompt.clear": "移除 AI 分析",
+			"prompt.goal": "目标",
+			"prompt.steps": "建议步骤",
+			"prompt.acceptance": "完成标准",
+			"prompt.notes": "备注",
 			"common.cancel": "取消"
 		};
 		/** English counterpart; the key set mirrors {@link zh} exactly. */
@@ -17712,6 +17854,27 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"detail.linkPrTitle": "Link Existing Pull Request",
 			"detail.prNumberInput": "PR Number",
 			"detail.deactivated": "Inclusion label was removed on GitHub; item is deactivated on the board.",
+			"prompt.title": "Execution prompt",
+			"prompt.templateHint": "The execution prompt is generated from a template: the issue header, the workflow and the write-back rules are fixed, and the issue body is appended verbatim inside a provenance wrap. The AI analysis is an optional section that only adds the goal, steps and completion criteria.",
+			"prompt.edited": "The execution prompt was edited by hand: synchronization no longer overwrites it, and regenerating needs a confirmation.",
+			"prompt.frozen": "The card has started executing; its execution prompt is frozen.",
+			"prompt.analysisNone": "No AI analysis yet.",
+			"prompt.analysisFresh": "AI analysis written by {model} at {time} is part of the execution prompt.",
+			"prompt.analysisStale": "The issue changed after the AI analysis: the old analysis was left out of the execution prompt. Generate it again to refresh it.",
+			"prompt.analysisPending": "Generating the AI analysis…",
+			"prompt.analysisError": "AI analysis failed: {error}",
+			"prompt.noCodeChange": "The model judged that this issue needs no code change (a notice or a discussion). Consider moving it to the backlog so a run does not invent changes to finish a goal.",
+			"prompt.moveBacklog": "Move to backlog",
+			"prompt.modelLabel": "Analysis model",
+			"prompt.modelPlaceholder": "provider/model; empty uses the repository setting, the card model or the host default",
+			"prompt.generate": "Generate AI analysis",
+			"prompt.regenerate": "Regenerate",
+			"prompt.overwrite": "Overwrite and regenerate",
+			"prompt.clear": "Remove AI analysis",
+			"prompt.goal": "Goal",
+			"prompt.steps": "Suggested steps",
+			"prompt.acceptance": "Completion criteria",
+			"prompt.notes": "Notes",
 			"common.cancel": "Cancel"
 		};
 		/** The dictionary this module falls back to when no runtime seat is wired. */
@@ -17747,7 +17910,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-task-board-github/src/client/github.module.css.mjs
-		const css$11 = ".SUUxSG_detailSection{flex-direction:column;gap:6px;display:flex}.SUUxSG_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}.SUUxSG_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}.SUUxSG_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}.SUUxSG_cardTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}.SUUxSG_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;align-self:flex-start;align-items:center;padding:2px 6px;font-size:12px;line-height:1;display:inline-flex}.SUUxSG_cardLink{cursor:pointer;text-decoration:none}.SUUxSG_cardLink:hover{color:var(--dsw-alias-label-primary);text-decoration:underline}.SUUxSG_cardLink:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}.SUUxSG_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}.SUUxSG_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.SUUxSG_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.SUUxSG_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.SUUxSG_moveRow{flex-wrap:wrap;gap:8px;display:flex}.SUUxSG_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.SUUxSG_field{flex-direction:column;gap:5px;display:flex}.SUUxSG_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.SUUxSG_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.SUUxSG_input:focus{border-color:var(--dsw-alias-state-business-primary)}.SUUxSG_input::placeholder{color:var(--dsw-alias-label-tertiary)}.SUUxSG_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}.SUUxSG_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}.SUUxSG_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.SUUxSG_linkButton:hover{text-decoration:underline}.SUUxSG_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.SUUxSG_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.SUUxSG_primaryButton:disabled{opacity:.5;cursor:default}.SUUxSG_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.SUUxSG_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_ghostButton:disabled{opacity:.45;cursor:default}.SUUxSG_primaryButton:focus-visible,.SUUxSG_ghostButton:focus-visible,.SUUxSG_linkButton:focus-visible,.SUUxSG_input:focus-visible,.SUUxSG_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.SUUxSG_primaryButton,.SUUxSG_ghostButton,.SUUxSG_linkButton,.SUUxSG_input,.SUUxSG_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}.SUUxSG_primaryButton:active:not(:disabled),.SUUxSG_ghostButton:active:not(:disabled),.SUUxSG_linkButton:active:not(:disabled){transform:translateY(1px)}.SUUxSG_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.SUUxSG_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}.SUUxSG_modalTitle{margin:0;font-size:15px;font-weight:700}.SUUxSG_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}.SUUxSG_modalBody>*{flex:none}.SUUxSG_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.SUUxSG_sectionHint{color:var(--dsw-alias-label-secondary);margin:4px 0;font-size:12px;line-height:1.5}.SUUxSG_setupPanel{border-top:1px solid var(--dsw-alias-separator-primary);margin-top:16px;padding-top:12px}.SUUxSG_settingsSummaryTitle{margin:0 0 8px;font-size:13px;font-weight:600}.SUUxSG_setupSection{margin-top:10px}.SUUxSG_setupLine{margin:4px 0;font-size:12px}.SUUxSG_setupHint{opacity:.8;margin:4px 0;font-size:12px}.SUUxSG_setupRow{flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0;display:flex}.SUUxSG_setupRow .SUUxSG_input{flex:220px;min-width:0}.SUUxSG_setupLabelInput{flex:0 140px}.SUUxSG_setupRepository{overflow-wrap:anywhere;flex:220px;align-items:center;gap:6px;min-width:0;font-size:12px;display:inline-flex}.SUUxSG_setupReport{margin-top:4px}@media (width<=720px){.SUUxSG_input{box-sizing:border-box;font-size:16px}.SUUxSG_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}.SUUxSG_modal{box-sizing:border-box;width:100vw;height:100dvh;max-height:none;padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));border:0;border-radius:0}.SUUxSG_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}.SUUxSG_modalFooter>button{flex:120px}}";
+		const css$11 = ".SUUxSG_detailSection{flex-direction:column;gap:6px;display:flex}.SUUxSG_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}.SUUxSG_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}.SUUxSG_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}.SUUxSG_cardTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}.SUUxSG_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;align-self:flex-start;align-items:center;padding:2px 6px;font-size:12px;line-height:1;display:inline-flex}.SUUxSG_cardLink{cursor:pointer;text-decoration:none}.SUUxSG_cardLink:hover{color:var(--dsw-alias-label-primary);text-decoration:underline}.SUUxSG_cardLink:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}.SUUxSG_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}.SUUxSG_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.SUUxSG_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.SUUxSG_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.SUUxSG_moveRow{flex-wrap:wrap;gap:8px;display:flex}.SUUxSG_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.SUUxSG_field{flex-direction:column;gap:5px;display:flex}.SUUxSG_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.SUUxSG_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.SUUxSG_input:focus{border-color:var(--dsw-alias-state-business-primary)}.SUUxSG_input::placeholder{color:var(--dsw-alias-label-tertiary)}.SUUxSG_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}.SUUxSG_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}.SUUxSG_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.SUUxSG_linkButton:hover{text-decoration:underline}.SUUxSG_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.SUUxSG_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.SUUxSG_primaryButton:disabled{opacity:.5;cursor:default}.SUUxSG_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.SUUxSG_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_ghostButton:disabled{opacity:.45;cursor:default}.SUUxSG_primaryButton:focus-visible,.SUUxSG_ghostButton:focus-visible,.SUUxSG_linkButton:focus-visible,.SUUxSG_input:focus-visible,.SUUxSG_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.SUUxSG_primaryButton,.SUUxSG_ghostButton,.SUUxSG_linkButton,.SUUxSG_input,.SUUxSG_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}.SUUxSG_primaryButton:active:not(:disabled),.SUUxSG_ghostButton:active:not(:disabled),.SUUxSG_linkButton:active:not(:disabled){transform:translateY(1px)}.SUUxSG_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.SUUxSG_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}.SUUxSG_modalTitle{margin:0;font-size:15px;font-weight:700}.SUUxSG_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}.SUUxSG_modalBody>*{flex:none}.SUUxSG_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.SUUxSG_sectionHint{color:var(--dsw-alias-label-secondary);margin:4px 0;font-size:12px;line-height:1.5}.SUUxSG_setupPanel{border-top:1px solid var(--dsw-alias-separator-primary);margin-top:16px;padding-top:12px}.SUUxSG_settingsSummaryTitle{margin:0 0 8px;font-size:13px;font-weight:600}.SUUxSG_setupSection{margin-top:10px}.SUUxSG_setupLine{margin:4px 0;font-size:12px}.SUUxSG_setupHint{opacity:.8;margin:4px 0;font-size:12px}.SUUxSG_setupRow{flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0;display:flex}.SUUxSG_setupRow .SUUxSG_input{flex:220px;min-width:0}.SUUxSG_setupLabelInput{flex:0 140px}.SUUxSG_setupRepository{overflow-wrap:anywhere;flex:220px;align-items:center;gap:6px;min-width:0;font-size:12px;display:inline-flex}.SUUxSG_setupReport{margin-top:4px}@media (width<=720px){.SUUxSG_input{box-sizing:border-box;font-size:16px}.SUUxSG_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}.SUUxSG_modal{box-sizing:border-box;width:100vw;height:100dvh;max-height:none;padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));border:0;border-radius:0}.SUUxSG_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}.SUUxSG_modalFooter>button{flex:120px}}.SUUxSG_promptPanel{border-top:1px solid var(--dsh-task-tag-border);flex-direction:column;gap:6px;margin-top:10px;padding-top:8px;display:flex}.SUUxSG_promptPanel .SUUxSG_detailMeta{margin:0;line-height:1.5}.SUUxSG_promptAnalysis{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);border-radius:8px;flex-direction:column;gap:4px;padding:8px;display:flex}.SUUxSG_promptList{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;margin:0;padding-left:20px;font-size:13px;line-height:1.55}.SUUxSG_promptNotice{flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;display:flex}";
 		const tagId$11 = "@linxin666/dsh-web-all/packages/dsh-task-board-github/src/client/github.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
 			const tag = document.createElement("style");
@@ -17777,6 +17940,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"modalTitle": "SUUxSG_modalTitle",
 			"moveRow": "SUUxSG_moveRow",
 			"primaryButton": "SUUxSG_primaryButton",
+			"promptAnalysis": "SUUxSG_promptAnalysis",
+			"promptList": "SUUxSG_promptList",
+			"promptNotice": "SUUxSG_promptNotice",
+			"promptPanel": "SUUxSG_promptPanel",
 			"scheduleToggle": "SUUxSG_scheduleToggle",
 			"sectionHint": "SUUxSG_sectionHint",
 			"settingsSummaryTitle": "SUUxSG_settingsSummaryTitle",
@@ -17790,6 +17957,207 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"setupSection": "SUUxSG_setupSection",
 			"statusBadge": "SUUxSG_statusBadge"
 		};
+		//#endregion
+		//#region ../dsh-task-board-github/src/client/github/prompt-panel.tsx
+		/**
+		* The execution-prompt panel of the GitHub task-detail seat.
+		*
+		* It shows how the card's prompt was built — templated, edited by hand, or
+		* frozen by an execution — and drives the optional model analysis: start one
+		* (with an optional model route), regenerate a stale one, overwrite a prompt
+		* somebody edited after an explicit confirmation, or drop the analysis. The
+		* model call runs on the host in the background; this panel only dispatches
+		* the request and then renders the progress the host writes back onto the
+		* card, so a reload or a second window shows the same state.
+		*
+		* @module dsh-task-board-github/client/github/prompt-panel
+		*/
+		/**
+		* Derive the panel state from a card and its provider payload.
+		* @param task - the card.
+		* @param metadata - its GitHub payload.
+		* @returns the panel state.
+		*/
+		function promptPanelState(task, metadata) {
+			const analysis = metadata.analysis === void 0 ? "none" : metadata.analysis.sourceHash === issueSourceHash(metadata.remoteTitle ?? "", metadata.remoteBody ?? "") ? "fresh" : "stale";
+			return {
+				frozen: task.executions.length > 0 || task.archivedAt !== void 0,
+				edited: isPromptEdited(task.prompt, metadata.promptHash, {
+					...metadata.remoteTitle === void 0 ? {} : { title: metadata.remoteTitle },
+					...metadata.remoteBody === void 0 ? {} : { body: metadata.remoteBody }
+				}),
+				pending: metadata.analysisPendingSince !== void 0,
+				analysis
+			};
+		}
+		/** Report a dispatch failure the way the action channel phrased it. */
+		function messageOf$2(error) {
+			return error instanceof Error ? error.message : String(error);
+		}
+		/** The execution-prompt panel. */
+		function GitHubPromptPanel({ task, metadata, dispatch }) {
+			const [model, setModel] = (0, react.useState)("");
+			const [busy, setBusy] = (0, react.useState)(false);
+			const [error, setError] = (0, react.useState)();
+			const state = promptPanelState(task, metadata);
+			const analysis = metadata.analysis;
+			const send = async (action, payload = {}) => {
+				setBusy(true);
+				setError(void 0);
+				try {
+					await dispatch({
+						extensionId: GITHUB_EXTENSION_ID,
+						action,
+						taskId: task.id,
+						payload
+					});
+				} catch (cause) {
+					setError(messageOf$2(cause));
+				} finally {
+					setBusy(false);
+				}
+			};
+			const disabled = busy || state.pending || state.frozen;
+			const generateLabel = state.edited ? t$4("prompt.overwrite") : state.analysis === "none" ? t$4("prompt.generate") : t$4("prompt.regenerate");
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: github_module_css_default.promptPanel,
+				"data-dsh-part": "github-prompt",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.fieldLabel,
+						children: t$4("prompt.title")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.detailMeta,
+						children: t$4("prompt.templateHint")
+					}),
+					state.frozen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.detailMeta,
+						children: t$4("prompt.frozen")
+					}),
+					!state.frozen && state.edited && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.detailMeta,
+						"data-prompt-state": "edited",
+						children: t$4("prompt.edited")
+					}),
+					state.pending ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.detailMeta,
+						"data-prompt-state": "pending",
+						children: t$4("prompt.analysisPending")
+					}) : state.analysis === "none" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.detailMeta,
+						children: t$4("prompt.analysisNone")
+					}) : state.analysis === "stale" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.detailMeta,
+						"data-prompt-state": "stale",
+						children: t$4("prompt.analysisStale")
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.detailMeta,
+						"data-prompt-state": "fresh",
+						children: t$4("prompt.analysisFresh", {
+							model: analysis?.model ?? "",
+							time: formatHostTimestamp(analysis?.generatedAt ?? 0)
+						})
+					}),
+					analysis !== void 0 && state.analysis === "fresh" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: github_module_css_default.promptAnalysis,
+						"data-dsh-part": "github-analysis",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+								className: github_module_css_default.detailText,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t$4("prompt.goal") }),
+									": ",
+									analysis.goal
+								]
+							}),
+							analysis.steps.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.detailText,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t$4("prompt.steps") })
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ol", {
+								className: github_module_css_default.promptList,
+								children: analysis.steps.map((step, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: step }, index))
+							})] }),
+							analysis.acceptance.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: github_module_css_default.detailText,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t$4("prompt.acceptance") })
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+								className: github_module_css_default.promptList,
+								children: analysis.acceptance.map((item, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", { children: item }, index))
+							})] }),
+							analysis.notes !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+								className: github_module_css_default.detailText,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t$4("prompt.notes") }),
+									": ",
+									analysis.notes
+								]
+							}),
+							!analysis.needsCodeChange && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: github_module_css_default.promptNotice,
+								"data-prompt-state": "no-code-change",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: github_module_css_default.detailText,
+									children: t$4("prompt.noCodeChange")
+								}), task.status !== "backlog" && !state.frozen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: github_module_css_default.ghostButton,
+									disabled: busy,
+									onClick: () => {
+										send("move-backlog");
+									},
+									children: t$4("prompt.moveBacklog")
+								})]
+							})
+						]
+					}),
+					metadata.analysisError !== void 0 && !state.pending && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.formError,
+						children: t$4("prompt.analysisError", { error: metadata.analysisError })
+					}),
+					error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: github_module_css_default.formError,
+						children: error
+					}),
+					!state.frozen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: github_module_css_default.field,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: github_module_css_default.fieldLabel,
+							children: t$4("prompt.modelLabel")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							type: "text",
+							className: github_module_css_default.input,
+							value: model,
+							placeholder: t$4("prompt.modelPlaceholder"),
+							onChange: (event) => setModel(event.target.value),
+							disabled
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: github_module_css_default.moveRow,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: github_module_css_default.ghostButton,
+							disabled,
+							onClick: () => {
+								send("analyze", {
+									...model.trim() === "" ? {} : { model: model.trim() },
+									...state.edited ? { overwrite: true } : {}
+								});
+							},
+							children: state.pending ? t$4("prompt.analysisPending") : generateLabel
+						}), analysis !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: github_module_css_default.ghostButton,
+							disabled,
+							onClick: () => {
+								send("clear-analysis", state.edited ? { overwrite: true } : {});
+							},
+							children: t$4("prompt.clear")
+						})]
+					})] })
+				]
+			});
+		}
 		//#endregion
 		//#region ../dsh-task-board-github/src/client/github/sections.tsx
 		/**
@@ -18192,6 +18560,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							onClick: () => setShowLinkPr(true),
 							children: t$4("detail.linkPr")
 						})] })]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(GitHubPromptPanel, {
+						task,
+						metadata,
+						dispatch
 					}),
 					showCreatePr && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CreatePrModal, {
 						dispatch,

@@ -20,6 +20,7 @@ import { GITHUB_EXTENSION_ID, readTaskGitHubMetadata, type GitHubTaskMetadata } 
 import { formatHostTimestamp } from '../format-host-time.ts'
 import { t, type TaskBoardGithubKey } from '../locales.ts'
 import type { GitHubSummary } from './summary.ts'
+import { GitHubPromptPanel } from './prompt-panel.tsx'
 import css from '../github.module.css'
 
 /** Report a dispatch failure the way the action channel phrased it. */
@@ -310,6 +311,8 @@ export function GitHubDetailSection({ task, dispatch }: TaskBoardDetailSectionPr
           </>
         )}
       </div>
+
+      <GitHubPromptPanel task={task} metadata={metadata} dispatch={dispatch} />
 
       {showCreatePr && (
         <CreatePrModal dispatch={dispatch} metadata={metadata} task={task} onClose={() => setShowCreatePr(false)} />

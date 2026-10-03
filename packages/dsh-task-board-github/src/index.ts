@@ -18,7 +18,9 @@ import z from '@deepseek-ai/schemastery'
 // Type-only: pulls the host web server's Context merge (ctx.webServer) this
 // half registers its setup routes on.
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { resolveTaskBoardHostFace } from './core/contract.ts'
+import { createLlmIssueAnalyzer } from './host/analysis.ts'
 import { createGitHubExtension } from './host/extension.ts'
 import { probeWorkspaceRegistry } from './host/workspace-registry.ts'
 import { resolveGitHubToken } from './host/credentials.ts'
@@ -104,6 +106,8 @@ export interface GitHubRepoConfig {
   closeIssueOnMerge: boolean
   /** Base branch pull requests target. */
   baseBranch: string
+  /** Qualified provider/model the issue analysis uses; empty falls back to the card, then the host default. */
+  analysisModel: string
 }
 
 /**
@@ -181,6 +185,8 @@ export interface GitHubRepoConfigInput {
   closeIssueOnMerge?: boolean
   /** Base branch pull requests target. */
   baseBranch?: string
+  /** Qualified provider/model the issue analysis uses. */
+  analysisModel?: string
 }
 
 /** One configured repository, as the profile patch declares it. */
@@ -204,6 +210,7 @@ const GitHubRepoConfigSchema = z.object({
   draftPrPolicy: z.union(DRAFT_PR_POLICIES).default('draft'),
   closeIssueOnMerge: z.boolean().default(true),
   baseBranch: z.string().default('main'),
+  analysisModel: z.string().default(''),
 })
 
 export const Config: z<ConfigInput, Config> = z.object({
@@ -310,6 +317,55 @@ function resolveToolLookup(ctx: Context): ToolLookupFace | undefined {
   }
 }
 
+/**
+ * Resolve the optional `llm` service per call. It is deliberately not
+ * injected: a deployment without a model must still mount the provider, which
+ * then synchronizes cards on the templated prompt alone and refuses analysis
+ * requests with a reason.
+ * @param ctx - host context.
+ * @returns the llm service, or undefined.
+ */
+export function resolveLlmRuntime(ctx: Context): LlmRuntime | undefined {
+  try {
+    const get = (ctx as { get?: (name: string) => unknown }).get
+    if (typeof get !== 'function') return undefined
+    const llm = get.call(ctx, 'llm') as LlmRuntime | undefined
+    return llm !== undefined && typeof (llm as { stream?: unknown }).stream === 'function' ? llm : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The slice of the host gateway the default-model lookup speaks to. */
+interface GatewayFace {
+  invoke(request: { namespace: string; method: string; args: Record<string, unknown> }): Promise<unknown>
+}
+
+/**
+ * Read the host's default model route (the route an unconfigured session
+ * starts at) from the optional gateway's `session/modelCatalog`. Any failure
+ * reads as "no default": the analysis then needs an explicit model.
+ * @param ctx - host context.
+ * @returns the qualified provider/model, or undefined.
+ */
+export async function resolveHostDefaultModel(ctx: Context): Promise<string | undefined> {
+  try {
+    const get = (ctx as { get?: (name: string) => unknown }).get
+    if (typeof get !== 'function') return undefined
+    const gateway = get.call(ctx, 'typertGateway') as GatewayFace | undefined
+    if (gateway === undefined || typeof gateway.invoke !== 'function') return undefined
+    // session/modelCatalog declares zero parameters, so its args must be {}.
+    const catalog = await gateway.invoke({ namespace: 'session', method: 'modelCatalog', args: {} })
+    if (typeof catalog !== 'object' || catalog === null) return undefined
+    const route = (catalog as { default?: { provider?: unknown; model?: unknown } }).default
+    if (typeof route?.provider !== 'string' || route.provider === '') return undefined
+    if (typeof route.model !== 'string' || route.model === '') return undefined
+    return `${route.provider}/${route.model}`
+  } catch {
+    return undefined
+  }
+}
+
 function resolveSystemPrompt(ctx: Context): SystemPromptFace | undefined {
   try {
     const get = (ctx as { get?: (name: string) => unknown }).get
@@ -361,6 +417,9 @@ function applyImpl(ctx: Context, config?: Config): void {
   let disposed = false
   let disposeSection: (() => void) | undefined
   let announceLive = false
+
+  /** One analyzer for the life of the row; it resolves the model service per call. */
+  const analyzer = createLlmIssueAnalyzer(() => resolveLlmRuntime(ctx))
 
   /** The configuration surface the settings card, the routes and the tools share. */
   const setup = createGitHubSetup({
@@ -463,6 +522,8 @@ function applyImpl(ctx: Context, config?: Config): void {
           credential: async () => resolveGitHubToken(ctx, settings().tokenEnv),
           onService: service => { liveService = service },
           setup,
+          analyzer,
+          defaultModel: () => resolveHostDefaultModel(ctx),
         }))
         return () => { providerLive = false; dispose() }
       }, 'task-board-github: provider registration')

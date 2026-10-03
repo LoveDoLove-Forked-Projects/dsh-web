@@ -21,6 +21,7 @@ import {
   reconcileIssueWithTask,
   resolveStatusFromLabels,
 } from '../src/core/projection.ts'
+import { fingerprint } from '../src/core/prompt.ts'
 import {
   normalizeGitHubMetadata,
   readTaskGitHubMetadata,
@@ -203,7 +204,12 @@ describe('GitHub projection and label management', () => {
     expect(task.id).toBe('task-uuid')
     expect(task.title).toBe('Fix issue 42')
     expect(task.description).toBe('Detailed description of fix')
-    expect(task.prompt).toBe('Detailed description of fix')
+    // And its execution prompt is the template: the issue reference, the
+    // workflow, and the body verbatim inside the provenance wrap
+    expect(task.prompt).toContain('GitHub issue deepseek-ai/dsh#42')
+    expect(task.prompt).toContain('task_board_github_comment')
+    expect(task.prompt).toContain('ISSUE 原文 开始')
+    expect(task.prompt).toContain('Detailed description of fix')
     expect(task.status).toBe('todo')
     expect(task.integrations?.github).toEqual({
       provider: 'github',
@@ -218,6 +224,7 @@ describe('GitHub projection and label management', () => {
       remoteLabels: ['dsh', 'dsh:state:todo', 'component:ui'],
       lastSyncedAt: 100,
       lastRemoteUpdatedAt: Date.parse('2026-09-02T10:00:00Z'),
+      promptHash: fingerprint(task.prompt),
     })
   })
 
@@ -251,7 +258,8 @@ describe('GitHub projection and label management', () => {
     // decides whether a frozen card keeps its recorded values
     expect(reconciled.title).toBe('New Remote Title')
     expect(reconciled.description).toBe('New Remote Body')
-    expect(reconciled.prompt).toBe('New Remote Body')
+    expect(reconciled.prompt).toContain('GitHub issue deepseek-ai/dsh#101')
+    expect(reconciled.prompt).toContain('New Remote Body')
     expect(readTaskGitHubMetadata(reconciled)?.remoteTitle).toBe('New Remote Title')
     expect(readTaskGitHubMetadata(reconciled)?.issueNumber).toBe(101)
     expect(readTaskGitHubMetadata(reconciled)?.lastSyncedAt).toBe(20)

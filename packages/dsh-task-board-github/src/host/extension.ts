@@ -17,6 +17,7 @@ import {
 import type { HostTimerFace } from '../core/timers.ts'
 import type { WorkspaceRegistryFace } from './service.ts'
 import { GITHUB_EXTENSION_ID, type GitHubRepoConfig } from '../core/types.ts'
+import type { IssueAnalyzer } from './analysis.ts'
 import { GitHubApiClient } from './client.ts'
 import { GitHubSyncService } from './service.ts'
 import { buildGitHubTools, buildSetupTools } from './tools.ts'
@@ -67,6 +68,10 @@ export interface GitHubExtensionOptions {
    * programmatic mount) registers the synchronization tools only.
    */
   setup?: GitHubSetup
+  /** Writes the model analysis of a card's issue; absent refuses analysis requests. */
+  analyzer?: IssueAnalyzer
+  /** Resolves the host's default model route (provider/model). */
+  defaultModel?: () => Promise<string | undefined>
 }
 
 /** One provider action the GitHub browser half dispatches. */
@@ -112,6 +117,8 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
       now: options.now,
       credential: options.credential,
       workspaceRegistry: options.workspaceRegistry,
+      analyzer: options.analyzer,
+      defaultModel: options.defaultModel,
     })
     return service
   }
@@ -205,6 +212,27 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
           }
           const pullRequest = await service.linkPullRequest(taskId, pullRequestNumber)
           return { ok: true, pullRequest }
+        }
+        case 'analyze': {
+          // Accepted at once: the model call outlives the board's action
+          // channel, so it runs in the background and its outcome reaches the
+          // browser as a card change. A refusal (frozen, edited, in flight)
+          // throws here, synchronously, so the dispatcher sees it.
+          const taskId = requireTaskId(request)
+          const model = stringField(request, 'model')
+          void service.beginAnalysis(taskId, {
+            ...(model === undefined || model.trim() === '' ? {} : { model: model.trim() }),
+            overwrite: request.payload?.overwrite === true,
+          })
+          return { ok: true, started: true }
+        }
+        case 'clear-analysis': {
+          service.clearAnalysis(requireTaskId(request), request.payload?.overwrite === true)
+          return { ok: true }
+        }
+        case 'move-backlog': {
+          service.moveToBacklog(requireTaskId(request))
+          return { ok: true }
         }
         default:
           throw new Error(`unknown GitHub action "${request.action}"`)

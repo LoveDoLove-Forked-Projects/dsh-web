@@ -9,6 +9,7 @@
  *
  * @module dsh-task-board-github/core/types
  */
+import { normalizeIssueAnalysis, type IssueAnalysis } from './prompt.ts'
 
 /**
  * Stable extension id. It is the key this provider's payload is stored under in
@@ -25,6 +26,16 @@ export const GITHUB_EXTENSION_ID = 'github'
  * back a verdict with a link instead.
  */
 export const GITHUB_COMMENT_MAX_CHARS = 16_000
+
+/** A model-written issue analysis as stored on a card, with its provenance. */
+export interface GitHubPromptAnalysis extends IssueAnalysis {
+  /** Fingerprint of the issue title and body the analysis was written from. */
+  sourceHash: string
+  /** Qualified provider/model route that wrote it. */
+  model: string
+  /** Instant it was written (ms epoch). */
+  generatedAt: number
+}
 
 /** First-class pull request metadata stored on a task. */
 export interface GitHubPullRequestMetadata {
@@ -81,6 +92,18 @@ export interface GitHubTaskMetadata {
    * hides the card from active board columns without deleting history.
    */
   deactivated?: boolean
+  /**
+   * Fingerprint of the execution prompt the provider last generated for this
+   * card. A card whose prompt no longer matches it was edited by somebody, and
+   * synchronization keeps that prompt instead of regenerating it.
+   */
+  promptHash?: string
+  /** The model-written analysis the generated prompt includes while it is fresh. */
+  analysis?: GitHubPromptAnalysis
+  /** Instant an analysis request started, while one is in flight. */
+  analysisPendingSince?: number
+  /** Why the last analysis request failed, until the next one starts. */
+  analysisError?: string
 }
 
 /** Configured state labels for projecting task status into GitHub labels. */
@@ -128,6 +151,12 @@ export interface GitHubRepoConfig {
   closeIssueOnMerge?: boolean
   /** Default base branch for PR creation (default: 'main'). */
   baseBranch?: string
+  /**
+   * Qualified provider/model the issue analysis of this repository's cards
+   * uses when a request names none (default: the card's pinned model, then the
+   * host default).
+   */
+  analysisModel?: string
 }
 
 /** Resolved repository configuration with defaults applied. */
@@ -147,6 +176,8 @@ export interface ResolvedGitHubRepoConfig {
   readonly draftPrPolicy: 'draft' | 'ready'
   readonly closeIssueOnMerge: boolean
   readonly baseBranch: string
+  /** Analysis model route, or undefined when none is configured. */
+  readonly analysisModel?: string
 }
 
 export const DEFAULT_INCLUSION_LABEL = 'dsh'
@@ -183,6 +214,7 @@ export function resolveRepoConfig(raw: GitHubRepoConfig): ResolvedGitHubRepoConf
     draftPrPolicy: raw.draftPrPolicy === 'ready' ? 'ready' : 'draft',
     closeIssueOnMerge: raw.closeIssueOnMerge !== false,
     baseBranch: (raw.baseBranch ?? DEFAULT_BASE_BRANCH).trim(),
+    ...((raw.analysisModel ?? '').trim() === '' ? {} : { analysisModel: raw.analysisModel!.trim() }),
   }
 }
 
@@ -248,6 +280,8 @@ export function normalizeGitHubMetadata(value: unknown): GitHubTaskMetadata | un
     }
   }
 
+  const analysis = normalizeStoredAnalysis(gh.analysis)
+
   return {
     provider: 'github',
     owner: gh.owner.trim(),
@@ -264,7 +298,27 @@ export function normalizeGitHubMetadata(value: unknown): GitHubTaskMetadata | un
     ...(typeof gh.lastSyncError === 'string' && gh.lastSyncError !== '' ? { lastSyncError: gh.lastSyncError } : {}),
     ...(pullRequest !== undefined ? { pullRequest } : {}),
     ...(gh.deactivated === true ? { deactivated: true } : {}),
+    ...(typeof gh.promptHash === 'string' && gh.promptHash !== '' ? { promptHash: gh.promptHash } : {}),
+    ...(analysis !== undefined ? { analysis } : {}),
+    ...(typeof gh.analysisPendingSince === 'number' && Number.isFinite(gh.analysisPendingSince) ? { analysisPendingSince: gh.analysisPendingSince } : {}),
+    ...(typeof gh.analysisError === 'string' && gh.analysisError !== '' ? { analysisError: gh.analysisError } : {}),
   }
+}
+
+/**
+ * Repair one stored analysis: the analysis fields are re-bounded, and the
+ * provenance fields must all be present or the whole entry reads as absent.
+ * @param value - candidate stored analysis.
+ * @returns the repaired analysis, or undefined.
+ */
+export function normalizeStoredAnalysis(value: unknown): GitHubPromptAnalysis | undefined {
+  const analysis = normalizeIssueAnalysis(value)
+  if (analysis === undefined) return undefined
+  const raw = value as Record<string, unknown>
+  if (typeof raw.sourceHash !== 'string' || raw.sourceHash === '') return undefined
+  if (typeof raw.model !== 'string' || raw.model === '') return undefined
+  if (typeof raw.generatedAt !== 'number' || !Number.isFinite(raw.generatedAt)) return undefined
+  return { ...analysis, sourceHash: raw.sourceHash, model: raw.model, generatedAt: raw.generatedAt }
 }
 
 /**
