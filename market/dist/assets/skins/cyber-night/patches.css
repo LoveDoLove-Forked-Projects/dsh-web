@@ -25,7 +25,9 @@ body {
    it paints after every negative-z descendant and crushes the -2 illustration
    whatever body does (issue #1763). Suffix matching on _frame covers the shell's
    CSS-module hash (e.g. ZTP-Xa_frame) without being neutralized by the skin
-   patch prefix pipeline. Inert in the web host, which has no such element. */
+   patch prefix pipeline. It matches only an element carrying that class, and
+   maid-atelier already ships the identical rule, so the web host sees the same
+   declaration under cyber-night and renders unchanged. */
 [class*="_frame"] {
   background: transparent !important;
 }

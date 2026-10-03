@@ -37,11 +37,12 @@ Status: implemented
 - 桌面客户端的 SSH 终端页会明确说明本页无法承载 WebSocket 并指向浏览器，而不是笼统的 `connection error`。
 - ORCA LINK 宽屏下插件列表的每一行都重新可点，新建会话的舞台命中区只覆盖真正的空白带。
 - maid-atelier 的宫殿背景在桌面端重新可见；侧栏收起态归位；桌面端标题栏品牌装饰改由官方属性锚定。
-- maid-atelier 与 cyber-night 现在都带上同一对声明，在 Windows 桌面宿主中保持插画可见。`[class*="_frame"]` 在网页宿主中无对应元素，因而是惰性的，网页版渲染不变。其他既声明了 `contributes.backgroundMedia` 又给 body 上不透明底色的皮肤仍需补上这一对，在补上之前，它们的插画在 Windows 桌面端依然被压掉。
+- maid-atelier 与 cyber-night 现在都带上同一对声明，在 Windows 桌面宿主中保持插画可见。该规则只匹配类名带此后缀的元素；maid-atelier 已经带着同一条规则在跑，网页宿主对同一声明是能接受的。其他既声明了 `contributes.backgroundMedia` 又给 body 上不透明底色的皮肤仍需补上这一对，在补上之前，它们的插画在 Windows 桌面端依然被压掉。
 
 ## 覆盖缺口
 
 - #1743 的几何在 jsdom 中不可验证（无布局），断言针对的是浏览器会应用的声明与两者的实际几何关系；真实逐帧点击仍需复现环境验证。
 - #1745 / #1746 的 `isolation: isolate` 方向由报告者在同款宿主上实测有效（`z-index: -2` 层恢复出图、正文未被覆盖、立绘正常），本仓按该读数落地，未再单独复现。
 - cyber-night 复用同一对规则的落地，由声明层、变换后的选择器，以及 Windows frame 夹具下的 jsdom 层叠结果三处钉住；把修复前样式表放回去时，10 条断言中有 7 条失败。**本次会话仍无法复现 Electron 合成器**——在跑的是网页版宿主，它在改动前后都正常渲染 cyber-night 的插画——所以 Windows 端的可见结果仍依据 #1745/#1746 与 #1763 的桌面端实测，而非本地复现。
+- 本次会话无法枚举网页宿主自身的 CSS-Module 类名，因此无法直接证明 `[class*="_frame"]` 在那里匹配不到任何元素：在跑的宿主不带其进程级 token 时返回 401，而该 token 不属于本会话可以使用的东西。该判断的依据是 maid-atelier 在同一宿主里已经带着完全相同的规则在跑，而不是一次直接检查。
 - #1751/#1754 的回归用例断言的是放置与机制规则（哪些函数触碰 patch 文件与防火墙、延期是否走 `runDetached`，以及 `tests/detached-work.spec.ts` 中「裸 `setImmediate` 确实继承事务、`runDetached` 不继承」）。两者都不是由真实设置保存驱动的真实 HMR 事务端到端复现。
