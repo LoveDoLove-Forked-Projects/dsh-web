@@ -858,11 +858,17 @@ body[data-orca-sidebar-wide] :is([data-pane="sidebar"], [data-dsh-surface="sideb
   transition-duration: .2s;
 }
 
+/* The painted character's box is the one geometry both the art and the frame
+   that bounds it read, so the highlight cannot drift off the picture. */
+[data-dsh-surface="sidebar"] > :first-child {
+  --orca-art-h: calc(var(--orca-stage, 300px) - 66px);
+}
+
 [data-dsh-surface="sidebar"] > :first-child > .orca-ch-statusCharacter {
   --orca-character-signal: var(--orca-cyan);
   z-index: 1;
   width: calc(var(--orca-sidebar-art-width, 280px) - 30px);
-  height: calc(var(--orca-stage, 300px) - 66px);
+  height: var(--orca-art-h);
   pointer-events: none;
   opacity: 0;
   clip-path: inset(0 100% 0 0);
@@ -1020,6 +1026,11 @@ body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > butto
   pointer-events: none;
 }
 
+/* The hit plane and the frame are two different boxes and must not be one.
+   The plane is what a click reaches; the frame is what the user sees around
+   the character. The plane stays clipped to the free band above the panel list
+   (issue #1743), the frame spans the art, so the two no longer have to
+   compromise on a single height. */
 body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > button:not([data-dsh-part="sidebar-entry"]):before {
   z-index: 2;
   top: 58px;
@@ -1027,51 +1038,67 @@ body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > butto
   width: calc(var(--orca-sidebar-art-width, 280px) - 30px);
   /* 58 + (stage - 174) = stage - 116: the plane ends exactly where the panel
      list is pushed to (the list's own `margin-top`), so no point of any plugin
-     row can reach this button (issue #1743). The painted character still owns
-     the full stage; only the hit surface is clipped to the free band. */
+     row can reach this button (issue #1743). The painted character and the
+     frame below both run the full stage; only the hit surface is clipped. */
   height: calc(var(--orca-stage, 300px) - 174px);
   content: "";
-  /* The hit plane is the stage's own box, the one the status character paints:
-     every point of the area the skin presents as the new-session stage reaches
-     the button's click handler, starting at the pane top the way the artwork
-     does.
-
-     It must stop where the PANEL LIST starts, not at the stage seam. The list
-     is offset to `stage - 116px` while the painted stage reaches `stage`, so a
-     plane sized to the artwork swallowed the first rows of the list: their own
-     boxes sit above it, but the plane is the ::before of a sibling that keeps
-     the pane's child z-index, so a click landing on a row's lower half reached
-     the New Session button instead of opening the panel (issue #1743). Ending
-     the plane at the list's own offset keeps every point of the list its own. */
+  /* The hit plane starts at the pane top the way the artwork does, and is
+     painted by nothing: the frame is the visible half of this control. */
   cursor: pointer;
   opacity: 0;
-  background: linear-gradient(var(--orca-blue), var(--orca-blue)) left top / 18px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left top / 1px 18px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right top / 18px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right top / 1px 18px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left bottom / 18px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left bottom / 1px 18px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right bottom / 18px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right bottom / 1px 18px no-repeat;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--orca-blue) 12%, transparent);
   transition: opacity .16s;
   position: absolute;
 }
 
+/* The stage frame: the character area's own rectangle, read from the same
+   `--orca-art-h` the art is sized with, so the highlight is exactly the box the
+   picture occupies. It used to share the hit plane's clipped height, which left
+   the lower half of the character outside its own frame. Corner brackets carry
+   the stage-frame language and the corner wedge is the last of them, drawn as a
+   background layer so the frame stays a single box. */
 body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > button:not([data-dsh-part="sidebar-entry"]):after {
-  top: calc(58px + var(--orca-stage, 300px) - 174px - 12px);
-  left: calc(22px + var(--orca-sidebar-art-width, 280px) - 30px - 13px);
+  z-index: 2;
+  top: 58px;
+  left: 22px;
+  width: calc(var(--orca-sidebar-art-width, 280px) - 30px);
+  height: var(--orca-art-h);
   content: "";
   pointer-events: none;
-  background: var(--orca-blue);
-  clip-path: polygon(100% 0, 100% 100%, 0 100%);
-  opacity: .36;
-  width: 9px;
-  height: 9px;
-  transition: opacity .16s, transform .16s;
+  background: linear-gradient(var(--orca-blue), var(--orca-blue)) left top / 18px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left top / 1px 18px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right top / 18px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right top / 1px 18px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left bottom / 18px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) left bottom / 1px 18px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right bottom / 18px 1px no-repeat, linear-gradient(var(--orca-blue), var(--orca-blue)) right bottom / 1px 18px no-repeat;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--orca-blue) 12%, transparent);
+  opacity: 0;
+  transition: opacity .16s;
   position: absolute;
 }
 
-body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > button:not([data-dsh-part="sidebar-entry"]):hover:before, body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > button:not([data-dsh-part="sidebar-entry"]):focus-visible:before {
-  opacity: .62;
+/* The corner wedge is the one piece of the stage frame that rests on screen
+   rather than appearing with the hover, so it lives on the art itself and
+   takes the art's own bottom-right corner -- not a separately positioned box
+   that drifts off the picture when the frame is resized. Scoped with the rest
+   of the wide stage: the collapsed rail has no art to carry it. */
+body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > .orca-ch-statusCharacter:before {
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(to top left, var(--orca-blue) 0 50%, #0000 50%);
+  opacity: .36;
+  width: 9px;
+  height: 9px;
+  transition: opacity .16s;
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+}
+
+body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child:has(> button:not([data-dsh-part="sidebar-entry"]):hover) > .orca-ch-statusCharacter:before, body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child:has(> button:not([data-dsh-part="sidebar-entry"]):focus-visible) > .orca-ch-statusCharacter:before {
+  opacity: .92;
 }
 
 body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > button:not([data-dsh-part="sidebar-entry"]):hover:after, body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > button:not([data-dsh-part="sidebar-entry"]):focus-visible:after {
+  opacity: .62;
+}
+
+body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > button:not([data-dsh-part="sidebar-entry"]):focus-visible:after {
   opacity: .92;
-  transform: translate(-2px, -2px);
 }
 
 body[data-orca-sidebar-wide] [data-dsh-surface="sidebar"] > :first-child > button:not([data-dsh-part="sidebar-entry"]):focus-visible {
