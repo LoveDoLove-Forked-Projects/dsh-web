@@ -11,6 +11,15 @@
 
 import type { GitHubCommentPayload, GitHubIssuePayload, GitHubPullRequestPayload } from '../core/types.ts'
 
+/**
+ * Default ceiling on one GitHub request, in milliseconds.
+ *
+ * Generous enough for a slow connection and small enough that a wedged one
+ * is bounded: a pass makes many sequential requests, so an unbounded request
+ * does not cost one call, it costs the entire pass and every poll after it.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+
 export class GitHubApiError extends Error {
   constructor(
     readonly status: number,
@@ -19,6 +28,22 @@ export class GitHubApiError extends Error {
   ) {
     super(message)
     this.name = 'GitHubApiError'
+  }
+}
+
+/**
+ * A request that exceeded its ceiling.
+ *
+ * Distinct from a transport error so a caller can tell "GitHub said no" from
+ * "GitHub never answered", which are different problems with different fixes.
+ */
+export class GitHubTimeoutError extends Error {
+  constructor(
+    readonly timeoutMs: number,
+    readonly endpoint: string,
+  ) {
+    super(`GitHub request timed out after ${String(timeoutMs)}ms: ${endpoint}`)
+    this.name = 'GitHubTimeoutError'
   }
 }
 
@@ -33,6 +58,16 @@ export interface GitHubClientOptions {
   fetch?: typeof fetch
   /** Custom env dictionary (defaults to process.env). */
   env?: Record<string, string | undefined>
+  /**
+   * Ceiling on one request, in milliseconds.
+   *
+   * Every request is bounded by this. A sync pass issues a hundred or more
+   * single-issue reads for the cards a listing did not return, and an
+   * unbounded fetch on any of them can leave the await pending forever —
+   * which wedges the whole background poll, silently, on every start. Zero or
+   * less disables the bound and restores the old (unsafe) behavior.
+   */
+  requestTimeoutMs?: number
 }
 
 export class GitHubApiClient {
@@ -41,6 +76,7 @@ export class GitHubApiClient {
   private readonly tokenEnv: string
   private readonly explicitToken?: string
   private readonly env: Record<string, string | undefined>
+  private readonly requestTimeoutMs: number
 
   constructor(options: GitHubClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? 'https://api.github.com').replace(/\/+$/, '')
@@ -48,6 +84,7 @@ export class GitHubApiClient {
     this.tokenEnv = options.tokenEnv ?? 'GITHUB_TOKEN'
     this.explicitToken = options.token
     this.env = options.env ?? process.env
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   }
 
   /** Resolve effective GitHub token. Returns undefined when none is configured. */
@@ -62,6 +99,32 @@ export class GitHubApiClient {
   /** Whether a valid authentication credential is present on the Host. */
   hasCredential(): boolean {
     return this.getToken() !== undefined
+  }
+
+  /**
+   * One request, guaranteed to settle.
+   *
+   * The ceiling is enforced with a real AbortSignal rather than a raced
+   * promise: a race would let the caller continue while the socket stayed
+   * open, and this client is shared by every poll. A fetch that ignores the
+   * signal is still bounded by the race, so both guards are present — the
+   * signal releases the socket, the race guarantees the await returns.
+   */
+  private async boundedFetch(input: string, init: RequestInit): Promise<Response> {
+    const bound = this.requestTimeoutMs
+    if (!(bound > 0)) return await this.fetchImpl(input, init)
+    const controller = new AbortController()
+    const timer = setTimeout(() => { controller.abort() }, bound)
+    try {
+      return await Promise.race([
+        this.fetchImpl(input, { ...init, signal: controller.signal }),
+        new Promise<never>((_resolve, reject) => {
+          setTimeout(() => { reject(new GitHubTimeoutError(bound, input)) }, bound)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   private async request<T>(
@@ -87,7 +150,7 @@ export class GitHubApiClient {
       headers['content-type'] = 'application/json'
     }
 
-    const response = await this.fetchImpl(url, {
+    const response = await this.boundedFetch(url, {
       method: options.method ?? 'GET',
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,

@@ -24,6 +24,7 @@ import { probeWorkspaceRegistry } from './host/workspace-registry.ts'
 import { resolveGitHubToken } from './host/credentials.ts'
 import { makeGitHubSetupRoutes } from './host/routes.ts'
 import { createGitHubSetup } from './host/setup.ts'
+import type { GitHubSyncService } from './host/service.ts'
 import { mountOnce } from './mount-once.ts'
 import { PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from './tool-surface.ts'
 
@@ -353,6 +354,8 @@ function applyImpl(ctx: Context, config?: Config): void {
   let providerLive = false
   /** Signature of the mounted registration; a change remounts it. */
   let mounted: string | undefined
+  /** The provider this process mounted, so the status route can read its health. */
+  let liveService: GitHubSyncService | undefined
   /** The credential the mounted client authenticates with. */
   let token: string | undefined
   let disposed = false
@@ -365,6 +368,11 @@ function applyImpl(ctx: Context, config?: Config): void {
     repositories: () => settings().repositories,
     tokenEnv: () => settings().tokenEnv,
     running: () => providerLive,
+    // Health of the provider THIS process mounted, read live: the status route
+    // is how an operator tells a configured integration that has stopped
+    // syncing from one that is merely quiet, and a snapshot taken at mount
+    // would say nothing about the pass running now.
+    health: () => liveService?.syncHealth(),
     // A credential write lands in the store, so the value this process already
     // read is stale: re-resolve and remount before the next request.
     reload: () => { requestSync() },
@@ -445,6 +453,7 @@ function applyImpl(ctx: Context, config?: Config): void {
           tokenEnv: next.tokenEnv,
           enabled: () => settings().enabled,
           workspaceRegistry: () => probeWorkspaceRegistry(ctx),
+          onService: service => { liveService = service },
           setup,
         }))
         return () => { providerLive = false; dispose() }

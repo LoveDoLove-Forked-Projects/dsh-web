@@ -18,6 +18,7 @@ import {
   type GitHubCredentialStatus,
   type GitHubRepositoryCheck,
   type GitHubSetupSummary,
+  type GitHubSyncHealth,
 } from '../core/setup.ts'
 import type { GitHubRepoConfig } from '../core/types.ts'
 import { ME_ASSIGNEE, resolveRepoConfig } from '../core/types.ts'
@@ -43,6 +44,14 @@ export interface GitHubSetupOptions {
   tokenEnv(): string
   /** Whether the provider is mounted right now. */
   running(): boolean
+  /**
+   * Live sync health of the mounted provider, when one exists.
+   *
+   * Read at call time rather than captured, so the status route reports the
+   * pass in flight right now instead of the one that happened to be running
+   * when the settings surface was built.
+   */
+  health?(): GitHubSyncHealth | undefined
   /**
    * Called after a credential write, so the next request authenticates with
    * the new value instead of the one this process already read.
@@ -106,11 +115,13 @@ export function createGitHubSetup(options: GitHubSetupOptions): GitHubSetup {
 
   const status = async (): Promise<GitHubSetupSummary> => {
     const face = resolveSettingsFace(options.ctx)
+    const health = options.health?.()
     return {
       credential: await credential(),
       repositories: repositories(),
       running: options.running(),
       settingsWritable: face !== undefined && face.writable !== false && findGitHubSettingsEntry(face) !== undefined,
+      ...(health === undefined ? {} : { health }),
     }
   }
 

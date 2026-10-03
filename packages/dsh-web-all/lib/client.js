@@ -17053,6 +17053,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"settings.unsaved": "未保存",
 			"settings.saveFailed": "部署未接受这些值，已保留供你修改。",
 			"setup.apiUnavailable": "无法访问本机 Host 配置接口：{error}",
+			"setup.healthOk": "后台同步：最近一次成功同步于 {at}。",
+			"setup.healthStale": "后台同步：已 {minutes} 分钟没有成功同步（配置看起来正常，但同步实际已停）。",
+			"setup.healthNever": "后台同步：本次启动以来还没有成功同步过一次。",
+			"setup.healthErrors": "最近一次同步报告了 {count} 条错误，详情见宿主日志（dsh-task-board-github）。",
 			"setup.credentialConfigured": "Host 凭据：已配置（{name}，来源 {source}）",
 			"setup.credentialMissing": "Host 凭据：未配置（可直接在下方粘贴 GitHub Token，存到本机凭据库 {name}）",
 			"setup.credentialSourceUnknown": "未知",
@@ -17141,6 +17145,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"settings.unsaved": "Unsaved",
 			"settings.saveFailed": "The deployment did not accept these values; they were left for you to correct.",
 			"setup.apiUnavailable": "Cannot reach the host configuration API: {error}",
+			"setup.healthOk": "Background sync: last reached GitHub at {at}.",
+			"setup.healthStale": "Background sync: no successful sync for {minutes} minutes (the configuration looks right, but synchronization has stopped).",
+			"setup.healthNever": "Background sync: nothing has synced successfully since this host started.",
+			"setup.healthErrors": "The last sync reported {count} error(s); see the host log (dsh-task-board-github).",
 			"setup.credentialConfigured": "Host credential: configured ({name}, source {source})",
 			"setup.credentialMissing": "Host credential: not configured (paste a GitHub token below; it is stored in the local credential store as {name})",
 			"setup.credentialSourceUnknown": "unknown",
@@ -17934,6 +17942,18 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						className: github_module_css_default.formError,
 						children: t("setup.apiUnavailable", { error: statusError })
 					}),
+					status?.health !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: github_module_css_default.setupSection,
+						"data-dsh-part": "github-sync-health",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: github_module_css_default.setupLine,
+							"data-dsh-stale": status.health.staleSince !== void 0 ? "true" : void 0,
+							children: status.health.staleSince !== void 0 && status.health.lastSyncAt !== void 0 ? t("setup.healthStale", { minutes: String(Math.floor((Date.now() - status.health.lastSyncAt) / 6e4)) }) : status.health.lastSyncAt !== void 0 ? t("setup.healthOk", { at: new Date(status.health.lastSyncAt).toLocaleTimeString() }) : t("setup.healthNever")
+						}), status.health.lastErrors.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: github_module_css_default.formError,
+							children: t("setup.healthErrors", { count: String(status.health.lastErrors.length) })
+						})]
+					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: github_module_css_default.setupSection,
 						"data-dsh-part": "github-credential",
@@ -18311,16 +18331,34 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				if (!response.ok || body.ok === false) throw new Error(typeof body.error === "string" && body.error !== "" ? body.error : "the Host refused the request (" + String(response.status) + ")");
 				return body;
 			};
-			const asSummary = (body) => {
+			/** Parse the host's sync-health block, dropping it when absent or malformed. */
+			const asHealth = (value) => {
+				if (typeof value !== "object" || value === null) return void 0;
+				const row = value;
+				if (typeof row.running !== "boolean" || typeof row.inFlight !== "boolean") return void 0;
 				return {
-					credential: (typeof body.credential === "object" && body.credential !== null ? body.credential : void 0) ?? {
+					running: row.running,
+					inFlight: row.inFlight,
+					...typeof row.lastSyncAt === "number" ? { lastSyncAt: row.lastSyncAt } : {},
+					lastErrors: Array.isArray(row.lastErrors) ? row.lastErrors.filter((item) => typeof item === "string") : [],
+					consecutiveEmptySyncs: typeof row.consecutiveEmptySyncs === "number" ? row.consecutiveEmptySyncs : 0,
+					...typeof row.staleSince === "number" ? { staleSince: row.staleSince } : {},
+					...typeof row.staleAfterMs === "number" ? { staleAfterMs: row.staleAfterMs } : {}
+				};
+			};
+			const asSummary = (body) => {
+				const credential = typeof body.credential === "object" && body.credential !== null ? body.credential : void 0;
+				const health = asHealth(body.health);
+				return {
+					credential: credential ?? {
 						configured: false,
 						writable: false,
 						envName: "GITHUB_TOKEN"
 					},
 					repositories: Array.isArray(body.repositories) ? body.repositories : [],
 					running: body.running === true,
-					settingsWritable: body.settingsWritable === true
+					settingsWritable: body.settingsWritable === true,
+					...health === void 0 ? {} : { health }
 				};
 			};
 			return {

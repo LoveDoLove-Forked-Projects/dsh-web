@@ -36,6 +36,10 @@ export const zh = {
   'settings.saveFailed': '部署未接受这些值，已保留供你修改。',
 
   'setup.apiUnavailable': '无法访问本机 Host 配置接口：{error}',
+  'setup.healthOk': '后台同步：最近一次成功同步于 {at}。',
+  'setup.healthStale': '后台同步：已 {minutes} 分钟没有成功同步（配置看起来正常，但同步实际已停）。',
+  'setup.healthNever': '后台同步：本次启动以来还没有成功同步过一次。',
+  'setup.healthErrors': '最近一次同步报告了 {count} 条错误，详情见宿主日志（dsh-task-board-github）。',
   'setup.credentialConfigured': 'Host 凭据：已配置（{name}，来源 {source}）',
   'setup.credentialMissing': 'Host 凭据：未配置（可直接在下方粘贴 GitHub Token，存到本机凭据库 {name}）',
   'setup.credentialSourceUnknown': '未知',
@@ -129,6 +133,10 @@ export const en: Record<keyof typeof zh, string> = {
   'settings.saveFailed': 'The deployment did not accept these values; they were left for you to correct.',
 
   'setup.apiUnavailable': 'Cannot reach the host configuration API: {error}',
+  'setup.healthOk': 'Background sync: last reached GitHub at {at}.',
+  'setup.healthStale': 'Background sync: no successful sync for {minutes} minutes (the configuration looks right, but synchronization has stopped).',
+  'setup.healthNever': 'Background sync: nothing has synced successfully since this host started.',
+  'setup.healthErrors': 'The last sync reported {count} error(s); see the host log (dsh-task-board-github).',
   'setup.credentialConfigured': 'Host credential: configured ({name}, source {source})',
   'setup.credentialMissing': 'Host credential: not configured (paste a GitHub token below; it is stored in the local credential store as {name})',
   'setup.credentialSourceUnknown': 'unknown',

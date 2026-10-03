@@ -53,6 +53,10 @@ export const ru: Record<string, string> = {
   'settings.unsaved': 'Не сохранено',
 
   'setup.apiUnavailable': 'Не удаётся обратиться к API конфигурации хоста: {error}',
+  'setup.healthOk': 'Фоновая синхронизация: последний успешный запрос к GitHub в {at}.',
+  'setup.healthStale': 'Фоновая синхронизация: успешной синхронизации не было {minutes} минут (конфигурация выглядит верной, но синхронизация остановлена).',
+  'setup.healthNever': 'Фоновая синхронизация: с запуска хоста не было ни одной успешной синхронизации.',
+  'setup.healthErrors': 'Последняя синхронизация сообщила об ошибках: {count}; подробности в логе хоста (dsh-task-board-github).',
   'setup.credentialConfigured': 'Учётные данные Host: настроены ({name}, источник {source})',
   'setup.credentialMissing': 'Учётные данные Host: не настроены (вставьте токен GitHub ниже; он сохранится в локальном хранилище как {name})',
   'setup.credentialSourceUnknown': 'неизвестно',

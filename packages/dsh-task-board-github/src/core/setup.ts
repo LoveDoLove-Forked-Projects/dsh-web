@@ -53,6 +53,21 @@ export interface GitHubCredentialStatus {
   reason?: string
 }
 
+/**
+ * What a mounted provider reports about its own background synchronization.
+ *
+ * Declared structurally so the setup surface does not import the service.
+ */
+export interface GitHubSyncHealth {
+  running: boolean
+  inFlight: boolean
+  lastSyncAt?: number
+  lastErrors: string[]
+  consecutiveEmptySyncs: number
+  staleSince?: number
+  staleAfterMs?: number
+}
+
 /** Everything the settings card needs to draw the integration at a glance. */
 export interface GitHubSetupSummary {
   /** Credential facts, never the token. */
@@ -63,6 +78,28 @@ export interface GitHubSetupSummary {
   running: boolean
   /** Whether the settings document accepts configuration writes at all. */
   settingsWritable: boolean
+  /**
+   * Whether background synchronization is actually reaching GitHub.
+   *
+   * Absent when no provider is mounted to report it. It is here because every
+   * other field describes CONFIGURATION: a credentialed, enabled, correctly
+   * configured integration that has synced nothing for hours looks exactly
+   * like a healthy one, and the only way to tell them apart is to show when
+   * the last pass landed.
+   */
+  health?: {
+    running: boolean
+    inFlight: boolean
+    /** When the last pass reached GitHub without an error, ms epoch. */
+    lastSyncAt?: number
+    /** What the last pass reported, empty when it was clean. */
+    lastErrors: string[]
+    /** Passes in a row that produced neither a sync nor a clean result. */
+    consecutiveEmptySyncs: number
+    /** Set once the last clean pass is older than three poll intervals. */
+    staleSince?: number
+    staleAfterMs?: number
+  }
 }
 
 /** One repository's outcome in a connection test. */

@@ -65,13 +65,31 @@ export function createGitHubSetupApi(fetchImpl: typeof fetch = fetch): GitHubSet
     return body
   }
 
+  /** Parse the host's sync-health block, dropping it when absent or malformed. */
+  const asHealth = (value: unknown): GitHubSetupSummary['health'] => {
+    if (typeof value !== 'object' || value === null) return undefined
+    const row = value as Record<string, unknown>
+    if (typeof row.running !== 'boolean' || typeof row.inFlight !== 'boolean') return undefined
+    return {
+      running: row.running,
+      inFlight: row.inFlight,
+      ...(typeof row.lastSyncAt === 'number' ? { lastSyncAt: row.lastSyncAt } : {}),
+      lastErrors: Array.isArray(row.lastErrors) ? row.lastErrors.filter((item): item is string => typeof item === 'string') : [],
+      consecutiveEmptySyncs: typeof row.consecutiveEmptySyncs === 'number' ? row.consecutiveEmptySyncs : 0,
+      ...(typeof row.staleSince === 'number' ? { staleSince: row.staleSince } : {}),
+      ...(typeof row.staleAfterMs === 'number' ? { staleAfterMs: row.staleAfterMs } : {}),
+    }
+  }
+
   const asSummary = (body: Record<string, unknown>): GitHubSetupSummary => {
     const credential = typeof body.credential === 'object' && body.credential !== null ? body.credential as GitHubSetupSummary['credential'] : undefined
+    const health = asHealth(body.health)
     return {
       credential: credential ?? { configured: false, writable: false, envName: 'GITHUB_TOKEN' },
       repositories: Array.isArray(body.repositories) ? body.repositories as GitHubRepoConfig[] : [],
       running: body.running === true,
       settingsWritable: body.settingsWritable === true,
+      ...(health === undefined ? {} : { health }),
     }
   }
 

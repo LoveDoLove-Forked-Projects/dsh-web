@@ -59,6 +59,11 @@ export interface GitHubSyncServiceOptions {
    * card on the board's own workspace inheritance rules.
    */
   workspaceRegistry?: () => WorkspaceRegistryFace | undefined
+  /**
+   * Called after every completed pass, so a consumer can re-publish health.
+   * Never awaited, and a throw from it never reaches the pass.
+   */
+  onPass?: () => void
 }
 
 const DEFAULT_TIMERS: HostTimerFace = {
@@ -84,9 +89,17 @@ export class GitHubSyncService {
   private readonly timers: HostTimerFace
   private readonly now: () => number
   private readonly workspaceRegistry: (() => WorkspaceRegistryFace | undefined) | undefined
+  private readonly onPass: (() => void) | undefined
   private pollTimer: (() => void) | undefined
   private stopped = false
-  private syncing = false
+  /** In-flight pass, with the instant it opened: a stale one is taken over. */
+  private inFlight: { since: number } | undefined
+  /** When the last pass actually reached a repository, ms epoch. */
+  private lastSyncAt: number | undefined
+  /** Errors the last pass collected, for the operator to read. */
+  private lastSyncErrors: string[] = []
+  /** Consecutive passes that synced nothing at all. */
+  private consecutiveEmptySyncs = 0
   /** Immutable remote identity -> local card id, owned by this provider. */
   private readonly identityIndex = new Map<string, string>()
   /** Login this credential authenticates as, resolved once for an `@me` inclusion rule. */
@@ -99,6 +112,7 @@ export class GitHubSyncService {
     this.timers = options.timers ?? DEFAULT_TIMERS
     this.now = options.now ?? Date.now
     this.workspaceRegistry = options.workspaceRegistry
+    this.onPass = options.onPass
   }
 
   /**
@@ -163,11 +177,32 @@ export class GitHubSyncService {
 
     const minInterval = Math.min(...intervals)
     this.pollTimer = this.timers.interval(() => {
-      void this.syncAll().catch(() => {})
+      this.runBackgroundSync()
     }, minInterval)
 
     // Trigger initial background sync
-    void this.syncAll().catch(() => {})
+    this.runBackgroundSync()
+  }
+
+  /**
+   * One background pass, with its outcome reported instead of discarded.
+   *
+   * The old form was `syncAll().catch(() => {})` on both the timer and the
+   * initial call: a pass that rejected took the whole extension down to
+   * silence, and the operator was left looking at a configured, credentialed,
+   * enabled integration that had plainly stopped working. A pass that merely
+   * produced errors is ALSO reported — those were returned to a caller that
+   * discarded them, which is why a repository-wide listing failure left no
+   * trace on any card.
+   */
+  private runBackgroundSync(): void {
+    void this.syncAll().then(result => {
+      if (result.errors.length > 0) {
+        console.warn('[dsh-task-board-github] sync reported errors: ' + result.errors.join(' | '))
+      }
+    }).catch(error => {
+      console.error('[dsh-task-board-github] sync failed', error)
+    })
   }
 
   /** Stop background polling timer. */
@@ -307,10 +342,24 @@ export class GitHubSyncService {
     }
   }
 
-  /** Synchronize all configured repositories. */
+  /**
+   * Synchronize all configured repositories.
+   *
+   * The re-entry guard is a TIMESTAMP, not a flag. A boolean set true by a
+   * pass that never returns is permanent: every later poll returns at the
+   * first line, on this host and on every restart of it, with nothing logged
+   * and no card touched — the exact failure this replaces. A pass that has
+   * held the guard longer than one poll interval is presumed wedged and
+   * taken over rather than waited on forever.
+   */
   async syncAll(): Promise<{ synced: number; errors: string[] }> {
-    if (this.stopped || this.syncing) return { synced: 0, errors: [] }
-    this.syncing = true
+    if (this.stopped) return { synced: 0, errors: [] }
+    const now = this.now()
+    const held = this.inFlight
+    if (held !== undefined && now - held.since < this.pollIntervalMs()) {
+      return { synced: 0, errors: [] }
+    }
+    this.inFlight = { since: now }
     let totalSynced = 0
     const errors: string[] = []
 
@@ -325,10 +374,60 @@ export class GitHubSyncService {
         }
       }
     } finally {
-      this.syncing = false
+      this.inFlight = undefined
     }
 
+    // The health record is written even when a pass produced nothing, which is
+    // what makes a stall legible: "last synced 40 minutes ago" is a fact the
+    // operator can act on, and silence is not.
+    if (errors.length === 0 && totalSynced > 0) {
+      this.lastSyncAt = this.now()
+      this.lastSyncErrors = []
+      this.consecutiveEmptySyncs = 0
+    } else {
+      this.lastSyncErrors = errors
+      this.consecutiveEmptySyncs += 1
+    }
+    try { this.onPass?.() } catch { /* a health reporter cannot fail a pass */ }
+
     return { synced: totalSynced, errors }
+  }
+
+  /** The shortest configured poll interval, the re-entry guard's own bound. */
+  private pollIntervalMs(): number {
+    const intervals = this.repositories
+      .map(repository => repository.pollingIntervalMs)
+      .filter(ms => ms > 0)
+    return intervals.length === 0 ? 60_000 : Math.min(...intervals)
+  }
+
+  /**
+   * What the operator needs to tell "quiet" from "broken": when a pass last
+   * reached GitHub, what it reported, and how many passes in a row have
+   * produced neither a sync nor a clean result.
+   */
+  syncHealth(): {
+    running: boolean
+    inFlight: boolean
+    lastSyncAt?: number
+    lastErrors: string[]
+    consecutiveEmptySyncs: number
+    /** Set once the last clean pass is older than three poll intervals. */
+    staleSince?: number
+    staleAfterMs?: number
+  } {
+    const now = this.now()
+    const staleAfter = this.pollIntervalMs() * 3
+    return {
+      running: !this.stopped && this.repositories.length > 0,
+      inFlight: this.inFlight !== undefined,
+      ...(this.lastSyncAt === undefined ? {} : { lastSyncAt: this.lastSyncAt }),
+      lastErrors: [...this.lastSyncErrors],
+      consecutiveEmptySyncs: this.consecutiveEmptySyncs,
+      ...(this.lastSyncAt !== undefined && now - this.lastSyncAt > staleAfter
+        ? { staleSince: this.lastSyncAt, staleAfterMs: staleAfter }
+        : {}),
+    }
   }
 
   /** Synchronize a single repository by owner and name. */
@@ -885,6 +984,21 @@ export class GitHubSyncService {
       hasCredential: boolean
     }>
     hasCredential: boolean
+    /**
+     * Sync health travels WITH the summary so a stalled poll is visible on the
+     * board itself. Every other field here describes configuration, which is
+     * what made a broken poll look like a healthy one: the repositories and
+     * the credential were all correct while nothing had synced for hours.
+     */
+    health: {
+      running: boolean
+      inFlight: boolean
+      lastSyncAt?: number
+      lastErrors: string[]
+      consecutiveEmptySyncs: number
+      staleSince?: number
+      staleAfterMs?: number
+    }
   } {
     const hasCred = this.client.hasCredential()
     return {
@@ -897,6 +1011,7 @@ export class GitHubSyncService {
         prCreationEnabled: r.prCreationEnabled,
         hasCredential: hasCred,
       })),
+      health: this.syncHealth(),
     }
   }
 }

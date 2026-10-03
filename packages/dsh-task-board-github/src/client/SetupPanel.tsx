@@ -181,6 +181,21 @@ export function GitHubSetupPanel({ t, api, disabled = false }: GitHubSetupPanelP
         <p className={css.formError}>{t('setup.apiUnavailable', { error: statusError })}</p>
       )}
 
+      {status?.health !== undefined && (
+        <div className={css.setupSection} data-dsh-part="github-sync-health">
+          <p className={css.setupLine} data-dsh-stale={status.health.staleSince !== undefined ? 'true' : undefined}>
+            {status.health.staleSince !== undefined && status.health.lastSyncAt !== undefined
+              ? t('setup.healthStale', { minutes: String(Math.floor((Date.now() - status.health.lastSyncAt) / 60000)) })
+              : status.health.lastSyncAt !== undefined
+                ? t('setup.healthOk', { at: new Date(status.health.lastSyncAt).toLocaleTimeString() })
+                : t('setup.healthNever')}
+          </p>
+          {status.health.lastErrors.length > 0 && (
+            <p className={css.formError}>{t('setup.healthErrors', { count: String(status.health.lastErrors.length) })}</p>
+          )}
+        </div>
+      )}
+
       <div className={css.setupSection} data-dsh-part="github-credential">
         <p className={css.setupLine}>
           {credential.configured

@@ -99,6 +99,8 @@ The switch defaults (`enabled: true`, `announceToAgent: false`) are the same on 
 - The extension only contributes while the task board is installed and enabled; on its own it configures GitHub access and nothing else.
 - Turning the extension off does not delete board cards that were synchronized before, because the board owns its ledger.
 - A repository whose poll interval is `0` is synchronized on demand only (a manual refresh, a status change or an execution settlement) and never on a timer.
+- **A stalled sync now announces itself.** Every GitHub request is bounded at 30 seconds (`GitHubTimeoutError`), so one request that never returns can no longer wedge an entire pass; the re-entry guard is a timestamp rather than a boolean, so a pass still running after one poll interval is taken over by the next one instead of every later poll returning at its first line. Background failures and the errors a pass collects are written to the host log (`[dsh-task-board-github] ...`) and are **no longer swallowed by `.catch(() => {})`**. The settings card carries a Background sync line: when the last clean pass landed, how long it has been stale, and how many errors the last pass reported; going three poll intervals without a clean pass is marked as stopped.
+- The listing call takes the FIRST page of `state=all&per_page=100` and never paginates. In a repository with more than 100 issues only the newest 100 take part in the inclusion decision; older ones are seen only when a single-issue read still finds them included.
 
 ## Build and test
 

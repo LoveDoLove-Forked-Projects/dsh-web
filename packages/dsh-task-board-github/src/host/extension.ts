@@ -45,6 +45,14 @@ export interface GitHubExtensionOptions {
    */
   workspaceRegistry?: () => WorkspaceRegistryFace | undefined
   /**
+   * Called with the live service on start and with undefined on stop.
+   *
+   * The settings surface needs the mounted service to read its sync health;
+   * the settings options are built before any service exists, so the handle
+   * arrives here instead of being captured.
+   */
+  onService?: (service: GitHubSyncService | undefined) => void
+  /**
    * Volatile master switch, read at use time by the board's registry. Absent
    * means enabled, which is the schema default.
    */
@@ -86,6 +94,12 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
 
   const settings = (host: TaskBoardExtensionHost): GitHubSyncService => {
     service ??= new GitHubSyncService({
+      // Re-publish after every pass so the board's copy of the summary carries
+      // a live lastSyncAt rather than the instant the provider mounted.
+      onPass: () => {
+        if (service === undefined) return
+        try { host.publish(service.snapshotSummary()) } catch { /* best-effort */ }
+      },
       host,
       client: options.client ?? new GitHubApiClient({ token: options.token, tokenEnv: options.tokenEnv }),
       repositories: options.repositories,
@@ -102,6 +116,7 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
     enabled: () => options.enabled?.() ?? true,
     start(host) {
       const sync = settings(host)
+      options.onService?.(sync)
       disposers.push(host.events.onExecutionSettled(event => {
         const task = host.tasks.get(event.taskId)
         const execution = task?.executions.find(entry => entry.id === event.executionId)
@@ -138,6 +153,7 @@ export function createGitHubExtension(options: GitHubExtensionOptions = {}): Tas
       for (const dispose of disposers.splice(0)) {
         try { dispose() } catch { /* best-effort */ }
       }
+      options.onService?.(undefined)
       service?.dispose()
       service = undefined
     },
