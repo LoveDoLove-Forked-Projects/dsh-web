@@ -65,6 +65,15 @@ deps:
 # （改由卫星自带的 loader entry 挂载）。
 # preset-center 排在 patchFrom 行之后：创意工坊卡片（本仓 dsh-market 行）先声明
 # dsh-workshop.panel 子槽位，预设面板再注册进该槽位（见 dsh-presets 仓）。
+# 家族行 id 覆盖（#1794）：子包独立安装行 id 与聚合家族行 id 解耦。
+# dsh-plugin-manager 的独立行必须避开官方 @deepseek-ai/dsh-web-app 的
+# ui-plugin-manager（loader 同 id 后来者胜且不报错，官方插件页行被静默丢弃，
+# 侧栏「插件」入口随之消失）；派生规则会把新的独立行 id 一并改名，从而移动
+# 已发布的聚合行 id 与家族子路径导出。覆盖把两者拆开：独立行改名，聚合行
+# web-ui-plugin-manager 与子路径 plugin-manager 逐字不变，老 profile 无需迁移。
+# 值必须在本聚合的 web-ui-* id 空间内，且必须指向本聚合真实挂载的行。
+familyIds:
+  ui-plugin-manager-update-check: web-ui-plugin-manager
 rows:
   - {"id": "community-plugins", "name": "@linxin666/dsh-client-ui-community-plugins"}
   - {"id": "pet", "name": "@linxin666/dsh-pet"}
