@@ -34,7 +34,7 @@ dsh Web GUI 的 Host 权威多列任务看板。任务通过真实 DSH 会话执
 - provider 只见宿主能力面 `tasks.{ list, get, create, patchContent, setStatus, linked }`、`integration.{ read, write }`、`events.{ onStatusChanged, onExecutionSettled, onTaskDeleted }`、`publish`、`registerTool`，以及客户端能力面 `dispatch` / `registerVisibility` / `subscribe` / `snapshot`；`HostTaskLedger` 不进服务面。
 - 载荷不透明：`TaskRecord.integrations` 是 `Record<string, unknown>`，只校验纯 JSON 对象且单条不超过 64KiB；协议只有泛化的 `{ kind: "extension-action", extensionId, action, taskId?, payload? }`；快照只有 `extensions?: Record<string, unknown>`；不做账本 schema 迁移，远端语义的归一化不再被看板核心引用。
 - 不变量由看板上收执行：`patchContent` 复用 `canEditTaskContent`（执行过或已归档的卡内容冻结）、`setStatus` 走既有列与权限门禁、事件回调 try/catch 隔离且绝不打断执行；远端身份的索引归 provider，看板不提供 `findTaskByGitHubIdentity` 或 `updateTaskIntegrations`。
-- 开关三态：loader 行禁用（需重启，最重）> 扩展 `enabled`（volatile，默认 true，即时惰性：停轮询、停写回、注销工具、撤下详情区与徽章，不清数据）> 看板总开关；扩展的设置区块必须保持可达（它是重新开启的地方），只收放其中的配置表单。契约全文见 [Agent Note](../../.agents/notes/proposed/architecture/2026-09-30-task-board-extension-contract.md)。
+- 开关三态：loader 行禁用（需重启，最重）> 扩展 `enabled`（volatile，默认 true，即时惰性：停轮询、停写回、注销工具、撤下详情区与徽章，不清数据）> 看板总开关；扩展的设置区块必须保持可达（它是重新开启的地方），只收放其中的配置表单。契约全文见 [Agent Note](../../.agents/notes/implemented/architecture/2026-09-30-task-board-extension-contract.md)。
 
 ## 电源保护
 

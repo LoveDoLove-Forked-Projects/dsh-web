@@ -28,7 +28,7 @@ Status: implemented
 ## Consequences
 
 - 以 `[data-dsh-part="card"]` 为选择器的皮肤仍然匹配。该元素现在是 `article`，所以写成 `button[data-dsh-part="card"]` 的选择器不再匹配。新增部件与属性已列入 semantic-attrs/v1 契约（dsh-skins 的 `contracts/semantic-attrs-v1.md`）。
-- 看板的提供方契约不变（[任务看板扩展契约](../../proposed/architecture/2026-09-30-task-board-extension-contract.md)）。装饰现在作为行内徽章与看板自己的徽章并排显示。
+- 看板的提供方契约不变（[任务看板扩展契约](../architecture/2026-09-30-task-board-extension-contract.md)）。装饰现在作为行内徽章与看板自己的徽章并排显示。
 - 拖拽仍遵循[拖拽切换状态](2026-08-26-task-board-drag-drop-status.md)；拖拽源从按钮移到了 article。
 - 密度偏好按浏览器保存，而不是按 Host；在另一台设备上从默认值开始。
 - 摘要启发式只识别 `issue-form.ts` 中的标题。遇到不认识的模板时，会退化为「第一个非模板段落」，绝不会让卡片变成空白。

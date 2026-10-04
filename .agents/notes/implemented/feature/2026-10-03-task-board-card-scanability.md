@@ -28,7 +28,7 @@ A board fed by GitHub issue sync held a Done column of more than a hundred cards
 ## Consequences
 
 - Skins that target `[data-dsh-part="card"]` keep matching. The element is now an `article`, so a selector written as `button[data-dsh-part="card"]` no longer matches. The new parts and attributes are listed in the semantic-attrs/v1 contract (dsh-skins `contracts/semantic-attrs-v1.md`).
-- The board's provider contract is unchanged ([task board extension contract](../../proposed/architecture/2026-09-30-task-board-extension-contract.md)). Decorations now render as inline chips beside the board's own badges.
+- The board's provider contract is unchanged ([task board extension contract](../architecture/2026-09-30-task-board-extension-contract.md)). Decorations now render as inline chips beside the board's own badges.
 - Dragging still follows [drag and drop status changes](2026-08-26-task-board-drag-drop-status.md); the drag source moved from the button to the article.
 - The density preference is per browser, not per Host; a second device starts from the default.
 - The excerpt heuristic recognizes the headings in `issue-form.ts`. An unfamiliar template degrades to "first non-boilerplate paragraph", never to a blank card.

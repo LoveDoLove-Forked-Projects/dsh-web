@@ -23,7 +23,7 @@ Status: implemented
 - **故障隔离**：GitHub 网络或接口错误仅在任务元数据中记录 `lastSyncError`，绝不中断或使本地正在执行的任务失败。
 - **智能体工具与界面**：扩展经看板的 `registerTool` 能力提供七个受限工具，因此随「看板总开关 × 扩展 enabled」一起收放：五个同步工具（`task_board_github_list`、`task_board_github_get`、`task_board_github_refresh`、`task_board_github_create_pr`、`task_board_github_link_pr`）加两个配置工具——`task_board_github_setup`（凭据状态、存入、清除，以及一次真实连接测试）与 `task_board_github_repositories`（列出、添加、移除、修改仓库）。其浏览器半区遵循同一门禁：在任务详情中渲染 `data-dsh-part="github-integration"` 区域并渲染紧凑的 `#<issueNumber>` 卡片徽章，二者分别注册进看板声明的两个子席位（`task-board.detail.section`、`task-board.card.decoration`）。配置块（`data-dsh-part="github-settings"`）在扩展自己的设置卡中渲染，紧邻决定其行为的开关，且不占看板席位：它经本扩展自己的 loopback-only 配置路由访问宿主，人在界面上做的配置与模型通过两个配置工具做的配置走的是同一条路径。
 
-使这套集成成为扩展而非内联功能的看板侧契约——`taskBoard` 提供方服务、三个子席位、能力面、不透明的 `TaskRecord.integrations` 容器与三态开关——由[任务看板外部提供方扩展契约](../../proposed/architecture/2026-09-30-task-board-extension-contract.md)持有。该契约部分替代本记录：GitHub 端点相关决策仍归本记录，而本记录曾记载的依赖方向与存储层耦合由该契约取代。
+使这套集成成为扩展而非内联功能的看板侧契约——`taskBoard` 提供方服务、三个子席位、能力面、不透明的 `TaskRecord.integrations` 容器与三态开关——由[任务看板外部提供方扩展契约](../architecture/2026-09-30-task-board-extension-contract.md)持有。该契约部分替代本记录：GitHub 端点相关决策仍归本记录，而本记录曾记载的依赖方向与存储层耦合由该契约取代。
 
 ## Architecture and Host-Side Security
 
