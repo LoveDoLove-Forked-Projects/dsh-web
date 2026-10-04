@@ -59,7 +59,7 @@ body[data-ds-dark-theme]::after {
 /* the loader owns these flags: a wallpaper or backdrop must not be painted over.
    Write body[...]::after, never html[...] body::after — see the long note in
    materialPatchesSheet for why the html form can never match after force-scoping. */
-body[data-dsh-wallpaper-active]::after,
+body[data-we-wallpaper]::after,
 body[data-dsh-backdrop-active]::after {
   background-color: transparent;
   background-image: none;

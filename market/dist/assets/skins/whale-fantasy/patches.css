@@ -16,7 +16,7 @@
  *                 [data-composer-placeholder]
  *   · hero        [data-phase="hero"]
  *
- * Deliberately NOT touched: html[data-dsh-wallpaper-active] and
+ * Deliberately NOT touched: html[data-we-wallpaper] and
  * html[data-dsh-backdrop-active]. The loader owns those — it neutralises scene
  * backgrounds behind a wallpaper and re-blurs the composer card itself — so the
  * canvas rule below steps aside instead of fighting it.
@@ -71,7 +71,7 @@ body::after {
    wallpaper. The crystal engine was fixed first (see the note further down); the
    material and anime engines still carried the dead form, which is also why
    verify() rejected all eleven of them and no theme could be rebuilt. */
-body[data-dsh-wallpaper-active]::after,
+body[data-we-wallpaper]::after,
 body[data-dsh-backdrop-active]::after {
   background-color: transparent;
   background-image: none;

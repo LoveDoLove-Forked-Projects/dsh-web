@@ -62,7 +62,7 @@ body::after {
    html[data-dsh-skin] 本身。）
 
    标记同时打在 html 与 body 上，所以用 body 定位等价且能通过作用域。 */
-body[data-dsh-wallpaper-active]::after,
+body[data-we-wallpaper]::after,
 body[data-dsh-backdrop-active]::after {
   background-color: transparent;
   background-image: none;
@@ -490,7 +490,7 @@ div:has([data-json-root-row]) {
    就会把它整个盖住——只改画布的话，主区看不出任何变化。所以主区改成透明，
    整屏才是同一条连续的斜坡。
 
-   透明还有一个好处：用户开壁纸时（loader 给 html 加 data-dsh-wallpaper-active），
+   透明还有一个好处：用户开壁纸时（loader 给 html 加 data-we-wallpaper），
    壁纸能直接透进主区，不必再单独处理。 */
 
 [data-phase='hero'] {
