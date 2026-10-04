@@ -47,6 +47,10 @@ const crypto = require('node:crypto')
 const { crc32 } = require('node:zlib')
 
 const ROOT = path.resolve(__dirname, '..')
+/** The lockfile naming which submodule carries each market input. */
+const LOCKFILE = 'market-inputs.lock.json'
+/** The submodule declarations those lockfile entries resolve against. */
+const GITMODULES = '.gitmodules'
 /**
  * Content sources. The skin, pet and preset assets live in their own
  * repositories (dsh-skins, dsh-pet, dsh-presets) since the family split;
@@ -104,6 +108,33 @@ const GENERATED_DATE = CHECK && fs.existsSync(committedManifest)
 function fail(msg) {
   console.error('market-build: ' + msg)
   process.exit(1)
+}
+
+/**
+ * Refuse to compare market/dist against content that is not the pinned one.
+ *
+ * The --check comparison rebuilds from MARKET_INPUTS_DIR, so a cache holding an
+ * older commit makes the committed dist look stale and names files the operator
+ * is told to commit. Following that literally commits unpinned content, which
+ * market-fetch-inputs.mjs forbids: the build serves the pinned gitlinks, so a
+ * dist built from anything else must never land. Verify the cache against the
+ * pins first. A tree that declares no pins (the fixture trees) has nothing to
+ * verify and keeps its previous behaviour.
+ */
+async function assertInputsPinned() {
+  const lockFile = path.join(ROOT, LOCKFILE)
+  if (!fs.existsSync(lockFile) || !fs.existsSync(path.join(ROOT, GITMODULES))) return
+  const { loadLockfile, resolveSources, planInputs } = await import(
+    pathToFileURL(path.join(__dirname, 'market-fetch-inputs.mjs')).href
+  )
+  const lock = loadLockfile(ROOT)
+  const plan = planInputs(lock, MARKET_INPUTS_DIR, { sources: resolveSources(lock, ROOT) })
+  const offPin = plan.filter((input) => input.state !== 'ok')
+  if (offPin.length === 0) return
+  fail(MARKET_INPUTS_DIR + ' is not at the pinned commits ('
+    + offPin.map((input) => input.name + ': ' + input.state).join(', ')
+    + '); run "node scripts/market-fetch-inputs.mjs" first — comparing dist against '
+    + 'unpinned content reports a false diff, and rebuilding from it must not be committed')
 }
 
 /**
@@ -836,6 +867,9 @@ async function main() {
   }
 
   if (CHECK) {
+    // Comparing dist against an off-pin cache reports a false diff and advises
+    // a commit that must never be made; verify the pins first.
+    await assertInputsPinned()
     const tmp = path.join(ROOT, '.market-check-tmp')
     fs.rmSync(tmp, { recursive: true, force: true })
     emit(tmp, files, binary, skins, pets, plugins, presets, picks, transformSkinCss)

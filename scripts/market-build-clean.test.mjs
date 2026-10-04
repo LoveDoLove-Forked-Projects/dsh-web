@@ -38,6 +38,8 @@ function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-market-clean-'))
   const pairs = [
     [join(ROOT, 'scripts', 'market-build'), join(dir, 'scripts', 'market-build')],
+    // The pin guard imports this to compare the cache against the gitlinks.
+    [join(ROOT, 'scripts', 'market-fetch-inputs.mjs'), join(dir, 'scripts', 'market-fetch-inputs.mjs')],
     [join(ROOT, 'market', 'src'), join(dir, 'market', 'src')],
     [join(ROOT, 'market', 'editor-picks.json'), join(dir, 'market', 'editor-picks.json')],
     [join(ROOT, 'market', 'dist'), join(dir, 'market', 'dist')],
@@ -76,6 +78,30 @@ function fixture() {
 
 function runCheck(dir) {
   return spawnSync(process.execPath, ['scripts/market-build', '--check'], { cwd: dir, encoding: 'utf8' })
+}
+
+const SKINS_SUBMODULE = 'satellites/dsh-skins'
+const GITMODULES_NAME = '.gitmodules'
+
+/**
+ * Give a fixture the two things git cannot carry in the lockfile: the submodule
+ * declaration and the gitlink pin itself. One input is enough to exercise the
+ * pin guard; the content directories the build reads are already in place.
+ */
+function pinSkins(dir, pinSha) {
+  const git = (...args) => {
+    const result = spawnSync('git', args, { cwd: dir, encoding: 'utf8' })
+    assert.equal(result.status, 0, 'git ' + args.join(' ') + ' failed: ' + result.stderr)
+  }
+  git('-c', 'init.defaultBranch=main', 'init', '-q')
+  writeFileSync(join(dir, GITMODULES_NAME),
+    '[submodule "' + SKINS_SUBMODULE + '"]\n\tpath = ' + SKINS_SUBMODULE + '\n\turl = https://github.com/zhu1090093659/dsh-skins.git\n')
+  writeFileSync(join(dir, 'market-inputs.lock.json'), JSON.stringify({
+    version: 2,
+    inputs: { skins: { submodule: SKINS_SUBMODULE, path: 'skins', target: 'skins' } },
+  }))
+  mkdirSync(join(dir, SKINS_SUBMODULE), { recursive: true })
+  git('update-index', '--add', '--cacheinfo', '160000,' + pinSha + ',' + SKINS_SUBMODULE)
 }
 
 /** sha256 of every file under a tree, keyed by path relative to it. */
@@ -169,6 +195,46 @@ test('check rejects an editor pick outside the skin / pet / plugin kinds', (t) =
     const result = runCheck(dir)
     assert.equal(result.status, 1)
     assert.match(result.stderr, /editor picks #0: kind must be one of skin \/ pet \/ plugin/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('check refuses to compare dist against a cache that is off the pin', (t) => {
+  if (!hasInputs) return t.skip(SKIP_REASON)
+  const dir = fixture()
+  try {
+    const pinned = 'a'.repeat(40)
+    const stale = 'b'.repeat(40)
+    pinSkins(dir, pinned)
+    writeFileSync(join(dir, '.market-inputs', 'skins.sha'), stale + '\n')
+
+    // Given a cache holding a different commit than the gitlink, When the gate
+    // checks dist, Then it fails on the pin rather than reporting dist as stale
+    // and naming files to commit: rebuilding from that cache would bake unpinned
+    // content into the committed dist.
+    const result = runCheck(dir)
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /skins: stale/)
+    assert.match(result.stderr, /market-fetch-inputs/)
+    assert.doesNotMatch(result.stderr, /dist stale/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('check proceeds to the dist comparison when the cache is on the pin', (t) => {
+  if (!hasInputs) return t.skip(SKIP_REASON)
+  const dir = fixture()
+  try {
+    const pinned = 'c'.repeat(40)
+    pinSkins(dir, pinned)
+    writeFileSync(join(dir, '.market-inputs', 'skins.sha'), pinned + '\n')
+
+    // Given the cache matches the gitlink, When the gate checks dist, Then the
+    // pin guard stays out of the way and the comparison itself decides.
+    const result = runCheck(dir)
+    assert.doesNotMatch(result.stderr, /not at the pinned commits/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
