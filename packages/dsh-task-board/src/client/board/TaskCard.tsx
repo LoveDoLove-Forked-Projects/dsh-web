@@ -6,7 +6,7 @@
  * The card is an `article` with one stretched `button` rather than a button
  * itself: interactive content inside a button is invalid HTML, and the card
  * carries its own quick actions (open the execution session, a provider's
- * link such as the GitHub issue). The article owns the pointer click and
+ * link such as the tracker issue). The article owns the pointer click and
  * ignores clicks that land on a quick action; the stretched open button is the
  * keyboard and accessibility target, and its click bubbles into the same
  * handler, so the detail opens exactly once either way.

@@ -1,7 +1,7 @@
 /**
  * Issue-form vocabulary the card excerpt recognizes.
  *
- * GitHub issue forms (and the zh templates this family's repositories use)
+ * Issue forms from an issue tracker (and the zh templates this family's repositories use)
  * write the same section headings and empty-field placeholders on every issue.
  * The patterns are data about those forms, not UI copy, so they live in the
  * shared core rather than in a locale dictionary; the browser half imports them.
