@@ -92,6 +92,8 @@ pnpm typecheck && pnpm test && pnpm docs:check   # 提交前必过
 `pnpm market:fetch` 得到 `HTTP 404`——移动钉扎的那一次运行成功，掩盖了后续所有运行的失败。
 卫星仓内改动的验收与门禁在该仓自己的 CI 跑（见该仓 `AGENTS.md`）。
 
+**卫星仓的 `main` 受分支规则集保护**：只有仓库所有者与拥有 write 权限的协作者可以直接 push，其他贡献者必须对该仓的 `main` 开 PR，由该仓 CI 作业转绿后合入。规则集始终要求 PR、禁止强推与删除，且不要求人工审批；豁免名单与决策见 [卫星分支推送策略 Note](.agents/notes/implemented/process/2026-10-04-satellite-main-branch-push-policy.md)。
+
 **桌面宿主读到的是哪份卫星副本**：全家桶聚合包按 semver 声明这四个卫星包
 （`^0.4.3`），`pnpm install` 因此把聚合包 `node_modules/@linxin666` 下的符号链接指到
 pnpm store 的已发布 tarball。桌面宿主解析聚合 patch 行贡献的外部行时从聚合包自身的
