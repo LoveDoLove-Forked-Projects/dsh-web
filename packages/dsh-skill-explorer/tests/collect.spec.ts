@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync, rmSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { buildPayload, collectSkills, findProjectRoot, isSkillName, writeSkillFile, type RegistrySkill } from '../src/collect.ts'
+import { buildPayload, collectSkills, customSkillDirsFromLoader, findProjectRoot, isSkillName, normalizeSkillRoots, writeSkillFile, type RegistrySkill } from '../src/collect.ts'
 
 const TMP = mkdtempSync(join(tmpdir(), 'skill-explorer-collect-'))
 const PROJ = join(TMP, 'proj')
@@ -543,6 +543,98 @@ describe('writeSkillFile', () => {
     expect(raw).toContain("whenToUse: 'it''s 引号'")
     expect(raw).toContain('name: quoted-skill')
     rmSync(tmp, { recursive: true, force: true })
+  })
+})
+
+
+describe('custom skill roots from the live skill-filesystem row (#1801)', () => {
+  it('operator sees the provider row customSkillDirs scanned with an editable path', async () => {
+    // Given custom roots declared on the skill-filesystem loader row (the
+    // official documented placement) and NOT on this plugin's own config
+    const rowRoot = join(TMP, 'row-custom')
+    write(join(rowRoot, 'row-alpha', 'SKILL.md'), '---\nname: row-alpha\ndescription: 行配置的技能\n---\n')
+    write(join(rowRoot, 'row-beta', 'SKILL.md'), '---\nname: row-beta\ndescription: 另一个行配置技能\n---\n')
+    const loaderEntries = [
+      {
+        options: { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { customSkillDirs: [rowRoot] } },
+        fiber: { config: { customSkillDirs: [rowRoot] } },
+      },
+    ]
+
+    // When the host resolves the custom roots the panel must scan
+    const dirs = normalizeSkillRoots(customSkillDirsFromLoader(loaderEntries))
+    const { skills } = await collectSkills({
+      cwd: PROJ,
+      projectRoots: [PROJ],
+      customSkillDirs: dirs,
+      dshHome: HOME,
+      agentsHome: AGENTS,
+      registry,
+    })
+
+    // Then both row-declared skills are listed in the custom group WITH the
+    // path the write routes need, so the row controls are not dead
+    const byName = Object.fromEntries(skills.map((s) => [s.name, s]))
+    expect(byName['row-alpha'].level).toBe('custom')
+    expect(byName['row-alpha'].path).toBe(join(rowRoot, 'row-alpha', 'SKILL.md'))
+    expect(byName['row-beta'].level).toBe('custom')
+    expect(byName['row-beta'].path).toBe(join(rowRoot, 'row-beta', 'SKILL.md'))
+  })
+
+  it('operator sees blank and duplicated custom roots collapse to one absolute scan', () => {
+    // Given a list mixing blanks, a relative entry and a duplicate
+    const configured = ['', '   ', CUSTOM, CUSTOM, 'relative-skills']
+
+    // When the host normalizes the configured roots
+    const dirs = normalizeSkillRoots(configured)
+
+    // Then blanks are dropped, duplicates collapse, and each root is absolute
+    expect(dirs).toEqual([CUSTOM, join(process.cwd(), 'relative-skills')])
+  })
+
+  it('operator on a host whose loader row is not skill-filesystem sees no borrowed roots', () => {
+    // Given rows that belong to other plugins
+    const entries = [
+      { options: { id: 'skill-badge', name: '@deepseek-ai/dsh-skill-badge', config: { customSkillDirs: ['/should/not/leak'] } } },
+      { options: { id: 'no-name' } },
+    ]
+
+    // When the host reads custom roots off those rows
+    const dirs = customSkillDirsFromLoader(entries)
+
+    // Then nothing is borrowed from them
+    expect(dirs).toEqual([])
+  })
+
+  it('operator whose loader tree throws mid-reload still gets a served list', () => {
+    // Given an entry tree that throws while being enumerated
+    function* throwing(): Generator<never> {
+      throw new Error('loader mid-reload')
+    }
+
+    // When the host reads custom roots off that tree
+    const dirs = customSkillDirsFromLoader(throwing())
+
+    // Then the extractor degrades instead of failing the scan
+    expect(dirs).toEqual([])
+  })
+
+  it('operator sees the resolved fiber config contribute a root the raw config cannot express', () => {
+    // Given a row whose customSkillDirs arrives only through the resolved
+    // fiber config (the loader interpolates a !!js expression there)
+    const resolvedRoot = join(TMP, 'resolved-custom')
+    const entries = [
+      {
+        options: { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { customSkillDirs: [] } },
+        fiber: { config: { customSkillDirs: [resolvedRoot] } },
+      },
+    ]
+
+    // When the host reads custom roots off the row
+    const dirs = normalizeSkillRoots(customSkillDirsFromLoader(entries))
+
+    // Then the resolved root is read
+    expect(dirs).toEqual([resolvedRoot])
   })
 })
 

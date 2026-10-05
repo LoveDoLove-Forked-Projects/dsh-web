@@ -4,12 +4,17 @@
  * The web profile mounts the skill-filesystem provider only at the agent
  * preset scope layer, so the host plane cannot read project/user skills from
  * ctx.skills — the list route scans the official root conventions itself and
- * merges registry entries (bundled / runtime) by name.
+ * merges registry entries (bundled / runtime) by name. Because that scan is
+ * what supplies an editable path, the custom roots the provider was actually
+ * configured with are read back off the live loader rows
+ * (customSkillDirsFromLoader) and scanned alongside this plugin's own
+ * customSkillDirs; otherwise the registry's custom-source entries would be
+ * listed with no path and no way to manage them.
  */
 
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { parseFrontmatter } from './frontmatter.ts'
 
 /** Display order and copy for each source level. */
@@ -118,7 +123,7 @@ export interface CollectOptions {
   cwd: string
   /** Project roots to scan (each scans .dsh/skills and .agents/skills). */
   projectRoots?: string[]
-  /** Extra custom skill roots. */
+  /** Extra custom skill roots (the plugin's own config plus every live provider row). */
   customSkillDirs?: string[]
   /** User dsh config root (~/.dsh). */
   dshHome: string
@@ -167,6 +172,87 @@ export function findProjectRoot(cwd: string): string {
     if (parent === current) return cwd
     current = parent
   }
+}
+
+/**
+ * Normalize a custom-root list: drop blanks, resolve each entry to an absolute
+ * path, and de-duplicate.
+ *
+ * Two sources can name the same root — the plugin's own `customSkillDirs` and
+ * the live `skill-filesystem` row config — and the official provider resolves
+ * every configured root with `resolve()` before scanning it. Matching that
+ * here keeps the scanned identity equal to the path the write routes later
+ * re-resolve, so a toggle or delete addresses the file the panel displayed.
+ * @param dirs - configured custom skill roots (possibly empty or duplicated).
+ * @returns absolute, de-duplicated, non-empty roots in first-seen order.
+ */
+export function normalizeSkillRoots(dirs: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const roots: string[] = []
+  for (const dir of dirs) {
+    if (typeof dir !== 'string' || dir.trim() === '') continue
+    const root = resolve(dir)
+    if (seen.has(root)) continue
+    seen.add(root)
+    roots.push(root)
+  }
+  return roots
+}
+
+/** One live loader entry as the composition enumerates it. */
+export interface LoaderEntryLike {
+  options?: { id?: unknown; name?: unknown; config?: unknown }
+  fiber?: { config?: unknown }
+}
+
+/** The `skill-filesystem` loader row's module specifier. */
+const SKILL_FILESYSTEM_ROW = '@deepseek-ai/dsh-skill-filesystem'
+
+/** Whether a loader row is the official filesystem skill provider. */
+function isSkillFilesystemRow(entry: LoaderEntryLike): boolean {
+  const name = entry.options?.name
+  if (typeof name !== 'string') return false
+  return name === SKILL_FILESYSTEM_ROW || name.endsWith('/dsh-skill-filesystem')
+}
+
+/** Read one customSkillDirs field off a resolved config object. */
+function customSkillDirsOf(config: unknown): string[] {
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) return []
+  const value = (config as { customSkillDirs?: unknown }).customSkillDirs
+  if (!Array.isArray(value)) return []
+  return value.filter((dir): dir is string => typeof dir === 'string')
+}
+
+/**
+ * Collect the custom skill roots every live `skill-filesystem` loader row
+ * declares.
+ *
+ * The official documentation mounts the provider as a profile row and puts
+ * `customSkillDirs` on that row, not on this plugin. Without reading those
+ * rows the panel shows the row's skills in the "Custom directories" group
+ * (the registry reports their `source` as `custom`) while owning no scanned
+ * path for them, so every row-level control answers 404. Both the row's raw
+ * `options.config` and the resolved `fiber.config` are read: the loader
+ * interpolates `!!js` expressions into the latter, and the shipped preset
+ * row uses one for its bundled skills directory.
+ * @param entries - live loader entries (any iterable).
+ * @returns the declared custom roots, unnormalized.
+ */
+export function customSkillDirsFromLoader(entries: Iterable<LoaderEntryLike> | undefined): string[] {
+  if (entries === undefined) return []
+  const dirs: string[] = []
+  try {
+    for (const entry of entries) {
+      if (!isSkillFilesystemRow(entry)) continue
+      dirs.push(...customSkillDirsOf(entry.options?.config))
+      dirs.push(...customSkillDirsOf(entry.fiber?.config))
+    }
+  } catch {
+    // A loader whose entry tree is mid-reload must not fail the scan: the
+    // plugin's own config still contributes, and the panel keeps working.
+    return dirs
+  }
+  return dirs
 }
 
 /**
@@ -354,7 +440,7 @@ export async function collectSkills(options: CollectOptions): Promise<CollectRes
     scanTasks.push(scanSkillRoot(join(root, '.dsh', 'skills'), 'project-dsh', byName, wsInfo))
     scanTasks.push(scanSkillRoot(join(root, '.agents', 'skills'), 'project-agents', byName, wsInfo))
   }
-  for (const dir of customSkillDirs ?? []) scanTasks.push(scanSkillRoot(dir, 'custom', byName))
+  for (const dir of normalizeSkillRoots(customSkillDirs ?? [])) scanTasks.push(scanSkillRoot(dir, 'custom', byName))
   scanTasks.push(scanSkillRoot(join(dshHome, 'skills'), 'user-dsh', byName, undefined, true))
   scanTasks.push(scanSkillRoot(join(agentsHome, 'skills'), 'user-agents', byName))
   await Promise.all(scanTasks)

@@ -35,8 +35,12 @@ DSH Web GUI 与官方桌面客户端的**技能中心**：按来源分级浏览�
 - **编辑 tab**：从行内编辑入口打开，先经宿主读取该技能（列表只带元数据），
   再就地改写描述、适用场景与正文；技能名、位置与启用状态保持不变。
 - 数据来自按官方 dsh-skill-filesystem 根约定的文件系统扫描，并与
-  `ctx.skills` 注册表（bundled / runtime 条目）合并。本插件不改变 skill 的
-  加载/注入语义——纯 GUI 管理层。
+  `ctx.skills` 注册表（bundled / runtime 条目）合并。扫描既读本插件自己的
+  `customSkillDirs`，也读每一条在用的 `skill-filesystem` loader 行的同名
+  配置，因此官方文档推荐的配法（写在 profile patch 的 provider 行上）同样可管理。
+  本插件不改变 skill 的加载/注入语义——纯 GUI 管理层。
+- 没有本地 SKILL.md 文件的技能（bundled 或运行时注册）会带上「无本地文件」
+  标记，而不是静默缺失控件，用户能看出它为何无法启停、编辑或删除。
 - 只有官方 provider 会加载的技能才被列出：SKILL.md 必须声明非空的 `name`
   与 `description`，且 name 满足官方技能名文法。被官方 provider 丢弃的文件
   在面板里同样不出现，面板不会展示模型收不到的技能。
@@ -88,7 +92,9 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-skill-explorer
 - 写路由仅把面板展示的路径作为身份声明；执行修改前，最新文件系统扫描必须解析到
   同名且路径完全一致的技能。任意路径与过期的同名回退都会被拒绝，因此项目技能
   消失后，尚未执行的操作不会改到同名的用户级或自定义技能。read 路由走同一套
-  解析，因此也无法用来读取任意路径。
+  解析，因此也无法用来读取任意路径。该解析所用扫描按与 list 路由完全相同的顺序
+  确定工作区（显式覆盖、活动会话工作区、进程 cwd），因此写操作不会重新扫描到与
+  面板展示不同的项目根。
 - update 路由原地改写已有 SKILL.md，不改技能名与位置，并原样保留当前的
   `disable-model-invocation` 值，因此编辑不会静默把已禁用的技能重新启用。
   与删除同理，链接技能在该路由上被拒绝（见下）。
@@ -109,14 +115,16 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-skill-explorer
 
 - 项目技能跟随面板显示的 workspace：list 路由接受显式 `?cwd=` 覆盖，
   创建表单会发送当前显示的 workspace；项目根为该 workspace 最近的
-  `.git` 祖先。
+  `.git` 祖先。写路由解析与 list 路由相同的 workspace，因此即使宿主进程 cwd
+  在别处，项目技能仍可管理。
 - frontmatter 解析为零依赖轻量实现（块标量、布尔、input 嵌套块）；不支持的
   生僻 YAML 特性以官方 dsh-skill-filesystem 提供方为准。
 - 面板覆盖它扫描的文件系统根，加上 `ctx.skills` 注册表的全局层（bundled 与
-  runtime 条目）。仅通过**某个 agent preset 自己的** `customSkillDirs` 或
-  preset 作用域提供方到达 agent 的技能不在此覆盖范围内，因为面板读取注册表时
-  不带 viewing scope。因此面板里没有的技能，不一定模型也没有：会话能加载什么，
-  以官方 `skill` 工具目录为准。
+  runtime 条目）。配在 host 平面 `skill-filesystem` 行上的 `customSkillDirs`
+  会被扫描，因为宿主会读取该行配置；仅通过**某个 agent preset 自己的**
+  `customSkillDirs` 或 preset 作用域提供方到达 agent 的技能不在此覆盖范围内，
+  因为面板读取注册表时不带 viewing scope。因此面板里没有的技能，不一定模型也没有：
+  会话能加载什么，以官方 `skill` 工具目录为准。
 - 链接技能不可删除、不可编辑（见安全模型）；启用/禁用对链接技能正常（改写目标
   `SKILL.md` frontmatter）。目录型与「单文件」链接都能正常列出；「单文件」
   符号链接（指向单个 `.md`）在原子改写（rename）时会被替换为一个普通文件
