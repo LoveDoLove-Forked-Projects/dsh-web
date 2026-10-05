@@ -274,6 +274,12 @@ export type MarketCardProps =
     npmDownloads?: Record<string, number> | (() => Promise<Record<string, number> | null>)
     /** Install-event recorder override (injected for tests); returns the fresh count. */
     reportInstall?: (kind: Kind, id: string) => Promise<number>
+    /**
+     * Bulk install-event recorder override (injected for tests). One call
+     * reports every asset a bulk install covered; returns the fresh count
+     * per asset id.
+     */
+    reportInstallBatch?: (kind: Kind, ids: string[]) => Promise<Record<string, number>>
     /** Market-origin base for test injection. */
     marketOrigin?: string
   }
@@ -310,6 +316,11 @@ export function MarketCard(props: MarketCardProps): ReactNode {
   const [pluginErrors, setPluginErrors] = useState<Record<string, string>>({})
   const [npmDownloads, setNpmDownloads] = useState<Record<string, number>>({})
   const likeSeq = useRef(new Map<string, number>())
+  // Bulk "install all missing" state. The first tap only arms the button,
+  // because a full catalog pulls a lot of data and the count is not obvious
+  // from the button label alone.
+  const [installAllArmed, setInstallAllArmed] = useState(false)
+  const [installAll, setInstallAll] = useState<{ phase: 'idle' | 'checking' | 'running'; done: number; total: number; failed: number; reported: number; note: string } | null>(null)
 
   // Remote data (test override or the live market site).
   useEffect(() => {
@@ -376,7 +387,6 @@ export function MarketCard(props: MarketCardProps): ReactNode {
   }
   const [liveGateway, setLiveGateway] = useState<AssetGateway | null | undefined>(undefined)
   useEffect(() => {
-    if (props.gateway !== undefined) return
     let alive = true
     const gatewayClient: AssetGateway = {
       async install(kind, id, force) {
@@ -401,11 +411,16 @@ export function MarketCard(props: MarketCardProps): ReactNode {
         return { skins: r.skins ?? [], pets: r.pets ?? [], presets: r.presets ?? [] }
       },
     }
-    void gatewayClient.list().then((list) => {
+    // An injected gateway is the writer, but its own list() is still how the
+    // card learns what is installed: skipping it left the installed set empty,
+    // so the bulk action would plan a full catalog on any host that injects
+    // the gateway (tests, and any future native bridge).
+    const client: AssetGateway = props.gateway ?? gatewayClient
+    void client.list().then((list) => {
       if (!alive) return
       setInstalled(list)
-      setLiveGateway(gatewayClient)
-    }).catch(() => { if (alive) setLiveGateway(null) })
+      setLiveGateway(props.gateway ?? gatewayClient)
+    }).catch(() => { if (alive && props.gateway === undefined) setLiveGateway(null) })
     return () => { alive = false }
   }, [props.gateway])
   const gateway = props.gateway !== undefined ? props.gateway : (liveGateway ?? null)
@@ -560,6 +575,83 @@ export function MarketCard(props: MarketCardProps): ReactNode {
     }
   }
 
+  /**
+   * Install every published skin this machine does not have yet, then report
+   * the whole run to the market as ONE event.
+   *
+   * The downloads go through the same loopback gateway one at a time, so each
+   * asset keeps its own progress, its own failure and its own integrity
+   * write. Only the reporting is aggregated: a bulk install is one user
+   * gesture, so it costs one Turnstile challenge and one request rather than
+   * one per asset, and the per-asset counters it produces are the same rows a
+   * run of single installs would have written.
+   */
+  /** Published skins this machine does not have yet, in catalog order. */
+  const missingInstallCount = (): number => {
+    const have = new Set(installed.skins)
+    return (data?.items.skin ?? []).filter((item) => !have.has(item.id)).length
+  }
+
+  const onInstallAll = async (): Promise<void> => {
+    if (gateway === null) return
+    setInstallAllArmed(false)
+    setInstallAll({ phase: 'checking', done: 0, total: 0, failed: 0, reported: 0, note: '' })
+    const published = (data?.items.skin ?? []).map((item) => item.id)
+    const have = new Set(installed.skins)
+    const missing = published.filter((id) => !have.has(id))
+    if (missing.length === 0) {
+      setInstallAll({ phase: 'idle', done: 0, total: 0, failed: 0, reported: 0, note: t('installAllNone', {}) })
+      return
+    }
+    if (!installAllArmed) {
+      setInstallAll({ phase: 'idle', done: 0, total: 0, failed: 0, reported: 0, note: '' })
+      setInstallAllArmed(true)
+      return
+    }
+    let done = 0
+    let failed = 0
+    const landed: string[] = []
+    for (const id of missing) {
+      setInstallAll({ phase: 'running', done, total: missing.length, failed, reported: 0, note: '' })
+      try {
+        await gateway.install('skin', id, false)
+        landed.push(id)
+      } catch {
+        failed++
+      }
+      done++
+    }
+    try {
+      setInstalled(await gateway.list())
+    } catch { /* the per-asset callouts already carry the outcome */ }
+    // One aggregated report for the whole run.
+    let reported = 0
+    if (landed.length > 0) {
+      try {
+        const counts = await reportInstallBatch('skin', landed)
+        reported = Object.keys(counts).length
+        setData((prev) => prev ? {
+          ...prev,
+          stats: {
+            ...prev.stats,
+            installs: {
+              ...(prev.stats.installs ?? { skin: {}, pet: {}, plugin: {}, preset: {} }),
+              skin: { ...(prev.stats.installs?.skin ?? {}), ...counts },
+            },
+          },
+        } : prev)
+      } catch { /* reporting is non-fatal: the install itself succeeded */ }
+    }
+    setInstallAll({
+      phase: 'idle',
+      done,
+      total: missing.length,
+      failed,
+      reported,
+      note: failed === 0 ? t('installAllDone', { count: done }) : t('installAllFailed', { count: failed }),
+    })
+  }
+
   const onInstallAsset = (kind: Kind, id: string): void => {
     if (gateway === null || installing !== null) return
     void installAssetKind(kind, id, false)
@@ -656,6 +748,29 @@ export function MarketCard(props: MarketCardProps): ReactNode {
     return out.installs ?? 0
   })
 
+  /**
+   * Report a whole bulk install as ONE request.
+   *
+   * A bulk install is one user gesture, so it must not spend one Turnstile
+   * challenge and one round trip per asset. The edge endpoint writes exactly
+   * the same per-asset rows and per-asset counts a run of single installs
+   * would - it only folds them into one D1 batch - so the public counters are
+   * indistinguishable from installing one at a time.
+   */
+  const reportInstallBatch = props.reportInstallBatch ?? (async (kind: Kind, ids: string[]): Promise<Record<string, number>> => {
+    if (ids.length === 0) return {}
+    const token = await (props.turnstileToken ?? (() => marketTurnstileToken(TURNSTILE_ACTION_INSTALL)))()
+    const installId = window.crypto.randomUUID ? window.crypto.randomUUID() : 'ins-' + Math.random().toString(36).slice(2) + '-' + Date.now().toString(36)
+    const res = await fetch(origin + '/api/install-batch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, asset_ids: ids, device_fp: deviceFp(), install_id: installId, turnstile_token: token }),
+    })
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    const out = (await res.json()) as { installs?: Record<string, number> }
+    return out.installs ?? {}
+  })
+
   const chipClass = (isOn: boolean, isSub: boolean): string => {
     const cls = [css.filterChip]
     if (isSub) cls.push(css.filterChipSub)
@@ -746,6 +861,39 @@ export function MarketCard(props: MarketCardProps): ReactNode {
               </button>
             ))}
           </div>
+          {tab === 'skin' ? (
+            <div className={css.bulkRow}>
+              <button
+                type="button"
+                className={installAllArmed ? css.bulkArmed : css.bulkButton}
+                disabled={gateway === null || installing !== null || (installAll !== null && installAll.phase === 'running')}
+                onClick={() => { void onInstallAll() }}
+              >
+                {installAll?.phase === 'checking'
+                  ? t('installAllChecking', {})
+                  : installAll?.phase === 'running'
+                  ? t('installAllRunning', { done: installAll.done, total: installAll.total })
+                  : installAllArmed
+                  ? t('installAllConfirm', { count: missingInstallCount() })
+                  : t('installAll', {})}
+              </button>
+              {installAllArmed ? (
+                <button
+                  type="button"
+                  className={css.bulkCancel}
+                  onClick={() => { setInstallAllArmed(false) }}
+                >
+                  {t('cancel', {})}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {installAll !== null && installAll.note !== '' ? (
+            <p className={installAll.failed > 0 ? css.bulkNoteWarn : css.bulkNote}>
+              {installAll.note}
+              {installAll.reported > 0 ? ' · ' + t('installAllSummary', { count: installAll.reported }) : ''}
+            </p>
+          ) : null}
           {tab === 'preset' || tab === 'picks' ? null : (
             <input
               className={css.search}

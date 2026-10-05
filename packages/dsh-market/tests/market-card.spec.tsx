@@ -52,7 +52,7 @@ const t: MarketCardProps['t'] = (key, params) => {
   return text.replace(/\{(\w+)\}/g, (match, name: string) => String(params[name] ?? match))
 }
 
-class FakeScope implements ConfigForm<MarketSettings> {
+export class FakeScope implements ConfigForm<MarketSettings> {
   value: MarketSettings
   base: MarketSettings
   user: Partial<MarketSettings> = {}
@@ -122,7 +122,7 @@ class FakeScope implements ConfigForm<MarketSettings> {
   }
 }
 
-function cardProps(
+export function cardProps(
   scope: ConfigForm<MarketSettings>,
   overrides: Partial<MarketCardProps> = {},
 ): ComponentProps<typeof MarketCard> {
@@ -388,8 +388,10 @@ describe('MarketCard', () => {
       turnstileToken: async () => 'verified-token',
     })} />)
     fireEvent.click(screen.getByRole('button', { name: /赞 3/ }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    // The card also probes the installed snapshot on mount, so the like is the
+    // call that carries a Turnstile token, not simply the first one.
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/api/like'))).toBe(true))
+    const [url, init] = fetchMock.mock.calls.find(([u]) => String(u).includes('/api/like')) as [string, RequestInit]
     expect(String(url)).toContain('/api/like')
     const headers = new Headers(init.headers)
     expect(headers.has('x-dsh-market-client')).toBe(false)
