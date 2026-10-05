@@ -1125,6 +1125,38 @@
   overflow-y: auto;
 }
 
+/* --- clamped long content (detail description / prompt) ---------------------
+ * A long markdown body renders behind a fixed clamp with a fade into the
+ * detail surface; the expand toggle exists only when the content really
+ * overflows the clamp (measured at runtime), so short texts are untouched.
+ * The clamp height is read back by ClampedMarkdown through getComputedStyle —
+ * keep the pixel value here only.
+ * --------------------------------------------------------------------------- */
+
+.clampBody {
+  position: relative;
+}
+
+.clampBody[data-clamped='true'] {
+  max-height: 160px;
+  overflow: hidden;
+}
+
+.clampBody[data-clamped='true']::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 44px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--dsw-alias-bg-base));
+}
+
+.clampToggle {
+  align-self: flex-start;
+}
+
 .executionList {
   list-style: none;
   margin: 0;

@@ -27,7 +27,7 @@ import { inheritPresetLabel, presetLabel } from './preset-label.ts'
 import { formatHostTimestamp, formatTime } from './TaskCard.tsx'
 import { STATUS_KEY } from './status-key.ts'
 import { VerificationReport } from './VerificationReport.tsx'
-import { TaskMarkdown } from './task-markdown.tsx'
+import { ClampedMarkdown } from './ClampedMarkdown.tsx'
 
 /** Execution outcome → locale key. */
 const RESULT_KEY: Record<NonNullable<ExecutionRecord['result']>, TaskBoardKey> = {
@@ -522,7 +522,7 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
           )}
           <section className={css.detailSection}>
             <h4>{t('detail.description')}</h4>
-            <TaskMarkdown source={current.description !== '' ? current.description : '—'} />
+            <ClampedMarkdown source={current.description !== '' ? current.description : '—'} />
           </section>
 
           <SubtaskSection controller={controller} task={current} pending={pending} archived={archived} snapshot={snapshot} />
@@ -600,7 +600,7 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
 
           <section className={css.detailSection}>
             <h4>{t('detail.prompt')}</h4>
-            <TaskMarkdown source={current.prompt !== '' ? current.prompt : current.title} />
+            <ClampedMarkdown source={current.prompt !== '' ? current.prompt : current.title} />
           </section>
 
           {!archived && (
