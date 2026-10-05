@@ -47034,6 +47034,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"list.invokable": "可调用：{marks}",
 			"list.invokableTooltip": "模型可自动调用该技能；手动 /skill 指令不受影响",
 			"list.linked": "软链接",
+			"list.noFile": "无本地文件",
+			"list.noFileTooltip": "该技能由插件在运行时注册或随包提供，没有可编辑的 SKILL.md 文件",
+			"list.noFileHint": "该技能没有本地 SKILL.md 文件，无法在此启用/禁用、编辑或删除。",
 			"list.mark.model": "模型",
 			"list.mark.user": "用户",
 			"provider.filesystem": "文件系统",
@@ -47105,6 +47108,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"list.invokable": "Invokable: {marks}",
 			"list.invokableTooltip": "The model can invoke this skill automatically; manual /skill commands remain available",
 			"list.linked": "symlinked",
+			"list.noFile": "No local file",
+			"list.noFileTooltip": "This skill is registered at runtime or shipped by a plugin, so it has no editable SKILL.md file",
+			"list.noFileHint": "This skill has no local SKILL.md file, so it cannot be enabled/disabled, edited, or deleted here.",
 			"list.mark.model": "model",
 			"list.mark.user": "user",
 			"provider.filesystem": "Filesystem",
@@ -47686,6 +47692,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								className: panel_module_css_default.badge,
 								children: tt("list.linked")
 							}),
+							skill.path === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.badge,
+								title: tt("list.noFileTooltip"),
+								children: tt("list.noFile")
+							}),
 							(skill.modelInvocable || skill.userInvocable) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								className: `${panel_module_css_default.badge} ${panel_module_css_default.badgeInvokable}`,
 								title: tt("list.invokableTooltip"),
@@ -47739,6 +47750,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					skill.path !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: panel_module_css_default.skillPath,
 						children: skill.path
+					}),
+					skill.path === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: panel_module_css_default.skillWhen,
+						children: tt("list.noFileHint")
 					}),
 					error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: panel_module_css_default.banner,
