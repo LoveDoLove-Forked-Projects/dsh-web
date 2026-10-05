@@ -32,7 +32,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
   }
 })
 
-import { MarketCard } from '../src/client/MarketCard.tsx'
+import { MarketCard, type MarketCardProps } from '../src/client/MarketCard.tsx'
 import { FakeScope, cardProps } from './market-card.spec.tsx'
 
 /** Two published skins; each test decides which are already on the machine. */
@@ -73,7 +73,10 @@ interface Run {
 
 function mount(
   installed: string[],
-  options: { failFor?: string; gateway?: unknown; reportCounts?: Record<string, number> } = {},
+  // The gateway override carries the card prop's own type, so the
+  // "no gateway" test passes null and the default branch keeps the face's
+  // shape; a bare unknown here widens the fallback arm and stops typecheck.
+  options: { failFor?: string; gateway?: MarketCardProps['gateway']; reportCounts?: Record<string, number> } = {},
 ): Run {
   INSTALLED = installed
   const run: Run = { installedIds: [], reportedIds: [], reportCalls: 0 }
