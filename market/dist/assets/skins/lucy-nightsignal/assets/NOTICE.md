@@ -1,4 +1,4 @@
-# Notices - crt-phosphor
+# Notices - lucy-nightsignal
 
 ## Artwork
 
@@ -6,11 +6,10 @@ Every raster asset under `assets/` is AI-generated through the OFOX image API an
 processed locally. The character was described in text only; no photograph, cosplay
 image or other third-party picture was used as model input.
 
-- Portraits: the same matted assets as `skins/lucy-nightsignal`
-  (`volcengine/doubao-seedream-5.0-pro`, matted locally), submitted by the same author.
-- Scenes: those same scenes passed through `tools/build_crt_assets.py` - duotone with
-  halation, baked scanlines, vignette, grain.
-- Typeface: Fusion Pixel Font, OFL-1.1 (`assets/FUSION-PIXEL-OFL.txt`).
+- Portraits: `volcengine/doubao-seedream-5.0-pro`, matted locally by chroma key.
+- Scenes: `volcengine/doubao-seedream-5.0-pro` (runs `sd-run-06` and `sd-run-07`).
+- Two earlier background attempts used `openai/gpt-image-2.5-sunburst`; they are marked
+  superseded in `docs/ART-PROVENANCE.md` and no shipped file comes from them.
 
 ## Character and rights
 

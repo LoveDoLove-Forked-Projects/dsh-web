@@ -21,7 +21,7 @@
   "license": "CC BY-NC-SA 4.0",
   "licenseUrl": "https://github.com/lemonhall/dsh-skin-crt/blob/main/LICENSE",
   "sourceUrl": "https://github.com/lemonhall/dsh-skin-crt",
-  "attribution": "背景由本项目自有的 AI 生成场景经本地磷光双色调处理得到；非官方同人再创作",
+  "attribution": "AI 生成素材：立绘与同仓 lucy-nightsignal 同源（volcengine/doubao-seedream-5.0-pro），背景由其场景经本地磷光管线处理；角色与作品权利归原权利人；非官方同人作品，仅供个人非商业使用。",
   "preview": {
     "light": "preview/light.jpg",
     "dark": "preview/dark.jpg"

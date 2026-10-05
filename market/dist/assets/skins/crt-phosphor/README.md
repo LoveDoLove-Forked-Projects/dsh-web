@@ -47,8 +47,8 @@ Both are 1440x900 JPEG q85 from the market's own facade renderer.
 
 The submitted skin is **declare-only**: it ships no `hooks.mjs`, because the skin
 contract reserves `facets.client` for built-in skins. The optional interactive
-version (click the left portrait and she narrates the balance/usage numbers from the
-whale widget's pipeline, right-click opens that widget's menu) lives in the
+version (click the left portrait and she narrates the balance and usage numbers from
+the whale widget's pipeline; right-click opens that widget's menu) lives in the
 standalone repository `lemonhall/dsh-lucy-companion` together with the rest of the
 tooling.
 
@@ -65,15 +65,32 @@ rim and a full green ghost duotone.
 ## Provenance and copyright
 
 **The artwork is AI-generated.** Every raster asset under `assets/` was produced with
-an image model through the OFOX image API (`volcengine/doubao-seedream-5.0-pro`) and then processed locally: the
-scenes by a phosphor duotone pass with halation, then baked scanlines, a vignette and grain; the portraits by chroma-key matting (key estimation, alpha ramp, unmix, despill, alpha floor, connected-component despeckle). **No photograph, cosplay
-image, or other third-party picture was given to any model** - the character was
-described in text only.
+an image model through the OFOX image API and then processed locally. The character
+was described in text only: **no photograph, cosplay image or other third-party
+picture was used as model input.**
 
-**Character and source work.** The two portraits depict **Lucy / Lucyna Kushinada**
-from **Cyberpunk: Edgerunners**. The character design, the work itself and its
-setting belong to their rights holders: **Studio TRIGGER** and **CD PROJEKT RED**
-(together with their respective licensors and successors).
+**Which model made what.** The portraits (`lucy-signal-left.webp`,
+`lucy-signal-right.webp`) and the two scenes (`scene-light.webp`, `scene-dark.webp`)
+come from `volcengine/doubao-seedream-5.0-pro` runs recorded in
+`docs/ART-PROVENANCE.md`; the portraits were matted locally by chroma key (key
+estimation, alpha ramp, unmix, despill, alpha floor, connected-component despeckle).
+Two earlier background attempts used `openai/gpt-image-2.5-sunburst`; they are marked
+**superseded** in that document and **no shipped file comes from them**.
+
+**Same origin as the sibling skin.** The portraits are the **same matted assets** as
+`skins/lucy-nightsignal` (same author, same submission), and the two scenes here are
+that skin's scenes passed through `tools/build_crt_assets.py` (duotone with halation,
+baked scanlines, vignette, grain). Both skins therefore carry identical provenance
+terms.
+
+**Typeface.** The bundled **Fusion Pixel Font** is redistributed under **OFL-1.1**
+(`assets/FUSION-PIXEL-OFL.txt`, upstream licences under `assets/licenses/`). The font
+keeps its own licence, independent of this skin.
+
+**Character and source work.** The portraits depict **Lucy / Lucyna Kushinada** from
+**Cyberpunk: Edgerunners**. The character design, the work and its setting belong to
+their rights holders: **Studio TRIGGER** and **CD PROJEKT RED** (with their respective
+licensors and successors).
 
 **Terms of use.** **Personal, non-commercial use only.** This is **unofficial fan
 artwork**: it is not affiliated with, endorsed by, sponsored by, or licensed from
@@ -81,21 +98,18 @@ Studio TRIGGER, CD PROJEKT RED, the maintainers of this repository, or the DeepS
 Harness project. All rights to the character and the source work remain with their
 rights holders; if a rights holder objects, this skin should be removed.
 
-**Licence of the skin itself.** The skin's own code and styles (`skin.json`,
-`skin.css`, `patches.css`, and `hooks.mjs` where present) are released under
-**CC BY-NC-SA 4.0** (see the repository `LICENSE`). That licence covers only the
-parts authored here and grants no rights to the character or the source work.
+**Contributor's responsibility.** The contributor accepts responsibility for the
+copyright and compliance of this skin, and warrants that they hold the right to
+distribute every file in it under the terms stated here: the images are AI-generated
+by the models named above, the text and code are the contributor's own work, and the
+bundled typeface is redistributed under its own licence. If any part is found to
+infringe, the contributor will correct or remove it on request.
 
-**Same origin as the sibling skin.** These are the **same matted
-portraits** used by the `lucy-nightsignal` skin in this repository - same author,
-same submission, same generation and matting pipeline - so both skins carry
-identical provenance terms.
-
-**Backgrounds and fonts.** The two scenes are this project's own AI-generated night
-city, processed locally into a phosphor duotone. The bundled typeface is **Fusion
-Pixel Font** (OFL-1.1), shipped with its licence at `assets/FUSION-PIXEL-OFL.txt`
-and the upstream licences under `assets/licenses/`; the font keeps its own licence,
-independent of this skin.
+**Licence of the skin itself.** The skin's own files (`skin.json`, `skin.css`,
+`patches.css`, and `hooks.mjs` where present) are released under **CC BY-NC-SA 4.0** -
+see `LICENSE` in this directory and `licenseUrl` in `skin.json`. The repository root
+`LICENSE` is BSD-3-Clause and covers the repository's own code, not this skin. Neither
+licence grants any rights to the character or the source work.
 
 ## Known limitations
 

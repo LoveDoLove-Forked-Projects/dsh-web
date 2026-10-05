@@ -34,7 +34,7 @@ dsh web GUI 的 CRT 皮肤：暗玻璃上的磷光绿、覆盖中英文的点阵
 ## 交互
 
 投稿的这套皮肤是**纯声明式**的：不带 `hooks.mjs`，因为皮肤契约把 `facets.client`
-保留给内置皮肤。可选的可交互版本（点左侧立绘，她会把鲸鱼挂件管线里的余额/用量数字
+保留给内置皮肤。可选的可交互版本（点左侧立绘，她会把鲸鱼挂件管线里的余额与用量数字
 念出来；右键打开那个挂件的菜单）与相关工具放在独立仓库
 `lemonhall/dsh-lucy-companion`。
 
@@ -46,32 +46,40 @@ dsh web GUI 的 CRT 皮肤：暗玻璃上的磷光绿、覆盖中英文的点阵
 
 ## 来源与版权
 
-**素材均为 AI 生成。** `assets/` 下的所有位图都由图像模型经 OFOX 图像 API
-（`volcengine/doubao-seedream-5.0-pro`）生成，随后在本地处理：场景做磷光双色调与 halation，再烘焙扫描线、暗角与颗粒；立绘做色度键抠图（键色估计、alpha 斜坡、解混、去溢色、alpha 阈值、连通域去噪）。
-**没有**向任何模型提交过照片、cosplay 图或其它第三方图片 —— 角色形象是纯文本描述的。
+**素材均为 AI 生成。** `assets/` 下的所有位图都由图像模型经 OFOX 图像 API 生成，随后在
+本地处理。角色形象是纯文本描述的：**没有**把照片、cosplay 图或其它第三方图片作为模型输入。
 
-**角色与所属作品。** 两张立绘描绘的是**《赛博朋克：边缘行者》**
-（Cyberpunk: Edgerunners）中的 **Lucy / Lucyna Kushinada**。角色设计、作品本身
-与世界观的权利归其权利人：**Studio TRIGGER** 与 **CD PROJEKT RED**（及其各自的
-许可方与权利继承人）。
+**哪个模型生成了什么。** 立绘（`lucy-signal-left.webp`、`lucy-signal-right.webp`）与两张
+场景（`scene-light.webp`、`scene-dark.webp`）出自 `volcengine/doubao-seedream-5.0-pro`，
+逐次记录见 `docs/ART-PROVENANCE.md`；立绘在本地做色度键抠图（键色估计、alpha 斜坡、解混、
+去溢色、alpha 阈值、连通域去噪）。更早还有两次背景尝试用的是
+`openai/gpt-image-2.5-sunburst`，它们在上述文档里标注为 **superseded**，
+**没有任何出货文件来自那两次**。
+
+**与同仓另一套皮肤同源。** 立绘与 `skins/lucy-nightsignal` 用的是**同一批抠图素材**
+（同一作者、同一次投稿）；这里的两张场景就是那套皮肤的场景经 `tools/build_crt_assets.py`
+处理所得（双色调 + halation、烘焙扫描线、暗角、颗粒）。因此两套皮肤的来源声明完全一致。
+
+**字体。** 随包的 **Fusion Pixel Font** 按 **OFL-1.1** 再分发
+（`assets/FUSION-PIXEL-OFL.txt`，上游三方许可在 `assets/licenses/`）。字体保留自身许可，
+独立于本皮肤。
+
+**角色与所属作品。** 立绘描绘的是**《赛博朋克：边缘行者》**（Cyberpunk: Edgerunners）中的
+**Lucy / Lucyna Kushinada**。角色设计、作品本身与世界观的权利归其权利人：
+**Studio TRIGGER** 与 **CD PROJEKT RED**（及其各自的许可方与权利继承人）。
 
 **使用条款。** **仅供个人非商业使用。** 本作品为**非官方同人作品**：与
 Studio TRIGGER、CD PROJEKT RED、本仓库维护者以及 DeepSeek Harness 项目**均无关联**，
-未获其授权、赞助或背书；角色与作品的一切权利归原权利人。若权利人提出异议，
-应移除本皮肤。
+未获其授权、赞助或背书；角色与作品的一切权利归原权利人。若权利人提出异议，应移除本皮肤。
 
-**皮肤自身的许可。** 皮肤自己的代码与样式（`skin.json`、`skin.css`、`patches.css`，
-以及存在时的 `hooks.mjs`）按 **CC BY-NC-SA 4.0** 发布（见仓库 `LICENSE`）。
-该许可仅覆盖本项目原创的部分，**不授予**角色或原作品的任何权利。
+**贡献者责任。** 本皮肤的贡献者承担其版权与合规责任，并保证有权按此处声明的范围
+分发其中的每一个文件：图像由上述模型生成，文字与代码为贡献者本人所作，随包字体按字体
+自身的许可再分发。若其中任何部分被认定侵权，贡献者将按要求更正或移除。
 
-**与同仓另一套皮肤同源。** 本皮肤使用的是同仓库 `lucy-nightsignal`
-皮肤的**同一批抠图立绘** —— 同一提交人、同一次投稿、同一套生成与抠图流程 ——
-因此两套皮肤的来源声明完全一致。
-
-**背景与字体。** 两张场景是本项目自有的 AI 生成夜景，经本地处理成磷光双色调。
-随包字体为 **Fusion Pixel Font**（OFL-1.1），许可原文在
-`assets/FUSION-PIXEL-OFL.txt`，上游三方许可在 `assets/licenses/`；字体保留其自身
-许可，独立于本皮肤。
+**皮肤自身的许可。** 皮肤自己的文件（`skin.json`、`skin.css`、`patches.css`，
+以及存在时的 `hooks.mjs`）按 **CC BY-NC-SA 4.0** 发布 —— 见本目录下的 `LICENSE`
+与 `skin.json` 的 `licenseUrl`。仓库根目录的 `LICENSE` 是 BSD-3-Clause，覆盖仓库自身
+代码，不覆盖本皮肤。两个许可都不授予角色或原作品的任何权利。
 
 ## 已知限制
 

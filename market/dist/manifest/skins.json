@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-04",
+  "generated": "2026-10-05",
   "items": [
     {
       "id": "porco-rosso",
@@ -2330,6 +2330,61 @@
       }
     },
     {
+      "id": "lucy-nightsignal",
+      "name": "露西·夜城信号",
+      "nameEn": "Lucy · Night City Signal",
+      "author": "lemonhall",
+      "rank": 60,
+      "tagline": "银发彩虹渐变的夜之城网络黑客 · 双立绘天台背景 · 青洋红霓虹玻璃面板",
+      "description": "一套面向 DeepSeek Harness Web GUI 的赛博朋克同人皮肤：亮色是白天云海之上的未来都市天台，暗色是霓虹雨雾里的夜之城天际线，两侧各立一位银白短发、发尾彩虹渐变、白色短夹克配黑色紧身战衣与漆皮长靴的角色立绘。界面覆盖层由深靛蓝、玻璃白与霓虹青/洋红构成，面板半透明磨砂，输入框与侧栏带霓虹描边，并在加载与思考状态给出青色流光。",
+      "tags": [
+        "cyberpunk",
+        "night-city",
+        "neon",
+        "anime",
+        "glass",
+        "lucy"
+      ],
+      "version": "0.1.0",
+      "accent": "#22d3ee",
+      "preview": {
+        "light": "assets/skins/lucy-nightsignal/preview/light.jpg",
+        "dark": "assets/skins/lucy-nightsignal/preview/dark.jpg"
+      },
+      "files": [
+        "LICENSE",
+        "README.md",
+        "README.zh.md",
+        "assets/NOTICE.md",
+        "assets/lucy-signal-left.webp",
+        "assets/lucy-signal-right.webp",
+        "assets/scene-dark.webp",
+        "assets/scene-light.webp",
+        "patches.css",
+        "preview/dark.jpg",
+        "preview/light.jpg",
+        "skin.css",
+        "skin.json"
+      ],
+      "repo": "https://github.com/lemonhall/dsh-skin-lucy",
+      "contributes": {
+        "stylesheet": "skin.css",
+        "patches": "patches.css",
+        "backgroundMedia": {
+          "light": {
+            "type": "image",
+            "src": "assets/skins/lucy-nightsignal/assets/scene-light.webp",
+            "scrim": "linear-gradient(rgba(238, 246, 252, 0.08) 0%, rgba(232, 242, 250, 0.14) 55%, rgba(224, 238, 248, 0.22) 100%)"
+          },
+          "dark": {
+            "type": "image",
+            "src": "assets/skins/lucy-nightsignal/assets/scene-dark.webp",
+            "scrim": "linear-gradient(rgba(4, 8, 18, 0.34) 0%, rgba(7, 12, 26, 0.48) 55%, rgba(5, 9, 20, 0.60) 100%)"
+          }
+        }
+      }
+    },
+    {
       "id": "crt-phosphor",
       "name": "磷光 CRT",
       "nameEn": "Phosphor CRT",
@@ -2352,6 +2407,7 @@
         "dark": "assets/skins/crt-phosphor/preview/dark.jpg"
       },
       "files": [
+        "LICENSE",
         "README.md",
         "README.zh.md",
         "assets/FUSION-PIXEL-OFL.txt",
