@@ -36,6 +36,12 @@ const SKIN_OWNER = 'maid-atelier'
 const SKIN_SYSTEM_CHROME_COLOR = '#0b193f'
 const VIEWPORT_RESIZE_SETTLE_MS = 120
 const SIDEBAR_COLUMN_SELECTOR = ":is([data-pane='sidebar'], [class*='sidebarCol'])"
+/* AppFrame publishes the sidebar's own open/closed state on the frame element
+   as data-sidebar-collapsed. On the macOS desktop host a collapsed sidebar is a
+   ZERO-width grid track (the host keeps no icon rail there), so collapsing it
+   is the one official signal that --maid-sidebar-width must be re-read. The
+   attribute is stable and un-hashed, unlike the frame's CSS-module class. */
+const SIDEBAR_COLLAPSED_ATTRIBUTE = 'data-sidebar-collapsed'
 const SETTINGS_DIALOG_SELECTOR = "[data-slot='sidebar.settings'] [role='dialog'][aria-modal='true']"
 const SETTINGS_MASK_SELECTOR = "[role='presentation'] > [class*='mask']"
 const ACTIVE_CONVERSATION_SELECTOR = "[data-phase='active']"
@@ -214,6 +220,7 @@ export default function defineSkinHooks() {
       let previousThemeColor
       let themeColorObserver
       let observedSidebar
+      let sidebarMeasured = false
       let resizeObserver
       let composerPhase
       let composerMotionTimer
@@ -535,10 +542,17 @@ export default function defineSkinHooks() {
         if (!sidebar) {
           if (observedSidebar) resizeObserver.unobserve(observedSidebar)
           observedSidebar = undefined
+          sidebarMeasured = false
           return
         }
         if (observedSidebar) resizeObserver.unobserve(observedSidebar)
         observedSidebar = sidebar
+        // Attaching is not measuring: the observer reports asynchronously, and
+        // on some hosts it never reports for a column that collapsed to a
+        // zero-width track. Until an entry has actually arrived for this node
+        // the direct measurement in syncSidebarDecorations is the only source
+        // of truth, so start the flag false on every (re)attach.
+        sidebarMeasured = false
         resizeObserver.observe(sidebar)
       }
 
@@ -581,6 +595,7 @@ export default function defineSkinHooks() {
         resizeObserver = new ResizeObserver((entries) => {
           const entry = entries.at(-1)
           if (!entry) return
+          sidebarMeasured = true
           applySidebarWidth(entry.contentRect.width)
         })
       }
@@ -738,6 +753,15 @@ export default function defineSkinHooks() {
       syncSettingsBackdropFrame()
       syncProjectedState()
 
+      /* The ResizeObserver is the cheap live path, but it only reports for the
+         node it is attached to. When that node never existed at attach time, or
+         was replaced by a remount, the observer stays silent and the width
+         freezes at the stylesheet default (280px) - which on a host that hides a
+         collapsed sidebar entirely reads as a phantom sidebar: the lace, the
+         crest and the left maid all sit one sidebar to the right of the content
+         they belong to. So the direct measurement is a real fallback whenever
+         the observer is absent or not watching the current column, not a
+         no-ResizeObserver-only branch. */
       const syncSidebarDecorations = () => {
         syncTitlebarHeight?.()
         decorateTitlebarBrand(ownedNodes)
@@ -746,7 +770,9 @@ export default function defineSkinHooks() {
         ensureSidebarObserved()
         const sidebar = document.querySelector(SIDEBAR_COLUMN_SELECTOR)
         if (sidebar === null) clearSidebarWidth()
-        else if (resizeObserver === undefined) applySidebarWidth(sidebar.getBoundingClientRect().width)
+        else if (resizeObserver === undefined || !sidebarMeasured) {
+          applySidebarWidth(sidebar.getBoundingClientRect().width)
+        }
       }
 
       const isSkinChrome = (node) => (
@@ -775,7 +801,12 @@ export default function defineSkinHooks() {
           if (target?.closest(TERMINAL_SELECTOR) !== null) continue
 
           if (record.type === 'attributes') {
-            if (record.attributeName === 'aria-expanded'
+            if (record.attributeName === SIDEBAR_COLLAPSED_ATTRIBUTE) {
+              // A pure width change: the host flips one attribute on the frame
+              // and rewrites its inline grid. No sidebar subtree churn, so this
+              // is the only notification the mutation observer can see.
+              sidebarStructureChanged = true
+            } else if (record.attributeName === 'aria-expanded'
               && target !== undefined
               && target.closest("[data-slot='sidebar.settings']") !== null) {
               settingsStateChanged = true
@@ -833,6 +864,10 @@ export default function defineSkinHooks() {
           'data-ds-dark-theme',
           'data-dsh-better-sidebar',
           'data-dsh-sidebar-collapsed',
+          // The official frame's own collapse signal (see
+          // SIDEBAR_COLLAPSED_ATTRIBUTE). data-dsh-sidebar-collapsed above is a
+          // different, plugin-side marker; only this one rides AppFrame.
+          'data-sidebar-collapsed',
           'data-phase',
           'data-slot',
           'role',

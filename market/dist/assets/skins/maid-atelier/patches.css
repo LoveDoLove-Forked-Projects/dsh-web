@@ -182,7 +182,7 @@ body[data-maid-low-power] [data-maid-character] {
 }
 
 [data-skin-chrome="top-trim"] {
-  translate: var(--maid-sidebar-width) 0;
+  translate: var(--maid-sidebar-width, 280px) 0;
   z-index: 1;
   pointer-events: none;
   contain: paint;
@@ -256,7 +256,7 @@ body:has([data-slot="main"] [data-plugin-detail]) [data-skin-chrome="top-trim"] 
 }
 
 [data-skin-chrome="bottom-trim"] {
-  translate: var(--maid-sidebar-width) 0;
+  translate: var(--maid-sidebar-width, 280px) 0;
   z-index: 19;
   pointer-events: none;
   background: var(--maid-bottom-trim-art) left bottom / auto 30px repeat-x;
