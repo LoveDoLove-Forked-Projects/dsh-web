@@ -1680,6 +1680,18 @@
       "npm": "dsh-plugin-wallpaper-engine",
       "category": "ui",
       "subcategory": "render"
+    },
+    {
+      "id": "dsh-pet-quota",
+      "name": "宠物额度气泡",
+      "rank": 132,
+      "nameEn": "Pet Quota Bubble",
+      "author": "Daizhdd",
+      "description": "在 DSH 桌面宠物头上显示今日 token 用量：按输入+缓存读+缓存写+输出与侧边栏同口径统计，分轻度/中度/重度三档，档位只用一个彩色圆点表示，无进度条与百分比；另有任务完成、本轮失败、跨档三类事件气泡，全部通过宠物插件公开的 announce 接口推送，不改动任何第三方代码。",
+      "descriptionEn": "Shows today token usage as a bubble above the DSH desktop pet: counts input + cache-read + cache-write + output with the same convention as the sidebar, sorts the day into three tiers shown as a single coloured dot (no progress bar, no percentage), and adds completion / failure / tier-change bubbles through the pet plugin public announce API without patching any third-party code.",
+      "repo": "https://github.com/Daizhdd/dsh-pet-quota",
+      "category": "utility",
+      "subcategory": "stats"
     }
   ]
 }
