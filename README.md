@@ -55,7 +55,7 @@ dsh-web 通过官方 profile 机制挂载到 `dsh web`，零修改侵入官方�
 | Agent 预设管理 | 仅官方预设（Standard / Minimal 等） | 官方预设 + 创意工坊社区海量预设一键启用 |
 | 自定义模型能力 | 无法可视化修改模型属性 | 逐模型可视化声明 Vision 图片多模态与推理思考档位，支持供应商快速启闭 |
 | 自动化任务看板 | 无 | 5 列看板工作流 + 真实智能体会话执行 + Cron 表达式后台定时调度 |
-| 移动端与跨设备控制 | 仅限本机浏览器 | 手机扫码直连、跨设备 PC 浏览器访问、SSE 实时流式响应与专属移动触控手势 |
+| 移动端与跨设备控制 | 仅限本机浏览器 | 手机扫码直连、跨设备 PC 浏览器访问、WebSocket 实时流式响应与专属移动触控手势 |
 | 远程服务器运维 | 无 | 网页版 SSH 终端 (xterm.js)、SFTP 文件传输、端口转发隧道与集群批量命令 |
 | Token 用量与成本监控 | 无 | 每日 Token 消耗明细、多供应商余额查询、套餐使用进度与 Token 银行 |
 | Git 可视化与多任务开发 | 仅终端 git 命令 | 可视化分支与提交图谱 + Git Worktree 自动创建专属隔离目录防代码冲突 |
@@ -67,7 +67,7 @@ dsh-web 通过官方 profile 机制挂载到 `dsh web`，零修改侵入官方�
 | 核心使用场景与用户需求 | 推荐解决方案与能力 | 快速入口 |
 | --- | --- | --- |
 | 后台无人值守运行 AI 任务，或定时执行每日代码巡检、健康检查与自动报告 | 任务看板：5 列状态流转、Cron 表达式后台调度、系统防休眠电源保护、会话复用 | [任务看板与 cron 定时执行](packages/dsh-task-board/README.zh.md) |
-| 在 iPhone / Android 手机、iPad 或另一台电脑上远程使用 DeepSeek | 移动端远程控制：扫码即连、SSE 实时流式响应、移动端触控优化与安全配对门控 | [手机与 PC 浏览器远程控制](packages/dsh-remote-web-ui/README.zh.md) |
+| 在 iPhone / Android 手机、iPad 或另一台电脑上远程使用 DeepSeek | 移动端远程控制：扫码即连、WebSocket 实时流式响应、移动端触控优化与安全配对门控 | [手机与 PC 浏览器远程控制](packages/dsh-remote-web-ui/README.zh.md) |
 | 让 AI 智能体执行远程 Linux 服务器运维、传输配置或排查线上服务 | SSH 运维面板：Web 终端、可视化 SFTP 传输、端口转发隧道、集群批量命令 | [SSH 终端、文件传输与隧道](packages/dsh-ssh/README.zh.md) |
 | 监控各家模型 API 的 Token 消耗明细、查询供应商账户余额或套餐进度 | 使用统计：每日消耗明细、余额查询、账单估算、套餐追踪与 Token 银行鲸元券 | [用量统计与 Token 银行](packages/dsh-usage/README.zh.md) |
 | 多 Agent 并行编码容易产生代码覆盖冲突，需要隔离工作区 | Git 图谱与 Worktree：可视化提交图谱、自动为会话创建专属 worktree 分支 | [Git 可视化与 Worktree 隔离](packages/dsh-git-graph/README.zh.md) |
@@ -121,13 +121,13 @@ dsh-web 通过官方 profile 机制挂载到 `dsh web`，零修改侵入官方�
 
 ![DeepSeek Harness 手机端与桌面端 Web 界面实时协同与扫码配对](docs/assets/phone-and-web.png)
 
-> **实时消息与隧道**：移动端基于 SSE（Server-Sent Events）接收实时流式消息。Cloudflare quick tunnel（trycloudflare.com）和 Tailscale Serve 默认不透传 SSE，此类网络环境下插件会自动降级为高频轮询，收发消息正常进行，新消息可能略有延迟。若需要即时流式推送，建议使用支持长连接与 SSE 的隧道服务（如 Cloudflare named tunnel 或自建 TCP 端口转发）。
+> **实时消息与隧道**：移动端的流式输出走官方 WebSocket 通道（配对后经门控的 `/remote` 代理转发），Cloudflare 快速隧道、命名隧道与 dsh-market 固定域名中继都能转发该连接。远程访问把广域网往返延迟叠加到每次更新上，固定域名中继比裸隧道多一跳；对延迟敏感时可在设置卡片关闭该中继。
 
 | 移动端主页（鲸鱼入口） | 会话列表 |
 | --- | --- |
 | ![DeepSeek Harness 移动端主页 — 手机浏览器专属触控导航与轻量界面](docs/screenshots/20-mobile-home.png) | ![DeepSeek 手机端会话列表 — 跨设备多端实时上下文同步](docs/screenshots/21-mobile-sessions.png) |
 | 聊天（思考与工具调用） | 模型选择（底部弹层） |
-| ![DeepSeek 移动端对话界面 — SSE 流式输出与思考过程折叠](docs/screenshots/22-mobile-chat.png) | ![DeepSeek 手机端模型切换弹层 — 多供应商与思考档位快速选择](docs/screenshots/23-mobile-model-sheet.png) |
+| ![DeepSeek 移动端对话界面 — WebSocket 流式输出与思考过程折叠](docs/screenshots/22-mobile-chat.png) | ![DeepSeek 手机端模型切换弹层 — 多供应商与思考档位快速选择](docs/screenshots/23-mobile-model-sheet.png) |
 
 ### 远程连接（SSH Ops · Web 终端、SFTP 传输与集群运维）
 
@@ -351,7 +351,7 @@ dsh-web 针对主流操作系统、现代化浏览器及网络拓扑进行了深
 <details>
 <summary><strong>手机端配对后为何没有收到流式推送？</strong></summary>
 
-移动端流式传输依赖 SSE 通道。Cloudflare quick tunnel 与 Tailscale Serve 服务默认不转发 SSE 长连接，在此类网络下插件会自动切换为短轮询模式，消息收发功能正常但更新稍有间隔。若需获得平滑的实时流式体验，请搭配支持长连接的隧道方案（如 Cloudflare named tunnel 或自建 TCP 反向代理）。
+流式推送走官方 WebSocket 通道，配对后经门控的 `/remote` 代理转发。隧道中断期间更新暂停，通道恢复后继续，无需重新配对；更新节奏的差异来自远程链路的广域网往返延迟。
 
 </details>
 
@@ -409,7 +409,7 @@ dsh-web 针对主流操作系统、现代化浏览器及网络拓扑进行了深
 
 - 任务看板由后端 Host 进程统一调度，关闭前端标签页不影响任务执行；但若宿主进程停止或操作系统关机睡眠，处于离线期间的触发点将直接跳过不补跑。可选的电源保护仅阻止系统闲置睡眠，无法阻止用户主动合盖、手动休眠或电源切断，技术细节见 [dsh-task-board README](packages/dsh-task-board/README.zh.md)。
 - SSH 凭据（密码与私钥口令）保存在本地 `~/.dsh/dsh-ssh.json` 文件中（文件权限为 0600）；在网络中断重连时可能重新发送非幂等命令，终端输出保持原样返回不执行脱敏，安全规范见 [dsh-ssh README](packages/dsh-ssh/README.zh.md)。
-- 移动端基于 SSE 实现流式推送：在不支持 SSE 透传的代理或免费隧道下会自动降级为轮询，消息更新存在秒级延迟。
+- 移动端流式输出经隧道或固定域名中继转发，广域网往返延迟叠加在每次更新上；固定域名中继比裸快速隧道多一跳，两者都可用。
 - 从源码构建全仓需要 Node.js >= 22 与 pnpm 工具链，直接从 npm 安装不受此限制。
 
 ## 社区

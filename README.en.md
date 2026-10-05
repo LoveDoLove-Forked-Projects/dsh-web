@@ -55,7 +55,7 @@ dsh-web mounts directly into `dsh web` via official profiles without modifying D
 | Agent Presets | Stock presets only (Standard / Minimal, etc.) | Stock presets + instant activation of community presets from Workshop |
 | Custom Model Capabilities | No visual configuration for model attributes | Visual declarations for vision image inputs and reasoning effort tiers |
 | Autonomous Task Board | None | 5-column lifecycle board + real agent execution + cron-scheduled background runs |
-| Mobile & Remote Control | Localhost browser only | QR code pairing, cross-device PC access, SSE token streaming & touch gestures |
+| Mobile & Remote Control | Localhost browser only | QR code pairing, cross-device PC access, WebSocket token streaming & touch gestures |
 | Remote Server Operations | None | Web-based SSH terminal (xterm.js), SFTP file transfer, tunnels & cluster commands |
 | Token Usage & Cost Monitor | None | Daily token metrics, provider balance queries, plan quota tracking & Token Bank |
 | Git Visualization & Worktrees | Command line only | Visual branch & commit graph + automated Git worktree directory isolation |
@@ -67,7 +67,7 @@ dsh-web mounts directly into `dsh web` via official profiles without modifying D
 | User Goal & Scenario | Recommended Solution & Capability | Entry Point |
 | --- | --- | --- |
 | Run autonomous unattended AI tasks, daily code audits, health checks, or automated reports | Task Board: 5-column tracking, cron scheduling, power management, session reuse | [Task board and cron execution](packages/dsh-task-board/README.md) |
-| Access DeepSeek from an iPhone, Android device, iPad, or another remote computer | Mobile Remote: instant QR pairing, SSE real-time streaming, touch gestures & security gate | [Mobile and PC browser remote control](packages/dsh-remote-web-ui/README.md) |
+| Access DeepSeek from an iPhone, Android device, iPad, or another remote computer | Mobile Remote: instant QR pairing, WebSocket real-time streaming, touch gestures & security gate | [Mobile and PC browser remote control](packages/dsh-remote-web-ui/README.md) |
 | Perform Linux server administration, SFTP configuration sync, or remote troubleshooting | SSH Remote Ops: web terminal, visual SFTP, port forwarding tunnels, cluster commands | [SSH terminal, file transfer, and tunnels](packages/dsh-ssh/README.md) |
 | Monitor multi-provider token consumption, check API balances, or track subscription quotas | Usage Statistics: daily token breakdown, balance queries, bill estimation & Token Bank | [Usage statistics and Token Bank](packages/dsh-usage/README.md) |
 | Prevent Git merge conflicts and dirty working trees during multi-agent concurrent coding | Git Graph & Worktree: visual commit swimlanes, automated session worktree branches | [Git visualization and worktree isolation](packages/dsh-git-graph/README.md) |
@@ -119,7 +119,7 @@ The same pairing link works seamlessly on **secondary PC browsers**: open the de
 
 ![DeepSeek Harness mobile phone and desktop browser real-time interface synchronization](docs/assets/phone-and-web.png)
 
-> **Real-Time Streaming & Tunnels**: Mobile clients rely on SSE (Server-Sent Events) for token streaming. Services like Cloudflare quick tunnels (trycloudflare.com) and Tailscale Serve do not proxy SSE streams by default; under these connections, the plugin automatically falls back to short polling. Messages send and receive normally with a minor polling interval delay. For smooth real-time streaming, use tunnels supporting persistent HTTP connections (such as Cloudflare named tunnels or self-hosted TCP proxies).
+> **Real-Time Streaming & Tunnels**: Mobile streaming rides the official WebSocket channel (relayed through the gated `/remote` proxy once paired), which Cloudflare quick tunnels, named tunnels, and the dsh-market stable-hostname relay all forward. Remote access adds a wide-area round trip to every update, and the relay costs one hop more than a bare tunnel; turn the relay off in the settings card when latency matters most.
 
 | Mobile Home (Whale toggle) | Session List |
 | --- | --- |
@@ -349,7 +349,7 @@ Scheduling runs directly on the `dsh web` host daemon without requiring browser 
 <details>
 <summary><strong>Why does mobile pairing fail to stream real-time updates?</strong></summary>
 
-Streaming relies on SSE. Cloudflare quick tunnels and Tailscale Serve do not proxy SSE connections, causing the client to fall back to short polling. For seamless token streaming, use tunnels supporting persistent connections such as Cloudflare named tunnels or self-hosted TCP reverse proxies.
+Streaming rides the official WebSocket channel, relayed through the gated `/remote` proxy once paired. Updates pause while the tunnel is down and resume when the channel recovers, with no re-pairing needed; pacing differences come from the wide-area round trip of the remote link.
 
 </details>
 
@@ -409,7 +409,7 @@ Running multiple autonomous agents in a single shared Git checkout often results
 
 - Task board scheduling runs on the backend host; closing browser tabs will not interrupt tasks, but stopping the host process or putting the machine to sleep will skip missed schedules without backfilling. Optional power management prevents idle sleep only and cannot bypass manual sleep, lid closure, or power shutdown (see [dsh-task-board README](packages/dsh-task-board/README.md)).
 - SSH credentials (passwords and private key passphrases) persist locally in `~/.dsh/dsh-ssh.json` with 0600 permissions; reconnecting during connection drops may replay non-idempotent commands, and remote outputs return without sanitization (see [dsh-ssh README](packages/dsh-ssh/README.md)).
-- Mobile streaming uses SSE: connections through proxies without SSE pass-through automatically drop back to polling with small update latencies.
+- Mobile streaming is relayed through a tunnel or the stable-hostname relay, so a wide-area round trip is added to every update; the relay costs one hop more than a bare quick tunnel, and both work.
 - Full repository builds require Node.js >= 22 and pnpm; standard npm installations have no developer tool prerequisites.
 
 ## Community
