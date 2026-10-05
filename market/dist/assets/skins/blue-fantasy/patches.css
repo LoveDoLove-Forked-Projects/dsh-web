@@ -2,6 +2,21 @@
   background: none;
 }
 
+/* The Windows desktop shell paints --dsw-specific-sidebar-fill on its
+   whole-window frame element. This skin defines that token as a scrim-tracking
+   rgba(), so at the default scrim 0 its alpha is 1 and the frame painted the
+   entire window flat #1d2539; because the frame is an ancestor of the
+   conversation column, it covered the z-index: -2 whale illustration even
+   though the web host (which uses the token on the sidebar only) rendered it
+   fine (issue #1803). Clear the frame's background: the illustration layer
+   stays visible and the scrim keeps driving the panels and the sidebar.
+   Suffix matching on _frame handles the shell's CSS-module hash (e.g.
+   BynINW_frame) without being neutralized by the skin patch prefix pipeline;
+   maid-atelier and cyber-night ship the identical rule (issue #1763). */
+[class*="_frame"] {
+  background: transparent !important;
+}
+
 a {
   color: #3c4e92;
 }

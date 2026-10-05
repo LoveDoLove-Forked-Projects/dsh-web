@@ -296,10 +296,13 @@ body [data-dsh-skin-layer='background'] {
    position: relative + z-index: 2 之后会掉进文档流（实测工作区菜单与模式菜单被排到
    y=1338、视口之外，表现就是「主界面上点了工作区和模式没反应」）。门户自带
    position: fixed + z-index: 1100，必须让它们留着。
-   应用主体就是 #root（id 写在 index.html 里，四种壳共用同一份 HTML）；第二条兜底
-   只对「既没有 role 也没有 class 的裸根 div」生效，门户一定带 class 或 role，不会再被误伤。 */
-body > #root,
-body > div:not([data-dsh-skin-layer]):not([data-dsh-plugin]):not([role]):not([class]) {
+   应用主体就是 #root（id 写在 index.html 里，四种壳共用同一份 HTML），所以只认它。
+   **兜底选择器已删除，不要再加回来**：宿主壳挂到 body 的直系容器未必带 class 或 role ——
+   Windows 桌面端的窗口菜单宿主只带 data-windows-menu（role="menubar" 在它的 shadow 树里），
+   被旧兜底命中后 position: fixed 被改写成 relative、z-index 1100 被改成 2，caption 左上的
+   「应用 / 编辑」随即消失且点不到（#1802）。声明与旧版逐字一致，只是作用对象只剩 #root；
+   tests/body-child-host-shells.spec.ts 用机械断言钉住「body 直系裸 div 不得当规则主体」。 */
+body > #root {
   position: relative;
   z-index: 2;
 }
