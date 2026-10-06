@@ -180,7 +180,16 @@ const ADAPT_CSS: readonly string[] = [
   '[class$="_composerSeat"] [class$="_modes"]{min-width:0;padding-left:38px}',
   // Model line left-aligned with the permission line (same command-button
   // clearance), rows stay tightly stacked.
-  '[class$="_composerSeat"] [class$="_trailing"]{flex-basis:100%;position:relative;min-height:32px;justify-content:flex-start;padding-left:38px;padding-right:78px}',
+  // The trailing line is forced onto its own row at flex-basis:100% and carries
+  // 116px of side padding (38 left for the command button, 78 right for the
+  // send button). Under the default content-box that padding is ADDED to the
+  // 100% basis, so the line's own box overflowed the card by exactly 116px and
+  // dragged the absolutely-positioned send button out with it: on a 393px phone
+  // the card ended at x=367 while the button sat at x=433..467, past the
+  // viewport's right edge, which is the unreachable button the reporter
+  // measured (#1818). border-box contains the padding inside the basis, so the
+  // line stays within the card and the button lands back inside it.
+  '[class$="_composerSeat"] [class$="_trailing"]{box-sizing:border-box;flex-basis:100%;position:relative;min-height:32px;justify-content:flex-start;padding-left:38px;padding-right:78px}',
   '[class$="_composerSeat"] [class$="_trailing"] *{font-size:12px}',
   // v54: smaller permission/model buttons (font + height). v79: the
   // permission trigger collapses to its shield icon on phones — the label

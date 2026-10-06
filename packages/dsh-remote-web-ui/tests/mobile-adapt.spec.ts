@@ -584,6 +584,32 @@ describe('startMobileAdapt', () => {
     }
   })
 
+  it('operator gets the send button contained by the composer card on a narrow phone', async () => {
+    media.portrait = true
+    media.coarse = true
+    setWidth(390)
+    const start = await freshStart()
+    start()
+    ;(window as unknown as { __dshRemoteAdapt?: { evaluate: () => void } }).__dshRemoteAdapt?.evaluate()
+    // Given the trailing line is forced onto its own row at flex-basis:100% and
+    // carries 116px of side padding (38 left for the command button, 78 right
+    // for the send button), when the sheet is read, then that line is
+    // border-box: under the default content-box the padding is added to the
+    // 100% basis, the line overflows the card by exactly 116px, and the
+    // absolutely-positioned send button is dragged outside the card and past
+    // the viewport edge (issue #1818). The card geometry itself must stay
+    // untouched - the button moves back in, the card does not grow.
+    const tag = document.querySelector('style[data-plugin-css="dsh-remote-web-ui/mobile-adapt.css"]')
+    const css = tag?.textContent ?? ''
+    const trailing = css.split('}').find(rule => rule.includes('[class$="_composerSeat"] [class$="_trailing"]{'))
+    expect(trailing).toContain('box-sizing:border-box')
+    expect(trailing).toContain('flex-basis:100%')
+    expect(trailing).toContain('padding-right:78px')
+    // The button keeps its in-card right edge offset, so it lands inside the
+    // padded content box rather than at the screen edge.
+    expect(css).toContain('[class$="_composerSeat"] [class$="_primary"]{position:absolute;right:8px')
+  })
+
   it('reads injected-surface labels from the wired translate seat, not the browser language', async () => {
     vi.useFakeTimers()
     try {
