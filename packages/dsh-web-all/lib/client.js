@@ -7854,6 +7854,8 @@ window.__ModuleLoader__.load({
 			"settings.unsaved": "未保存",
 			"settings.saveFailed": "部署未接受这些值，已保留供你修改。",
 			"settings.invalidNumber": "请输入数字，留空则使用默认值。",
+			"settings.sessionPollSeconds": "会话轮询间隔（秒）",
+			"settings.sessionPollSecondsHint": "默认 5 秒。仅在看板有需要核对的事情——运行中的卡片或未结算的执行——时才读取会话名册；两者都没有时不再轮询，Host 不会持续扫描持久化会话目录。取值 1–300 秒：间隔越短结算越快、Host 负载越高。",
 			"settings.maxSubtaskDepth": "子任务深度上限",
 			"settings.maxSubtaskDepthHint": "默认 1：一个任务只允许一层子任务，子任务不能再创建或关联子任务。最大 3。执行父任务会并发执行它的整棵子任务树，层级越深，一次执行开启的会话越多。",
 			"settings.maxSubtaskDepthOption": "{depth} 层",
@@ -8213,6 +8215,8 @@ window.__ModuleLoader__.load({
 			"settings.unsaved": "Unsaved",
 			"settings.saveFailed": "The deployment did not accept these values; they were left for you to correct.",
 			"settings.invalidNumber": "Enter a number, or leave blank to use the default.",
+			"settings.sessionPollSeconds": "Session poll interval (seconds)",
+			"settings.sessionPollSecondsHint": "Default 5. The Host reads the DSH session roster only while the board has something to reconcile: a running card or an open execution. With neither it stops polling and never re-scans the persisted session directory. Range 1 to 300 seconds: a shorter interval settles runs sooner and costs the Host more.",
 			"settings.maxSubtaskDepth": "Subtask depth limit",
 			"settings.maxSubtaskDepthHint": "Default 1: a task may carry one level of subtasks, and a subtask cannot create or link further subtasks. Maximum 3. Running a task also runs its whole subtask tree concurrently, and every extra level opens more sessions per run.",
 			"settings.maxSubtaskDepthOption": "{depth} levels",
@@ -14718,6 +14722,51 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}) : null]
 			});
 		}
+		/** A staged value field. `numeric` only hints the keypad: which drafts a field accepts is decided by its spec. */
+		function ValueField$2(props) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: settings_card_module_css_default$3.field,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: settings_card_module_css_default$3.head,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+							className: settings_card_module_css_default$3.label,
+							htmlFor: props.id,
+							children: props.label
+						}), props.overridden ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: settings_card_module_css_default$3.badges,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: settings_card_module_css_default$3.badge,
+								children: props.overriddenLabel
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: settings_card_module_css_default$3.reset,
+								disabled: props.disabled,
+								onClick: props.onReset,
+								children: props.resetLabel
+							})]
+						}) : null]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						id: props.id,
+						className: props.invalid ? settings_card_module_css_default$3.inputInvalid : settings_card_module_css_default$3.input,
+						type: "text",
+						...props.numeric === true ? { inputMode: "numeric" } : {},
+						...props.invalid ? { "aria-invalid": true } : {},
+						value: props.text,
+						placeholder: props.placeholder ?? "",
+						disabled: props.disabled,
+						onChange: (event) => {
+							props.onEdit(event.target.value);
+						}
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: props.invalid ? settings_card_module_css_default$3.invalid : settings_card_module_css_default$3.hint,
+						children: props.invalid ? props.invalidLabel : props.hint
+					})
+				]
+			});
+		}
 		const NON_SKIN_BODY_MARKERS$3 = /* @__PURE__ */ new Set(["dshSkinCenter", "dshSidebarCollapsed"]);
 		function isSkinActive$3() {
 			return Object.keys(document.body.dataset).some((key) => key.startsWith("dsh") && !NON_SKIN_BODY_MARKERS$3.has(key));
@@ -15303,6 +15352,28 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		/** The depth choices the card offers, derived from the supported range. */
 		const SUBTASK_DEPTH_CHOICES = Array.from({ length: 3 }, (_, index) => String(1 + index));
 		/**
+		* The roster-poll cadence field: a whole number of seconds inside the
+		* supported range, because the Host schema (`sessionPollSeconds`) is numeric.
+		* A draft outside the range blocks the save instead of staging a value the
+		* Host would clamp behind the user's back.
+		*/
+		function sessionPollField() {
+			return {
+				field: "sessionPollSeconds",
+				format: (value) => typeof value === "number" && Number.isInteger(value) ? String(value) : "",
+				parse: (text) => {
+					const trimmed = text.trim();
+					if (trimmed === "") return { kind: "clear" };
+					if (!/^\d+$/.test(trimmed)) return void 0;
+					const seconds = Number(trimmed);
+					return seconds >= 1 && seconds <= 300 ? {
+						kind: "set",
+						value: seconds
+					} : void 0;
+				}
+			};
+		}
+		/**
 		* The depth field: a choice among the supported levels whose draft text is a
 		* number, because the Host schema (`maxSubtaskDepth`) is numeric. A draft
 		* outside the range blocks the save instead of staging a value the Host
@@ -15372,6 +15443,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					booleanField$3("announceToAgent"),
 					booleanField$3("preventIdleSleep"),
 					subtaskDepthField(),
+					sessionPollField(),
 					booleanField$3("goalVerification"),
 					judgeModelField(),
 					judgeEffortField()
@@ -15385,6 +15457,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					announceToAgent: this.form.field("announceToAgent"),
 					preventIdleSleep: this.form.field("preventIdleSleep"),
 					maxSubtaskDepth: this.form.field("maxSubtaskDepth"),
+					sessionPollSeconds: this.form.field("sessionPollSeconds"),
 					goalVerification: this.form.field("goalVerification"),
 					goalVerificationModel: this.form.field("goalVerificationModel"),
 					goalVerificationReasoningEffort: this.form.field("goalVerificationReasoningEffort")
@@ -15585,6 +15658,20 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									},
 									onReset: () => {
 										props.resetField("preventIdleSleep");
+									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ValueField$2, {
+									id: "settings-task-board-session-poll",
+									label: t("settings.sessionPollSeconds"),
+									hint: t("settings.sessionPollSecondsHint"),
+									numeric: true,
+									...fieldProps,
+									...state.sessionPollSeconds,
+									onEdit: (text) => {
+										props.edit("sessionPollSeconds", text);
+									},
+									onReset: () => {
+										props.resetField("sessionPollSeconds");
 									}
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField$1, {

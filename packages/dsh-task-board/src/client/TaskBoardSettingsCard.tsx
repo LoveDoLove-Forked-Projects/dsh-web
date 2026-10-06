@@ -12,8 +12,9 @@ import type { TaskBoardPowerSnapshot, TaskBoardVerificationOptions } from '../pr
 import type { TaskBoardExtensionDispatch } from '../core/extension.ts'
 import { resolveContract, type ModelCatalogView, type VerificationSettings } from '../core/verification.ts'
 import { parseModelRoute } from '../core/verification.ts'
-import { PluginSettingsCard, BooleanField, ChoiceField } from './PluginSettingsCard.tsx'
+import { PluginSettingsCard, BooleanField, ChoiceField, ValueField } from './PluginSettingsCard.tsx'
 import { SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from '../core/subtask.ts'
+import { SESSION_POLL_MAX_SECONDS, SESSION_POLL_MIN_SECONDS } from '../core/poll-cadence.ts'
 import { CardForm, booleanField, type CardActions, type CardShell, type FieldSpec, type FieldState as CardFieldState } from './settings-form.ts'
 import settingsCss from './board-settings.module.css'
 
@@ -22,6 +23,28 @@ const SUBTASK_DEPTH_CHOICES: readonly string[] = Array.from(
   { length: SUBTASK_DEPTH_MAX - SUBTASK_DEPTH_MIN + 1 },
   (_, index) => String(SUBTASK_DEPTH_MIN + index),
 )
+
+/**
+ * The roster-poll cadence field: a whole number of seconds inside the
+ * supported range, because the Host schema (`sessionPollSeconds`) is numeric.
+ * A draft outside the range blocks the save instead of staging a value the
+ * Host would clamp behind the user's back.
+ */
+function sessionPollField(): FieldSpec {
+  return {
+    field: 'sessionPollSeconds',
+    format: value => typeof value === 'number' && Number.isInteger(value) ? String(value) : '',
+    parse: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '') return { kind: 'clear' }
+      if (!/^\d+$/.test(trimmed)) return undefined
+      const seconds = Number(trimmed)
+      return seconds >= SESSION_POLL_MIN_SECONDS && seconds <= SESSION_POLL_MAX_SECONDS
+        ? { kind: 'set', value: seconds }
+        : undefined
+    },
+  }
+}
 
 /**
  * The depth field: a choice among the supported levels whose draft text is a
@@ -84,6 +107,8 @@ export interface TaskBoardSettings {
   preventIdleSleep?: boolean
   /** Subtask depth limit (1..3); 1 means a single level of subtasks. */
   maxSubtaskDepth?: number
+  /** Roster-poll cadence in seconds while the board has work to reconcile. */
+  sessionPollSeconds?: number
   /** Goal acceptance for this board's executions (default on). */
   goalVerification?: boolean
   /** Judge model route for goal acceptance; blank inherits the host default. */
@@ -102,6 +127,8 @@ export interface TaskBoardSettingsCardState extends CardShell {
   preventIdleSleep: CardFieldState
   /** Subtask depth limit field. */
   maxSubtaskDepth: CardFieldState
+  /** Roster-poll cadence field. */
+  sessionPollSeconds: CardFieldState
   /** Goal-acceptance switch. */
   goalVerification: CardFieldState
   /** Judge model route field. */
@@ -132,6 +159,7 @@ export class TaskBoardSettingsCardController {
       booleanField('announceToAgent'),
       booleanField('preventIdleSleep'),
       subtaskDepthField(),
+      sessionPollField(),
       booleanField('goalVerification'),
       judgeModelField(),
       judgeEffortField(),
@@ -146,6 +174,7 @@ export class TaskBoardSettingsCardController {
       announceToAgent: this.form.field('announceToAgent'),
       preventIdleSleep: this.form.field('preventIdleSleep'),
       maxSubtaskDepth: this.form.field('maxSubtaskDepth'),
+      sessionPollSeconds: this.form.field('sessionPollSeconds'),
       goalVerification: this.form.field('goalVerification'),
       goalVerificationModel: this.form.field('goalVerificationModel'),
       goalVerificationReasoningEffort: this.form.field('goalVerificationReasoningEffort'),
@@ -341,6 +370,16 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
             {...state.preventIdleSleep}
             onEdit={(text) => { props.edit('preventIdleSleep', text) }}
             onReset={() => { props.resetField('preventIdleSleep') }}
+          />
+          <ValueField
+            id="settings-task-board-session-poll"
+            label={t('settings.sessionPollSeconds')}
+            hint={t('settings.sessionPollSecondsHint')}
+            numeric
+            {...fieldProps}
+            {...state.sessionPollSeconds}
+            onEdit={(text) => { props.edit('sessionPollSeconds', text) }}
+            onReset={() => { props.resetField('sessionPollSeconds') }}
           />
           <ChoiceField
             id="settings-task-board-subtask-depth"

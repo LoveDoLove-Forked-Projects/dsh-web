@@ -476,6 +476,138 @@ describe('TaskBoardHostService scheduling without a browser', () => {
     }
   })
 
+  it('operator with an empty board sees no session roster read at all', async () => {
+    // Given an idle board and a gateway that refuses any call but a roster read
+    let rosterReads = 0
+    const { gateway } = makeGateway(request => {
+      if (request.method === 'list') { rosterReads += 1; return { items: [] } }
+      throw new Error('unexpected gateway call')
+    })
+    const service = new TaskBoardHostService(gateway, {
+      ledger: new HostTaskLedger(root()),
+      power: new PowerInhibitor({ platform: 'linux' }),
+    })
+
+    // When the poll ticks while nothing is running and no schedule is armed
+    const poll = service as unknown as { pollSessions(): Promise<void> }
+    await poll.pollSessions()
+    await poll.pollSessions()
+
+    // Then the persisted session roster is never read
+    expect(rosterReads).toBe(0)
+    service.dispose()
+  })
+
+  it('operator whose running card is parked without an execution still gets roster reads', async () => {
+    // Given a board with a card in the running column and no tracked execution
+    const ledger = new HostTaskLedger(root())
+    ledger.applyRequest('create', { kind: 'create', id: 'task-a', input: { title: 'A', description: '', prompt: '' } })
+    ledger.applyRequest('move', { kind: 'move', taskId: 'task-a', status: 'running' })
+    const list = vi.fn(async () => ({ items: [{ sessionId: 'session-a', running: true }] }))
+    const { gateway } = makeGateway(request => {
+      if (request.method === 'list') return list()
+      throw new Error('unexpected gateway call')
+    })
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+    })
+
+    // When the poll ticks
+    await (service as unknown as { pollSessions(): Promise<void> }).pollSessions()
+
+    // Then the roster is read, because a hand-moved card's verdict may arrive
+    // from a settle this process never observed
+    expect(list).toHaveBeenCalledOnce()
+    service.dispose()
+  })
+
+  it('operator watching an idle board sees the roster read resume once a card runs', async () => {
+    // Given an idle board whose session tree is live
+    const ledger = new HostTaskLedger(root())
+    ledger.applyRequest('create', { kind: 'create', id: 'task-a', input: { title: 'A', description: '', prompt: '' } })
+    const list = vi.fn(async () => ({ items: [{ sessionId: 'session-a', running: true }] }))
+    const { gateway } = makeGateway(request => {
+      if (request.namespace !== 'session') throw new Error('unexpected namespace')
+      if (request.method === 'create') return { sessionId: 'session-a' }
+      if (request.method === 'rename') return { title: 'A', seq: 1 }
+      if (request.method === 'prompt') return { accepted: true }
+      if (request.method === 'list') return list()
+      throw new Error('unexpected gateway call')
+    })
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+    })
+    const poll = service as unknown as { pollSessions(): Promise<void> }
+    await poll.pollSessions()
+    const whileIdle = list.mock.calls.length
+
+    // When the card is run
+    service.apply('run-1', { kind: 'run', taskId: 'task-a' })
+    await flushLaunchChain()
+    await poll.pollSessions()
+
+    // Then the roster is read again, so the run can be settled
+    expect(whileIdle).toBe(0)
+    expect(list.mock.calls.length).toBe(1)
+    service.dispose()
+  })
+
+  it('operator whose session tree stays down sees the retry back off instead of keeping the cadence', async () => {
+    // Given a board watching a card and a session tree that rejects every read
+    const ledger = new HostTaskLedger(root())
+    ledger.applyRequest('create', { kind: 'create', id: 'task-a', input: { title: 'A', description: '', prompt: '' } })
+    ledger.applyRequest('move', { kind: 'move', taskId: 'task-a', status: 'running' })
+    const list = vi.fn(async (): Promise<{ items: Array<{ sessionId: string; running: boolean }> }> => {
+      throw new Error('session tree offline')
+    })
+    const { gateway } = makeGateway(request => request.method === 'list' ? list() : { items: [] })
+    const armed: Array<{ callback: () => void; delay: number }> = []
+    const timers = {
+      timeout(callback: () => void, delay: number): () => void {
+        armed.push({ callback, delay })
+        return () => {}
+      },
+      interval(): () => void {
+        return () => {}
+      },
+    }
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      timers,
+    })
+    try {
+      // When consecutive passes meet the failing session tree
+      const schedule = service as unknown as { schedulePoll(): void }
+      schedule.schedulePoll()
+      await flushLaunchChain()
+      schedule.schedulePoll()
+      await flushLaunchChain()
+      schedule.schedulePoll()
+      await flushLaunchChain()
+
+      // Then each failure arms a longer retry than the configured cadence, and
+      // the retry replaces the fixed heartbeat instead of adding to it
+      expect(armed.map(entry => entry.delay)).toEqual([10_000, 20_000, 40_000])
+
+      // And a pass that finally reads the roster arms no retry at all
+      list.mockImplementation(async () => ({ items: [{ sessionId: 'session-a', running: true }] }))
+      schedule.schedulePoll()
+      await flushLaunchChain()
+      expect(armed).toHaveLength(3)
+
+      // So the next failure starts the ramp over instead of continuing it
+      list.mockImplementation(async () => { throw new Error('session tree offline again') })
+      schedule.schedulePoll()
+      await flushLaunchChain()
+      expect(armed.at(-1)?.delay).toBe(10_000)
+    } finally {
+      service.dispose()
+    }
+  })
+
   it('holds exactly one recurring poll timer, and start() is idempotent', () => {
     const interval = vi.fn((_callback: () => void, _delay: number) => () => {})
     const { gateway } = makeGateway(() => ({ items: [] }))
@@ -492,6 +624,28 @@ describe('TaskBoardHostService scheduling without a browser', () => {
     expect(interval.mock.calls[0]?.[1]).toBe(5_000)
     service.dispose()
   })
+
+  it('operator editing the poll cadence sees the recurring timer re-armed at the new interval', () => {
+    // Given a started board on the default cadence
+    const interval = vi.fn((_callback: () => void, _delay: number) => () => {})
+    const { gateway } = makeGateway(() => ({ items: [] }))
+    const service = new TaskBoardHostService(gateway, {
+      ledger: new HostTaskLedger(root()),
+      power: new PowerInhibitor({ platform: 'linux' }),
+      timers: { timeout: () => () => {}, interval },
+    })
+    service.start()
+    expect(interval).toHaveBeenCalledOnce()
+
+    // When the settings commit a slower cadence
+    service.setConfiguration(true, false, 30)
+
+    // Then the recurring timer is replaced at that cadence
+    expect(interval).toHaveBeenCalledTimes(2)
+    expect(interval.mock.calls[1]?.[1]).toBe(30_000)
+    service.dispose()
+  })
+
 })
 
 describe('TaskBoardHostService poll heartbeat', () => {
@@ -503,8 +657,12 @@ describe('TaskBoardHostService poll heartbeat', () => {
   }
 
   it('does not push SSE frames while the session and power snapshots stay unchanged', async () => {
+    // Given a board that is actually watching a card, so it does poll
+    const ledger = new HostTaskLedger(root())
+    ledger.applyRequest('create', { kind: 'create', id: 'task-a', input: { title: 'A', description: '', prompt: '' } })
+    ledger.applyRequest('move', { kind: 'move', taskId: 'task-a', status: 'running' })
     const service = new TaskBoardHostService(sessionsList([]), {
-      ledger: new HostTaskLedger(root()),
+      ledger,
       power: new PowerInhibitor({ platform: 'linux' }),
     })
     let pushes = 0
@@ -525,8 +683,12 @@ describe('TaskBoardHostService poll heartbeat', () => {
       if (request.namespace !== 'session' || request.method !== 'list') throw new Error('unexpected gateway call')
       return { items }
     })
+    // Given a board that is watching a card, so it does poll
+    const ledger = new HostTaskLedger(root())
+    ledger.applyRequest('create', { kind: 'create', id: 'task-a', input: { title: 'A', description: '', prompt: '' } })
+    ledger.applyRequest('move', { kind: 'move', taskId: 'task-a', status: 'running' })
     const service = new TaskBoardHostService(gateway, {
-      ledger: new HostTaskLedger(root()),
+      ledger,
       power: new PowerInhibitor({ platform: 'linux' }),
     })
     let pushes = 0
@@ -678,7 +840,7 @@ describe('TaskBoardHostService poll heartbeat', () => {
     const runtimeView = vi.spyOn(ledger, 'runtimeView')
 
     await (service as unknown as { pollSessions(): Promise<void> }).pollSessions()
-    expect(runtimeView).not.toHaveBeenCalled()
+    expect(runtimeView).toHaveBeenCalledOnce()
     sessionStateAvailable = true
     await (service as unknown as { pollSessions(): Promise<void> }).pollSessions()
     // Arming the schedule reads only the ledger's next target, never the
@@ -686,7 +848,9 @@ describe('TaskBoardHostService poll heartbeat', () => {
     service.refreshSchedule()
 
     expect(state).not.toHaveBeenCalled()
-    expect(runtimeView).toHaveBeenCalledOnce()
+    // One projection decides whether the pass may stand down, and the second
+    // re-reads what the roster RPC was in flight for.
+    expect(runtimeView).toHaveBeenCalledTimes(3)
     // The 2,000-entry fixture is trimmed to the retention limit on append and
     // import, keeping snapshot and ledger size bounded.
     const snapshotValue = service.snapshot()
