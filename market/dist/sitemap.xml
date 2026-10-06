@@ -212,6 +212,11 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://dsh-market.com/tryon/?skin=shuimo-danqing</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://dsh-market.com/tryon/?skin=lucy-nightsignal</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
@@ -298,6 +303,11 @@
   </url>
   <url>
     <loc>https://dsh-market.com/tryon/?skin=whale-maid</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://dsh-market.com/tryon/?skin=midnight-contract</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
