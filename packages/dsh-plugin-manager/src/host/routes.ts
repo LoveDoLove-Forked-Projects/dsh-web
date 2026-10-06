@@ -17,6 +17,7 @@ import { dshRequirementOf, meetsMinimumDsh, parseDshVersion } from '../core/vers
 import { readPatchText, readProfileManifest, type ProfileFacts } from './profile.ts'
 import { legacyMigrationFor, targetSpecForLegacy } from './legacy-migration.ts'
 import { setRowEnabled, writePatchAtomic } from './rows.ts'
+import { runDetached } from './detached-work.ts'
 import { buildPluginRow, claimedEntryRowsOf, findRowOwner, LOCKED_ENTRY_IDS, snapshotGateway } from './state.ts'
 import { performRestart, planRestart, type RestartFacts, type RestartRuntime } from './restart.ts'
 import { createOutputCapture, type OutputCapture } from './console-output.ts'
@@ -436,7 +437,21 @@ export function makeGatewayRoutes(deps: GatewayRouteDeps): WebRoute[] {
         next = setRowEnabled(next, facts.patchPath, entry.id, entry.name, entryEnabled, entry.baseEnabled)
       }
       if (next !== patchText) {
-        await writePatchAtomic(facts.patchPath, next)
+        // The write must leave this handler's async context. The toggle can
+        // arrive inside the Host's hmr.runExclusive transaction, and
+        // cordis.patch.yml is exactly the file the HMR config watcher refreshes
+        // from: a write issued on the transaction's context makes the watcher's
+        // refresh re-enter runExclusive, which rejects with "HMR transactions
+        // cannot be nested" and fails the toggle (#1816). A bare deferral would
+        // NOT help - setImmediate inherits the transaction mark (measured; see
+        // shared/host/detached-work.ts) - so the write is scheduled through the
+        // module-scope AsyncResource. It is still awaited, so the response
+        // reports the real write outcome and the snapshot below stays ordered.
+        await runDetached(() => new Promise<void>((resolve, reject) => {
+          setImmediate(() => {
+            writePatchAtomic(facts.patchPath, next).then(resolve, reject)
+          })
+        }))
       }
       const snapshot = await snapshotGateway(facts, next)
       const plugin = snapshot.plugins.find(item => item.id === ownerName)

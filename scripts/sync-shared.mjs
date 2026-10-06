@@ -249,6 +249,21 @@ const MANIFEST = [
       'packages/dsh-update/src/console-output.ts',
     ],
   },
+  {
+    // Leaving the caller's async context: a Host mutation inside
+    // `hmr.runExclusive` that writes an HMR-watched file (cordis.patch.yml)
+    // makes the watcher's refresh re-enter the transaction and be refused with
+    // "HMR transactions cannot be nested". A bare deferral does not detach -
+    // see the module header - so the remote-web-ui LAN-bind write and the
+    // plugin-manager set-enabled write schedule through this one resource
+    // (#1751, #1754, #1816).
+    file: 'detached-work.ts',
+    source: 'shared/host/detached-work.ts',
+    targets: [
+      'packages/dsh-remote-web-ui/src/detached-work.ts',
+      'packages/dsh-plugin-manager/src/host/detached-work.ts',
+    ],
+  },
 ]
 
 /** One source-to-consumer copy step. */
