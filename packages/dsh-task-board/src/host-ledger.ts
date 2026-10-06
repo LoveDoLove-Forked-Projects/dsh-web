@@ -108,6 +108,24 @@ export interface DueScheduleReference {
 export interface LedgerRuntimeView {
   readonly armedSchedules: number
   readonly openExecutions: readonly OpenExecutionReference[]
+  /**
+   * Session ids of every open execution, including the ones
+   * {@link openExecutions} skips because their own outcome is already
+   * recorded. A caller that asks whether the board still observes any session
+   * must use this list: a deferred cascade parent is settled by its members,
+   * but it is still an open execution.
+   */
+  readonly openSessionIds: readonly string[]
+  /**
+   * Whether this document holds anything the session roster can still decide:
+   * an open execution that needs inspecting, or a card in the running column
+   * whose verdict may arrive from a settle this process never saw.
+   *
+   * A board with no running card, no open execution and no armed schedule has
+   * no use for the roster at all, which is what lets the Host poll stand down
+   * instead of re-reading every persisted session forever.
+   */
+  readonly needsSessionState: boolean
 }
 
 const MAX_REQUEST_CACHE = 256
@@ -521,12 +539,13 @@ export class HostTaskLedger {
   }
 
   /**
-   * Runtime-only projection for the 5 s Host poll. It copies just primitive
+   * Runtime-only projection for the Host poll. It copies just primitive
    * identifiers and timestamps, never the complete task/execution history or
    * an authoritative mutable object from the ledger.
    */
   runtimeView(): LedgerRuntimeView {
     let armedSchedules = 0
+    let runningCards = 0
     // Run groups opened by a team-mode card: every other member of those groups
     // runs as a teammate inside that card's Lead session.
     const teamGroups = new Set<string>()
@@ -537,10 +556,13 @@ export class HostTaskLedger {
       }
     }
     const openExecutions: OpenExecutionReference[] = []
+    const openSessionIds: string[] = []
     for (const task of this.document.tasks) {
       if (task.archivedAt === undefined && task.schedule?.enabled === true) armedSchedules += 1
+      if (task.status === 'running') runningCards += 1
       for (const execution of task.executions) {
         if (execution.endedAt !== undefined) continue
+        if (execution.sessionId !== undefined) openSessionIds.push(execution.sessionId)
         // A deferred cascade parent already knows its own outcome; the monitor
         // has nothing left to inspect, and its children's settles finalize it.
         if (execution.ownResult !== undefined) continue
@@ -555,7 +577,12 @@ export class HostTaskLedger {
         })
       }
     }
-    return { armedSchedules, openExecutions }
+    return {
+      armedSchedules,
+      openExecutions,
+      openSessionIds,
+      needsSessionState: openExecutions.length > 0 || runningCards > 0,
+    }
   }
 
   /** Count armed, non-archived schedules without cloning task histories. */

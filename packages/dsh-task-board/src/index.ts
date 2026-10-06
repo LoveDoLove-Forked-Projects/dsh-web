@@ -21,6 +21,7 @@ import { TaskBoardHostService, type HostTimerFace, type TaskBoardTeamDispatcher 
 import { parseTaskDraft, TaskParseError } from './host-ai.ts'
 import { TASK_PERMISSIONS, isTaskPermission, type TaskPermission } from './core/tasks.ts'
 import { DEFAULT_SUBTASK_DEPTH, SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from './core/subtask.ts'
+import { DEFAULT_SESSION_POLL_SECONDS, SESSION_POLL_MAX_SECONDS, SESSION_POLL_MIN_SECONDS } from './core/poll-cadence.ts'
 import { DEFAULT_SESSION_PERMISSION } from './core/handover.ts'
 import { buildTaskBoardTools, TASK_BOARD_TOOL_NAMES } from './host/agent-tools.ts'
 import { PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from './tool-surface.ts'
@@ -89,6 +90,13 @@ export interface Config {
    */
   maxSubtaskDepth?: Volatile<number>
   /**
+   * How often, in seconds, the Host re-reads the DSH session roster while the
+   * board has something to reconcile: a running card, an open execution, or an
+   * active provider extension. An idle board with none of those does not poll
+   * at all, so this cadence only bounds how quickly a running card settles.
+   */
+  sessionPollSeconds?: Volatile<number>
+  /**
    * Continuable-subagent provider the Agent Teams service uses to compose a
    * teammate. Matches the Agent Teams tool plugin's `freshProvider` default;
    * only team-mode runs use it.
@@ -152,6 +160,8 @@ export interface ConfigInput {
   sessionDefaultPermission?: TaskPermission
   /** Subtask depth limit, 1..3. */
   maxSubtaskDepth?: number
+  /** Roster-poll cadence in seconds while the board has work to reconcile. */
+  sessionPollSeconds?: number
   /** Continuable-subagent provider the Agent Teams service composes a teammate from. */
   teamProvider?: string
   /** Goal acceptance switch. */
@@ -170,6 +180,7 @@ export const Config: z<ConfigInput, Config> = z.object({
   proxyTokenEnv: z.string().min(1).default(DEFAULT_PROXY_TOKEN_ENV),
   sessionDefaultPermission: z.union(TASK_PERMISSIONS),
   maxSubtaskDepth: z.number().min(SUBTASK_DEPTH_MIN).max(SUBTASK_DEPTH_MAX).default(DEFAULT_SUBTASK_DEPTH).volatile(),
+  sessionPollSeconds: z.number().min(SESSION_POLL_MIN_SECONDS).max(SESSION_POLL_MAX_SECONDS).default(DEFAULT_SESSION_POLL_SECONDS).volatile(),
   teamProvider: z.string().min(1).default(DEFAULT_TEAM_PROVIDER),
   goalVerification: z.boolean().default(true).volatile(),
   goalVerificationModel: z.string().default('').volatile(),
@@ -419,6 +430,8 @@ function applyImpl(ctx: Context, config?: Config): void {
   const preventIdleSleep = (): boolean => readConfigField(config?.preventIdleSleep, false)
   /** Current subtask depth limit (read live: the settings card edits it in place). */
   const maxSubtaskDepth = (): number => readConfigField(config?.maxSubtaskDepth, DEFAULT_SUBTASK_DEPTH)
+  /** Current roster-poll cadence in seconds (read live: the settings card edits it in place). */
+  const sessionPollSeconds = (): number => readConfigField(config?.sessionPollSeconds, DEFAULT_SESSION_POLL_SECONDS)
   /**
    * The baseline the permission confirmation gate judges against: the row's own
    * `sessionDefaultPermission` when the deployment pins one, otherwise the Host's
@@ -461,7 +474,7 @@ function applyImpl(ctx: Context, config?: Config): void {
   hostForCatalog = host
   // Configuration before start(): a disabled row must not take the first
   // scheduler tick, which would roll schedules the board is not running.
-  host.setConfiguration(enabled(), preventIdleSleep())
+  host.setConfiguration(enabled(), preventIdleSleep(), sessionPollSeconds())
   host.start()
 
   // External providers. The board publishes its registration service so any
@@ -586,7 +599,7 @@ function applyImpl(ctx: Context, config?: Config): void {
   }, 'task-board: host ledger, scheduler, and routes')
 
   let disposeSection: (() => void) | undefined
-  let applied: { enabled: boolean; announceToAgent: boolean; preventIdleSleep: boolean; maxSubtaskDepth: number } | undefined
+  let applied: { enabled: boolean; announceToAgent: boolean; preventIdleSleep: boolean; maxSubtaskDepth: number; sessionPollSeconds: number } | undefined
 
   // Apply the current values to the host service and the announcement. A
   // commit that changes nothing visible is a no-op, so following a coarse
@@ -594,13 +607,19 @@ function applyImpl(ctx: Context, config?: Config): void {
   // under one disposer: re-registering first tears the old one down so a
   // duplicate-name registration never throws.
   const sync = (): void => {
-    const next = { enabled: enabled(), announceToAgent: announceToAgent(), preventIdleSleep: preventIdleSleep(), maxSubtaskDepth: maxSubtaskDepth() }
-    if (applied !== undefined && applied.enabled === next.enabled && applied.announceToAgent === next.announceToAgent && applied.preventIdleSleep === next.preventIdleSleep && applied.maxSubtaskDepth === next.maxSubtaskDepth) {
+    const next = {
+      enabled: enabled(),
+      announceToAgent: announceToAgent(),
+      preventIdleSleep: preventIdleSleep(),
+      maxSubtaskDepth: maxSubtaskDepth(),
+      sessionPollSeconds: sessionPollSeconds(),
+    }
+    if (applied !== undefined && applied.enabled === next.enabled && applied.announceToAgent === next.announceToAgent && applied.preventIdleSleep === next.preventIdleSleep && applied.maxSubtaskDepth === next.maxSubtaskDepth && applied.sessionPollSeconds === next.sessionPollSeconds) {
       return
     }
     applied = next
     host.ledger.setMaxSubtaskDepth(next.maxSubtaskDepth)
-    host.setConfiguration(next.enabled, next.preventIdleSleep)
+    host.setConfiguration(next.enabled, next.preventIdleSleep, next.sessionPollSeconds)
     setToolsEnabled(next.enabled)
     if (disposeSection !== undefined) {
       disposeSection()

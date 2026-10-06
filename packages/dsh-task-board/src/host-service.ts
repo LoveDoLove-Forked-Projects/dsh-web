@@ -1,5 +1,6 @@
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import { nextRunAtMs } from './core/schedule.ts'
+import { DEFAULT_SESSION_POLL_SECONDS, normalizeSessionPollSeconds, sessionPollMs } from './core/poll-cadence.ts'
 import { reusableSessionId } from './core/session-reuse.ts'
 import { HostTaskLedger, type OpenedRun, type OpenExecutionReference } from './host-ledger.ts'
 import { HostExecutionRunner, SessionLaunchError, promptText, type SessionCommandDispatcher, type SessionSummary, type TaskBoardWorkspaceRegistry } from './host-runner.ts'
@@ -9,7 +10,7 @@ import { PowerInhibitor } from './power-inhibitor.ts'
 import { TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardEventPayload, type TaskBoardSnapshot } from './protocol.ts'
 import { TaskBoardExtensionRegistry } from './host/extension-registry.ts'
 import type { TaskBoardExtension } from './core/extension.ts'
-import type { ExecutionOutcome, TaskStatus } from './core/tasks.ts'
+import type { ExecutionOutcome, TaskRecord, TaskStatus } from './core/tasks.ts'
 import { passedAttempt, resolveContract, verificationRequired, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 import type { TaskPermission } from './core/handover.ts'
 
@@ -43,8 +44,8 @@ export interface TaskBoardTeamDispatcher {
   spawn(input: TeamSpawnInput): Promise<TeamSpawnResult>
 }
 
-/** Session-roster poll cadence — the one recurring Host timer this service still holds. */
-const SESSION_POLL_MS = 5_000
+/** Ceiling for the roster-poll failure backoff: a broken session tree is retried at most once a minute. */
+const POLL_FAILURE_MAX_BACKOFF_MS = 60_000
 /**
  * How late an armed schedule fire may be before it counts as a resume rather
  * than a normal occurrence. The schedule timer is armed AT the next due
@@ -113,6 +114,12 @@ export class TaskBoardHostService {
   private readonly listeners = new Set<() => void>()
   /** The one recurring timer: the session-roster poll. */
   private pollTimer: (() => void) | undefined
+  /** Cadence of the roster poll, in seconds (a settings field; see the config schema). */
+  private sessionPollSeconds = DEFAULT_SESSION_POLL_SECONDS
+  /** Pending delay that follows a failed poll pass, if one is armed. */
+  private pollBackoffTimer: (() => void) | undefined
+  /** Consecutive failed poll passes; doubles the next retry delay. */
+  private consecutivePollFailures = 0
   /** The armed schedule timer, if a trigger is pending. */
   private scheduleTimer: (() => void) | undefined
   /** The instant the armed schedule timer targets (ms epoch), for resume detection. */
@@ -120,13 +127,6 @@ export class TaskBoardHostService {
   private disposed = false
   private pollInFlight = false
   private active = true
-  /**
-   * Ids the last roster poll saw as present and idle; undefined while the
-   * roster is unknown. Session reuse (issue #1419) requires this positive
-   * evidence, so a launch before the first successful poll mints a fresh
-   * conversation instead of prompting into a session it cannot see.
-   */
-  private idleSessionIds: ReadonlySet<string> | undefined
   /**
    * Consecutive unreadable-history polls per open execution (see
    * {@link noteUnreadableInspection}). Cleared as soon as an inspection
@@ -210,7 +210,7 @@ export class TaskBoardHostService {
   start(): void {
     if (this.disposed || this.pollTimer !== undefined) return
     this.syncPowerReasons()
-    this.pollTimer = this.timers.interval(() => { this.schedulePoll() }, SESSION_POLL_MS)
+    this.pollTimer = this.timers.interval(() => { this.schedulePoll() }, sessionPollMs(this.sessionPollSeconds))
     this.schedulePoll()
     // Boot is a recovery point: an occurrence armed while the Host was down is
     // not replayed, and each schedule rolls to its next future target. A
@@ -219,10 +219,30 @@ export class TaskBoardHostService {
     this.recoverSchedule()
   }
 
-  setConfiguration(active: boolean, preventIdleSleep: boolean): void {
+  /**
+   * Apply the live configuration. The roster cadence is re-read on every
+   * commit, so a settings edit takes effect without a restart; the poll is
+   * scheduled at the new cadence immediately rather than waiting out the old
+   * interval.
+   * @param active - the board's master switch.
+   * @param preventIdleSleep - whether the board holds an idle-sleep assertion.
+   * @param sessionPollSeconds - roster-poll cadence in seconds (clamped).
+   */
+  setConfiguration(active: boolean, preventIdleSleep: boolean, sessionPollSeconds?: number): void {
     const resumed = !this.active && active
     this.active = active
     this.preventIdleSleep = preventIdleSleep
+    const cadence = normalizeSessionPollSeconds(sessionPollSeconds)
+    const retimed = this.pollTimer !== undefined && cadence !== this.sessionPollSeconds
+    this.sessionPollSeconds = cadence
+    if (retimed) {
+      // The recurring timer was armed at the old cadence: replace it and take
+      // the next pass now, so the new interval starts from this commit.
+      this.pollTimer?.()
+      this.pollTimer = this.timers.interval(() => { this.schedulePoll() }, sessionPollMs(this.sessionPollSeconds))
+      this.clearPollBackoff()
+      this.schedulePoll()
+    }
     if (resumed) {
       const current = this.power.snapshot()
       this.power.updateReasons({
@@ -411,6 +431,7 @@ export class TaskBoardHostService {
     this.disposed = true
     this.extensions.dispose()
     this.clearScheduleTimer()
+    this.clearPollBackoff()
     this.pollTimer?.()
     this.pollTimer = undefined
     this.power.dispose()
@@ -424,7 +445,7 @@ export class TaskBoardHostService {
       // children of that session, so reusing an older one would collide on
       // their names and orphan the previous team.
       const team = opened.task.teamRun === true
-      const reuseSessionId = team ? undefined : reusableSessionId(opened.task, this.idleSessionIds)
+      const reuseSessionId = team ? undefined : await this.reuseSessionFor(opened.task)
       // Both modes tell the launched agent what else this run opens; only a team
       // run names teammates, because only then does this session own them.
       const peers = others.length === 0 ? undefined : others.map(other => ({
@@ -520,21 +541,42 @@ export class TaskBoardHostService {
     }
   }
 
-  private async pollSessions(): Promise<void> {
-    if (this.disposed) return
-    if (!this.active && this.ledger.runtimeView().openExecutions.length === 0) return
+  /**
+   * One roster pass, and whether it could read the session tree.
+   *
+   * The board reads the DSH session roster only while it has something the
+   * roster can decide: an execution to inspect, or a card parked in the running
+   * column whose verdict may arrive from a settle this process never saw. That
+   * gate is what removes the cost the reporter measured — `session/list`
+   * rebuilds every persisted session row (string conversion, object allocation,
+   * a stat per record), and an idle board with no tasks was paying it every few
+   * seconds forever.
+   * @returns whether the roster was readable (an idle pass counts as readable).
+   */
+  private async pollSessions(): Promise<boolean> {
+    if (this.disposed) return true
+    const runtime = this.ledger.runtimeView()
+    if (!this.active) {
+      // A disabled board still settles the runs it opened before it was
+      // switched off, and re-reads the roster while a card sits in the running
+      // column. With neither, the poll is a no-op.
+      if (runtime.openExecutions.length === 0 && runtime.armedSchedules === 0) return true
+    } else if (!runtime.needsSessionState) {
+      // Idle board: nothing to reconcile and nothing to count. Keep the last
+      // power reading (a stale count only delays the release of the idle-sleep
+      // assertion, never starts one) and stand down.
+      return true
+    }
     const running = await this.runner.listRunning()
     const previous = this.power.snapshot()
     if (!running.known) {
-      this.idleSessionIds = undefined
       this.power.updateReasons({
         runningSessions: previous.runningSessions,
-        armedSchedules: this.ledger.armedScheduleCount(),
+        armedSchedules: runtime.armedSchedules,
         sessionStateKnown: false,
       })
-      return
+      return false
     }
-    this.idleSessionIds = new Set(running.items.filter(item => !item.running).map(item => item.sessionId))
     // Fold whatever the board can already decide before spending inspection
     // RPCs: a team run whose Lead recorded its verdict, and any lineage whose
     // members are all settled. Idempotent, so an already folded board is free.
@@ -543,15 +585,44 @@ export class TaskBoardHostService {
     this.emitStatusChanges(foldedBefore)
     // Read after the RPC so executions attached while it was in flight are
     // included in this pass, matching the former full-state snapshot timing.
-    const runtime = this.ledger.runtimeView()
+    const current = this.ledger.runtimeView()
     this.power.updateReasons({
       runningSessions: running.count,
-      armedSchedules: runtime.armedSchedules,
+      armedSchedules: current.armedSchedules,
       sessionStateKnown: true,
     })
     // No unconditional emit here: real changes already emit through the
     // ledger subscription (settles) and the gated power listener above.
-    await this.reconcileExecutions(running.items, runtime.openExecutions)
+    await this.reconcileExecutions(running.items, current.openExecutions)
+    return true
+  }
+
+  /**
+   * The session a run may continue in, for a card that opted into reuse
+   * (issue #1419). Reuse requires positive evidence that the previous session
+   * is present and idle, and that evidence must be read for THIS launch: an
+   * idle board no longer polls, so a roster cached from an earlier pass could
+   * be hours old — either refusing a session that has been idle all along, or
+   * prompting into one that started running since. A card that did not opt in
+   * reads no roster at all, and a read that fails mints a fresh conversation
+   * exactly as an unknown roster always did.
+   * @param task - the task about to run.
+   * @returns the session id to continue in, or undefined for a fresh session.
+   */
+  private async reuseSessionFor(task: TaskRecord): Promise<string | undefined> {
+    if (task.reuseSession !== true) return undefined
+    let running: Awaited<ReturnType<HostExecutionRunner['listRunning']>>
+    try {
+      running = await this.runner.listRunning()
+    } catch (error) {
+      // A read that failed is an unknown roster, and an unknown roster never
+      // reuses; the launch itself must not fail over the reuse probe.
+      this.notePollFailure()
+      safeConsoleError('[dsh-task-board] session roster read for session reuse failed; starting a fresh session', error)
+      return undefined
+    }
+    if (!running.known) return undefined
+    return reusableSessionId(task, new Set(running.items.filter(item => !item.running).map(item => item.sessionId)))
   }
 
   /** Reuse the session list this poll already fetched: one list RPC per tick, not 1 + E. */
@@ -769,9 +840,45 @@ export class TaskBoardHostService {
   private schedulePoll(): void {
     if (this.pollInFlight || this.disposed) return
     this.pollInFlight = true
-    void this.pollSessions().catch(error => {
+    void this.pollSessions().then((rosterReadable) => {
+      // A pass that could not read the roster is a failure even though it
+      // resolved: the board knows no more about its sessions than before.
+      if (rosterReadable) this.consecutivePollFailures = 0
+      else this.notePollFailure()
+    }).catch(error => {
+      this.notePollFailure()
       safeConsoleError('[dsh-task-board] session polling failed', error)
     }).finally(() => { this.pollInFlight = false })
+  }
+
+  /**
+   * Count one failed pass and arm the retry that follows it.
+   *
+   * A session tree that is down is retried on a doubling delay instead of
+   * hammering it on the fixed cadence: the heartbeat would otherwise repeat
+   * every failure — and every retry inside {@link HostExecutionRunner.listRunning}
+   * — at exactly the interval the reporter measured.
+   */
+  private notePollFailure(): void {
+    this.consecutivePollFailures += 1
+    this.armPollBackoff()
+  }
+
+  /** Arm the retry that follows a failed pass, doubling up to the ceiling. */
+  private armPollBackoff(): void {
+    if (this.disposed) return
+    this.pollBackoffTimer?.()
+    const delay = Math.min(sessionPollMs(this.sessionPollSeconds) * 2 ** Math.min(this.consecutivePollFailures, 8), POLL_FAILURE_MAX_BACKOFF_MS)
+    this.pollBackoffTimer = this.timers.timeout(() => {
+      this.pollBackoffTimer = undefined
+      this.schedulePoll()
+    }, delay)
+  }
+
+  /** Drop a pending retry; the next regular tick takes over. */
+  private clearPollBackoff(): void {
+    this.pollBackoffTimer?.()
+    this.pollBackoffTimer = undefined
   }
 
   /**

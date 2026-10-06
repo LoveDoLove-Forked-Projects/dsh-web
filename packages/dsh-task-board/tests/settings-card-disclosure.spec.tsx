@@ -56,6 +56,7 @@ function cardState(): TaskBoardSettingsCardState {
     announceToAgent: field,
     preventIdleSleep: field,
     maxSubtaskDepth: field,
+    sessionPollSeconds: field,
     goalVerification: { ...field, text: 'true' },
     goalVerificationModel: field,
     goalVerificationReasoningEffort: field,

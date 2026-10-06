@@ -250,6 +250,11 @@ describe('HostTaskLedger', () => {
         startedAt: NOW,
         teamMember: false,
       }],
+      // One session id per open execution: the launch that has not resolved a
+      // session yet contributes none, and the settled 2,000-row history is not
+      // walked into the projection.
+      openSessionIds: ['session-open'],
+      needsSessionState: true,
     })
     expect(ledger.armedScheduleCount()).toBe(1)
     expect(ledger.dueSchedules(NOW + 60_000)).toEqual([{
@@ -259,6 +264,30 @@ describe('HostTaskLedger', () => {
       nextRunAt: NOW + 30_000,
     }])
     expect(ledger.runtimeView().openExecutions[0]).not.toBe(runtime.openExecutions[0])
+  })
+
+  it('operator with an idle board sees the runtime view report no session state to reconcile', () => {
+    // Given a board whose cards all settled and whose only schedule is archived
+    const ledger = new HostTaskLedger(tempRoot(), () => NOW)
+    ledger.applyRequest('idle-create', { kind: 'create', id: 'idle', input: { title: 'Idle', description: '', prompt: '' } })
+    ledger.applyRequest('idle-run', { kind: 'run', taskId: 'idle' })
+    const execution = ledger.getTask('idle')?.executions.at(-1)
+    if (execution === undefined) throw new Error('no execution')
+    ledger.settle('idle', execution.id, 'succeeded')
+
+    // When the runtime view is derived
+    const idle = ledger.runtimeView()
+
+    // Then nothing asks for the session roster
+    expect(idle.openExecutions).toEqual([])
+    expect(idle.openSessionIds).toEqual([])
+    expect(idle.needsSessionState).toBe(false)
+
+    // And a card parked in the running column without a tracked execution asks
+    // for it again: its verdict may arrive from a settle this process never saw
+    ledger.applyRequest('park', { kind: 'move', taskId: 'idle', status: 'running' })
+    expect(ledger.runtimeView().needsSessionState).toBe(true)
+    ledger.dispose()
   })
 
   it('cancels a running record without a session id after restart instead of resending it', () => {
