@@ -14,9 +14,11 @@ Status: implemented
 
 ## 决策
 
-1. **会改写被 HMR 监听文件的副作用必须换一条异步上下文（#1751）**：LAN bind 块写入与防火墙探测移入 `applyLanBindWork`，只经 `scheduleLanBindWork()` 走 `runDetached`（`src/detached-work.ts`）调度。该断言幂等（先比对现状再写），所以被合并的第二轮 `sync()` 不会重复写盘；延期值在执行时经 `resolve()` 重新读取，一 tick 内的两次切换落在最后一个提交值上。延期执行抛错只记录不外抛——保存早已应答，设置卡有自己的轮询读回活状态。
+1. **会改写被 HMR 监听文件的副作用必须换一条异步上下文（#1751）**：LAN bind 块写入与防火墙探测移入 `applyLanBindWork`，只经 `scheduleLanBindWork()` 走 `runDetached`（`shared/host/detached-work.ts`，由 `scripts/sync-shared.mjs` 复制为 `packages/dsh-remote-web-ui/src/detached-work.ts`）调度。该断言幂等（先比对现状再写），所以被合并的第二轮 `sync()` 不会重复写盘；延期值在执行时经 `resolve()` 重新读取，一 tick 内的两次切换落在最后一个提交值上。延期执行抛错只记录不外抛——保存早已应答，设置卡有自己的轮询读回活状态。
 
    **更正（#1754，2026-09-30）。** 本笔记原先用「`setImmediate` 起的是新的 AsyncLocalStorage store」来论证这条延期。该说法是错的，并在 Node 24 上被实测推翻：AsyncLocalStorage 会传播进 `setImmediate`、`node:timers`、promise 续体，以及任何以当前 async id 为 trigger 的 AsyncResource。延期因此从未把写盘与保存事务分离，#1754 报告 0.4.4 上同一故障依旧。`runDetached` 用能真正生效的机制替换了那个前提：模块作用域创建的一个 `AsyncResource`——创建时任何事务都还不存在——不携带 store，由它调度出去的一切继承这份空上下文，而不是调用方的标记。上面那条幂等守卫仍然保留，但它是第二道保险，不是修复本身。同一轮还修正了该改动留下的漂移：#1754 的客户端保存队列此前被写进 `packages/dsh-remote-web-ui/src/client/settings-form.ts`——一个由 `scripts/sync-shared.mjs` 生成的副本——而不是它复制自的 `shared/client/settings/settings-form.ts` 源文件。
+
+   **推广到全家族（#1816，2026-10-06）。** 插件管理器的 set-enabled 写入撞上了同一条拒绝，因此该机制现在只存在于 `shared/host/detached-work.ts` 一处，并在同步清单里登记了两个消费方；`packages/dsh-plugin-manager/src/host/detached-work.ts` 是第二份生成副本，它自己的放置与机制用例与下文所列同名同形。见 [the open issue resolution](2026-10-06-open-issues-resolution-1816-1818.md)。
 2. **清空值不进 `enum`，改用 `oneOf` 精确分支（#1748）**：`permission` 拆成 `oneOf: [{ type: 'string', enum: [...TASK_PERMISSIONS] }, { type: 'string', const: '' }]`。合法值校验与「空串清除」语义都保留，而 `enum` 里不再出现空成员，网关的 Gemini 转发不再被拒。
 3. **按「网页方案」而非「已知外壳方案」分类（#1744）**：`terminalSocketUrl()` 只在 `WEB_PAGE_PROTOCOLS` 列出的方案上拨号，其余方案返回 `undefined`，客户端据此直接回报可执行的说明（改用浏览器打开 Web 界面），而不是开一个注定失败的 socket 再报 `connection error`。该清单与 remote channel 的 `isWebPageProtocol`、update 席位的 `isApplicationDeliveredPage` 描述同一事实，取网页侧可覆盖官方将来发布的任何外壳。
 
@@ -45,4 +47,4 @@ Status: implemented
 - #1745 / #1746 的 `isolation: isolate` 方向由报告者在同款宿主上实测有效（`z-index: -2` 层恢复出图、正文未被覆盖、立绘正常），本仓按该读数落地，未再单独复现。
 - cyber-night 复用同一对规则的落地，由声明层、变换后的选择器，以及 Windows frame 夹具下的 jsdom 层叠结果三处钉住；把修复前样式表放回去时，10 条断言中有 7 条失败。**本次会话仍无法复现 Electron 合成器**——在跑的是网页版宿主，它在改动前后都正常渲染 cyber-night 的插画——所以 Windows 端的可见结果仍依据 #1745/#1746 与 #1763 的桌面端实测，而非本地复现。
 - 本次会话无法枚举网页宿主自身的 CSS-Module 类名，因此无法直接证明 `[class*="_frame"]` 在那里匹配不到任何元素：在跑的宿主不带其进程级 token 时返回 401，而该 token 不属于本会话可以使用的东西。该判断的依据是 maid-atelier 在同一宿主里已经带着完全相同的规则在跑，而不是一次直接检查。
-- #1751/#1754 的回归用例断言的是放置与机制规则（哪些函数触碰 patch 文件与防火墙、延期是否走 `runDetached`，以及 `tests/detached-work.spec.ts` 中「裸 `setImmediate` 确实继承事务、`runDetached` 不继承」）。两者都不是由真实设置保存驱动的真实 HMR 事务端到端复现。
+- #1751/#1754 的回归用例断言的是放置与机制规则（哪些函数触碰 patch 文件与防火墙、延期是否走 `runDetached`，以及 `tests/detached-work.spec.ts` 中「裸 `setImmediate` 确实继承事务、`runDetached` 不继承」）。两者都不是由真实设置保存驱动的真实 HMR 事务端到端复现。`packages/dsh-plugin-manager/tests/` 下的 #1816 同名副本形状相同、缺口也相同。
