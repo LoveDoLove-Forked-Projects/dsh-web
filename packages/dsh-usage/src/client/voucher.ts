@@ -1,6 +1,6 @@
 /**
- * The Whale-yuan voucher (鲸元券): the DeepSeek official family's retained
- * ledger totals stamped onto the banknote artwork as a denomination, ready
+ * The Whale-yuan voucher (鲸元券): the mint family's retained ledger totals
+ * stamped onto the banknote artwork as a denomination, ready
  * to save or share. The canvas copy is deliberately locale-neutral (digits,
  * latin captions, ISO dates) so the exported image needs no dictionary;
  * everything user-facing around it lives in the section's locales. The pure
@@ -16,11 +16,11 @@ import { VOUCHER_ART_DATA_URL } from './voucher-art.generated.ts'
 
 /** The facts stamped onto one voucher. */
 export interface VoucherData {
-  /** DeepSeek official family total tokens over the retained window. */
+  /** Mint family (DeepSeek official + MiMo) total tokens over the retained window. */
   tokens: number
   /** Provider calls that reported usage. */
   calls: number
-  /** Fold-time spend estimate in CNY (the only priced family). */
+  /** Fold-time spend estimate in CNY; only the priced family contributes. */
   cost: number
   /** Retained window bounds (local date keys, inclusive). */
   from: string
@@ -44,21 +44,43 @@ export function formatDay(ms: number): string {
 }
 
 /**
- * Sum the DeepSeek official family rows out of a usage window (both the
- * `deepseek` catalog alias and the live `deepseek-official` route fold into
- * one voucher). Undefined when the window is absent (older host) or the
- * family has no usage — a zero-token note mints nothing.
+ * Provider route ids minted beside the DeepSeek official family: the MiMo
+ * gateway, which a profile may run as its default route and which the ledger
+ * records under its own route id. The bank counts the tokens a profile spends,
+ * not only the ones DeepSeek bills. Route ids rather than adapter families
+ * because minting is an accounting decision that must never widen the
+ * credential or probing paths — the same split `isDeepSeekProviderRoute()`
+ * keeps against `adapterFor()` (issue #1772). An empty list mints exactly the
+ * official family, which is how a profile that never runs MiMo behaves.
  */
-export function deepseekVoucherData(window: UsageWindowSummary | undefined): VoucherData | undefined {
+export const EXTRA_MINT_ROUTE_IDS: readonly string[] = ['mimo']
+
+/** Whether one provider route's ledger rows mint whale yuan. */
+export function mintsWhaleYuan(provider: string): boolean {
+  return isDeepSeekProviderRoute(provider) || EXTRA_MINT_ROUTE_IDS.includes(provider)
+}
+
+/**
+ * Sum the mint family's rows out of a usage window: the whole DeepSeek
+ * official family (the `deepseek` catalog alias, the live `deepseek-official`
+ * route and the signed-in `deepseek-account` route all fold into one voucher)
+ * plus {@link EXTRA_MINT_ROUTE_IDS}. Undefined when the window is absent
+ * (older host) or the family has no usage — a zero-token note mints nothing.
+ *
+ * Only the priced family contributes `cost`: MiMo ships no price book, so it
+ * mints tokens and calls while the spend line keeps reporting the official
+ * family's fold-time estimate (and the observed-balance watch above it).
+ */
+export function voucherData(window: UsageWindowSummary | undefined): VoucherData | undefined {
   if (window === undefined) return undefined
   let tokens = 0
   let calls = 0
   let cost = 0
   for (const row of window.providers) {
-    if (!isDeepSeekProviderRoute(row.provider)) continue
+    if (!mintsWhaleYuan(row.provider)) continue
     tokens += totalTokens(row.totals)
     calls += row.totals.calls
-    cost += row.totals.cost
+    if (isDeepSeekProviderRoute(row.provider)) cost += row.totals.cost
   }
   if (tokens <= 0) return undefined
   return { tokens, calls, cost, from: window.from, to: window.to }

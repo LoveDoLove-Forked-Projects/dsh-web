@@ -15,7 +15,7 @@ import { t } from './locales.ts'
 import styles from './usage.module.css'
 import { isDeepSeekProviderRoute } from '../core/adapters.ts'
 import { deepseekPeriodAt } from '../core/pricing.ts'
-import { deepseekVoucherData, drawVoucher, faceValue, formatDay, formatDenomination, loadVoucherArt } from './voucher.ts'
+import { voucherData, drawVoucher, faceValue, formatDay, formatDenomination, loadVoucherArt } from './voucher.ts'
 import type { ObservedSpendView, ProviderSnapshotView, UsageDayView, UsageOverviewView, UsageProviderSummary, UsageTokenTotals, UsageWindowSummary } from '../core/types.ts'
 
 /** The settings fields this section edits (immediate-apply semantics). */
@@ -550,18 +550,18 @@ function totalOf(totals: UsageTokenTotals): number {
 }
 
 /**
- * The Token 银行 card: the DeepSeek official family's retained-ledger usage
- * minted onto the whale-yuan note at 1,000,000 tokens per whale yuan. The
- * window is the whole retained ledger by default (the host's aggregate,
- * falling back to the 30-day trend when an older host serves no `all`) or the
- * single day the user picked; the spend line prefers the official balance
- * watch (whole window only) and falls back to the fold-time estimate; the
- * artwork draw failure degrades to an error line and never takes the section
- * down.
+ * The Token 银行 card: the mint family's (DeepSeek official + MiMo)
+ * retained-ledger usage minted onto the whale-yuan note at 1,000,000 tokens
+ * per whale yuan. The window is the whole retained ledger by default (the
+ * host's aggregate, falling back to the 30-day trend when an older host serves
+ * no `all`) or the single day the user picked; the spend line prefers the
+ * official balance watch (whole window only) and falls back to the fold-time
+ * estimate, which only the priced family feeds; the artwork draw failure
+ * degrades to an error line and never takes the section down.
  */
 function VoucherCard(props: { window?: UsageWindowSummary; observedSpend?: ObservedSpendView; loading?: boolean; error?: string }): ReactNode {
   const { window: ledger, observedSpend, loading, error } = props
-  const data = deepseekVoucherData(ledger)
+  const data = voucherData(ledger)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [drawError, setDrawError] = useState<string | undefined>(undefined)
   const dataKey = data === undefined ? '' : `${data.from}|${data.to}|${data.tokens}|${data.calls}|${data.cost}`
