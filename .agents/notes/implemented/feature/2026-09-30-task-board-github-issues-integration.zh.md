@@ -63,3 +63,4 @@ Status: implemented
 - 凭据管理保持在服务端，需通过环境变量或 profile patch 部署，而非前端输入框。
 - 卡片的 Prompt 现在比它来源的 issue 正文长数倍，措辞归 `src/core/prompt.ts` 所有；模板变更只会在卡片 Prompt 仍是生成版本时于下次同步触达它，永远不会触达已执行过的卡片。
 - AI 分析消耗部署自己的模型额度，每次显式请求一次；没有模型服务的部署保留模板化 Prompt，并带原因拒绝请求。模型调用本身在 `tests/issue-analysis.spec.ts` 中针对注入的 `llm` 服务替身验证，而非真实模型。
+- 每个 GitHub 工具的返回值都是无损 JSON。宿主运行时会在模型看到成功值之前先做快照，并拒绝任何值为 undefined 的成员；而 JSON.stringify 只是静默丢弃这样的成员，因此仅用 JSON.stringify 自检的投影看起来健康，工具本身却不可用。故缺省的可选成员一律用条件展开省略，沿用 normalizeGitHubMetadata 既有的写法；githubTaskSummary 把远端一半委托给 githubIssueSummary，两个 PR 工具返回的 PR 元数据同样省略缺省的 draft、headBranch、baseBranch 与 mergedAt。tests/tool-output-json.spec.ts 对每个工具断言这条规则，这也正是 task_board_github_list 与 task_board_github_refresh 此前每次调用都直接失败的原因。

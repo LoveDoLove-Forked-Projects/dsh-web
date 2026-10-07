@@ -1043,14 +1043,19 @@ export class GitHubSyncService {
     })
 
     const now = this.now()
+    // A tool result has to be lossless JSON, so an absent optional is left
+    // out of the object rather than stored as an undefined value.
+    const mergedAt = prPayload.merged_at === undefined || prPayload.merged_at === null
+      ? undefined
+      : Date.parse(prPayload.merged_at)
     const pullRequest: GitHubPullRequestMetadata = {
       number: prPayload.number,
       url: prPayload.html_url,
       state: prPayload.state === 'closed' ? (prPayload.merged ? 'merged' : 'closed') : 'open',
-      draft: prPayload.draft === true ? true : undefined,
+      ...(prPayload.draft === true ? { draft: true } : {}),
       headBranch,
       baseBranch,
-      mergedAt: prPayload.merged_at ? Date.parse(prPayload.merged_at) : undefined,
+      ...(mergedAt === undefined || Number.isNaN(mergedAt) ? {} : { mergedAt }),
     }
 
     // Add PR phase label
@@ -1092,14 +1097,19 @@ export class GitHubSyncService {
     const prPayload = await this.client.getPullRequest(config.owner, config.repository, pullRequestNumber)
     const now = this.now()
 
+    // A tool result has to be lossless JSON, so an absent optional is left
+    // out of the object rather than stored as an undefined value.
+    const mergedAt = prPayload.merged_at === undefined || prPayload.merged_at === null
+      ? undefined
+      : Date.parse(prPayload.merged_at)
     const pullRequest: GitHubPullRequestMetadata = {
       number: prPayload.number,
       url: prPayload.html_url,
       state: prPayload.state === 'closed' ? (prPayload.merged ? 'merged' : 'closed') : 'open',
-      draft: prPayload.draft === true ? true : undefined,
-      headBranch: prPayload.head?.ref,
-      baseBranch: prPayload.base?.ref,
-      mergedAt: prPayload.merged_at ? Date.parse(prPayload.merged_at) : undefined,
+      ...(prPayload.draft === true ? { draft: true } : {}),
+      ...(prPayload.head === undefined ? {} : { headBranch: prPayload.head.ref }),
+      ...(prPayload.base === undefined ? {} : { baseBranch: prPayload.base.ref }),
+      ...(mergedAt === undefined || Number.isNaN(mergedAt) ? {} : { mergedAt }),
     }
 
     // Add PR phase label

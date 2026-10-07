@@ -11,7 +11,7 @@
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { addRepository, removeRepository, updateRepository, type RepositoryOptions } from '../core/setup.ts'
-import { readTaskGitHubMetadata } from '../core/types.ts'
+import { readTaskGitHubMetadata, type GitHubTaskMetadata } from '../core/types.ts'
 import type { TaskRecord } from '../core/task-record.ts'
 import type { GitHubSyncService } from './service.ts'
 import { GitHubSetupError, type GitHubSetup } from './setup.ts'
@@ -30,6 +30,34 @@ function refused(code: string, message: string): Json {
   return json({ ok: false, code, message })
 }
 
+/**
+ * Project the remote issue half of one card's metadata.
+ *
+ * The optional members are added by conditional spread rather than assigned as
+ * an undefined value. A tool result has to be lossless JSON: the host runtime
+ * snapshots a successful value before the model sees it and rejects any member
+ * whose value is undefined, while JSON.stringify merely drops such a member
+ * silently. Returning the whole metadata object instead would sidestep that
+ * check but hand a list call fields it never promised.
+ * @param gh - the repaired metadata of a linked card.
+ * @returns the remote issue members this projection carries.
+ */
+function githubIssueSummary(gh: GitHubTaskMetadata): Record<string, unknown> {
+  return {
+    owner: gh.owner,
+    repository: gh.repository,
+    issueNumber: gh.issueNumber,
+    issueUrl: gh.issueUrl,
+    remoteLabels: [...gh.remoteLabels],
+    ...(gh.remoteTitle === undefined ? {} : { remoteTitle: gh.remoteTitle }),
+    ...(gh.remoteState === undefined ? {} : { remoteState: gh.remoteState }),
+    ...(gh.lastSyncedAt === undefined ? {} : { lastSyncedAt: gh.lastSyncedAt }),
+    ...(gh.lastSyncError === undefined ? {} : { lastSyncError: gh.lastSyncError }),
+    ...(gh.deactivated === undefined ? {} : { deactivated: gh.deactivated }),
+    ...(gh.pullRequest === undefined ? {} : { pullRequest: gh.pullRequest }),
+  }
+}
+
 function githubTaskSummary(task: TaskRecord): Record<string, unknown> {
   const gh = readTaskGitHubMetadata(task)
   return {
@@ -37,19 +65,7 @@ function githubTaskSummary(task: TaskRecord): Record<string, unknown> {
     title: task.title,
     status: task.status,
     archived: task.archivedAt !== undefined,
-    github: gh === undefined ? undefined : {
-      owner: gh.owner,
-      repository: gh.repository,
-      issueNumber: gh.issueNumber,
-      issueUrl: gh.issueUrl,
-      remoteTitle: gh.remoteTitle,
-      remoteState: gh.remoteState,
-      remoteLabels: gh.remoteLabels,
-      lastSyncedAt: gh.lastSyncedAt,
-      lastSyncError: gh.lastSyncError,
-      deactivated: gh.deactivated,
-      pullRequest: gh.pullRequest,
-    },
+    ...(gh === undefined ? {} : { github: githubIssueSummary(gh) }),
   }
 }
 
@@ -279,13 +295,13 @@ function buildRefreshTool(service: GitHubSyncService): ToolDefinition {
           const result = await service.syncTask(args.taskId.trim())
           if (!result.ok) return refused('sync-failed', result.error ?? 'sync failed')
           const updated = service.host.tasks.get(args.taskId.trim())
-          return json({ ok: true, synced: 1, task: updated ? githubTaskSummary(updated) : undefined })
+          return json({ ok: true, synced: 1, ...(updated === undefined ? {} : { task: githubTaskSummary(updated) }) })
         } else if (typeof args.owner === 'string' && typeof args.repository === 'string') {
           const result = await service.syncRepository(args.owner.trim(), args.repository.trim())
-          return json({ ok: true, synced: result.synced, errors: result.errors.length > 0 ? result.errors : undefined })
+          return json({ ok: true, synced: result.synced, ...(result.errors.length > 0 ? { errors: result.errors } : {}) })
         } else {
           const result = await service.syncAll()
-          return json({ ok: true, synced: result.synced, errors: result.errors.length > 0 ? result.errors : undefined })
+          return json({ ok: true, synced: result.synced, ...(result.errors.length > 0 ? { errors: result.errors } : {}) })
         }
       } catch (error) {
         return refused('sync-error', error instanceof Error ? error.message : String(error))
