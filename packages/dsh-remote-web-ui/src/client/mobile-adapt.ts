@@ -173,10 +173,19 @@ const ADAPT_CSS: readonly string[] = [
   '[class$="_headerUtilities"]{display:none}',
   // v52 composer: the two lines (permission / model) stay stacked with zero
   // row gap; the command, context-meter and send/stop buttons float at the
-  // left/right edges vertically centered over both lines.
+  // left/right edges vertically centered over both lines. "Both lines" is what
+  // makes _row the containing block for those three floats: _row is the one box
+  // that wraps the lines, so nothing between a float and _row may claim it.
   '[class$="_composerSeat"] [class$="_card"]{margin-bottom:1px}',
   '[class$="_composerSeat"] [class$="_row"]{flex-wrap:wrap;row-gap:0;padding:2px 8px 1px;position:relative}',
-  '[class$="_composerSeat"] [class$="_add"]{position:absolute;left:8px;top:50%;transform:translateY(-50%)}',
+  // The attach button is the only file-picker entry on the portrait composer,
+  // and taking it out of flow costs it the paint order it had inline: a
+  // positioned sibling painted after it (the trailing line, see below) covers
+  // it and eats the taps on the covered half. Its own z-index makes the hit
+  // layer a property of the button instead of a side effect of a sibling
+  // (#1829). It clears the composer's own stacking ladder and stays far below
+  // the bottom-sheet menus (2147482000), which own the overlay above it.
+  '[class$="_composerSeat"] [class$="_add"]{position:absolute;left:8px;top:50%;transform:translateY(-50%);z-index:10}',
   '[class$="_composerSeat"] [class$="_modes"]{min-width:0;padding-left:38px}',
   // Model line left-aligned with the permission line (same command-button
   // clearance), rows stay tightly stacked.
@@ -189,7 +198,16 @@ const ADAPT_CSS: readonly string[] = [
   // viewport's right edge, which is the unreachable button the reporter
   // measured (#1818). border-box contains the padding inside the basis, so the
   // line stays within the card and the button lands back inside it.
-  '[class$="_composerSeat"] [class$="_trailing"]{box-sizing:border-box;flex-basis:100%;position:relative;min-height:32px;justify-content:flex-start;padding-left:38px;padding-right:78px}',
+  //
+  // The line stays UNPOSITIONED on purpose. position:relative arrived here with
+  // the compact picker and outlived it, but this box is the LAST line only: as
+  // the nearest positioned ancestor it took the containing block from _row, so
+  // the send button and the context meter centered inside the trailing line
+  // instead of over both lines - the send button rode the input's bottom edge,
+  // out of line with the attach button - and, painted after the out-of-flow
+  // attach button, the line covered that button's lower half and swallowed the
+  // taps there (#1829).
+  '[class$="_composerSeat"] [class$="_trailing"]{box-sizing:border-box;flex-basis:100%;min-height:32px;justify-content:flex-start;padding-left:38px;padding-right:78px}',
   '[class$="_composerSeat"] [class$="_trailing"] *{font-size:12px}',
   // v54: smaller permission/model buttons (font + height). v79: the
   // permission trigger collapses to its shield icon on phones — the label

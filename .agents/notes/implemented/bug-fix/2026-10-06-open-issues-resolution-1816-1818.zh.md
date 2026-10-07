@@ -31,7 +31,7 @@ Status: implemented
 ## Consequences
 
 - 插件页开关重新能写入覆盖行，该行在下一次 profile 应用时生效。写入仍被 await，因此失败的写入仍然让请求失败，而不会报成成功。
-- 竖屏手机上发送按钮位于输入框卡片右下角、在所探测的每个宽度都在卡内，唯一发送路径可单手触达。
+- 竖屏手机上发送按钮位于输入框卡片右下角、在所探测的每个宽度都在卡内，唯一发送路径可单手触达。它以控件行为中心，而不是以末行为中心；其旁的加号按钮整个可点面都能命中：末行交出了 `position:relative`（#1829），不再替该行的浮动元素充当包含块，且 `_add` 自带 `z-index`，其命中层不再依赖兄弟元素保持未定位。
 - `shared/host/detached-work.ts` 是本家族该机制的唯一归属；`dsh-remote-web-ui/src/detached-work.ts` 与 `dsh-plugin-manager/src/host/detached-work.ts` 是生成副本，必须经共享源修改。
 - 聚合客户端 bundle 内联了适配样式表，因此 `packages/dsh-web-all/lib` 重新构建并重新记录指纹。
 - 两个修复都无法在这里对报告人的硬件做确认：#1816 需要挂载了 `dsh-hmr` 的真实 Host，#1818 需要真机 iPhone。#1816 的机制正是本家族已为同一故障在生产中验证过的；#1818 的几何是在 Chrome 下对着官方 CSS Modules 实测的。
@@ -41,3 +41,4 @@ Status: implemented
 - `packages/dsh-plugin-manager/tests/set-enabled-hmr-nesting.spec.ts` 固定放置规则：写入经 `runDetached`、脱附包住调度而不是位于回调内部、写入在快照之前被 await、current-vs-desired 守卫仍然抑制空写入。
 - `packages/dsh-plugin-manager/tests/detached-work.spec.ts` 在本包副本上固定机制：裸 `setImmediate` 仍观测到事务，`runDetached` 不会，嵌套延期保持脱附，调用方保留自己的上下文。
 - `packages/dsh-remote-web-ui/tests/mobile-adapt.spec.ts` 把 trailing 规则上的 `border-box` 声明与其 100% basis、78px 右 padding 一起固定，使该规则不会再次悄悄失去收束。
+- 同一 spec 固定这些浮动元素所需的包含块（#1829）：`_row` 保持 `position:relative`，trailing 规则自身不声明任何定位，发送键与用量表保持 `top:50%` / `translateY(-50%)` 这一对，且 `_add` 声明 `z-index:10`。

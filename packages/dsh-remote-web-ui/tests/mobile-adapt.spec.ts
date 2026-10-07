@@ -76,6 +76,17 @@ async function freshStart(): Promise<() => void> {
   return mod.startMobileAdapt
 }
 
+/**
+ * One rule of the injected portrait sheet, read as it ships. The composer's
+ * geometry rules are CSS contracts, and what such a rule must NOT declare
+ * matters as much as what it does, so the lookup hands back the whole
+ * declaration block.
+ */
+function adaptRule(selector: string): string {
+  const css = document.querySelector('style[data-plugin-css="dsh-remote-web-ui/mobile-adapt.css"]')?.textContent ?? ''
+  return css.split('}').find(rule => rule.includes(selector)) ?? ''
+}
+
 describe('startMobileAdapt', () => {
   it('installs the global and stays inert on a desktop viewport', () => {
     media.portrait = false
@@ -608,6 +619,43 @@ describe('startMobileAdapt', () => {
     // The button keeps its in-card right edge offset, so it lands inside the
     // padded content box rather than at the screen edge.
     expect(css).toContain('[class$="_composerSeat"] [class$="_primary"]{position:absolute;right:8px')
+  })
+
+  it('operator gets the send button centered over both composer lines', async () => {
+    media.portrait = true
+    media.coarse = true
+    setWidth(390)
+    const start = await freshStart()
+    start()
+    // Given the control row wraps the tools line and the trailing line into one
+    // two-line box and the send button plus the context meter float over it,
+    // when the sheet is read, then that row is their only containing block.
+    // Positioned, the trailing line took the role from both, so each centered
+    // inside the last line alone and the send button rode the input's bottom
+    // edge, out of line with the attach button (issue #1829).
+    expect(adaptRule('[class$="_composerSeat"] [class$="_row"]{')).toContain('position:relative')
+    expect(adaptRule('[class$="_composerSeat"] [class$="_trailing"]{')).not.toMatch(/position:\s*(relative|absolute|sticky|fixed)/)
+    // Both floats keep the anchors that put them on that one shared middle.
+    expect(adaptRule('[class$="_composerSeat"] [class$="_primary"]{')).toContain('top:50%;transform:translateY(-50%)')
+    expect(adaptRule('[class$="_trailing"] > [class$="_root"]:has([class$="_track"]){')).toContain('top:50%;transform:translateY(-50%)')
+  })
+
+  it('operator can open the file picker from the attach button on a portrait phone', async () => {
+    media.portrait = true
+    media.coarse = true
+    setWidth(390)
+    const start = await freshStart()
+    start()
+    // Given the attach button floats out of flow at the left edge of the same
+    // two-line box, when the sheet is read, then it keeps the row-relative
+    // anchors that center it over both lines and owns an explicit hit layer.
+    // While the trailing line was positioned it painted after this button and
+    // covered its lower half, so the taps there reached nothing at all
+    // (issue #1829) - the attach button is the only file-picker entry on the
+    // portrait composer.
+    const add = adaptRule('[class$="_composerSeat"] [class$="_add"]{')
+    expect(add).toContain('position:absolute;left:8px;top:50%;transform:translateY(-50%)')
+    expect(add).toContain('z-index:10')
   })
 
   it('reads injected-surface labels from the wired translate seat, not the browser language', async () => {
