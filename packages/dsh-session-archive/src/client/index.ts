@@ -18,7 +18,9 @@ import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the shared-forms Context merge (ctx.configForms).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: the locale Translate signature (the LocaleNamespaceMap merge
+// this namespace declares lives in ./locales.ts).
+import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ctx.slots merge (the renderer owns the slot registry since 0.1.2).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the client sessions face merge (ctx.sessions) for the
@@ -30,7 +32,7 @@ import { createElement } from 'react'
 import { ArchiveController } from './archive-controller.ts'
 import { mainViewSessionId } from './main-session.ts'
 import { SessionArchiveCard, type SessionArchiveFace } from './SessionArchiveCard.tsx'
-import { NS, en, zh } from './locales.ts'
+import { NS, en, setRuntimeTranslate, zh } from './locales.ts'
 import { createServedEntryForm } from './settings-entry-form.ts'
 import type { SessionArchiveConfig } from '../core/config.ts'
 
@@ -107,6 +109,19 @@ export function apply(ctx: ClientContext): void {
       return () => {}
     }
   }, 'dsh-session-archive: dictionaries')
+
+  // Card copy resolves through the locale service: the bound function reads
+  // the ACTIVE language at call time and walks its fallback chain, so a
+  // language a pack registers for this namespace (dsh-i18n's ru) reaches the
+  // card body instead of the zh branch the document-language pick would pick.
+  // The cast widens the bound seat to plain string keys because the card
+  // builds dynamic ones (`arch.reason.${reason}`); the service degrades an
+  // unknown key to the key itself, which is what `t` already did.
+  try {
+    setRuntimeTranslate(ctx.locale.bind(NS) as Translate<string>)
+  } catch {
+    // Locale service absent: locales.ts keeps its document-language fallback.
+  }
 
   // The family binder resolves the family namespace onto this row's profile
   // entry id and binds the native shared form; a deployment without the group

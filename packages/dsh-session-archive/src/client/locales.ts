@@ -5,6 +5,10 @@
  * @module @linxin666/dsh-session-archive/client/locales
  */
 
+// Type-only: the locale service translate signature. The locale service
+// itself is injected by the host through ctx.locale, never imported here.
+import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+
 /** Dictionary namespace this package registers. */
 export const NS = 'dsh-web-ui-session-archive'
 
@@ -274,16 +278,46 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /**
- * Active dictionary, picked by the document language at call time (the
- * settings section has no framework locale seat of its own).
+ * Unwired fallback dictionary, picked by the document language at call time.
+ * A zh/en-only pick, so it can only ever answer the two languages this
+ * package ships: it stays in force exactly while the locale service seat
+ * below is unwired.
  */
 export function dictionary(): Record<ArchKey, string> {
   const lang = typeof document !== 'undefined' ? document.documentElement.lang : 'zh'
   return lang.toLowerCase().startsWith('en') ? en : zh
 }
 
-/** Translate a key with optional `{name}` template params; missing keys degrade to the key. */
+/**
+ * Locale-service translate seat, wired by the browser apply() through
+ * ctx.locale.bind(NS) (setRuntimeTranslate). The bound function resolves the
+ * ACTIVE language at call time, so every card surface reads the dictionary
+ * the host currently serves: this package's zh/en plus any language a pack
+ * registers for this namespace (dsh-i18n's ru), walked along that language's
+ * declared fallback chain. Reading the document language instead sent every
+ * non-en language into the zh branch, which left the card body Chinese while
+ * the nav label of the same namespace localized correctly.
+ *
+ * Undefined until wired, so the document-language fallback above stays in
+ * force when the locale service is absent or a caller runs before the
+ * plugin mounts.
+ */
+let runtimeT: Translate<string> | undefined
+
+/**
+ * Wire the locale-service translate seat; pass undefined to restore the
+ * document-language fallback.
+ */
+export function setRuntimeTranslate(translate: Translate<string> | undefined): void {
+  runtimeT = translate
+}
+
+/**
+ * Translate a key with optional `{name}` template params in the active
+ * language; a missing key degrades to the key itself.
+ */
 export function t(key: string, params?: Record<string, unknown>): string {
+  if (runtimeT !== undefined) return runtimeT(key, params)
   let text: string = (dictionary() as Record<string, string>)[key] ?? key
   if (params !== undefined) {
     for (const [name, value] of Object.entries(params)) {
