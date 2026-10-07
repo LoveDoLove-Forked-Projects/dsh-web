@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-06",
+  "generated": "2026-10-07",
   "items": [
     {
       "id": "dsh-quick-ask",
@@ -129,13 +129,13 @@
     },
     {
       "id": "dsh-plugin-hub",
-      "name": "插件中心（dsh-plugin-hub）",
+      "name": "插件门控中心",
       "rank": 11,
-      "nameEn": "Plugin Hub",
+      "nameEn": "Plugin Gating Hub",
       "author": "Noob-stupid",
-      "description": "插件管理面板：已安装插件一键启用/停用，内置 GitHub dsh-plugin 插件市场（官方/聚合识别、子包浏览、一键安装与本地 AI 兜底修复、删除卸载），版本检测与一键更新、框架一键升级。",
-      "descriptionEn": "Plugin management panel: one-click enable/disable, a GitHub dsh-plugin marketplace with official/aggregate detection, subpackage browsing, one-click installs with local-AI fallback repair, uninstall, update detection and one-click framework upgrade.",
-      "repo": "https://github.com/Noob-stupid/dsh-plugin-hub",
+      "description": "DSH 框架升级安全与插件升级门控：升级前契约预检 + 配置备份 + 整树回滚点，失败自动回滚、可一键回上一版，加载不了的插件有确证证据才自动禁用。安装与更新按候选插件的 dsh.engines 与 @deepseek-ai/* 范围门控，非 registry 来源可真装（registry 解析不了时回落 link: 开发式安装）。另带内置多源插件市场作发现层。",
+      "descriptionEn": "Framework-upgrade safety and plugin-version gating for DSH: a contract pre-check, config backup and full-tree rollback point before an upgrade; a failed upgrade auto-rolls back, one click returns to the previous version, and a plugin the new framework cannot load is auto-disabled only on hard evidence. Installs and updates are gated by the candidate's dsh.engines and @deepseek-ai/* ranges; non-registry sources are really installed (falling back to a link: development install when the registry cannot resolve them). Ships a built-in multi-source plugin market as the discovery layer.",
+      "repo": "https://github.com/Noob-stupid/dsh-plugin-gating-hub",
       "npm": "@noob-stupid/dsh-plugin-console",
       "category": "tools",
       "subcategory": "dev"
