@@ -137,6 +137,8 @@ dsh plugin --profile web remove @linxin666/dsh-liangshen
 - working-context 行只在其来源（plan-mode 状态、已激活的分页命名空间、进行中的 todo）可读时注入，否则省略；
 - 工具结果超过 4096 字符即被修剪，保留 2048 字符头部与 1024 字符尾部（守护稀疏索引槽位的同时保住错误尾部与退出码），避免超大输出挤占上下文；
 - `run_code` 需要挂载的 code runtime（随包发布的 web 与 headless 组合都挂载 `dsh-code-runtime-worker-thread`）；没有时 `ptc` 与 `both` 不做声明，会话运行原生工具面；
+- spawn 委派行已开启子 agent 模型选择（`modelSelectionSettings: true`），因此设置界面的子智能体模型选择开关在本预设下生效：模型在 `subagent` 上看到 `provider` / `model` / `reasoning_effort` 参数与 `list_subagent_models` 发现工具，显式路由会按会话的允许清单校验；
+- 同一组合 scope 内只允许一行委派工具开启该开关：上游开启时以固定工具名在该行所合入的 scope 中注册 `list_subagent_models`，而注册表拒绝同一 scope 内同名工具的第二次注册，因此第二行开启会让整个会话创建失败而不是多出一份能力。fork 行因此不带该键（官方 Standard、PTC、Cordis 预设同样如此），组合测试按结构统计开启行数；
 - 清单不发布 `workflow` 工具，而 workflow 引擎仍为 `ralph` 保留挂载；
 - shell 挂载上游标准 Stdio 栈，POSIX 注册 `bash`，win32 注册 `pwsh`——每个宿主恰好挂一个 shell 工具，带简短功能描述标题卡片与确定性退出码；
 - 文件工具继承宿主文件沙箱（不挂载裸 `dsh-fs-local`）；

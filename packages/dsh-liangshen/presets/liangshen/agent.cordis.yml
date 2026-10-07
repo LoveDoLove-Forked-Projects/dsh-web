@@ -377,11 +377,30 @@
     - id: tool-subagent-list-agents
       name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 
+    # `modelSelectionSettings: true` opts this row into the child-model
+    # selection the Web settings page owns per Session: the tool then
+    # publishes `provider` / `model` / `reasoning_effort` parameters and the
+    # `list_subagent_models` discovery tool, and an explicit route is
+    # checked against the Session's allowed list. Without it the settings
+    # toggle reads as dead under this preset and an explicit selection
+    # fails with `child model selection is disabled for this tool instance`.
+    #
+    # EXACTLY ONE delegation row per composition scope may opt in. The
+    # opt-in registers the discovery tool under the FIXED name
+    # `list_subagent_models` in the scope the row composes into, and the tool
+    # registry refuses a second registration of one name in one scope, so a
+    # second opt-in row fails the whole session with `tool
+    # 'list_subagent_models' is already registered in this scope`. The fork
+    # row below therefore stays without it, exactly as the builtin Standard,
+    # PTC, and Cordis presets ship: their `tool-subagent` row opts in and
+    # their `tool-subagent-fork` row does not. Do not complete the
+    # fork row to match; the opt-in belongs to the spawn row alone.
     - id: tool-subagent
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: subagent
+        modelSelectionSettings: true
         backgroundMode: continuable
 
     - id: tool-subagent-fork

@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest'
 
 import { PERSONA_SECTION_NAMES, PLAN_POLICY_SECTION_NAME, name as promptName } from '../presets/liangshen/minimal-prompt.mjs'
 import { name as catalogName } from '../presets/liangshen/tool-catalog.mjs'
-import { readCompositionRows } from '../src/composition.ts'
+import { type CompositionRow, readCompositionRows } from '../src/composition.ts'
 
 const preset = readFileSync(join(process.cwd(), 'presets/liangshen/agent.cordis.yml'), 'utf8')
 const presetDir = join(process.cwd(), 'presets', 'liangshen')
@@ -46,6 +46,19 @@ function row(id: string): string {
   return next < 0 ? rest : rest.slice(0, next)
 }
 
+/** Every leaf row of the composition, descending into each group's entry list. */
+function leafRows(rows: readonly CompositionRow[]): CompositionRow[] {
+  return rows.flatMap((row) =>
+    Array.isArray(row.config) ? leafRows(row.config as CompositionRow[]) : [row])
+}
+
+/** The parsed rows whose own config carries `modelSelectionSettings: true`. */
+function modelSelectionOptIns(text = preset): CompositionRow[] {
+  return leafRows(readCompositionRows(text, presetDir))
+    .filter((row) =>
+      typeof row.config === 'object' && row.config !== null && !Array.isArray(row.config)
+      && (row.config as Record<string, unknown>).modelSelectionSettings === true)
+}
 describe('liangshen preset composition', () => {
   it('is structurally valid for the preset loader', () => {
     expect(readable(preset)).toBe(true)
@@ -134,5 +147,32 @@ describe('liangshen preset composition', () => {
     expect(PERSONA_SECTION_NAMES).toContain(PERSONA_PREFIX_SECTION)
     expect(PERSONA_SECTION_NAMES).not.toContain(PERSONA_SUFFIX_SECTION)
     expect(PLAN_POLICY_SECTION_NAME).toBe('plan:policy')
+  })
+
+  it('operator gets child-model selection from the spawn delegation row alone', () => {
+    // Given: the shipped composition, read the way the preset loader reads it.
+    // When: the delegation rows are inspected for the child-model opt-in.
+    // Then: the spawn row opts in, so the tool publishes its route
+    // parameters and the `list_subagent_models` discovery tool the settings
+    // toggle depends on.
+    expect(row('tool-subagent')).toContain('modelSelectionSettings: true')
+    // Then: the fork row stays out, because the upstream opt-in registers
+    // one discovery tool under a FIXED name per composed scope and a second
+    // opt-in row fails the whole session composition with the duplicate
+    // tool-name error instead of adding a second opt-in.
+    expect(row('tool-subagent-fork')).not.toContain('modelSelectionSettings')
+    // Then: the parsed composition carries exactly one opt-in row, so the
+    // invariant survives a row being added, renamed, or moved.
+    expect(modelSelectionOptIns().map((optIn) => optIn.id)).toEqual(['tool-subagent'])
+    // Then: the guard is not vacuous - giving the fork row the flag, the
+    // exact edit a maintainer would make to complete the opt-in, is counted
+    // as a second one instead of passing silently.
+    const forked = preset.replace(
+      '        provider: fork\n        toolName: subagent_fork\n',
+      '        provider: fork\n        toolName: subagent_fork\n        modelSelectionSettings: true\n',
+    )
+    expect(forked).not.toBe(preset)
+    expect(modelSelectionOptIns(forked).map((optIn) => optIn.id))
+      .toEqual(['tool-subagent', 'tool-subagent-fork'])
   })
 })
