@@ -7105,7 +7105,7 @@ window.__ModuleLoader__.load({
 			if (typeof value !== "object" || value === null) return void 0;
 			const row = value;
 			if (typeof row.index !== "number" || typeof row.at !== "number") return void 0;
-			if (row.stage !== "quality" && row.stage !== "exception") return void 0;
+			if (row.stage !== "quality" && row.stage !== "exception" && row.stage !== "budget") return void 0;
 			if (typeof row.passed !== "boolean") return void 0;
 			if (typeof row.score !== "number" || !Number.isFinite(row.score)) return void 0;
 			if (typeof row.baseline !== "number" || !Number.isFinite(row.baseline)) return void 0;
@@ -7398,6 +7398,7 @@ window.__ModuleLoader__.load({
 				if (entry.initiatedBy !== void 0 && typeof entry.initiatedBy !== "string") return false;
 				if (entry.frozenBy !== void 0 && typeof entry.frozenBy !== "string") return false;
 				if (entry.frozenAt !== void 0 && typeof entry.frozenAt !== "number") return false;
+				if (entry.external !== void 0 && typeof entry.external !== "boolean") return false;
 				if (entry.verification !== void 0 && normalizeVerification(entry.verification) === void 0) return false;
 			}
 			return true;
@@ -7499,7 +7500,8 @@ window.__ModuleLoader__.load({
 					runGroupId: normalizeTargetId(execution.runGroupId),
 					ownResult: isExecutionOutcome(execution.ownResult) ? execution.ownResult : void 0,
 					ownError: typeof execution.ownError === "string" ? execution.ownError : void 0,
-					verification: normalizeVerification(execution.verification)
+					verification: normalizeVerification(execution.verification),
+					external: execution.external === true ? true : void 0
 				}));
 				task.workspaceId = normalizeTargetId(row.workspaceId);
 				task.mode = normalizeTargetId(row.mode);
@@ -7749,6 +7751,7 @@ window.__ModuleLoader__.load({
 			"detail.noSession": "暂无会话",
 			"detail.executionStarted": "已启动",
 			"detail.execution.initiator": "发起会话 {session}",
+			"detail.execution.external": "Host 之外完成：{agent}",
 			"detail.executionEnded": "已结束",
 			"detail.result.succeeded": "成功",
 			"detail.result.failed": "失败",
@@ -8110,6 +8113,7 @@ window.__ModuleLoader__.load({
 			"detail.noSession": "No session",
 			"detail.executionStarted": "Started",
 			"detail.execution.initiator": "Initiated by session {session}",
+			"detail.execution.external": "Completed outside this Host by {agent}",
 			"detail.executionEnded": "Ended",
 			"detail.result.succeeded": "Succeeded",
 			"detail.result.failed": "Failed",
@@ -8336,14 +8340,14 @@ window.__ModuleLoader__.load({
 		* language switch; the document-language pick above stays only as the
 		* unwired fallback (locale service absent, module-scope early callers).
 		*/
-		let runtimeT$3;
+		let runtimeT$4;
 		/** Wire the SDK translate seat; pass undefined to restore the document-language pick. */
-		function setRuntimeTranslate$3(t) {
-			runtimeT$3 = t;
+		function setRuntimeTranslate$4(t) {
+			runtimeT$4 = t;
 		}
 		/** Translate a key with optional {name} template params. */
 		function t$5(key, params) {
-			if (runtimeT$3 !== void 0) return runtimeT$3(key, params);
+			if (runtimeT$4 !== void 0) return runtimeT$4(key, params);
 			let text = dictionary$6()[key];
 			if (params !== void 0) for (const [name, value] of Object.entries(params)) text = text.replaceAll(`{${name}}`, value);
 			return text;
@@ -12725,9 +12729,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			passed: "verify.status.passed",
 			failed: "verify.status.failed"
 		};
-		/** One recorded attempt: a quality verdict or an acceptance anomaly. */
+		/** One recorded attempt: a quality verdict, an anomaly, or a budget stop. */
 		function AttemptRow({ attempt }) {
-			const exception = attempt.stage === "exception";
+			const exception = attempt.stage !== "quality";
 			const result = exception ? "failed" : attempt.passed ? "succeeded" : "failed";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
 				className: board_module_css_default.executionRow,
@@ -12955,9 +12959,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		/** One execution-history row. */
 		function ExecutionRow({ execution, timeZone, onOpen }) {
 			const result = execution.result;
+			const external = execution.external === true;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
 				className: board_module_css_default.executionRow,
 				"data-result": result,
+				"data-external": external ? "true" : void 0,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionBadge,
@@ -12973,7 +12979,12 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							execution.endedAt !== void 0 && ` · ${t$5("detail.executionEnded")} ${formatTime$3(execution.endedAt, timeZone)}`
 						]
 					}),
-					execution.initiatedBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					external && execution.initiatedBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: board_module_css_default.executionTimes,
+						title: execution.initiatedBy,
+						children: t$5("detail.execution.external", { agent: execution.initiatedBy })
+					}),
+					!external && execution.initiatedBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionTimes,
 						title: execution.initiatedBy,
 						children: t$5("detail.execution.initiator", { session: execution.initiatedBy })
@@ -16628,7 +16639,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 			}, "task-board: dictionaries");
 			try {
-				setRuntimeTranslate$3(ctx.locale.bind(NS$10));
+				setRuntimeTranslate$4(ctx.locale.bind(NS$10));
 			} catch {}
 			const settingsForm = bindSettingsForm$3(ctx);
 			const clientService = new TaskBoardClientService();
@@ -18228,10 +18239,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* follow a runtime language switch; the document-language pick above stays only
 		* as the unwired fallback.
 		*/
-		let runtimeT$2;
+		let runtimeT$3;
 		/** Wire the SDK translate seat; pass undefined to restore the document-language pick. */
-		function setRuntimeTranslate$2(t) {
-			runtimeT$2 = t;
+		function setRuntimeTranslate$3(t) {
+			runtimeT$3 = t;
 		}
 		/**
 		* Translate one key of this extension's catalog.
@@ -18244,7 +18255,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* @returns the localized text.
 		*/
 		function t$4(key, params) {
-			if (runtimeT$2 !== void 0) return runtimeT$2(key, params);
+			if (runtimeT$3 !== void 0) return runtimeT$3(key, params);
 			let text = dictionary$5()[key];
 			if (params !== void 0) for (const [name, value] of Object.entries(params)) text = text.replaceAll(`{${name}}`, value);
 			return text;
@@ -19994,7 +20005,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 			}, "task-board-github: dictionaries");
 			try {
-				setRuntimeTranslate$2(ctx.locale.bind(NS$9));
+				setRuntimeTranslate$3(ctx.locale.bind(NS$9));
 			} catch {}
 			let scope;
 			try {
@@ -26259,9 +26270,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"[class$=\"_headerUtilities\"]{display:none}",
 			"[class$=\"_composerSeat\"] [class$=\"_card\"]{margin-bottom:1px}",
 			"[class$=\"_composerSeat\"] [class$=\"_row\"]{flex-wrap:wrap;row-gap:0;padding:2px 8px 1px;position:relative}",
-			"[class$=\"_composerSeat\"] [class$=\"_add\"]{position:absolute;left:8px;top:50%;transform:translateY(-50%)}",
+			"[class$=\"_composerSeat\"] [class$=\"_add\"]{position:absolute;left:8px;top:50%;transform:translateY(-50%);z-index:10}",
 			"[class$=\"_composerSeat\"] [class$=\"_modes\"]{min-width:0;padding-left:38px}",
-			"[class$=\"_composerSeat\"] [class$=\"_trailing\"]{box-sizing:border-box;flex-basis:100%;position:relative;min-height:32px;justify-content:flex-start;padding-left:38px;padding-right:78px}",
+			"[class$=\"_composerSeat\"] [class$=\"_trailing\"]{box-sizing:border-box;flex-basis:100%;min-height:32px;justify-content:flex-start;padding-left:38px;padding-right:78px}",
 			"[class$=\"_composerSeat\"] [class$=\"_trailing\"] *{font-size:12px}",
 			"[class$=\"_composerSeat\"] [class$=\"_modes\"] [class$=\"_trigger\"]{height:24px;min-height:24px;font-size:12px}",
 			"[class$=\"_composerSeat\"] [class$=\"_trailing\"] [class$=\"_trigger\"]{height:24px;min-height:24px;font-size:11px}",
@@ -28768,14 +28779,14 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* surfaces follow a runtime language switch. The document-language pick stays
 		* as the unwired fallback (locale service absent, module-scope early callers).
 		*/
-		let runtimeT$1;
+		let runtimeT$2;
 		/** Wire the SDK translate seat; pass undefined to restore the document-language pick. */
-		function setRuntimeTranslate$1(t) {
-			runtimeT$1 = t;
+		function setRuntimeTranslate$2(t) {
+			runtimeT$2 = t;
 		}
 		/** Translate a key with optional {name} template params (current language). */
 		function tt$1(key, values) {
-			if (runtimeT$1 !== void 0) return runtimeT$1(key, values);
+			if (runtimeT$2 !== void 0) return runtimeT$2(key, values);
 			return t$3(dictionary$4(), key, values);
 		}
 		/** Human-readable error text from an unknown thrown value. */
@@ -44918,7 +44929,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 			}, "dsh-ssh: dictionaries");
 			try {
-				setRuntimeTranslate$1(ctx.locale.bind(NS$5));
+				setRuntimeTranslate$2(ctx.locale.bind(NS$5));
 			} catch {}
 			const controller = new PanelController$1({ panel: { select: (panelId) => {
 				(ctx.get?.("layout"))?.selectPanel?.(panelId);
@@ -47449,14 +47460,14 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* surfaces follow a runtime language switch. The document-language pick stays
 		* as the unwired fallback (locale service absent, module-scope early callers).
 		*/
-		let runtimeT;
+		let runtimeT$1;
 		/** Wire the SDK translate seat; pass undefined to restore the document-language pick. */
-		function setRuntimeTranslate(t) {
-			runtimeT = t;
+		function setRuntimeTranslate$1(t) {
+			runtimeT$1 = t;
 		}
 		/** Translate a key with optional {name} template params (current language). */
 		function tt(key, values) {
-			if (runtimeT !== void 0) return runtimeT(key, values);
+			if (runtimeT$1 !== void 0) return runtimeT$1(key, values);
 			let text = dictionary$3()[key] ?? key;
 			if (values !== void 0) for (const [name, value] of Object.entries(values)) text = text.replaceAll(`{${name}}`, String(value));
 			return text;
@@ -48448,7 +48459,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 			}, "skill-explorer: dictionaries");
 			try {
-				setRuntimeTranslate(ctx.locale.bind(NS$3));
+				setRuntimeTranslate$1(ctx.locale.bind(NS$3));
 			} catch {}
 			const api = new SkillApi();
 			const controller = new PanelController({ panel: { select: (panelId) => {
@@ -48561,8 +48572,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"usage.config.pollIntervalSec": "轮询间隔（秒）",
 			"usage.config.saveFailed": "保存失败：设置未被接受。",
 			"usage.bank.title": "鲸元券",
-			"usage.bank.hint": "官方 API 每消耗 100 万 tokens 铸造 1 鲸元；保存或分享这张票券。",
-			"usage.bank.noUsage": "暂无 DeepSeek 官方用量数据（统计自插件启用起）",
+			"usage.bank.hint": "DeepSeek 官方 API 与 MiMo 每消耗 100 万 tokens 铸造 1 鲸元；保存或分享这张票券。",
+			"usage.bank.noUsage": "暂无 DeepSeek 官方 / MiMo 用量数据（统计自插件启用起）",
 			"usage.bank.minted": "累计铸造 {minted} 鲸元（{tokens} tokens）",
 			"usage.bank.spend.observed": "官方余额实测花费 ¥{cost}（自 {since} 起）",
 			"usage.bank.spend.estimated": "消费估算：约 ¥{cost}",
@@ -48627,8 +48638,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"usage.config.pollIntervalSec": "Poll interval (seconds)",
 			"usage.config.saveFailed": "Save failed: the deployment did not accept the setting.",
 			"usage.bank.title": "Whale-yuan voucher",
-			"usage.bank.hint": "Every 1,000,000 tokens spent on the official API mint one whale yuan; save or share the note.",
-			"usage.bank.noUsage": "No official DeepSeek usage yet (counting starts when the plugin is enabled)",
+			"usage.bank.hint": "Every 1,000,000 tokens spent on the DeepSeek official API or on MiMo mint one whale yuan; save or share the note.",
+			"usage.bank.noUsage": "No DeepSeek official or MiMo usage yet (counting starts when the plugin is enabled)",
 			"usage.bank.minted": "Minted {minted} whale yuan ({tokens} tokens)",
 			"usage.bank.spend.observed": "Spent ¥{cost} observed on the official balance (watching since {since})",
 			"usage.bank.spend.estimated": "Estimated spend: about ¥{cost}",
@@ -49521,8 +49532,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		//#endregion
 		//#region ../dsh-usage/src/client/voucher.ts
 		/**
-		* The Whale-yuan voucher (鲸元券): the DeepSeek official family's retained
-		* ledger totals stamped onto the banknote artwork as a denomination, ready
+		* The Whale-yuan voucher (鲸元券): the mint family's retained ledger totals
+		* stamped onto the banknote artwork as a denomination, ready
 		* to save or share. The canvas copy is deliberately locale-neutral (digits,
 		* latin captions, ISO dates) so the exported image needs no dictionary;
 		* everything user-facing around it lives in the section's locales. The pure
@@ -49544,21 +49555,41 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			return `${date.getFullYear()}-${month}-${day}`;
 		}
 		/**
-		* Sum the DeepSeek official family rows out of a usage window (both the
-		* `deepseek` catalog alias and the live `deepseek-official` route fold into
-		* one voucher). Undefined when the window is absent (older host) or the
-		* family has no usage — a zero-token note mints nothing.
+		* Provider route ids minted beside the DeepSeek official family: the MiMo
+		* gateway, which a profile may run as its default route and which the ledger
+		* records under its own route id. The bank counts the tokens a profile spends,
+		* not only the ones DeepSeek bills. Route ids rather than adapter families
+		* because minting is an accounting decision that must never widen the
+		* credential or probing paths — the same split `isDeepSeekProviderRoute()`
+		* keeps against `adapterFor()` (issue #1772). An empty list mints exactly the
+		* official family, which is how a profile that never runs MiMo behaves.
 		*/
-		function deepseekVoucherData(window) {
+		const EXTRA_MINT_ROUTE_IDS = ["mimo"];
+		/** Whether one provider route's ledger rows mint whale yuan. */
+		function mintsWhaleYuan(provider) {
+			return isDeepSeekProviderRoute(provider) || EXTRA_MINT_ROUTE_IDS.includes(provider);
+		}
+		/**
+		* Sum the mint family's rows out of a usage window: the whole DeepSeek
+		* official family (the `deepseek` catalog alias, the live `deepseek-official`
+		* route and the signed-in `deepseek-account` route all fold into one voucher)
+		* plus {@link EXTRA_MINT_ROUTE_IDS}. Undefined when the window is absent
+		* (older host) or the family has no usage — a zero-token note mints nothing.
+		*
+		* Only the priced family contributes `cost`: MiMo ships no price book, so it
+		* mints tokens and calls while the spend line keeps reporting the official
+		* family's fold-time estimate (and the observed-balance watch above it).
+		*/
+		function voucherData(window) {
 			if (window === void 0) return void 0;
 			let tokens = 0;
 			let calls = 0;
 			let cost = 0;
 			for (const row of window.providers) {
-				if (!isDeepSeekProviderRoute(row.provider)) continue;
+				if (!mintsWhaleYuan(row.provider)) continue;
 				tokens += totalTokens(row.totals);
 				calls += row.totals.calls;
-				cost += row.totals.cost;
+				if (isDeepSeekProviderRoute(row.provider)) cost += row.totals.cost;
 			}
 			if (tokens <= 0) return void 0;
 			return {
@@ -50245,18 +50276,18 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			return totals.inputTokens + totals.cacheReadTokens + totals.cacheWriteTokens + totals.outputTokens;
 		}
 		/**
-		* The Token 银行 card: the DeepSeek official family's retained-ledger usage
-		* minted onto the whale-yuan note at 1,000,000 tokens per whale yuan. The
-		* window is the whole retained ledger by default (the host's aggregate,
-		* falling back to the 30-day trend when an older host serves no `all`) or the
-		* single day the user picked; the spend line prefers the official balance
-		* watch (whole window only) and falls back to the fold-time estimate; the
-		* artwork draw failure degrades to an error line and never takes the section
-		* down.
+		* The Token 银行 card: the mint family's (DeepSeek official + MiMo)
+		* retained-ledger usage minted onto the whale-yuan note at 1,000,000 tokens
+		* per whale yuan. The window is the whole retained ledger by default (the
+		* host's aggregate, falling back to the 30-day trend when an older host serves
+		* no `all`) or the single day the user picked; the spend line prefers the
+		* official balance watch (whole window only) and falls back to the fold-time
+		* estimate, which only the priced family feeds; the artwork draw failure
+		* degrades to an error line and never takes the section down.
 		*/
 		function VoucherCard(props) {
 			const { window: ledger, observedSpend, loading, error } = props;
-			const data = deepseekVoucherData(ledger);
+			const data = voucherData(ledger);
 			const canvasRef = (0, react.useRef)(null);
 			const [drawError, setDrawError] = (0, react.useState)(void 0);
 			(0, react.useEffect)(() => {
@@ -51780,12 +51811,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		}
 		//#endregion
 		//#region ../dsh-session-archive/src/client/locales.ts
-		/**
-		* dsh-session-archive locale dictionaries (zh/en). The zh dictionary is the
-		* key source; `en` mirrors its full key set (packages/AGENTS.md bilingual
-		* discipline). Russian copy ships centrally in dsh-i18n.
-		* @module @linxin666/dsh-session-archive/client/locales
-		*/
 		/** Dictionary namespace this package registers. */
 		const NS$1 = "dsh-web-ui-session-archive";
 		/** Chinese copy (key source). */
@@ -52043,14 +52068,42 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"arch.current.badge": "current"
 		};
 		/**
-		* Active dictionary, picked by the document language at call time (the
-		* settings section has no framework locale seat of its own).
+		* Unwired fallback dictionary, picked by the document language at call time.
+		* A zh/en-only pick, so it can only ever answer the two languages this
+		* package ships: it stays in force exactly while the locale service seat
+		* below is unwired.
 		*/
 		function dictionary$1() {
 			return (typeof document !== "undefined" ? document.documentElement.lang : "zh").toLowerCase().startsWith("en") ? en$1 : zh$1;
 		}
-		/** Translate a key with optional `{name}` template params; missing keys degrade to the key. */
+		/**
+		* Locale-service translate seat, wired by the browser apply() through
+		* ctx.locale.bind(NS) (setRuntimeTranslate). The bound function resolves the
+		* ACTIVE language at call time, so every card surface reads the dictionary
+		* the host currently serves: this package's zh/en plus any language a pack
+		* registers for this namespace (dsh-i18n's ru), walked along that language's
+		* declared fallback chain. Reading the document language instead sent every
+		* non-en language into the zh branch, which left the card body Chinese while
+		* the nav label of the same namespace localized correctly.
+		*
+		* Undefined until wired, so the document-language fallback above stays in
+		* force when the locale service is absent or a caller runs before the
+		* plugin mounts.
+		*/
+		let runtimeT;
+		/**
+		* Wire the locale-service translate seat; pass undefined to restore the
+		* document-language fallback.
+		*/
+		function setRuntimeTranslate(translate) {
+			runtimeT = translate;
+		}
+		/**
+		* Translate a key with optional `{name}` template params in the active
+		* language; a missing key degrades to the key itself.
+		*/
 		function t$1(key, params) {
+			if (runtimeT !== void 0) return runtimeT(key, params);
 			let text = dictionary$1()[key] ?? key;
 			if (params !== void 0) for (const [name, value] of Object.entries(params)) text = text.replaceAll(`{${name}}`, String(value));
 			return text;
@@ -53399,6 +53452,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					return () => {};
 				}
 			}, "dsh-session-archive: dictionaries");
+			try {
+				setRuntimeTranslate(ctx.locale.bind(NS$1));
+			} catch {}
 			const binder = ctx.get("webUiSettings");
 			const settingsForm = binder !== void 0 ? binder.bind({ namespace: ARCHIVE_SETTINGS_NS }) : createServedEntryForm({
 				forms: ctx.configForms,
