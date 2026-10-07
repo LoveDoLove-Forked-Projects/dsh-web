@@ -30,6 +30,12 @@ export const TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS: readonly number[] = [
 ]
 export const TASK_BOARD_API_PREFIX = '/api/task-board'
 
+/** Longest accepted caller identity on an external outcome record. */
+export const EXTERNAL_INITIATOR_MAX_LENGTH = 200
+
+/** Longest accepted free-text summary on an external outcome record. */
+export const EXTERNAL_SUMMARY_MAX_LENGTH = 1_000
+
 export type PowerPhase = 'disabled' | 'idle' | 'acquiring' | 'active' | 'error' | 'unsupported'
 
 export interface TaskBoardPowerSnapshot {
@@ -139,6 +145,17 @@ export type TaskBoardAction =
   | { kind: 'archive'; taskId: string }
   | { kind: 'restore'; taskId: string }
   | { kind: 'settle'; taskId: string }
+  /** Clear the acceptance anomalies recorded on a card's open execution (issue #1828). */
+  | { kind: 'reset-verification'; taskId: string }
+  /**
+   * Record an outcome an agent OUTSIDE the Host produced (issue #1826).
+   *
+   * It writes a real execution record, so the terminal column and the run
+   * history both derive from that one record instead of a bare column edit.
+   * `cancelled` is deliberately absent: nothing outside a DSH session may
+   * claim the Host closed a run, and `running` must stay Host-only.
+   */
+  | { kind: 'record-external-outcome'; taskId: string; result: 'succeeded' | 'failed'; initiatedBy: string; summary?: string }
   | { kind: 'set-schedule'; taskId: string; patch: { enabled?: boolean; cron?: string; timeZone?: string | null } }
   | { kind: 'run'; taskId: string }
   | { kind: 'rerun'; taskId: string }
@@ -209,6 +226,10 @@ function validImportedKnownFields(value: Record<string, unknown>): boolean {
       if (!optionalFiniteNumber(execution.endedAt) || !optionalString(execution.error)) return false
       if (execution.result !== undefined && !['succeeded', 'failed', 'cancelled'].includes(String(execution.result))) return false
       if (execution.initiatedBy !== undefined && typeof execution.initiatedBy !== 'string') return false
+      // An imported external marker is accepted (it is a declaration an
+      // operator made about their own board), but it is still just a boolean:
+      // the acceptance block below is what must never arrive from an import.
+      if (execution.external !== undefined && typeof execution.external !== 'boolean') return false
       if (execution.frozenBy !== undefined && typeof execution.frozenBy !== 'string') return false
       if (execution.frozenAt !== undefined && typeof execution.frozenAt !== 'number') return false
       // A well-formed acceptance block may be imported for inspection, but the
@@ -241,6 +262,7 @@ function importedTask(value: unknown): TaskRecord | undefined {
       result: execution.result,
       error: execution.error,
       ...(execution.initiatedBy === undefined ? {} : { initiatedBy: execution.initiatedBy }),
+      ...(execution.external === true ? { external: true } : {}),
       ...(execution.frozenAt === undefined ? {} : { frozenAt: execution.frozenAt }),
       ...(execution.frozenBy === undefined ? {} : { frozenBy: execution.frozenBy }),
       // 安全门（对抗场景 d）：验收报告是 Host 的判定，不接受 import 携带——
@@ -472,11 +494,36 @@ function parseEnvelopeAction(value: unknown): TaskBoardActionEnvelope | undefine
         },
       }
     }
+    case 'record-external-outcome': {
+      if (!exactKeys(action, ['kind', 'taskId', 'result', 'initiatedBy', 'summary'])) return undefined
+      if (taskId === undefined) return undefined
+      // Only a real outside verdict is accepted: `running` is Host-only and
+      // `cancelled` is the Host's own bookkeeping for a run it closed.
+      if (action.result !== 'succeeded' && action.result !== 'failed') return undefined
+      if (typeof action.initiatedBy !== 'string') return undefined
+      const initiatedBy = action.initiatedBy.trim()
+      // The caller must be identifiable: an unattributed external outcome is
+      // the same 'state without history' the record exists to avoid.
+      if (initiatedBy === '' || initiatedBy.length > EXTERNAL_INITIATOR_MAX_LENGTH) return undefined
+      if (action.summary !== undefined && typeof action.summary !== 'string') return undefined
+      const summary = typeof action.summary === 'string' ? action.summary.trim().slice(0, EXTERNAL_SUMMARY_MAX_LENGTH) : ''
+      return {
+        requestId: envelope.requestId,
+        action: {
+          kind: 'record-external-outcome',
+          taskId,
+          result: action.result,
+          initiatedBy,
+          ...(summary === '' ? {} : { summary }),
+        },
+      }
+    }
     case 'confirm-permission':
     case 'delete':
     case 'archive':
     case 'restore':
     case 'settle':
+    case 'reset-verification':
     case 'run':
     case 'rerun':
       if (!exactKeys(action, ['kind', 'taskId'])) return undefined

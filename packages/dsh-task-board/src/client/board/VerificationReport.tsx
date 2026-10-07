@@ -48,9 +48,12 @@ const PHASE_STATUS_KEY: Record<ReturnType<typeof verificationPhase>, TaskBoardKe
   failed: 'verify.status.failed',
 }
 
-/** One recorded attempt: a quality verdict or an acceptance anomaly. */
+/** One recorded attempt: a quality verdict, an anomaly, or a budget stop. */
 function AttemptRow({ attempt }: { attempt: VerificationAttempt }) {
-  const exception = attempt.stage === 'exception'
+  // Everything that is not a quality verdict renders as the anomaly row: a
+  // budget stop carries no score either, and showing it as a scored failure
+  // would read as a judgement the board never made.
+  const exception = attempt.stage !== 'quality'
   const result = exception ? 'failed' : attempt.passed ? 'succeeded' : 'failed'
   return (
     <li className={css.executionRow} data-result={result}>

@@ -87,6 +87,10 @@ function isTaskRecordShape(value: unknown): value is Omit<TaskRecord, 'status'> 
     if (entry.initiatedBy !== undefined && typeof entry.initiatedBy !== 'string') return false
     if (entry.frozenBy !== undefined && typeof entry.frozenBy !== 'string') return false
     if (entry.frozenAt !== undefined && typeof entry.frozenAt !== 'number') return false
+    // An external-outcome marker is optional in BOTH directions: a ledger
+    // written before the field existed carries none, and a non-boolean value
+    // is dropped by the repair below rather than trusted as provenance.
+    if (entry.external !== undefined && typeof entry.external !== 'boolean') return false
     // The acceptance block is repaired like every other optional field: an
     // unusable one is dropped, which can only make the board MORE strict.
     if (entry.verification !== undefined && normalizeVerification(entry.verification) === undefined) return false
@@ -210,6 +214,7 @@ export function parseLedger(raw: string | null): TaskRecord[] {
       // A malformed acceptance block is dropped rather than dropping the
       // execution record: the board then treats that run as unverified.
       verification: normalizeVerification(execution.verification),
+      external: execution.external === true ? true : undefined,
     }))
     // Execution targets are normalized like the schedule: blank strings
     // clear the pin and unknown permission strings from a future version

@@ -150,6 +150,56 @@ describe('task detail subtask block', () => {
   })
 })
 
+describe('execution history provenance', () => {
+  it('user reading a card finished outside this Host sees who finished it, not a session', () => {
+    // Given a card whose last run was reported by an outside agent
+    const { controller, tasks } = fakeController([task('task-a', {
+      status: 'done',
+      executions: [{
+        id: 'ext-1',
+        sessionId: undefined,
+        startedAt: NOW,
+        endedAt: NOW,
+        result: 'succeeded',
+        error: 'fixed the parser',
+        initiatedBy: 'codex',
+        external: true,
+      }],
+    })])
+
+    // When the user opens the card
+    const container = render(<TaskDetail controller={controller} task={tasks[0]!} />)
+
+    // Then the row names the outside agent and is marked as external
+    expect(container.textContent).toContain('codex')
+    expect(container.textContent).not.toContain(t('detail.viewSession'))
+    expect(container.querySelectorAll('[data-external="true"]')).toHaveLength(1)
+  })
+
+  it('user reading a card this Host ran still sees the initiating session', () => {
+    // Given a card with a normal Host-run execution
+    const { controller, tasks } = fakeController([task('task-a', {
+      status: 'done',
+      executions: [{
+        id: 'run-1',
+        sessionId: 'session-a',
+        startedAt: NOW,
+        endedAt: NOW,
+        result: 'succeeded',
+        error: undefined,
+        initiatedBy: 'session-a',
+      }],
+    })])
+
+    // When the user opens the card
+    const container = render(<TaskDetail controller={controller} task={tasks[0]!} />)
+
+    // Then the row still carries the session and is not marked external
+    expect(container.textContent).toContain(t('detail.execution.initiator', { session: 'session-a' }))
+    expect(container.querySelector('[data-external="true"]')).toBeNull()
+  })
+})
+
 describe('linking an existing task', () => {
   it('user picking a free task in the linker records it under the open parent', () => {
     // Given an open parent and one free on-board task

@@ -37,8 +37,23 @@ export interface ExecutionRecord {
    * Session id of the DSH session that issued the run/rerun action (issue #6
    * audit origin). Client-asserted, not a trust boundary; absent when the run
    * was triggered by cron (source unknown).
+   *
+   * On an EXTERNAL record (issue #1826) this names the agent that completed the
+   * work outside the Host instead, which is what makes the history readable.
    */
   initiatedBy?: string
+  /**
+   * True when this outcome was recorded from outside the Host by
+   * `record-external-outcome` rather than observed from a DSH session
+   * (issue #1826).
+   *
+   * The board never manufactures one of these itself: every Host-side path
+   * (`run`, `settle`, cascade folding, restart recovery) writes an execution
+   * without it, so `external` is the single field separating work this Host ran
+   * from work an outside agent reported. Such a record never carries a
+   * `sessionId` and never claims a verdict the Host observed.
+   */
+  external?: boolean
   /** Freeze instant captured from the card snapshot when the run opened. */
   frozenAt?: number
   /** Freeze source session captured from the card snapshot when the run opened. */
@@ -655,6 +670,21 @@ export function startExecution(
 }
 
 /**
+ * The column a settled outcome puts a card in. The ONE derivation shared by
+ * every settlement path (issue #1826): a Host-run execution and an outcome an
+ * outside agent reported both land in the same column from the same rule, so
+ * the column never becomes a second, independent piece of state.
+ @param task - the card being settled.
+ @param outcome - the settled outcome.
+ @returns the status the card shows afterwards.
+ */
+export function settledStatus(task: TaskRecord, outcome: ExecutionOutcome): TaskStatus {
+  if (outcome === 'succeeded') return task.schedule?.enabled === true ? 'todo' : 'done'
+  if (outcome === 'failed') return 'failed'
+  return task.status === 'running' ? 'todo' : task.status
+}
+
+/**
  * Settle a running execution: record the outcome and move the task into the
  * matching column. No-op (returns the input task) when the execution is not
  * the task's latest or is already settled.
@@ -673,11 +703,7 @@ export function settleExecution(
   const settled: ExecutionRecord = { ...execution, endedAt: now, result: outcome, error }
   const executions = [...task.executions]
   executions[index] = settled
-  const status: TaskStatus = outcome === 'succeeded'
-    ? (task.schedule?.enabled ? 'todo' : 'done')
-    : outcome === 'failed' ? 'failed'
-      : task.status === 'running' ? 'todo' : task.status
-  return { ...task, status, updatedAt: now, executions }
+  return { ...task, status: settledStatus(task, outcome), updatedAt: now, executions }
 }
 
 /** A settled-execution summary string for the detail view. */

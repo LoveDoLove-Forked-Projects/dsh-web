@@ -22,6 +22,16 @@ import { parseTaskDraft, TaskParseError } from './host-ai.ts'
 import { TASK_PERMISSIONS, isTaskPermission, type TaskPermission } from './core/tasks.ts'
 import { DEFAULT_SUBTASK_DEPTH, SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from './core/subtask.ts'
 import { DEFAULT_SESSION_POLL_SECONDS, SESSION_POLL_MAX_SECONDS, SESSION_POLL_MIN_SECONDS } from './core/poll-cadence.ts'
+import {
+  DEFAULT_VERIFICATION_BUDGET_SECONDS,
+  DEFAULT_VERIFICATION_CALL_TIMEOUT_SECONDS,
+  VERIFICATION_BUDGET_MAX_SECONDS,
+  VERIFICATION_BUDGET_MIN_SECONDS,
+  VERIFICATION_CALL_TIMEOUT_MAX_SECONDS,
+  VERIFICATION_CALL_TIMEOUT_MIN_SECONDS,
+  verificationBudgetMs,
+  verificationCallTimeoutMs,
+} from './core/verification-budget.ts'
 import { DEFAULT_SESSION_PERMISSION } from './core/handover.ts'
 import { buildTaskBoardTools, TASK_BOARD_TOOL_NAMES } from './host/agent-tools.ts'
 import { PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from './tool-surface.ts'
@@ -127,6 +137,23 @@ export interface Config {
    * sent, and the fallback to the model's own default is reported.
    */
   goalVerificationReasoningEffort?: Volatile<string>
+  /**
+   * Ceiling of ONE judge request of a goal acceptance, in seconds
+   * (30..600, default 150). One acceptance issues six judge requests (three
+   * criteria times two rounds), so a ceiling that is too small turns a slow but
+   * healthy judge route into a wall of timeouts, and every timeout was charged
+   * as an acceptance anomaly. Raise it for a reasoning model reading a long
+   * trace.
+   */
+  goalVerificationCallTimeoutSeconds?: Volatile<number>
+  /**
+   * Total ceiling of ONE goal acceptance attempt, in seconds (120..1800,
+   * default eight times the per-call default). Keep it at or above
+   * `goalVerificationCallTimeoutSeconds` times six or an acceptance can never
+   * finish: the attempt then ends early with a budget stop that judges nothing
+   * and spends no acceptance budget.
+   */
+  goalVerificationBudgetSeconds?: Volatile<number>
 }
 
 /**
@@ -170,6 +197,10 @@ export interface ConfigInput {
   goalVerificationModel?: string
   /** Judge reasoning effort; blank inherits the host default. */
   goalVerificationReasoningEffort?: string
+  /** Ceiling of one judge request of a goal acceptance, in seconds. */
+  goalVerificationCallTimeoutSeconds?: number
+  /** Total ceiling of one goal acceptance attempt, in seconds. */
+  goalVerificationBudgetSeconds?: number
 }
 
 export const Config: z<ConfigInput, Config> = z.object({
@@ -185,6 +216,8 @@ export const Config: z<ConfigInput, Config> = z.object({
   goalVerification: z.boolean().default(true).volatile(),
   goalVerificationModel: z.string().default('').volatile(),
   goalVerificationReasoningEffort: z.string().default('').volatile(),
+  goalVerificationCallTimeoutSeconds: z.number().min(VERIFICATION_CALL_TIMEOUT_MIN_SECONDS).max(VERIFICATION_CALL_TIMEOUT_MAX_SECONDS).default(DEFAULT_VERIFICATION_CALL_TIMEOUT_SECONDS).volatile(),
+  goalVerificationBudgetSeconds: z.number().min(VERIFICATION_BUDGET_MIN_SECONDS).max(VERIFICATION_BUDGET_MAX_SECONDS).default(DEFAULT_VERIFICATION_BUDGET_SECONDS).volatile(),
 })
 
 /** Schema default for the goal-acceptance switch, re-read for hand-built contexts. */
@@ -448,6 +481,15 @@ function applyImpl(ctx: Context, config?: Config): void {
     model: readConfigField(config?.goalVerificationModel, ''),
     reasoningEffort: readConfigField(config?.goalVerificationReasoningEffort, ''),
   })
+  /**
+   * The acceptance time ceilings, read live: raising one must unblock a card
+   * whose acceptance is stuck on a slow judge route without a remount, so
+   * these deliberately are NOT frozen into the per-execution contract.
+   */
+  const verificationCallTimeoutMsLive = (): number =>
+    verificationCallTimeoutMs(readConfigField(config?.goalVerificationCallTimeoutSeconds, DEFAULT_VERIFICATION_CALL_TIMEOUT_SECONDS))
+  const verificationBudgetMsLive = (): number =>
+    verificationBudgetMs(readConfigField(config?.goalVerificationBudgetSeconds, DEFAULT_VERIFICATION_BUDGET_SECONDS))
   // The catalog reader needs the service, and the service needs the reader;
   // the reader only runs after start(), so a late holder is enough.
   let hostForCatalog: TaskBoardHostService | undefined
@@ -556,6 +598,8 @@ function applyImpl(ctx: Context, config?: Config): void {
         // deployment records it; the acceptance degrades to the trajectory alone
         // when it does not.
         workspaceChanges: () => probeWorkspaceChanges(ctx),
+        callTimeoutMs: verificationCallTimeoutMsLive,
+        budgetMs: verificationBudgetMsLive,
         logger: {
           warn: (message: string, ...rest: unknown[]) => {
             const logger = (ctx as { logger?: { warn?: (...args: unknown[]) => void } }).logger

@@ -42,8 +42,14 @@ export const MAX_QUALITY_ATTEMPTS = 2
 /**
  * Anomaly budget of one cycle. A timeout, an authentication failure or an
  * unparseable judge answer is not a quality verdict, so it never consumes a
- * quality attempt; it is still bounded, so an unusable judge route can never
- * turn the completion gate into an unbounded retry loop.
+ * quality attempt.
+ *
+ * Reaching it does NOT judge the card: an unusable judge route is a property of
+ * the environment, not of the work, so a card must never be failed for it. The
+ * gate instead HOLDS the cycle open and runs no further judge call until the
+ * recorded anomalies are cleared by an explicit user action (see
+ * {@link withoutAcceptanceAnomalies}), which is what keeps the bound: one cycle
+ * spends at most this many judge rounds, and clearing them is a human decision.
  */
 export const MAX_EXCEPTION_ATTEMPTS = 2
 
@@ -329,13 +335,20 @@ export interface VerificationEvidenceSummary {
   workspaceFiles?: number
 }
 
-/** One recorded acceptance attempt: a quality verdict or an anomaly. */
+/** One recorded acceptance attempt: a quality verdict, an anomaly, or a budget stop. */
 export interface VerificationAttempt {
   /** 1-based ordinal within its own stage. */
   index: number
   /** When the attempt ran (ms epoch). */
   at: number
-  stage: 'quality' | 'exception'
+  /**
+   * `budget` records an acceptance the time budget ended before it could
+   * reach a verdict. It is neither a quality verdict nor an environment
+   * anomaly: the judge route may be perfectly healthy, the machine simply had
+   * no time left, so it is charged to no budget at all and cleared by the same
+   * explicit user action that clears anomalies.
+   */
+  stage: 'quality' | 'exception' | 'budget'
   /** Quality: whether the work passed. A recorded anomaly is never a pass. */
   passed: boolean
   /** Total score of the task's own work (0 for an anomaly). */
@@ -386,6 +399,36 @@ export function qualityAttempts(verification: ExecutionVerification | undefined)
 /** Anomaly attempts spent by this cycle. */
 export function exceptionAttempts(verification: ExecutionVerification | undefined): VerificationAttempt[] {
   return verification === undefined ? [] : verification.attempts.filter(attempt => attempt.stage === 'exception')
+}
+
+/**
+ * Attempts the time budget ended before a verdict, charged to no budget. They
+ * are kept so the report can say WHY an acceptance produced nothing, and they
+ * are cleared by the same explicit user action that clears anomalies.
+ */
+export function budgetAttempts(verification: ExecutionVerification | undefined): VerificationAttempt[] {
+  return verification === undefined ? [] : verification.attempts.filter(attempt => attempt.stage === 'budget')
+}
+
+/**
+ * The acceptance block with every non-quality attempt dropped: the explicit
+ * reset a user performs after fixing the environment (issue #1828).
+ *
+ * Only attempts that are not a quality verdict are dropped. A quality verdict
+ * is the board's own judgement of the work and survives every reset, so this
+ * can never buy an extra acceptance or re-open a judged failure; it only lets
+ * the environment be judged again.
+ * @param verification - the persisted acceptance state.
+ * @returns the cleared block, or undefined when there is nothing to clear.
+ */
+export function withoutAcceptanceAnomalies(verification: ExecutionVerification): ExecutionVerification | undefined {
+  const kept = verification.attempts.filter(attempt => attempt.stage === 'quality')
+  if (kept.length === verification.attempts.length) return undefined
+  const cleared: ExecutionVerification = { ...verification, attempts: kept }
+  delete cleared.inFlight
+  delete cleared.failedReason
+  delete cleared.failedAt
+  return cleared
 }
 
 /** The quality attempt that passed, when one did. */
@@ -455,7 +498,7 @@ function readAttempt(value: unknown): VerificationAttempt | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const row = value as Record<string, unknown>
   if (typeof row.index !== 'number' || typeof row.at !== 'number') return undefined
-  if (row.stage !== 'quality' && row.stage !== 'exception') return undefined
+  if (row.stage !== 'quality' && row.stage !== 'exception' && row.stage !== 'budget') return undefined
   if (typeof row.passed !== 'boolean') return undefined
   if (typeof row.score !== 'number' || !Number.isFinite(row.score)) return undefined
   if (typeof row.baseline !== 'number' || !Number.isFinite(row.baseline)) return undefined

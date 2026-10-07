@@ -114,8 +114,11 @@ function executionView(execution: ExecutionRecord): Record<string, unknown> {
     ...(execution.result === undefined ? {} : { result: execution.result }),
     ...(execution.error === undefined ? {} : { error: execution.error }),
     // The session that asked for the run (audit only; client-asserted by the
-    // browser, the calling session here).
+    // browser, the calling session here). On an external record it names the
+    // outside agent instead, which is what distinguishes it in the history.
     ...(execution.initiatedBy === undefined ? {} : { initiatedBy: execution.initiatedBy }),
+    // Set only by record-external-outcome: the Host observed no session for it.
+    ...(execution.external === true ? { external: true } : {}),
     ...(execution.runGroupId === undefined ? {} : { cascade: true }),
     // A deferred cascade parent has settled its own turn but still waits for
     // its subtasks; that is not a stuck card and the model must not retry it.
@@ -341,7 +344,9 @@ function buildManageTool(host: TaskBoardToolHost): ToolDefinition {
       'Move, archive, restore, delete, or settle one task board card.',
       'move-backlog, move-todo, move-running, move-done and move-failed are the manual column moves and cover every column; a card the runner is executing (one with an open execution) cannot be moved.',
       'A manual move writes the card column only and never fabricates an execution record, so the card reports a declaration rather than evidence of a run: done/failed declare work finished (or failed) outside a Host-run execution — human work, an external system, a decision made elsewhere — and running says the work is under way without a tracked session. Use task_board_run when the work should actually run in a session here.',
+      'record-external-outcome is the record-backed version of move-done and move-failed: use it when YOU, or another agent outside this Host, actually finished or failed the card with your own model, so the terminal column and the run history both derive from one execution record. It takes result (succeeded or failed) and initiatedBy (who completed it, for example your own agent name) plus an optional summary, and it is refused while the card still has an open execution: the Host stays the only authority over a run it is executing. It cannot record running or cancelled — those remain Host-only.',
       'settle force-closes the open execution of a card the board can no longer observe (a stuck running card) and records it cancelled with the caller as the reason, so the card returns to the todo column and can be run again.',
+      'reset-verification clears the acceptance anomalies (timeouts, authentication failures, an unresolvable judge route, or an attempt the time budget ended) recorded on a card open execution, so the next update_goal(action: complete) runs a fresh acceptance. It is refused unless that execution really carries such anomalies, it never clears a quality verdict, and a spent anomaly budget otherwise HOLDS the card open instead of failing it: tell the user the acceptance environment is unusable and that this action is how they clear it once they have fixed it.',
       'archive takes the whole subtask tree off the board and is refused while any member has an unsettled execution; restore brings the task, its ancestors and its subtree back; delete removes one card and is refused while it still has subtasks (detach or delete them first) or while it runs.',
       'It cannot confirm a permission binding: the confirmation gate is a human act performed in the board UI.',
     ].join(' '),
@@ -350,13 +355,59 @@ function buildManageTool(host: TaskBoardToolHost): ToolDefinition {
       action: {
         type: 'string',
         required: true,
-        enum: ['move-todo', 'move-backlog', 'move-running', 'move-done', 'move-failed', 'archive', 'restore', 'delete', 'settle'],
+        enum: ['move-todo', 'move-backlog', 'move-running', 'move-done', 'move-failed', 'archive', 'restore', 'delete', 'settle', 'reset-verification', 'record-external-outcome'],
         description: 'The lifecycle operation to perform.',
+      },
+      // Only record-external-outcome reads these two; every other action
+      // ignores them, so the model can pass them without a second tool call.
+      result: {
+        type: 'string',
+        enum: ['succeeded', 'failed'],
+        description: 'record-external-outcome only: the verdict the outside agent actually reached.',
+      },
+      initiatedBy: {
+        type: 'string',
+        description: 'record-external-outcome only: who finished the work outside this Host (for example your own agent name).',
+      },
+      summary: {
+        type: 'string',
+        description: 'record-external-outcome only: optional free-text note stored with the recorded outcome.',
       },
     },
     output: { schema: { type: 'json' }, render: renderJson },
     async execute(args, exec) {
       const initiator = callingSessionId(exec)
+      if (args.action === 'record-external-outcome') {
+        const result = args.result
+        const by = typeof args.initiatedBy === 'string' ? args.initiatedBy.trim() : ''
+        if (result !== 'succeeded' && result !== 'failed') {
+          return refused('missing-result', 'record-external-outcome needs result=succeeded or result=failed')
+        }
+        if (by === '') {
+          return refused('missing-initiator', 'record-external-outcome needs initiatedBy naming who completed the work outside this Host')
+        }
+        if (!host.snapshot().tasks.some(task => task.id === args.taskId)) {
+          return refused('task-not-found', 'no task with id ' + args.taskId)
+        }
+        try {
+          const snapshot = await host.apply(crypto.randomUUID(), {
+            kind: 'record-external-outcome',
+            taskId: args.taskId,
+            result,
+            initiatedBy: by,
+            ...(typeof args.summary === 'string' && args.summary.trim() !== '' ? { summary: args.summary } : {}),
+          }, initiator)
+          const task = snapshot.tasks.find(item => item.id === args.taskId)
+          return json({
+            ok: true,
+            action: args.action,
+            ...(task === undefined ? {} : { task: taskSummary(task, snapshot.tasks, snapshot.sessionDefaultPermission) }),
+            note: 'The outcome is recorded as its own execution, so the terminal column and the run history agree. Read it back with task_board_get.',
+          })
+        } catch (error) {
+          return refused('refused', messageOf(error))
+        }
+      }
       const actions: Record<string, TaskBoardAction> = {
         'move-todo': { kind: 'move', taskId: args.taskId, status: 'todo' },
         'move-backlog': { kind: 'move', taskId: args.taskId, status: 'backlog' },
@@ -365,6 +416,7 @@ function buildManageTool(host: TaskBoardToolHost): ToolDefinition {
         'move-failed': { kind: 'move', taskId: args.taskId, status: 'failed' },
         archive: { kind: 'archive', taskId: args.taskId },
         settle: { kind: 'settle', taskId: args.taskId },
+        'reset-verification': { kind: 'reset-verification', taskId: args.taskId },
         restore: { kind: 'restore', taskId: args.taskId },
         delete: { kind: 'delete', taskId: args.taskId },
       }

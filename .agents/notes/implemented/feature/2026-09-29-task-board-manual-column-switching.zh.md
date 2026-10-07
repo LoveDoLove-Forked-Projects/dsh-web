@@ -32,6 +32,10 @@ Status: implemented
 
 手工移动只经 `withStatus` 写入列，别的什么都不做：不产生执行记录、不动计划、不碰执行历史。`done`/`failed` 声明工作在 Host 执行之外结束（或失败），`running` 表示工作正在进行但没有对应会话。卡片的执行列表仍能区分两种来源，下一次结算的运行会用记录到的结果覆盖该列，持久化格式不变（`schemaVersion` 仍为 4，无迁移）。
 
+issue #1826 为同样两个列提供了第二条「有记录」的路径，用于 DSH 之外的 agent（Codex、Claude Code）确实用自己的模型把卡片做完或做失败的情况。`task_board_manage(action: 'record-external-outcome', result, initiatedBy)` 会写入一条真实 execution 记录——判定、完成者、可选摘要——并由它推导列，因此列与执行历史再也不会互相矛盾。手工移动仍然保留，也仍然是纯粹的声明：两者之别就是「我断言它完成了」与「这次运行就是这样结束的」。下面 Alternatives 里被否决的方案（只给 `move-done`/`move-failed` 解禁）恰恰会造成这种矛盾。
+
+护栏才是重点。卡片仍有未结算 execution 时拒绝外部结果：本 Host 正在执行该卡片时它才是唯一权威，过期的外部报告不得与它声称取代的那个会话赛跑；归档卡片同样拒绝。`running` 与 `cancelled` 根本不在协议联合里：`running` 只能由真实 DSH 会话产生，`cancelled` 是本 Host 对自己关闭的运行的记账。两者都由协议解析器拒绝，而不只是被劝阻。新记录带 `external: true` 且永远不带 `sessionId`——这是区分外部工作与 Host 运行的那一个字段；任何 Host 侧路径（启动、结算、级联收口、重启恢复）都不会写它。
+
 ## Alternatives considered
 
 **保留 running 归执行器，只放开规划列与判定列。** 否决：这会让「确实在进行中」的工作无法表达，而这正是本次诉求——追踪 DSH 之外工作的操作者只能选一个低估或高估的列。
@@ -39,6 +43,8 @@ Status: implemented
 **把 `running` 当普通列放开，但守卫继续读列。** 否决：手工停在该列的卡片会无法收拾（跑、移、归档、删除、settle 全部拒绝，且没有 execution 可供 settle 关闭）。放开列与移走锁是同一件事，不能拆成两步。
 
 **为手工状态新增持久化来源字段。** 否决：账本格式有版本，该字段需要加载时归一化、并在下一次结算运行时清除，且每位读者都要学会它。执行历史本身已把声明与运行分开。
+
+该否决在 issue #1826 中被部分取代，且取代范围很窄：被否决的是「在声明上加持久化字段」，而现在存在的字段在**执行记录**上，只在真有外部判定可记时才写，手工移动永不写它，也永远不需要清除（后续结算的运行照旧追加自己的一条记录，和重跑一直以来的行为一样）。被否决的是「让声明变持久」，落地的是「把一次外部运行记成一次运行」。
 
 **给手工停在进行中的卡片单独的标记或色调。** 暂时否决：详情页本就显示是否存在执行，而持久化标记还得由覆盖该列的结算路径负责清除——多一份状态，不多一分事实。
 
@@ -49,7 +55,11 @@ Status: implemented
 - 持有未结算执行的卡片锁定行为与消息完全不变。
 - 导入不再保留「无会话的未结算执行」，这类行在启动时被判 cancelled，而不是作为无法观察的运行残留。
 - 内容编辑的冻结时机从「处于 running 列」改为「出现第一条执行记录」，因此手工停在 running 的卡片仍可修正内容。
+- issue #1826 给那一列加上了「有记录的来源」：一张卡片现在可能因为真实执行结算而处于 `done`，也可能因为外部 agent 上报而处于 `done」，两者靠记录而非靠列区分。对进行中列的影响不变且仍是刻意的——它依旧只有两种含义，因为本 Host 之外没有任何东西有权把卡片放进那一列。
+- 外部记录的 `startedAt` 是登记时刻，而不是外部工作开始的时刻：Host 无从得知后者，编一个出来只会让历史说谎。
 
 ## Testing
 
 `tests/tasks.spec.ts` 钉住两个谓词（任意列可达，当前列与执行中/已归档卡片被拒），`tests/host-ledger.spec.ts` 手工把卡片停进 `running` 再移回、记录手工 `done` 时执行历史为空，并在导入归一化改变后改用真实启动驱动运行时投影，`tests/controller.spec.ts` 执行手工停在 running 的卡片、并在有未结算执行时仍拒绝二次启动，`tests/agent-tools.spec.ts` 经工具面驱动 `move-done` 并断言 `executionCount` 仍为 0，`tests/board-view.spec.tsx` 把卡片投到「已完成」与「进行中」列，同时拒绝拖拽执行中的卡片。包级 typecheck、测试与构建通过，`pnpm docs:check` 与 `pnpm i18n:check` 同时通过（移动文案已镜像进俄语字典）。
+
+issue #1826 新增：`tests/host-ledger.spec.ts` 钉住被记录的结果本身（一条 execution 带判定与完成者、没有 session，列由它推导）、失败变体、两种拒绝（有未结算 execution、已归档卡片），以及向后兼容——execution 行早于该标记的账本文档原样读回，不会凭空补出 `external`。`tests/protocol.spec.ts` 钉住协议规则：格式正确的结果连同裁剪后的摘要一起通过，而 `running`、`cancelled`、无名调用方、超长调用方、缺判定与多余的 `sessionId` 键全部在解析器被拒。`tests/agent-tools.spec.ts` 两次驱动该工具——一次记录真实结果并经 `task_board_get` 读回，一次在本 Host 正在运行该卡片时被拒——并覆盖两个缺字段的拒绝。`tests/subtask-view.spec.tsx` 钉住历史行：外部记录显示其 agent 且没有会话链接，Host 运行仍显示发起会话，且该行通过 `data-external` 对机器可读。

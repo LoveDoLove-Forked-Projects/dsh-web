@@ -11,7 +11,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HostTaskLedger } from '../src/host-ledger.ts'
 import { createGoalVerificationGate, type GateExecution } from '../src/host/verification-gate.ts'
 import { collectEvidence } from '../src/host/verification-runner.ts'
@@ -19,6 +19,7 @@ import {
   EMPTY_WORK_BASELINE,
   MAX_EXCEPTION_ATTEMPTS,
   VERIFICATION_THRESHOLD,
+  budgetAttempts,
   buildAcceptancePrompt,
   evidenceNonce,
   exceptionAttempts,
@@ -464,8 +465,42 @@ describe('goal acceptance gate', () => {
     expect(exceptionAttempts(verification)).toHaveLength(1)
   })
 
-  it('user whose judge keeps failing to answer sees the execution fail closed at the anomaly budget', async () => {
-    // Given: a judge route that always throws
+  it('user whose judge keeps failing to answer sees the execution HELD open at the anomaly budget instead of failed', async () => {
+    // Given: a judge route that always throws, and a goal service that records blocks
+    const fx = fixture()
+    const goal = goalDouble('active')
+    const gate = gateOver({
+      ledger: fx.ledger,
+      llm: judgeLlm({ fail: () => new Error('401 unauthorized') }),
+      goal: goal,
+    })
+    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+
+    // When: the agent claims completion up to the anomaly budget and once more
+    const first = await gate(completion(agent))
+    const second = await gate(completion(agent))
+    const third = await gate(completion(agent))
+
+    // Then: the anomalies are bounded and classified, and the card is NOT judged
+    // failed for an environment that could not answer (issue #1828).
+    expect(first?.kind).toBe('deny')
+    expect((first as { kind: 'deny', reason: string }).reason).toContain('鉴权失败')
+    expect(second?.kind).toBe('deny')
+    const verification = verificationOf(fx.ledger)
+    expect(exceptionAttempts(verification)).toHaveLength(MAX_EXCEPTION_ATTEMPTS)
+    expect(qualityAttempts(verification)).toHaveLength(0)
+    expect(verification.failedReason).toBeUndefined()
+    expect(verificationPhase(verification)).not.toBe('failed')
+    expect(goal.blocks).toEqual([])
+
+    // And a spent budget refuses the claim again WITHOUT spending a judge call,
+    // so an unusable route cannot turn the gate into an unbounded retry loop.
+    expect((third as { kind: 'deny', reason: string }).reason).toContain('验收异常额度已用尽')
+    expect(exceptionAttempts(verificationOf(fx.ledger))).toHaveLength(MAX_EXCEPTION_ATTEMPTS)
+  })
+
+  it('user who repairs the acceptance environment and clears the anomalies sees the execution judged again', async () => {
+    // Given: an execution whose anomaly budget is spent by a broken judge route
     const fx = fixture()
     const gate = gateOver({
       ledger: fx.ledger,
@@ -473,20 +508,115 @@ describe('goal acceptance gate', () => {
       goal: goalDouble('active'),
     })
     const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    await gate(completion(agent))
+    await gate(completion(agent))
+    expect(verificationOf(fx.ledger).failedReason).toBeUndefined()
 
-    // When: the agent claims completion up to the anomaly budget
-    const first = await gate(completion(agent))
-    const second = await gate(completion(agent))
+    // When: the environment is repaired and the user clears the recorded anomalies
+    fx.ledger.applyRequest('req-reset', { kind: 'reset-verification', taskId: fx.taskId })
 
-    // Then: anomalies are bounded, classified, and end the execution instead of
-    // silently succeeding or looping forever.
-    expect(first?.kind).toBe('deny')
-    expect((first as { kind: 'deny', reason: string }).reason).toContain('鉴权失败')
-    expect(second?.kind).toBe('deny')
+    // Then: the anomaly counter is cleared, no quality verdict was invented or
+    // lost, and the next completion claim runs a real acceptance again.
+    expect(exceptionAttempts(verificationOf(fx.ledger))).toHaveLength(0)
+    const repaired = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'A' }), goal: goalDouble('active') })
+    const decision = await repaired(completion(agent))
+    expect(decision).toEqual({ kind: 'allow' })
+    expect(passedAttempt(verificationOf(fx.ledger))?.passed).toBe(true)
+  })
+
+  it('user clearing the acceptance record of an execution that was judged is refused, because a quality verdict is not an anomaly', async () => {
+    // Given: an execution whose acceptance produced a real quality verdict
+    const fx = fixture()
+    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'A' }), goal: goalDouble('active') })
+    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    await gate(completion(agent))
+
+    // When: the user tries to clear the acceptance record
+    const refused = (() => {
+      try {
+        fx.ledger.applyRequest('req-reset', { kind: 'reset-verification', taskId: fx.taskId })
+        return ''
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+    })()
+
+    // Then: the reset is refused and the recorded verdict survives untouched.
+    expect(refused).toContain('no acceptance anomaly')
+    expect(passedAttempt(verificationOf(fx.ledger))?.passed).toBe(true)
+  })
+  it('operator whose acceptance runs out of time sees a budget stop that spends no judge call and fails nothing', async () => {
+    // Given: a clock that consumes the whole acceptance budget before the first
+    // judge call could ever finish
+    const fx = fixture()
+    let clock = NOW
+    const gate = createGoalVerificationGate({
+      ledger: fx.ledger,
+      llm: () => judgeLlm({ grade: 'A' }) as never,
+      goals: () => goalDouble('active') as never,
+      budgetMs: () => 100_000,
+      callTimeoutMs: () => 150_000,
+      logger: { warn: () => {} },
+      now: () => { clock += 60_000; return clock },
+    })
+    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+
+    // When: the agent claims completion
+    const decision = await gate(completion(agent))
+
+    // Then: no judge call was started (issue #1828), the outcome is recorded as a
+    // budget stop rather than an anomaly, and the execution is not judged failed.
+    expect(decision?.kind).toBe('deny')
+    expect((decision as { kind: 'deny', reason: string }).reason).toContain('验收未完成')
     const verification = verificationOf(fx.ledger)
-    expect(exceptionAttempts(verification)).toHaveLength(MAX_EXCEPTION_ATTEMPTS)
+    expect(budgetAttempts(verification)).toHaveLength(1)
+    expect(exceptionAttempts(verification)).toHaveLength(0)
     expect(qualityAttempts(verification)).toHaveLength(0)
-    expect(verification.failedReason).toContain('验收异常达到上限')
+    expect(verification.attempts[0]?.usage.calls).toBe(0)
+    expect(verification.failedReason).toBeUndefined()
+  })
+
+  it('operator who configures the judge ceiling sees a per-call timeout charged as an anomaly, not an abort', async () => {
+    // Given: a judge whose stream only ends when its own request signal fires,
+    // and a ceiling far inside the outer acceptance budget
+    const fx = fixture()
+    const blocking = judgeRuntime((request: { messages: readonly { content: readonly { text?: string }[] }[]; signal?: AbortSignal }) => (async function * () {
+      await new Promise<void>(resolve => {
+        request.signal?.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+      yield { type: 'text-delta', index: 0, text: '<score_A> A </score_A>' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    })())
+    const gate = createGoalVerificationGate({
+      ledger: fx.ledger,
+      llm: () => blocking as never,
+      goals: () => goalDouble('active') as never,
+      budgetMs: () => 600_000,
+      callTimeoutMs: () => 30_000,
+      logger: { warn: () => {} },
+      now: () => NOW,
+    })
+    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    vi.useFakeTimers()
+    try {
+      // When: the agent claims completion and every configured ceiling elapses
+      // (three bounded retries at 30s each)
+      let decision: Awaited<ReturnType<typeof gate>> | undefined
+      const pending = gate(completion(agent)).then((result) => { decision = result })
+      for (let turn = 0; turn < 8 && decision === undefined; turn += 1) await vi.advanceTimersByTimeAsync(30_000)
+      await pending
+
+      // Then: the acceptance ended on the CONFIGURED per-call ceiling as a
+      // bounded anomaly with no verdict; the outer budget was never what ended it.
+      expect(decision?.kind).toBe('deny')
+      const verification = verificationOf(fx.ledger)
+      expect(exceptionAttempts(verification)).toHaveLength(1)
+      expect(exceptionAttempts(verification)[0]?.error).toContain('timed out after 30s')
+      expect(qualityAttempts(verification)).toHaveLength(0)
+      expect(verification.failedReason).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('user whose provider plugin replaced the public llm.stream still gets a real acceptance verdict', async () => {

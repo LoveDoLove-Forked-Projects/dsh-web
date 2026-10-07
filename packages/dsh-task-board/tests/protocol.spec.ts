@@ -251,3 +251,40 @@ describe('label management actions', () => {
   })
 })
 
+describe('external outcome actions', () => {
+  it('operator reporting work finished outside this Host gets it carried with its caller', () => {
+    // Given an outside agent reporting a succeeded outcome with a summary
+    // When the envelope is parsed
+    const accepted = parseActionEnvelope({
+      requestId: 'ext-ok',
+      action: { kind: 'record-external-outcome', taskId: 'task-a', result: 'succeeded', initiatedBy: 'codex', summary: '  tests green  ' },
+    })
+
+    // Then the verdict, the caller and the trimmed note all survive
+    expect(accepted?.action).toEqual({
+      kind: 'record-external-outcome',
+      taskId: 'task-a',
+      result: 'succeeded',
+      initiatedBy: 'codex',
+      summary: 'tests green',
+    })
+  })
+
+  it('operator cannot report running or cancelled, an unnamed caller, or a verdict carrying extra keys', () => {
+    // Given envelopes that each break one of the action's own rules
+    // When each is parsed
+    const rejected = [
+      { kind: 'record-external-outcome', taskId: 'task-a', result: 'running', initiatedBy: 'codex' },
+      { kind: 'record-external-outcome', taskId: 'task-a', result: 'cancelled', initiatedBy: 'codex' },
+      { kind: 'record-external-outcome', taskId: 'task-a', result: 'succeeded', initiatedBy: '   ' },
+      { kind: 'record-external-outcome', taskId: 'task-a', result: 'succeeded' },
+      { kind: 'record-external-outcome', taskId: 'task-a', result: 'succeeded', initiatedBy: 'codex', sessionId: 's-1' },
+      { kind: 'record-external-outcome', taskId: 'task-a', result: 'succeeded', initiatedBy: 'c'.repeat(201) },
+    ]
+
+    // Then none survives: only a real outside verdict with an identifiable caller does
+    const outcomes = rejected.map((action, index) => parseActionEnvelope({ requestId: 'ext-rejected-' + String(index), action }))
+    expect(outcomes).toEqual(rejected.map(() => undefined))
+  })
+})
+

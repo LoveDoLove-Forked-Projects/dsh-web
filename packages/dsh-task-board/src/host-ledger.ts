@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { dshHome } from './dsh-home.ts'
 import { isValidCron, isValidTimeZone, nextRunAtMs, resolveHostTimeZone } from './core/schedule.ts'
 import { isTaskRecord, parseLedger } from './core/store.ts'
-import { canMoveManually, hasOpenExecution, retainRecentExecutions, settleExecution, startExecution, withStatus, type ExecutionOutcome, type ExecutionRecord, type TaskRecord } from './core/tasks.ts'
+import { canMoveManually, hasOpenExecution, retainRecentExecutions, settleExecution, settledStatus, startExecution, withStatus, type ExecutionOutcome, type ExecutionRecord, type TaskRecord } from './core/tasks.ts'
 import {
   DEFAULT_SUBTASK_DEPTH,
   cascadeTargets,
@@ -23,7 +23,7 @@ import { applySetParent } from './core/use-cases/task-parent.ts'
 import { applyDeleteTag, applyRenameTag } from './core/use-cases/task-tag.ts'
 import { applyUpdateTask, canEditTaskContent, hasContentPatch } from './core/use-cases/task-update.ts'
 import { TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS, TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts'
-import type { ExecutionVerification } from './core/verification.ts'
+import { withoutAcceptanceAnomalies, type ExecutionVerification } from './core/verification.ts'
 import { DEFAULT_SESSION_PERMISSION, effectivePermission, permissionCarriedBy, requiresPermissionConfirmation, type TaskPermission } from './core/handover.ts'
 
 interface PersistedScheduler extends TaskBoardSchedulerSnapshot {
@@ -900,6 +900,37 @@ export class HostTaskLedger {
         this.document.tasks = [...result.tasks]
         break
       }
+      case 'record-external-outcome': {
+        const task = this.document.tasks.find(item => item.id === action.taskId)
+        if (task === undefined) throw new Error('task not found')
+        if (task.archivedAt !== undefined) throw new Error('archived task is read-only')
+        // The one guardrail that matters: while the Host still owns a run it is
+        // the only authority on the card, so an outside agent may not write the
+        // terminal verdict over it. This is also what keeps a stale report from
+        // racing the session it claims to have replaced.
+        if (hasOpenExecution(task)) throw new Error('running task cannot receive an external outcome')
+        const execution: ExecutionRecord = {
+          // A fresh id, exactly like a Host-launched run: the external work is a
+          // new attempt in the history, never an overwrite of an earlier record.
+          id: crypto.randomUUID(),
+          sessionId: undefined,
+          startedAt: now,
+          endedAt: now,
+          result: action.result,
+          error: action.summary,
+          initiatedBy: action.initiatedBy,
+          external: true,
+        }
+        this.document.tasks = this.document.tasks.map(item => item.id !== action.taskId
+          ? item
+          : {
+            ...item,
+            status: settledStatus(item, action.result),
+            updatedAt: now,
+            executions: retainRecentExecutions([...item.executions, execution]),
+          })
+        break
+      }
       case 'settle': {
         const task = this.document.tasks.find(item => item.id === action.taskId)
         if (task === undefined) throw new Error('task not found')
@@ -926,6 +957,32 @@ export class HostTaskLedger {
         // Fold whatever became ready in the same action: an ancestor whose last
         // member this closed leaves the running column with it.
         this.finalizeReadyRuns(false)
+        break
+      }
+      case 'reset-verification': {
+        // The explicit user reset of the acceptance anomaly counter (issue
+        // #1828). It clears the attempts the ENVIRONMENT produced — timeouts,
+        // authentication failures, unresolvable routes, and attempts the time
+        // budget ended — and nothing else: a quality verdict is the board's own
+        // judgement of the work and survives every reset. Only the open
+        // execution is addressable, because the reset exists to unblock a
+        // completion claim on a run that is still going.
+        const task = this.document.tasks.find(item => item.id === action.taskId)
+        if (task === undefined) throw new Error('task not found')
+        if (task.archivedAt !== undefined) throw new Error('archived task is read-only')
+        const execution = [...task.executions].reverse().find(entry => entry.endedAt === undefined)
+        if (execution === undefined) throw new Error('task has no open execution')
+        const verification = execution.verification
+        if (verification === undefined || verification.applicability !== 'enforced') {
+          throw new Error('this execution is not gated by task acceptance')
+        }
+        const cleared = withoutAcceptanceAnomalies(verification)
+        if (cleared === undefined) throw new Error('this execution has no acceptance anomaly to reset')
+        this.document.tasks = this.document.tasks.map(item => item.id !== action.taskId ? item : {
+          ...item,
+          updatedAt: now,
+          executions: item.executions.map(entry => entry.id === execution.id ? { ...entry, verification: cleared } : entry),
+        })
         break
       }
       case 'restore': {

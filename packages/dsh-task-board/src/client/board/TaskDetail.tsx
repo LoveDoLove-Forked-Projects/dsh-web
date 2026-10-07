@@ -39,8 +39,12 @@ const RESULT_KEY: Record<NonNullable<ExecutionRecord['result']>, TaskBoardKey> =
 /** One execution-history row. */
 function ExecutionRow({ execution, timeZone, onOpen }: { execution: ExecutionRecord; timeZone?: string; onOpen: (sessionId: string) => void }) {
   const result = execution.result
+  // An external record is one the Host never observed running: no session, no
+  // spinner, and a named outside agent instead of the initiating session. The
+  // data attribute keeps the distinction machine-readable too.
+  const external = execution.external === true
   return (
-    <li className={css.executionRow} data-result={result}>
+    <li className={css.executionRow} data-result={result} data-external={external ? 'true' : undefined}>
       <span className={css.executionBadge} data-result={result}>
         {result === undefined ? t('detail.result.running') : t(RESULT_KEY[result])}
       </span>
@@ -48,7 +52,12 @@ function ExecutionRow({ execution, timeZone, onOpen }: { execution: ExecutionRec
         {t('detail.executionStarted')} {formatTime(execution.startedAt, timeZone)}
         {execution.endedAt !== undefined && ` · ${t('detail.executionEnded')} ${formatTime(execution.endedAt, timeZone)}`}
       </span>
-      {execution.initiatedBy !== undefined && (
+      {external && execution.initiatedBy !== undefined && (
+        <span className={css.executionTimes} title={execution.initiatedBy}>
+          {t('detail.execution.external', { agent: execution.initiatedBy })}
+        </span>
+      )}
+      {!external && execution.initiatedBy !== undefined && (
         <span className={css.executionTimes} title={execution.initiatedBy}>
           {t('detail.execution.initiator', { session: execution.initiatedBy })}
         </span>

@@ -4,12 +4,17 @@ import { collectEvidence, runAcceptance } from '../src/host/verification-runner.
 
 afterEach(() => { vi.useRealTimers() })
 
-function harness(replies: { text?: string; reason: FinishReason }[]) {
+function harness(replies: { text?: string; reason: FinishReason }[], options: { blocking?: boolean } = {}) {
   const budgets: number[] = []
   const llm = {
     prepareCall: async (config: { maxTokens: number }) => {
       const index = budgets.push(config.maxTokens) - 1
-      return { config, stream: async function* (): AsyncIterable<StreamChunk> {
+      return { config, stream: async function* (request: { signal?: AbortSignal }): AsyncIterable<StreamChunk> {
+        // A blocking answer ends only when its own per-call signal fires, which
+        // is what a route that stopped responding looks like to the runner.
+        if (options.blocking === true) {
+          await new Promise<void>(resolve => { request.signal?.addEventListener('abort', () => { resolve() }, { once: true }) })
+        }
         const reply = replies[Math.min(index, replies.length - 1)]!
         if (reply.text !== undefined) yield { type: 'text-delta', index: 0, text: reply.text }
         yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 1 } }
@@ -17,8 +22,8 @@ function harness(replies: { text?: string; reason: FinishReason }[]) {
       } }
     },
   } as unknown as LlmRuntime
-  const run = () => runAcceptance({ llm, route: { provider: 'test', model: 'judge' },
-    evidence: collectEvidence({}, 'test work', 0), threshold: 0.65, index: 1, signal: new AbortController().signal, now: () => 100 })
+  const run = (budgets?: { callTimeoutMs?: number; deadline?: number }) => runAcceptance({ llm, route: { provider: 'test', model: 'judge' },
+    evidence: collectEvidence({}, 'test work', 0), threshold: 0.65, index: 1, signal: new AbortController().signal, now: () => 100, ...budgets })
   return { budgets, run }
 }
 const valid = '<score_A>A</score_A><score_B>T</score_B>'
@@ -129,6 +134,35 @@ describe('judge stream recovery', () => {
     expect(attempt.error).toContain('[REDACTED]')
     // Then the recorded verdict and billing reflect the stream outcome.
     expect(attempt.error).not.toContain('private-test-value')
+  })
+
+  it('operator given an acceptance whose budget cannot fit a judge call, when it runs, then opens no call and judges nothing', async () => {
+    vi.useFakeTimers()
+    // Given a provider stream and a total budget shorter than one judge call.
+    const h = harness([{ text: valid, reason: { kind: 'stop' } }])
+    // When acceptance starts without room for the call it would have to make.
+    const { attempt } = await h.run({ callTimeoutMs: 60_000, deadline: 130 })
+    // Then the attempt is recorded as its own budget stage, billed nothing, and
+    // spent no judge call.
+    expect(attempt.stage).toBe('budget')
+    expect(attempt.passed).toBe(false)
+    expect(attempt.usage.calls).toBe(0)
+    expect(h.budgets).toEqual([])
+  })
+
+  it('operator given a live budget and a shorter configured ceiling, when the ceiling elapses, then charges an anomaly rather than an abort', async () => {
+    vi.useFakeTimers()
+    // Given a provider stream that only ends when its own request signal fires.
+    const h = harness([{ text: valid, reason: { kind: 'stop' } }], { blocking: true })
+    // When every bounded retry runs out under the configured per-call ceiling.
+    const pending = h.run({ callTimeoutMs: 30_000, deadline: 10_000_000 })
+    await vi.runAllTimersAsync()
+    const { attempt } = await pending
+    // Then the ceiling, not the outer budget, is what produced the anomaly.
+    expect(attempt.stage).toBe('exception')
+    expect(attempt.error).toContain('timed out after 30s')
+    expect(attempt.error).not.toContain('时间预算')
+    expect(attempt.usage.calls).toBe(3)
   })
 
   it('operator given cancellation after valid-looking text, when the stream ends, then refuses without retrying', async () => {

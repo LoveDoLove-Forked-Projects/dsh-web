@@ -108,6 +108,7 @@ export const ru: Record<string, string> = {
   'detail.editTags': 'Изменить теги',
   'detail.execution': 'История запусков',
   'detail.execution.initiator': 'Инициировано сессией {session}',
+  'detail.execution.external': 'Выполнено вне этого хоста: {agent}',
   'detail.executionEnded': 'Завершено',
   'detail.executionSettings': 'Настройки запуска',
   'detail.executionStarted': 'Запущено',

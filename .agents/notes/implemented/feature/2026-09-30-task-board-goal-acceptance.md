@@ -73,16 +73,50 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   as an applied edit; a deployment that serves no change service, or a failed
   read of one, degrades to the trajectory alone instead of failing the
   acceptance.
-- **Budget.** Two quality acceptances plus two anomalies per EXECUTION, recorded
-  on the execution record (`ExecutionRecord.verification`, ledger schema v5).
-  The key is the execution, not the goal id: an agent cannot mint a new goal to
-  reset the budget, and a repeated completion call, a new goal round, a plugin
-  reload and a Host restart all reuse the same cycle. A rerun or a scheduled
-  occurrence is a new execution with its own budget.
+- **Budget.** Two quality acceptances per EXECUTION, recorded on the execution
+  record (`ExecutionRecord.verification`, ledger schema v5). The key is the
+  execution, not the goal id: an agent cannot mint a new goal to reset the
+  budget, and a repeated completion call, a new goal round, a plugin reload and
+  a Host restart all reuse the same cycle. A rerun or a scheduled occurrence is
+  a new execution with its own budget. Anomalies and time-budget stops are
+  bounded separately and clear no quality budget (see below).
 - **Anomalies.** A timeout, an authentication failure, an unparseable judge
   answer and an unresolvable judge route are recorded as `exception` attempts
   separately from quality verdicts, never consume the quality budget, are
   bounded, and never pass silently.
+- **An anomaly never judges the work (issue #1828).** Reaching
+  `MAX_EXCEPTION_ATTEMPTS` does NOT finalize the cycle as failed and does NOT
+  block the goal: an unusable judge route is a property of the environment, and
+  a card must not be failed for it. The gate HOLDS the cycle open and spends no
+  further judge call until the recorded anomalies are cleared. That hold is what
+  keeps the bound real — one cycle can spend at most this many judge rounds, and
+  clearing them is a human decision.
+- **Reset.** `task_board_manage(action: reset-verification)` (ledger action
+  `reset-verification`) is the explicit reset: it drops every attempt that is NOT
+  a quality verdict — `exception` attempts and `budget` stops alike — and nothing
+  else. A quality verdict is the board's own judgement of the work and survives
+  every reset, so the reset can never buy an extra acceptance or re-open a
+  judged failure; it only lets the environment be judged again. It addresses the
+  card's open execution (the run that still needs to complete) and is refused
+  with the actual obstacle when there is no open execution, no acceptance block,
+  or nothing left to clear. It is deliberately NOT folded into the quality
+  budget: a budget reset would let an agent buy an extra acceptance by asking.
+- **Time budget (issue #1828).** Two row settings, `goalVerificationCallTimeoutSeconds`
+  (30..600, default 150) and `goalVerificationBudgetSeconds` (120..1800,
+  default 1200), normalized in `src/core/verification-budget.ts` beside the
+  existing `core/poll-cadence.ts` precedent and read LIVE, not frozen into the
+  contract: raising a ceiling must unblock a card without a plugin reload. The
+  total default is derived from the per-call default times the six judge calls
+  one acceptance needs plus two retries, because a total budget smaller than
+  six per-call ceilings guarantees that no acceptance can ever finish. Every
+  judge call is admitted against the deadline first: a call whose own ceiling
+  no longer fits in the time left is refused before it is opened, so a slow route
+  cannot spend the whole budget on calls the outer abort will kill anyway. An
+  outer abort produced by the budget expiring is classified `budget`, not
+  `aborted`, and recorded as a third attempt stage (`budget`) that is charged to
+  NO budget at all — it is neither a verdict nor an environment anomaly — so it
+  cannot consume either allowance or close the card. Per-call timeouts stay
+  `timeout` anomalies; only the outer deadline is a budget stop.
 - **Judge recovery.** Terminal events use the SDK `FinishReason.kind` object, including structured errors and cancellation; a failed or truncated stream never supplies a quality verdict, even if it contains score tags. Each criterion request has at most three attempts. Initial requests and retries use a fixed output cap of 16384 tokens without changing the frozen reasoning effort; empty, truncated, or malformed answers retry within that same cap. Authentication and cancellation stop immediately, while transient request failures retain bounded retries. Usage includes every billed attempt and propagates incomplete accounting. This handles reasoning models consuming the initial cap before visible scores without weakening the rubric or resetting the execution budget.
 - **Freeze.** `HostExecutionRunner.launch` reports when `/goal` was armed, and
   the service freezes the contract BEFORE the prompt is queued: the judge route
@@ -184,6 +218,12 @@ verifier's default acceptance ALGORITHM rather than the verifier.
 
 ## Consequences
 
+- A card whose acceptance environment is unusable is now stuck open rather than
+  failed: the agent's completion claim is refused with an explanation naming the
+  reset action, the report shows the anomalies, and the run ends only when the
+  user settles it (`settle`) or restarts it. That is the intended trade — a
+  clock-produced verdict is worse than an honest stuck card — but it does mean a
+  user must clear the anomalies (or rerun) rather than read a failure.
 - Forced acceptance is a cost decision as much as a quality one: one acceptance
   is three criteria times two rounds (six judge requests) and one execution may
   accept twice, so a goal cycle that needs its one repair spends up to twelve
@@ -239,6 +279,12 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   acceptance that still reaches a verdict when a third-party plugin replaced the
   public `llm.stream` with its waterfall-listener signature, and the public
   method kept as the fallback for a runtime that exposes no `prepareCall`.
+  Issue #1828 adds: the anomaly budget HELD open instead of finalizing the card
+  (no `failedReason`, no goal block, and a third call refused without another
+  judge call), the explicit reset clearing the counter and letting a repaired
+  route produce a real pass, the reset refused on an execution that only holds a
+  quality verdict, a budget stop that opens no judge call and spends no budget,
+  and the configured per-call ceiling ending the acceptance as a bounded anomaly.
 - `tests/goal-verification-service.spec.ts` (17 scenarios): the contract
   frozen and bound before the prompt, the switch off, `goalRun: false`, a
   refused `/goal`, an explicit route with an unsupported level, a scheduled
@@ -251,9 +297,19 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   checked card freezing an off contract with its own `skipped` reason, an
   unchecked card still enforced, and a skipped execution settling on the
   historical verdict.
+- `tests/verification-runner.spec.ts`: the two budget boundaries at the runner
+  itself — an acceptance whose remaining time cannot hold a single judge call
+  opens none and records the `budget` stage, while a live budget with a shorter
+  configured per-call ceiling charges a `timeout` anomaly that names the
+  configured ceiling rather than the outer budget.
 - `tests/goal-verification-view.spec.tsx`: a skipped execution renders a report
   that says the CARD skipped acceptance and never claims a pass, while an
   execution whose switch was off still renders nothing at all.
+- `tests/host-ledger.spec.ts` and `tests/agent-tools.spec.ts` cover the reset
+  action itself: the counter cleared with every recorded verdict preserved, the
+  second reset refused because nothing is left to clear, and both refusals that
+  name the real obstacle (no open execution, no acceptance gate) — once at the
+  ledger and once through the model-facing tool.
 - `tests/protocol.spec.ts` and the task-record round trips cover the field
   itself: only an explicit `true` is stored, a hand-edited `false` normalizes
   back to inheriting, the action gate accepts it on create and update, and the
