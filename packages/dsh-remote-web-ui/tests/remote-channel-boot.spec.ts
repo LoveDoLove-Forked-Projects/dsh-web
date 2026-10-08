@@ -4,7 +4,7 @@
  * the adoption hooks, and restore cleanly. Runs the generated script against
  * a fake window — no browser needed.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { renderIndexInjections } from '@deepseek-ai/dsh-host-webserver'
 
@@ -350,18 +350,17 @@ describe('remote channel boot patch (issue #987)', () => {
  */
 interface WatchWindow {
   location: { hostname: string; href: string; origin: string; reload: () => void }
-  document: { querySelector: (selector: string) => unknown }
+  document: { readyState: DocumentReadyState; querySelector: (selector: string) => unknown }
   sessionStorage: {
     store: Map<string, string>
     getItem(key: string): string | null
     setItem(key: string, value: string): void
     removeItem(key: string): void
   }
-  setTimeout(fn: () => void, ms: number): void
+  setTimeout: typeof setTimeout
   /** Minimal surfaces the channel patch wraps before the watchdog runs. */
   fetch: () => Promise<unknown>
   WebSocket: new () => unknown
-  ticks: Array<() => void>
   reloads: number
 }
 
@@ -375,15 +374,14 @@ function makeWatchWindow(appMounted: () => boolean, hostname = 'claire-grain-des
       origin: `https://${hostname}`,
       reload: () => { win.reloads += 1 },
     },
-    document: { querySelector: (selector) => (appMounted() ? { marker: selector } : null) },
+    document: { readyState: 'complete', querySelector: (selector) => (appMounted() ? { marker: selector } : null) },
     sessionStorage: {
       store: new Map<string, string>(),
       getItem(key) { return win.sessionStorage.store.get(key) ?? null },
       setItem(key, value) { win.sessionStorage.store.set(key, value) },
       removeItem(key) { win.sessionStorage.store.delete(key) },
     },
-    setTimeout(fn) { win.ticks.push(fn) },
-    ticks: [],
+    setTimeout,
     reloads: 0,
   }
   return win
@@ -396,12 +394,61 @@ function bootWatch(win: WatchWindow): void {
 
 /** Drive scheduled ticks until the watchdog reloads (or the queue drains). */
 function driveTicks(win: WatchWindow, max = 40): void {
-  for (let i = 0; i < max && win.reloads === 0 && win.ticks.length > 0; i++) {
-    win.ticks.shift()?.()
+  for (let i = 0; i < max && win.reloads === 0 && vi.getTimerCount() > 0; i++) {
+    vi.advanceTimersByTime(1_000)
   }
 }
 
 describe('boot watchdog', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
+
+  it.each(['loading', 'interactive'] as const)('user on a slow %s page gets the full recovery wait after resources finish', (readyState) => {
+    // Given: a remote shell whose first-screen resources are still downloading.
+    const win = makeWatchWindow(() => false)
+    win.document.readyState = readyState
+    bootWatch(win)
+
+    // When: downloading takes longer than the recovery budget.
+    driveTicks(win, 30)
+
+    // Then: the download is not interrupted and the reload latch is untouched.
+    expect(win.reloads).toBe(0)
+    expect(win.sessionStorage.store.has(BOOT_WATCHDOG_KEY)).toBe(false)
+
+    // When: resources finish but the app remains blank for less than 15 seconds.
+    win.document.readyState = 'complete'
+    driveTicks(win, 15)
+
+    // Then: download time has not consumed the recovery wait.
+    expect(win.reloads).toBe(0)
+
+    // When: the blank app exhausts its post-load recovery budget.
+    driveTicks(win, 1)
+
+    // Then: a single recovery reload is allowed and latched.
+    expect(win.reloads).toBe(1)
+    expect(win.sessionStorage.store.get(BOOT_WATCHDOG_KEY)).toBe('1')
+  })
+
+  it('user whose app mounts during loading keeps the successful page and clears a stale reload latch', () => {
+    // Given: an app still downloading resources, with a previous failed-boot latch.
+    let mounted = false
+    const win = makeWatchWindow(() => mounted)
+    win.document.readyState = 'loading'
+    win.sessionStorage.store.set(BOOT_WATCHDOG_KEY, '1')
+    bootWatch(win)
+
+    // When: the app mounts before the page finishes loading.
+    driveTicks(win, 5)
+    mounted = true
+    driveTicks(win, 30)
+
+    // Then: the successful page is retained and future failures can recover.
+    expect(win.reloads).toBe(0)
+    expect(win.sessionStorage.store.has(BOOT_WATCHDOG_KEY)).toBe(false)
+  })
+
   it('is embedded in the served boot script', () => {
     const script = buildRemoteChannelBootScript()
     expect(script).toContain(BOOT_WATCHDOG_KEY)
@@ -413,19 +460,19 @@ describe('boot watchdog', () => {
   it('stays unscheduled on loopback origins', () => {
     const win = makeWatchWindow(() => false, '127.0.0.1')
     bootWatch(win)
-    expect(win.ticks).toHaveLength(0)
+    expect(vi.getTimerCount()).toBe(0)
     expect(win.reloads).toBe(0)
   })
 
   it('reloads once when the app surface never mounts, then latches', () => {
     const win = makeWatchWindow(() => false)
     bootWatch(win)
-    expect(win.ticks).toHaveLength(1)
+    expect(vi.getTimerCount()).toBe(1)
     driveTicks(win)
     expect(win.reloads).toBe(1)
     expect(win.sessionStorage.store.get(BOOT_WATCHDOG_KEY)).toBe('1')
     // The latch holds: a second boot on the same session never reloads.
-    win.ticks.length = 0
+    vi.clearAllTimers()
     const second = makeWatchWindow(() => false)
     second.sessionStorage.store.set(BOOT_WATCHDOG_KEY, '1')
     bootWatch(second)

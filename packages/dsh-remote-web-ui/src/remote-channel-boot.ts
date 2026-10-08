@@ -204,7 +204,7 @@ export function buildRemoteChannelBootScript(rules: RemoteChannelRules = REMOTE_
 /** Boot-watchdog latch: one self-reload per session while the boot is broken. */
 export const BOOT_WATCHDOG_KEY = 'dsh-remote-boot-reload'
 
-/** Total wait for the app's first conversation surface before the reload. */
+/** Post-load wait for the app's first conversation surface before the reload. */
 const BOOT_WATCHDOG_WAIT_MS = 15_000
 
 /** Watchdog poll cadence. */
@@ -227,6 +227,9 @@ export function buildBootWatchdogScript(waitMs = BOOT_WATCHDOG_WAIT_MS, pollMs =
     ';function wBoot(){try{return !!(w.document&&w.document.querySelector&&(w.document.querySelector("[data-conversation-scroll]")||w.document.querySelector("[data-slot=\\"conversation\\"]")))}catch(e){return false}}' +
     'function wTick(n){try{' +
     'if(wBoot()){try{w.sessionStorage.removeItem(' + key + ')}catch(e){}return}' +
+    // Parse-time installation must not spend the recovery budget downloading
+    // the initial scripts/styles over a slow remote link (issue #1845).
+    'if(!w.document||w.document.readyState!=="complete"){w.setTimeout(function(){wTick(0)},' + pollMs + ');return}' +
     'if(n<' + waitMs + '){w.setTimeout(function(){wTick(n+' + pollMs + ')},' + pollMs + ');return}' +
     'var done=false;try{done=w.sessionStorage.getItem(' + key + ')==="1"}catch(e){}' +
     'if(done)return;' +
