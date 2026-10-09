@@ -267,7 +267,7 @@ describe('acceptance detail: the capacity bound survives a hand-edited ledger', 
     expect(kept?.gap.length).toBe(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS)
     expect(kept?.action?.length).toBe(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS)
     expect(kept?.quote.length).toBe(VERIFICATION_DETAIL_MAX_QUOTE_CHARS)
-    expect(raw.quote.length).toBeGreaterThan(kept?.quote.length)
+    expect(raw.quote.length).toBeGreaterThan(VERIFICATION_DETAIL_MAX_QUOTE_CHARS)
   })
 
   it('operator loading a legacy findings list that outgrew its bounds sees it clipped to the writer caps', () => {
