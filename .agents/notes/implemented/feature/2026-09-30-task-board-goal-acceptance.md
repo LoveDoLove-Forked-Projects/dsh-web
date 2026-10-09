@@ -178,6 +178,70 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   /api/task-board/verification` serves the resolved options and the host model
   catalog behind the board's usual loopback / authenticated-proxy guard.
 
+- **A veto nobody can locate is not a verdict.** A quality verdict is booked
+  only when the acceptance can point at the work. Every criterion whose score
+  makes the run fail must arrive with a STRUCTURED finding — the criterion it
+  belongs to, the requirement it imposes, the actual observation, the
+  difference, and a verbatim citation naming one of the evidence locations the
+  judge was given (`task`, `trajectory`, `workspace`, or `baseline`). The
+  check is program-level (`assessAcceptanceValidity` in `core/verification.ts`),
+  not a stronger prompt: the prompt merely tells the judge how to emit the
+  finding. A rejecting answer with no finding, a vacuous finding, a citation
+  that does not occur verbatim in the reviewed evidence, a citation of the
+  empty-work baseline, a citation shorter than the locating minimum, or a
+  criterion that is failed without its own evidence is recorded as an INVALID
+  acceptance — never as a quality verdict. The judge is told which slot holds
+  the work that round (the odd round swaps A/B), so the citation is mapped back
+  through `workSlotOfRound` and a veto of the work can never silently become a
+  veto of the baseline. Insufficient evidence (a truncated review window that
+  substantiates nothing) is its own invalid reason, because a judge that could
+  not see the output is not a judge that saw the work fail.
+- **An invalid acceptance consumes nothing.** Invalid acceptances are counted
+  separately (`VerificationAttempt.stage: 'invalid'`), bounded by
+  `MAX_INVALID_ATTEMPTS` (2), and consume neither the quality budget nor the
+  anomaly budget; the execution is NOT failed by them and no `failedReason` is
+  written. `verificationPhase` exposes a distinct `invalid` phase, so the card
+  and the report say "awaiting handling" rather than "failed". The agent's
+  feedback says the veto was unusable and explicitly NOT to repair anything
+  blindly; after the bound is spent the gate HOLDS — it opens no further judge
+  call and tells the user to clear the recorded invalid acceptances (the same
+  explicit `reset-verification` action the anomaly hold uses, whose
+  `withoutAcceptanceAnomalies` also drops the cleanup record) or rerun the
+  card. The bound is persisted on the ledger, so a Host restart, a repeated
+  completion call, a new goal round and a plugin reload all reuse it.
+- **Acceptance-only detail is cleaned automatically after a pass.** The
+  acceptance mechanism's own bulky material — per-attempt findings, the invalid
+  diagnostics, the structured citations — is removed once the execution PASSED
+  and its settlement is durable, and only a lightweight audit credential
+  remains (stage, pass flag, time, total and per-criterion scores, the judge
+  route, the evidence hash, a one-line problem summary and the cleanup state).
+  `withAcceptanceDetailCleared` is idempotent and purely additive to the
+  persisted block: nothing outside that execution's own `verification` field is
+  read or written, so no user file, task artifact, raw session history, host
+  change record or other execution's material is touched. The pass record and
+  the settlement are written FIRST; the cleanup runs after and its failure is
+  recorded as `cleanup.state: 'failed'` with the error and an attempt count —
+  it never revokes the pass. A boot-time catch-up pass completes any cleanup a
+  crash interrupted, and the UI renders the audit credential rather than
+  implying the judge gave no evidence.
+- **GLOBAL native /goal switch, default off.** A new row setting
+  `goalRunEnabled` (volatile, schema default `false`) is the master control
+  over whether this board starts a run with the built-in `/goal` at all. The
+  effective condition is the global switch AND the task's own `goalRun` not
+  being off; with the global switch off every card runs one plain turn. The
+  value is read ONCE per execution at launch and carried by value into the
+  runner, so a live settings edit only affects executions that start afterwards
+  and never arms, disarms or re-judges a run in flight — it covers the manual,
+  scheduled, session-reuse and team paths alike. A run that consequently never
+  became a goal run is recorded with its own applicability reason
+  (`goal-disabled`), distinct from a refused/unavailable `/goal`
+  (`goal-unavailable`), so it is neither reported as accepted nor failed for
+  lacking `update_goal(action: complete)`. The task-level option is disabled
+  with an explanation while the master switch is off and its stored value is
+  never rewritten, so re-enabling restores the user's own preference; the
+  collapsed run summary reports a single round when the master switch withholds
+  it. The switch is independent of the acceptance switch.
+
 ## Alternatives considered
 
 - **Import `dsh-llm-verifier/core` and call its exported primitives.** The
@@ -280,6 +344,24 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   row is exactly the additive change the v5 migration already describes, and
   bumping the version for it would make every deployment migrate a document
   whose shape did not change.
+- A judge that vetoes without usable evidence now costs the user a decision
+  instead of costing the agent a blind repair: the card stays open in the
+  `invalid` phase until the invalid acceptances are cleared or the card is
+  rerun. That is the intended trade — the alternative is an unreproducible
+  veto — but it means an unhelpful judge route needs the same explicit human
+  action the anomaly hold already required, and the settings copy tells the
+  user to look at the judge/evidence plumbing first.
+- The global switch defaults OFF, so an existing deployment that upgrades
+  starts running plain single turns until the user turns it on. That is the
+  requested default and it is the safe direction for quota: no card silently
+  begins a multi-round goal run after an upgrade. The task-level `goalRun`
+  preference is preserved untouched throughout, so re-enabling the master
+  switch restores exactly what each card had.
+- Cleanup deletes only what the acceptance mechanism itself wrote, and it
+  keeps the hash of the judged evidence: a later review can still prove WHICH
+  evidence backed a pass, but the per-criterion prose is gone. The stored
+  material is deliberately NOT copied anywhere else first — an extra full
+  evidence copy would be the leak the requirement forbids.
 
 ## Testing
 
@@ -342,3 +424,37 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   itself: only an explicit `true` is stored, a hand-edited `false` normalizes
   back to inheriting, the action gate accepts it on create and update, and the
   legacy import carries it while still stripping the acceptance block.
+- `tests/verification-validity.spec.ts` (10 scenarios) pins the veto-validity
+  rule at the pure layer: a failing criterion with no finding, a vacuous
+  finding, a citation absent from the reviewed evidence, a citation of the
+  empty-work baseline, an unfound second criterion, a workspace citation with
+  and without the host's record, and a citation shorter than the locating
+  minimum are each rejected with their own reason; a real trajectory citation
+  is accepted.
+- `tests/verification-cleanup.spec.ts` (8 scenarios) drives the real service,
+  ledger and settlement path: a passed execution's findings removed with the
+  audit credential and the evidence hash kept, a failed and an invalid
+  execution's detail retained, a second boot leaving an already-cleaned
+  execution's revision untouched, a crash-interrupted cleanup completed on the
+  next boot, a failed cleanup keeping the pass and the detail while recording
+  the error, the next boot healing it, only the passed execution of two
+  touched, and no user or unrelated file added or removed.
+- `tests/goal-verification-gate.spec.ts` grows the invalid-acceptance and
+  cleanup cases: an evidence-backed veto spending exactly one quality attempt
+  with locatable feedback, an evidence-free judge bounded to two invalid
+  acceptances and then HELD with no further judge call, the bound preserved
+  across a Host restart, an explicit clear reopening the budget so a later real
+  veto books, and the hold/retry copy proven not to read as a quality failure.
+- `tests/settings-goal-run-switch.spec.ts` (4 scenarios) covers the global
+  switch through the real settings-card controller: its unset default, a turn-on
+  committed alone (acceptance untouched), and an explicit false or a reset
+  behaving like every other boolean field.
+- `tests/goal-run.spec.ts`, `tests/task-detail-edit.spec.tsx`,
+  `tests/new-task-run.spec.tsx` and `tests/goal-verification-service.spec.ts`
+  cover the two-level switch: the global default producing a plain turn for a
+  card that never touched anything, the four combinations of the two switches,
+  a frozen value keeping an in-flight run's goal while a later execution sees
+  the change, the `goal-disabled` applicability being neither a pass nor a
+  failure, the task-level option disabled and explained under a closed master
+  switch while its stored preference survives, and the collapsed run summary
+  reporting a single round.
