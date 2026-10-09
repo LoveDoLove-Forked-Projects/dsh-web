@@ -104,16 +104,68 @@ export function retainRecentExecutions(executions: readonly ExecutionRecord[]): 
 }
 
 /**
+ * How a rule produces its triggers: a recurring cron rule, or one single
+ * planned instant. The distinction is stored rather than inferred so a
+ * one-shot is never represented as a date-restricted cron expression.
+ */
+export type ScheduleMode = 'cron' | 'once'
+
+/**
+ * Why a due occurrence produced no run, or why a rule stopped on its own.
+ *
+ * These are stable codes, not display text: the board renders them through its
+ * locale dictionary, so the ledger never carries a translated string.
+ */
+export type ScheduleStopReason =
+  /** The single planned instant produced its run. */
+  | 'fired'
+  /** The recurring rule reached its run budget. */
+  | 'limit'
+  /** The plan has no reachable instant any more (an impossible cron). */
+  | 'no-target'
+  /** The instant passed while the board was not running through it. */
+  | 'missed'
+  /** The task already had an open execution, so this occurrence was skipped. */
+  | 'busy'
+  /** An above-default permission was still unconfirmed, so this occurrence was skipped. */
+  | 'permission'
+
+/** Every stop reason this build understands; the repair and wire gates share it. */
+export const SCHEDULE_STOP_REASONS: readonly ScheduleStopReason[] = [
+  'fired', 'limit', 'no-target', 'missed', 'busy', 'permission',
+]
+
+/**
  * A scheduled-run rule attached to a task. The Host scheduler triggers the
  * task when `nextRunAt` is due and persists the rule in the Host ledger.
+ *
+ * A rule is either `cron` (the historical shape: a 5-field expression with an
+ * explicit IANA zone, optionally capped by `maxRuns`) or `once` (one planned
+ * instant, `at`, with an implicit budget of one run). Both modes count the
+ * executions the scheduler actually started in `runCount`; a rule that reaches
+ * its budget stops itself in the ledger (`enabled: false` + `endedReason`)
+ * instead of relying on the execution agent to disable it.
  */
 export interface ScheduleRule {
   /** Whether the schedule is armed. */
   enabled: boolean
-  /** 5-field cron expression: `分 时 日 月 周`. */
-  cron: string
   /**
-   * IANA zone the cron wall clock is read in (issue #1722). Absent means the
+   * Which kind of plan this rule carries. A rule loaded from a ledger written
+   * before the field existed normalizes to `cron` (its `cron` is the plan).
+   */
+  mode: ScheduleMode
+  /**
+   * 5-field cron expression: `分 时 日 月 周`. Present on a `cron` rule and
+   * absent on a `once` rule.
+   */
+  cron?: string
+  /**
+   * The instant a `once` rule executes (ms epoch). Kept after the run so the
+   * detail view can still show the planned time once the rule has ended.
+   */
+  at?: number
+  /**
+   * IANA zone the wall clock is read in (issue #1722). Absent means the
    * Host process zone, which is what a rule written before zones were
    * persisted keeps using; the Host stamps its own zone at ledger migration so
    * a later `TZ` change cannot silently move an existing rule.
@@ -123,6 +175,62 @@ export interface ScheduleRule {
   nextRunAt: number | undefined
   /** Instant of the latest scheduled trigger (ms epoch). */
   lastTriggeredAt: number | undefined
+  /**
+   * Scheduled executions the Host has created under this rule. This is the
+   * run budget's counter: it counts executions that were successfully opened
+   * (whatever their later outcome), never completions, and a manual run never
+   * touches it. A skipped occurrence (busy / permission / missed / no target)
+   * creates no execution and therefore consumes nothing.
+   */
+  runCount: number
+  /**
+   * Maximum scheduled executions for a `cron` rule; absent means unlimited
+   * (the historical behavior). A `once` rule has an implicit budget of one and
+   * stores no `maxRuns`.
+   */
+  maxRuns?: number
+  /** Instant the rule stopped itself (ms epoch); absent while it may still fire. */
+  endedAt?: number
+  /** Why the rule stopped itself; present with `endedAt`. */
+  endedReason?: ScheduleStopReason
+  /** Instant of the latest occurrence that produced no run. */
+  skippedAt?: number
+  /** Why that occurrence produced no run; present with `skippedAt`. */
+  skippedReason?: ScheduleStopReason
+}
+
+/**
+ * The rule's total run budget: one for a one-shot, the stored cap for a
+ * recurring rule, and undefined when the rule is unlimited.
+ * @param rule - the schedule rule.
+ * @returns the budget, or undefined for an uncapped rule.
+ */
+export function scheduleRunBudget(rule: ScheduleRule): number | undefined {
+  if (rule.mode === 'once') return 1
+  return rule.maxRuns
+}
+
+/**
+ * Whether a rule has no runs left. The scheduler refuses to open another
+ * execution for an exhausted rule, which is what makes the budget terminal
+ * regardless of restarts or repeated timer fires.
+ * @param rule - the schedule rule.
+ * @returns true when the run budget is spent.
+ */
+export function scheduleExhausted(rule: ScheduleRule): boolean {
+  const budget = scheduleRunBudget(rule)
+  return budget !== undefined && rule.runCount >= budget
+}
+
+/**
+ * The instant a rule plans to fire next, for display, whatever its mode: the
+ * planned `at` of a one-shot, or the stored `nextRunAt` of a recurring rule.
+ * @param rule - the schedule rule.
+ * @returns the planned instant, or undefined when the rule carries none.
+ */
+export function schedulePlannedAt(rule: ScheduleRule): number | undefined {
+  if (rule.mode === 'once') return rule.at
+  return rule.nextRunAt
 }
 
 /**
@@ -435,12 +543,22 @@ export interface NewTaskInput {
    */
   skipVerification?: boolean
   /**
-   * Optional scheduled-run rule requested at creation time (the new-task
-   * dialog): an enable flag, a 5-field cron expression, and the IANA zone its
-   * wall clock is read in (absent means the Host zone). The create use case
-   * arms it only when enabled and the expression is valid.
+   * Optional scheduling rule requested at creation time (the new-task
+   * dialog): an enable flag, the kind of plan (a recurring 5-field cron
+   * expression, or one planned instant for a one-shot), an optional run cap,
+   * and the IANA zone its wall clock is read in (absent means the Host zone).
+   * The create use case arms it only when enabled and the plan is valid.
    */
-  schedule?: { enabled: boolean; cron: string; timeZone?: string }
+  schedule?: {
+    enabled: boolean
+    mode?: ScheduleMode
+    cron?: string
+    /** Planned instant of a one-shot rule (ms epoch). */
+    at?: number
+    timeZone?: string
+    /** Run cap of a recurring rule; absent means unlimited. */
+    maxRuns?: number
+  }
   /**
    * Optional frozen context snapshot (goal/progress/next, sanitized by the
    * protocol gate) turning the new task into a continuation card.
@@ -597,35 +715,38 @@ export function withStatus(task: TaskRecord, status: TaskStatus, now: number): T
   return { ...task, status, updatedAt: now }
 }
 
+/** Every field a schedule patch may carry; the rest of the rule is carried over. */
+const SCHEDULE_PATCH_KEYS = [
+  'enabled', 'mode', 'cron', 'at', 'timeZone', 'nextRunAt', 'lastTriggeredAt',
+  'runCount', 'maxRuns', 'endedAt', 'endedReason', 'skippedAt', 'skippedReason',
+] as const satisfies ReadonlyArray<keyof ScheduleRule>
+
 /**
  * Merge a schedule patch into a task's schedule rule (creating it when
  * absent), with a fresh updatedAt. Keys present in the patch overwrite the
  * current value — including explicit `undefined`, which clears a field (used
- * to disarm `nextRunAt`); absent keys keep their current value.
+ * to disarm `nextRunAt` or to drop an ended/skip record); absent keys keep
+ * their current value.
  */
 export function withSchedule(
   task: TaskRecord,
   patch: Partial<ScheduleRule>,
   now: number,
 ): TaskRecord {
-  const current = task.schedule
-  const schedule: ScheduleRule = {
-    enabled: current?.enabled ?? false,
-    cron: current?.cron ?? '',
-    ...(current?.timeZone === undefined ? {} : { timeZone: current.timeZone }),
-    nextRunAt: current?.nextRunAt,
-    lastTriggeredAt: current?.lastTriggeredAt,
+  const schedule: ScheduleRule = task.schedule === undefined
+    ? { enabled: false, mode: 'cron', nextRunAt: undefined, lastTriggeredAt: undefined, runCount: 0 }
+    : { ...task.schedule }
+  const fields = schedule as unknown as Record<string, unknown>
+  const next = patch as unknown as Record<string, unknown>
+  for (const key of SCHEDULE_PATCH_KEYS) {
+    if (!(key in patch)) continue
+    if (next[key] === undefined) delete fields[key]
+    else fields[key] = next[key]
   }
-  if ('enabled' in patch) schedule.enabled = patch.enabled ?? false
-  if ('cron' in patch) schedule.cron = patch.cron ?? ''
-  // An explicit `undefined` drops the stored zone (back to the Host zone);
-  // an absent key keeps it.
-  if ('timeZone' in patch) {
-    if (patch.timeZone === undefined) delete schedule.timeZone
-    else schedule.timeZone = patch.timeZone
-  }
-  if ('nextRunAt' in patch) schedule.nextRunAt = patch.nextRunAt
-  if ('lastTriggeredAt' in patch) schedule.lastTriggeredAt = patch.lastTriggeredAt
+  // The three non-optional fields can never be cleared into an unusable rule.
+  if (schedule.enabled !== true) schedule.enabled = false
+  if (schedule.mode !== 'once') schedule.mode = 'cron'
+  if (!Number.isFinite(schedule.runCount) || schedule.runCount < 0) schedule.runCount = 0
   return { ...task, updatedAt: now, schedule }
 }
 

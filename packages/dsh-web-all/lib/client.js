@@ -4950,6 +4950,27 @@ window.__ModuleLoader__.load({
 			}
 			return Object.keys(result).length === 0 ? void 0 : result;
 		}
+		//#endregion
+		//#region ../dsh-task-board/src/core/tasks.ts
+		/** Every stop reason this build understands; the repair and wire gates share it. */
+		const SCHEDULE_STOP_REASONS = [
+			"fired",
+			"limit",
+			"no-target",
+			"missed",
+			"busy",
+			"permission"
+		];
+		/**
+		* The rule's total run budget: one for a one-shot, the stored cap for a
+		* recurring rule, and undefined when the rule is unlimited.
+		* @param rule - the schedule rule.
+		* @returns the budget, or undefined for an uncapped rule.
+		*/
+		function scheduleRunBudget(rule) {
+			if (rule.mode === "once") return 1;
+			return rule.maxRuns;
+		}
 		/**
 		* Repair a persisted tag list: keep the well-formed entries, trim, drop
 		* blanks and repeats, cap the count, and collapse a blank prompt line to
@@ -5166,27 +5187,47 @@ window.__ModuleLoader__.load({
 				updatedAt: now
 			};
 		}
+		/** Every field a schedule patch may carry; the rest of the rule is carried over. */
+		const SCHEDULE_PATCH_KEYS = [
+			"enabled",
+			"mode",
+			"cron",
+			"at",
+			"timeZone",
+			"nextRunAt",
+			"lastTriggeredAt",
+			"runCount",
+			"maxRuns",
+			"endedAt",
+			"endedReason",
+			"skippedAt",
+			"skippedReason"
+		];
 		/**
 		* Merge a schedule patch into a task's schedule rule (creating it when
 		* absent), with a fresh updatedAt. Keys present in the patch overwrite the
 		* current value — including explicit `undefined`, which clears a field (used
-		* to disarm `nextRunAt`); absent keys keep their current value.
+		* to disarm `nextRunAt` or to drop an ended/skip record); absent keys keep
+		* their current value.
 		*/
 		function withSchedule(task, patch, now) {
-			const current = task.schedule;
-			const schedule = {
-				enabled: current?.enabled ?? false,
-				cron: current?.cron ?? "",
-				...current?.timeZone === void 0 ? {} : { timeZone: current.timeZone },
-				nextRunAt: current?.nextRunAt,
-				lastTriggeredAt: current?.lastTriggeredAt
-			};
-			if ("enabled" in patch) schedule.enabled = patch.enabled ?? false;
-			if ("cron" in patch) schedule.cron = patch.cron ?? "";
-			if ("timeZone" in patch) if (patch.timeZone === void 0) delete schedule.timeZone;
-			else schedule.timeZone = patch.timeZone;
-			if ("nextRunAt" in patch) schedule.nextRunAt = patch.nextRunAt;
-			if ("lastTriggeredAt" in patch) schedule.lastTriggeredAt = patch.lastTriggeredAt;
+			const schedule = task.schedule === void 0 ? {
+				enabled: false,
+				mode: "cron",
+				nextRunAt: void 0,
+				lastTriggeredAt: void 0,
+				runCount: 0
+			} : { ...task.schedule };
+			const fields = schedule;
+			const next = patch;
+			for (const key of SCHEDULE_PATCH_KEYS) {
+				if (!(key in patch)) continue;
+				if (next[key] === void 0) delete fields[key];
+				else fields[key] = next[key];
+			}
+			if (schedule.enabled !== true) schedule.enabled = false;
+			if (schedule.mode !== "once") schedule.mode = "cron";
+			if (!Number.isFinite(schedule.runCount) || schedule.runCount < 0) schedule.runCount = 0;
 			return {
 				...task,
 				updatedAt: now,
@@ -5761,21 +5802,49 @@ window.__ModuleLoader__.load({
 				model: input.model ?? parent.model
 			}, now, id);
 			const requested = input.schedule;
-			if (requested?.enabled === true && requested.cron.trim() !== "" && isValidCron(requested.cron)) {
-				const cron = requested.cron.trim();
+			if (requested?.enabled === true) {
 				const requestedZone = requested.timeZone;
 				if (requestedZone !== void 0 && !isValidTimeZone(requestedZone)) return {
 					task: void 0,
 					tasks,
 					error: "invalid schedule time zone"
 				};
-				const nextRunAt = nextRunAtMs(cron, now, requestedZone ?? hostTimeZone);
-				if (nextRunAt !== void 0) task = withSchedule(task, {
-					enabled: true,
-					cron,
-					timeZone: requestedZone,
-					nextRunAt
-				}, now);
+				if (requested.mode === "once") {
+					const at = requested.at;
+					if (at === void 0 || !Number.isInteger(at) || at <= now) return {
+						task: void 0,
+						tasks,
+						error: "invalid schedule instant"
+					};
+					task = withSchedule(task, {
+						enabled: true,
+						mode: "once",
+						at,
+						timeZone: requestedZone,
+						nextRunAt: at,
+						runCount: 0
+					}, now);
+				} else {
+					const cron = (requested.cron ?? "").trim();
+					if (cron !== "" && isValidCron(cron)) {
+						const maxRuns = requested.maxRuns;
+						if (maxRuns !== void 0 && (!Number.isInteger(maxRuns) || maxRuns < 1)) return {
+							task: void 0,
+							tasks,
+							error: "invalid schedule run cap"
+						};
+						const nextRunAt = nextRunAtMs(cron, now, requestedZone ?? hostTimeZone);
+						if (nextRunAt !== void 0) task = withSchedule(task, {
+							enabled: true,
+							mode: "cron",
+							cron,
+							maxRuns,
+							timeZone: requestedZone,
+							nextRunAt,
+							runCount: 0
+						}, now);
+					}
+				}
 			}
 			return {
 				task,
@@ -5806,16 +5875,30 @@ window.__ModuleLoader__.load({
 		//#endregion
 		//#region ../dsh-task-board/src/core/use-cases/task-schedule.ts
 		/**
-		* Schedule use case: arm/disarm a task's cron rule and roll a rule forward.
-		* Pure ledger transitions (no persistence or notify — the controller
-		* orchestrates those). Validation and next-run computation live here, sharing
-		* the core cron parser (schedule.ts) and the withSchedule transition.
+		* Schedule use cases: arm/disarm a task's scheduling rule, and record what a
+		* due occurrence did to it. Pure ledger transitions (no persistence or notify
+		* — the controller orchestrates those). Validation and next-run computation
+		* live here, sharing the core cron parser (schedule.ts) and the withSchedule
+		* transition.
+		*
+		* A rule is either a recurring cron rule or a single planned instant, and
+		* either kind may be capped by a run budget. The counter (`runCount`) moves
+		* only when the Host actually opened an execution; a skipped occurrence
+		* (busy, unconfirmed permission, missed instant, unreachable plan) moves the
+		* rule without consuming its budget.
 		*/
 		/**
-		* Set an on-board task's schedule rule. A blank or invalid cron, an unknown or
-		* archived task, or an unusable zone is rejected (state untouched); an enabled
-		* rule computes the next run instant immediately in the rule's own zone, a
-		* disabled one carries no next-run instant.
+		* Set an on-board task's scheduling rule. An unknown or archived task, an
+		* unusable zone, a blank or invalid cron, a one-shot with no usable instant,
+		* a one-shot armed in the past, and a run cap that is not a positive integer
+		* are all rejected (state untouched). An enabled rule computes its next run
+		* instant immediately — a one-shot's next instant IS its planned instant — and
+		* a disabled rule carries none.
+		*
+		* Arming a rule that was not enabled, or switching its kind, starts a fresh
+		* budget: the run counter and any previous stop/skip record are cleared. Edits
+		* to a live rule (expression, zone, cap) keep the consumed count, so an
+		* already-spent budget can never silently reset and overrun.
 		* @param tasks - current ledger.
 		* @param id - the task to schedule.
 		* @param patch - rule fields to change (absent fields keep their current value).
@@ -5829,36 +5912,91 @@ window.__ModuleLoader__.load({
 				applied: false
 			};
 			const current = task.schedule;
+			const mode = patch.mode ?? current?.mode ?? "cron";
+			const timeZone = patch.timeZone === void 0 ? current?.timeZone : patch.timeZone ?? void 0;
+			if (timeZone !== void 0 && !isValidTimeZone(timeZone)) return {
+				tasks,
+				applied: false
+			};
+			const enabled = patch.enabled ?? current?.enabled ?? false;
+			const restart = enabled && current?.enabled !== true || (current?.mode ?? "cron") !== mode;
+			const runCount = restart ? 0 : current?.runCount ?? 0;
+			const effectiveZone = timeZone ?? hostTimeZone;
+			const cleared = restart ? {
+				endedAt: void 0,
+				endedReason: void 0,
+				skippedAt: void 0,
+				skippedReason: void 0
+			} : {
+				endedAt: current?.endedAt,
+				endedReason: current?.endedReason,
+				skippedAt: current?.skippedAt,
+				skippedReason: current?.skippedReason
+			};
+			if (mode === "once") {
+				const at = patch.at ?? current?.at;
+				if (at === void 0 || !Number.isInteger(at)) return {
+					tasks,
+					applied: false
+				};
+				if (enabled && at <= now) return {
+					tasks,
+					applied: false
+				};
+				return {
+					tasks: tasks.map((candidate) => candidate.id !== id ? candidate : withSchedule(candidate, {
+						enabled,
+						mode: "once",
+						at,
+						cron: void 0,
+						maxRuns: void 0,
+						timeZone: timeZone ?? void 0,
+						nextRunAt: enabled ? at : void 0,
+						runCount,
+						...cleared
+					}, now)),
+					applied: true
+				};
+			}
 			const cron = (patch.cron ?? current?.cron ?? "").trim();
 			if (cron === "" || !isValidCron(cron)) return {
 				tasks,
 				applied: false
 			};
-			const requestedZone = patch.timeZone === void 0 ? current?.timeZone : patch.timeZone ?? void 0;
-			if (requestedZone !== void 0 && !isValidTimeZone(requestedZone)) return {
+			const maxRuns = ("maxRuns" in patch ? patch.maxRuns : current?.maxRuns) ?? void 0;
+			if (maxRuns !== void 0 && (!Number.isInteger(maxRuns) || maxRuns < 1)) return {
 				tasks,
 				applied: false
 			};
-			const enabled = patch.enabled ?? current?.enabled ?? false;
-			const nextRunAt = enabled ? nextRunAtMs(cron, now, requestedZone ?? hostTimeZone) : void 0;
-			if (enabled && nextRunAt === void 0) return {
+			const spent = maxRuns !== void 0 && runCount >= maxRuns;
+			const armed = enabled && !spent;
+			const nextRunAt = armed ? nextRunAtMs(cron, now, effectiveZone) : void 0;
+			if (armed && nextRunAt === void 0) return {
 				tasks,
 				applied: false
 			};
+			const exhausted = enabled && spent;
 			return {
-				tasks: tasks.map((candidate) => candidate.id === id ? withSchedule(candidate, {
-					enabled,
+				tasks: tasks.map((candidate) => candidate.id !== id ? candidate : withSchedule(candidate, {
+					enabled: armed,
+					mode: "cron",
 					cron,
-					timeZone: requestedZone ?? void 0,
-					nextRunAt
-				}, now) : candidate),
+					at: void 0,
+					maxRuns,
+					timeZone: timeZone ?? void 0,
+					nextRunAt,
+					runCount,
+					...exhausted ? {
+						endedAt: now,
+						endedReason: "limit"
+					} : cleared
+				}, now)),
 				applied: true
 			};
 		}
 		/**
-		* Roll a task's schedule rule forward (scheduler callback): persist the next
-		* due instant and the trigger instant. No-op for tasks without a rule (deleted
-		* mid-tick, for example).
+		* Roll a task's schedule rule forward (legacy pure-controller seam): persist
+		* the next due instant and the trigger instant. No-op for tasks without a rule.
 		* @param tasks - current ledger.
 		* @param id - the task to roll forward.
 		* @param nextRunAt - next due instant (may be undefined to clear).
@@ -6545,13 +6683,15 @@ window.__ModuleLoader__.load({
 				return true;
 			}
 			/**
-			* Update a task's schedule rule. A blank or invalid cron expression is
-			* rejected (returns false, state untouched). When the rule ends up enabled
-			* the next run instant is computed immediately; a disabled rule carries no
-			* next-run instant. Delegates the domain transition to the schedule use case.
+			* Update a task's schedule rule. An unusable plan (blank or invalid cron, a
+			* one-shot with no future instant, a non-positive run cap) is rejected
+			* (returns false, state untouched). When the rule ends up enabled the next
+			* run instant is computed immediately — a one-shot's next instant IS its
+			* planned instant — and a disabled rule carries none. Delegates the domain
+			* transition to the schedule use case.
 			* @param id - the task to schedule.
 			* @param patch - fields to change (absent fields keep their current value).
-			* @returns true when applied, false when rejected (invalid cron / unknown task).
+			* @returns true when applied, false when rejected (unknown task / unusable plan).
 			*/
 			setSchedule(id, patch) {
 				const hostTimeZone = this.hostState?.scheduler.timeZone ?? resolveHostTimeZone();
@@ -7407,23 +7547,62 @@ window.__ModuleLoader__.load({
 		function normalizeStatus(status) {
 			return isTaskStatus(status) ? status : "todo";
 		}
+		/** A persisted ms timestamp, kept only when it is a usable finite number. */
+		function optionalInstant(value) {
+			return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+		}
+		/** A persisted positive-integer run cap, or undefined for unlimited/repair. */
+		function optionalRunCap(value) {
+			return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : void 0;
+		}
+		/** A persisted stop reason, kept only when it names a reason this build knows. */
+		function optionalStopReason(value) {
+			return typeof value === "string" && SCHEDULE_STOP_REASONS.includes(value) ? value : void 0;
+		}
 		/**
-		* Repair a persisted schedule rule: drop rules without a usable cron string,
-		* coerce booleans/numbers, and leave `nextRunAt`/`lastTriggeredAt` undefined
-		* when missing (a fresh recompute or the next tick fixes them).
+		* Repair a persisted schedule rule. Both modes are repaired field by field and
+		* a rule that carries no usable plan is dropped (the task row survives):
+		* a recurring rule without a well-formed 5-field cron, or a one-shot without a
+		* finite planned instant. A rule written before `mode` existed is a cron rule.
 		*/
 		function normalizeSchedule(schedule) {
 			if (typeof schedule !== "object" || schedule === null) return void 0;
 			const rule = schedule;
+			const timeZone = typeof rule.timeZone === "string" && isValidTimeZone(rule.timeZone) ? rule.timeZone : void 0;
+			const runCountValue = rule.runCount;
+			const runCount = typeof runCountValue === "number" && Number.isInteger(runCountValue) && runCountValue >= 0 ? runCountValue : 0;
+			const endedAt = optionalInstant(rule.endedAt);
+			const endedReason = optionalStopReason(rule.endedReason);
+			const skippedAt = optionalInstant(rule.skippedAt);
+			const skippedReason = optionalStopReason(rule.skippedReason);
+			const common = {
+				enabled: rule.enabled === true,
+				...timeZone === void 0 ? {} : { timeZone },
+				nextRunAt: optionalInstant(rule.nextRunAt),
+				lastTriggeredAt: optionalInstant(rule.lastTriggeredAt),
+				runCount,
+				...endedAt === void 0 ? {} : { endedAt },
+				...endedReason === void 0 ? {} : { endedReason },
+				...skippedAt === void 0 ? {} : { skippedAt },
+				...skippedReason === void 0 ? {} : { skippedReason }
+			};
+			if (rule.mode === "once") {
+				const at = optionalInstant(rule.at);
+				if (at === void 0) return void 0;
+				return {
+					...common,
+					mode: "once",
+					at
+				};
+			}
 			if (typeof rule.cron !== "string") return void 0;
 			if (rule.cron.trim() === "" || !isValidCron(rule.cron)) return void 0;
-			const timeZone = typeof rule.timeZone === "string" && isValidTimeZone(rule.timeZone) ? rule.timeZone : void 0;
+			const maxRuns = optionalRunCap(rule.maxRuns);
 			return {
-				enabled: rule.enabled === true,
+				...common,
+				mode: "cron",
 				cron: rule.cron,
-				...timeZone === void 0 ? {} : { timeZone },
-				nextRunAt: typeof rule.nextRunAt === "number" ? rule.nextRunAt : void 0,
-				lastTriggeredAt: typeof rule.lastTriggeredAt === "number" ? rule.lastTriggeredAt : void 0
+				...maxRuns === void 0 ? {} : { maxRuns }
 			};
 		}
 		/**
@@ -7794,7 +7973,33 @@ window.__ModuleLoader__.load({
 			"detail.schedule.duration.hours": "{count} 小时",
 			"detail.schedule.duration.minutes": "{count} 分钟",
 			"detail.schedule.duration.seconds": "{count} 秒",
+			"detail.schedule.mode": "调度方式",
+			"detail.schedule.mode.cron": "循环",
+			"detail.schedule.mode.once": "单次",
+			"detail.schedule.at": "执行时间",
+			"detail.schedule.atHint": "按所选时区解读的计划时刻；必须是未来时间。",
+			"detail.schedule.atInvalid": "请选择未来的有效时间",
+			"detail.schedule.plannedAt": "计划时间",
+			"detail.schedule.zoneOnceHint": "所选时刻按此时区解读。",
+			"detail.schedule.maxRuns": "次数上限",
+			"detail.schedule.maxRunsUnlimited": "不限次数",
+			"detail.schedule.maxRunsValue": "最多 {count} 次",
+			"detail.schedule.maxRunsCustom": "自定义",
+			"detail.schedule.maxRunsInvalid": "次数上限必须是正整数",
+			"detail.schedule.runs": "已执行 {done}/{total} 次",
+			"detail.schedule.runsUnlimited": "已执行 {done} 次",
+			"detail.schedule.remaining": "剩余 {count} 次",
+			"detail.schedule.cancel": "关闭调度",
+			"detail.schedule.ended": "调度已结束：{reason}",
+			"detail.schedule.skipped": "上次跳过：{reason}",
+			"detail.schedule.stop.fired": "单次计划已执行",
+			"detail.schedule.stop.limit": "已达次数上限",
+			"detail.schedule.stop.no-target": "计划已无可执行时刻",
+			"detail.schedule.stop.missed": "错过执行时刻，已跳过",
+			"detail.schedule.stop.busy": "触发时任务正在运行，已跳过",
+			"detail.schedule.stop.permission": "权限待人工确认，已跳过",
 			"card.scheduled": "定时",
+			"card.scheduledOnce": "单次",
 			"new.workspace": "工作区",
 			"new.agentPreset": "Agent 预设",
 			"new.permission": "权限",
@@ -8156,7 +8361,33 @@ window.__ModuleLoader__.load({
 			"detail.schedule.duration.hours": "{count}h",
 			"detail.schedule.duration.minutes": "{count}m",
 			"detail.schedule.duration.seconds": "{count}s",
+			"detail.schedule.mode": "Mode",
+			"detail.schedule.mode.cron": "Recurring",
+			"detail.schedule.mode.once": "Once",
+			"detail.schedule.at": "Run at",
+			"detail.schedule.atHint": "Planned instant, read in the selected zone; it must be in the future.",
+			"detail.schedule.atInvalid": "Choose a valid future time",
+			"detail.schedule.plannedAt": "Planned time",
+			"detail.schedule.zoneOnceHint": "The chosen instant is read in this zone.",
+			"detail.schedule.maxRuns": "Run limit",
+			"detail.schedule.maxRunsUnlimited": "Unlimited",
+			"detail.schedule.maxRunsValue": "At most {count} runs",
+			"detail.schedule.maxRunsCustom": "Custom",
+			"detail.schedule.maxRunsInvalid": "The run limit must be a positive whole number",
+			"detail.schedule.runs": "Ran {done}/{total}",
+			"detail.schedule.runsUnlimited": "Ran {done}",
+			"detail.schedule.remaining": "{count} left",
+			"detail.schedule.cancel": "Cancel schedule",
+			"detail.schedule.ended": "Schedule ended: {reason}",
+			"detail.schedule.skipped": "Last skip: {reason}",
+			"detail.schedule.stop.fired": "the one-shot ran",
+			"detail.schedule.stop.limit": "the run limit was reached",
+			"detail.schedule.stop.no-target": "the plan has no reachable occurrence",
+			"detail.schedule.stop.missed": "the instant was missed and skipped",
+			"detail.schedule.stop.busy": "the task was already running, so the occurrence was skipped",
+			"detail.schedule.stop.permission": "a permission awaited human confirmation, so the occurrence was skipped",
 			"card.scheduled": "scheduled",
+			"card.scheduledOnce": "once",
 			"new.workspace": "Workspace",
 			"new.agentPreset": "Agent preset",
 			"new.permission": "Permission",
@@ -8691,6 +8922,95 @@ window.__ModuleLoader__.load({
 			const delta = targetMs - now;
 			if (delta < 0) return t$5("detail.schedule.nextRunOverdue", { duration: durationParts(-delta) });
 			return `${durationParts(delta)}`;
+		}
+		/** Zero-pad a calendar/clock field for a `datetime-local` value. */
+		function pad(value) {
+			return String(value).padStart(2, "0");
+		}
+		/**
+		* The `datetime-local` input value for an instant, read in an explicit zone:
+		* `YYYY-MM-DDTHH:mm`. Uses the shared engine's zone reader, so the editor
+		* shows the same wall clock the Host schedules by.
+		* @param epochMs - the instant to render.
+		* @param timeZone - zone to read it in; absent uses the Host zone.
+		* @returns the input value.
+		*/
+		function zonedInputValue(epochMs, timeZone) {
+			const parts = partsInZone(usableZone(timeZone), epochMs);
+			return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
+		}
+		/**
+		* Parse a `datetime-local` input value back to an instant, read in an explicit
+		* zone. Returns undefined when the text is not a whole calendar wall clock or
+		* names one the zone skips (a spring-forward gap), so the editor can refuse an
+		* unusable instant instead of silently moving it.
+		* @param value - the input text.
+		* @param timeZone - zone to interpret it in; absent uses the Host zone.
+		* @returns the instant, or undefined when it is not a usable wall clock.
+		*/
+		function parseZonedInput(value, timeZone) {
+			const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value.trim());
+			if (match === null) return void 0;
+			const [year, month, day, hour, minute] = match.slice(1).map(Number);
+			if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return void 0;
+			return zonedEpoch(usableZone(timeZone), year, month, day, hour, minute);
+		}
+		/**
+		* The default instant a new one-shot editor opens on: the next whole hour,
+		* rendered in the zone the rule will be read in.
+		* @param now - reference instant.
+		* @param timeZone - zone the rule is read in.
+		* @returns the input value for a near-future default.
+		*/
+		function defaultZonedInputValue(now, timeZone) {
+			return zonedInputValue(Math.ceil(now / 36e5) * 36e5, timeZone);
+		}
+		/** The zone the input helpers resolve against: an explicit resolved zone, or the Host zone. */
+		function usableZone(timeZone) {
+			return timeZone !== void 0 && isValidTimeZone(timeZone) ? timeZone : resolveHostTimeZone();
+		}
+		/**
+		* The editor's run-cap option for a stored cap: the two named presets, the
+		* unlimited entry, or a custom value the editor shows in its own field.
+		* @param maxRuns - the stored cap, when any.
+		* @returns the select option value.
+		*/
+		function runCapOption(maxRuns) {
+			if (maxRuns === void 0) return "unlimited";
+			if (maxRuns === 1) return "1";
+			if (maxRuns === 2) return "2";
+			return "custom";
+		}
+		/** The locale key describing why a rule stopped or skipped an occurrence. */
+		function stopReasonKey(reason) {
+			return `detail.schedule.stop.${reason}`;
+		}
+		/**
+		* The run-budget line: how many scheduled executions the Host opened and how
+		* many remain. Derived from the counter and the cap rather than stored, so the
+		* display cannot drift from the ledger.
+		* @param rule - the schedule rule.
+		* @returns localized wording.
+		*/
+		function budgetLabel(rule) {
+			const budget = scheduleRunBudget(rule);
+			const done = String(rule.runCount);
+			if (budget === void 0) return t$5("detail.schedule.runsUnlimited", { done });
+			const remaining = Math.max(budget - rule.runCount, 0);
+			return `${t$5("detail.schedule.runs", {
+				done,
+				total: String(budget)
+			})} · ${t$5("detail.schedule.remaining", { count: String(remaining) })}`;
+		}
+		/** The line describing a rule that stopped itself, or undefined while it may still fire. */
+		function endedLabel(rule) {
+			if (rule.endedReason === void 0) return void 0;
+			return t$5("detail.schedule.ended", { reason: t$5(stopReasonKey(rule.endedReason)) });
+		}
+		/** The line describing the last skipped occurrence, or undefined when none. */
+		function skippedLabel(rule) {
+			if (rule.skippedReason === void 0) return void 0;
+			return t$5("detail.schedule.skipped", { reason: t$5(stopReasonKey(rule.skippedReason)) });
 		}
 		/**
 		* The full next-run label: the absolute wall clock in the schedule's own zone,
@@ -11529,8 +11849,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								}),
 								!archived && task.schedule?.enabled === true && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: board_module_css_default.cardSchedule,
-									title: task.schedule.nextRunAt !== void 0 ? `${t$5("card.scheduled")} · ${formatHostTimestamp$1(task.schedule.nextRunAt, timeZone)}` : t$5("card.scheduled"),
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconClock, { size: 12 }), t$5("card.scheduled")]
+									title: task.schedule.nextRunAt !== void 0 ? `${t$5(task.schedule.mode === "once" ? "card.scheduledOnce" : "card.scheduled")} · ${formatHostTimestamp$1(task.schedule.nextRunAt, timeZone)}` : t$5(task.schedule.mode === "once" ? "card.scheduledOnce" : "card.scheduled"),
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconClock, { size: 12 }), t$5(task.schedule.mode === "once" ? "card.scheduledOnce" : "card.scheduled")]
 								}),
 								latest !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: board_module_css_default.cardRun,
@@ -11648,7 +11968,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [goalRun, setGoalRun] = (0, react.useState)(initialTask?.goalRun ?? true);
 			const [skipVerification, setSkipVerification] = (0, react.useState)(initialTask?.skipVerification ?? false);
 			const [scheduleEnabled, setScheduleEnabled] = (0, react.useState)(initialTask?.schedule?.enabled ?? false);
+			const [scheduleMode, setScheduleMode] = (0, react.useState)(initialTask?.schedule?.mode ?? "cron");
 			const [scheduleCron, setScheduleCron] = (0, react.useState)(initialTask?.schedule?.cron ?? "");
+			const [scheduleAt, setScheduleAt] = (0, react.useState)(() => initialTask?.schedule?.mode === "once" && initialTask.schedule.at !== void 0 ? zonedInputValue(initialTask.schedule.at, initialTask.schedule.timeZone) : defaultZonedInputValue(Date.now(), initialTask?.schedule?.timeZone));
+			const [scheduleMaxRunsChoice, setScheduleMaxRunsChoice] = (0, react.useState)(() => runCapOption(initialTask?.schedule?.maxRuns));
+			const [scheduleMaxRunsText, setScheduleMaxRunsText] = (0, react.useState)(initialTask?.schedule?.maxRuns === void 0 ? "" : String(initialTask.schedule.maxRuns));
 			const [scheduleZone, setScheduleZone] = (0, react.useState)(initialTask?.schedule?.timeZone ?? "");
 			const [scheduleError, setScheduleError] = (0, react.useState)(void 0);
 			const [freezeText, setFreezeText] = (0, react.useState)("");
@@ -11708,11 +12032,24 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			* reporting the creation as failed.
 			*/
 			const submit = async (runAfterCreate) => {
-				if (scheduleEnabled) {
+				if (scheduleEnabled) if (scheduleMode === "once") {
+					const at = parseZonedInput(scheduleAt, scheduleZone === "" ? hostTimeZone : scheduleZone);
+					if (at === void 0 || at <= Date.now()) {
+						setScheduleError(t$5("detail.schedule.atInvalid"));
+						return;
+					}
+				} else {
 					const cron = scheduleCron.trim();
 					if (cron === "" || !isValidCron(cron)) {
 						setScheduleError(t$5("detail.schedule.invalid"));
 						return;
+					}
+					if (scheduleMaxRunsChoice === "custom") {
+						const cap = Number(scheduleMaxRunsText.trim());
+						if (scheduleMaxRunsText.trim() === "" || !Number.isInteger(cap) || cap < 1) {
+							setScheduleError(t$5("detail.schedule.maxRunsInvalid"));
+							return;
+						}
 					}
 				}
 				let freeze = void 0;
@@ -11751,9 +12088,16 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					...goalRun ? {} : { goalRun: false },
 					...skipVerification ? { skipVerification: true } : {},
 					...tagList.length > 0 ? { tags: tagList } : {},
-					schedule: scheduleEnabled ? {
+					schedule: scheduleEnabled ? scheduleMode === "once" ? {
 						enabled: true,
+						mode: "once",
+						at: parseZonedInput(scheduleAt, scheduleZone === "" ? hostTimeZone : scheduleZone),
+						...scheduleZone === "" ? {} : { timeZone: scheduleZone }
+					} : {
+						enabled: true,
+						mode: "cron",
 						cron: scheduleCron.trim(),
+						...scheduleMaxRunsChoice === "unlimited" ? {} : { maxRuns: scheduleMaxRunsChoice === "custom" ? Number(scheduleMaxRunsText.trim()) : Number(scheduleMaxRunsChoice) },
 						...scheduleZone === "" ? {} : { timeZone: scheduleZone }
 					} : void 0
 				});
@@ -11771,7 +12115,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			};
 			const hostTimeZone = controller.getSnapshot().host?.scheduler.timeZone;
 			const scheduleTimeZone = scheduleZone === "" ? hostTimeZone : scheduleZone;
-			const scheduleNextRun = scheduleEnabled && scheduleCron.trim() !== "" && isValidCron(scheduleCron) ? nextRunAtMs(scheduleCron, Date.now(), scheduleTimeZone) : void 0;
+			const scheduleNextRun = !scheduleEnabled ? void 0 : scheduleMode === "once" ? parseZonedInput(scheduleAt, scheduleTimeZone) : scheduleCron.trim() !== "" && isValidCron(scheduleCron) ? nextRunAtMs(scheduleCron, Date.now(), scheduleTimeZone) : void 0;
 			const modalTitle = parentTask !== void 0 ? t$5("new.subtaskTitle") : isDuplicate ? t$5("new.duplicateTitle") : t$5("board.new");
 			const builtinPresets = options.presets.filter((preset) => isBuiltinPreset(preset.id));
 			const customPresets = options.presets.filter((preset) => !isBuiltinPreset(preset.id));
@@ -11791,7 +12135,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const labelsSummary = tagCount === 0 ? t$5("new.summary.none") : t$5("new.summary.labelCount", { count: String(tagCount) });
 			const runSummary = [goalRun ? t$5("new.summary.multiRound") : t$5("new.summary.singleRound"), ...reuseSession ? [t$5("exec.reuseSession")] : []].join(" · ");
 			const handoverSummary = freezeText.trim() !== "" || handoverText.trim() !== "" ? t$5("new.summary.filled") : t$5("new.summary.none");
-			const scheduleSummary = !scheduleEnabled ? t$5("new.summary.scheduleOff") : scheduleCron.trim() === "" ? t$5("new.summary.none") : scheduleCron.trim();
+			const scheduleSummary = !scheduleEnabled ? t$5("new.summary.scheduleOff") : scheduleMode === "once" ? `${t$5("detail.schedule.mode.once")} · ${scheduleAt.replace("T", " ")}` : scheduleCron.trim() === "" ? t$5("new.summary.none") : [scheduleCron.trim(), ...scheduleMaxRunsChoice === "unlimited" ? [] : [t$5("detail.schedule.maxRunsValue", { count: scheduleMaxRunsChoice === "custom" ? scheduleMaxRunsText : scheduleMaxRunsChoice })]].join(" · ");
 			const parseSummary = parseText.trim() === "" ? t$5("new.summary.none") : t$5("new.summary.filled");
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(ModalShell, {
 				ariaLabel: modalTitle,
@@ -12157,36 +12501,116 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								}
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.enable") })]
 						}), scheduleEnabled && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: board_module_css_default.scheduleRow,
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: `${board_module_css_default.input} ${board_module_css_default.scheduleInput}${scheduleError !== void 0 ? ` ${board_module_css_default.scheduleInputInvalid}` : ""}`,
-									value: scheduleCron,
-									placeholder: "0 9 * * *",
-									spellCheck: false,
-									"aria-label": t$5("detail.schedule.cron"),
-									onChange: (event) => {
-										setScheduleCron(event.target.value);
-										setScheduleError(void 0);
-									}
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: board_module_css_default.scheduleZone,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.mode") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
 									className: board_module_css_default.schedulePreset,
-									value: "",
-									"aria-label": t$5("detail.schedule.presets"),
+									value: scheduleMode,
+									"aria-label": t$5("detail.schedule.mode"),
 									onChange: (event) => {
-										if (event.target.value === "") return;
-										setScheduleCron(event.target.value);
+										setScheduleMode(event.target.value);
 										setScheduleError(void 0);
 									},
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-										value: "",
-										children: [t$5("detail.schedule.presets"), "…"]
-									}), SCHEDULE_PRESETS.map((preset) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-										value: preset.cron,
-										children: t$5(preset.label)
-									}, preset.cron))]
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "cron",
+										children: t$5("detail.schedule.mode.cron")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "once",
+										children: t$5("detail.schedule.mode.once")
+									})]
 								})]
 							}),
+							scheduleMode === "once" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: board_module_css_default.scheduleZone,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.at") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: board_module_css_default.input,
+									type: "datetime-local",
+									value: scheduleAt,
+									"aria-label": t$5("detail.schedule.at"),
+									title: t$5("detail.schedule.atHint"),
+									onChange: (event) => {
+										setScheduleAt(event.target.value);
+										setScheduleError(void 0);
+									}
+								})]
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: board_module_css_default.scheduleRow,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										className: `${board_module_css_default.input} ${board_module_css_default.scheduleInput}${scheduleError !== void 0 ? ` ${board_module_css_default.scheduleInputInvalid}` : ""}`,
+										value: scheduleCron,
+										placeholder: "0 9 * * *",
+										spellCheck: false,
+										"aria-label": t$5("detail.schedule.cron"),
+										onChange: (event) => {
+											setScheduleCron(event.target.value);
+											setScheduleError(void 0);
+										}
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+										className: board_module_css_default.schedulePreset,
+										value: "",
+										"aria-label": t$5("detail.schedule.presets"),
+										onChange: (event) => {
+											if (event.target.value === "") return;
+											setScheduleCron(event.target.value);
+											setScheduleError(void 0);
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+											value: "",
+											children: [t$5("detail.schedule.presets"), "…"]
+										}), SCHEDULE_PRESETS.map((preset) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+											value: preset.cron,
+											children: t$5(preset.label)
+										}, preset.cron))]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: board_module_css_default.scheduleZone,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.maxRuns") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+										className: board_module_css_default.schedulePreset,
+										value: scheduleMaxRunsChoice,
+										"aria-label": t$5("detail.schedule.maxRuns"),
+										onChange: (event) => {
+											setScheduleMaxRunsChoice(event.target.value);
+											setScheduleError(void 0);
+											if (event.target.value === "custom") setScheduleMaxRunsText(initialTask?.schedule?.maxRuns === void 0 ? "" : String(initialTask.schedule.maxRuns));
+										},
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+												value: "unlimited",
+												children: t$5("detail.schedule.maxRunsUnlimited")
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+												value: "1",
+												children: t$5("detail.schedule.maxRunsValue", { count: "1" })
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+												value: "2",
+												children: t$5("detail.schedule.maxRunsValue", { count: "2" })
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+												value: "custom",
+												children: t$5("detail.schedule.maxRunsCustom")
+											})
+										]
+									})]
+								}),
+								scheduleMaxRunsChoice === "custom" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: board_module_css_default.scheduleZone,
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.maxRuns") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										className: board_module_css_default.input,
+										type: "number",
+										min: 1,
+										step: 1,
+										value: scheduleMaxRunsText,
+										"aria-label": t$5("detail.schedule.maxRuns"),
+										onChange: (event) => {
+											setScheduleMaxRunsText(event.target.value);
+											setScheduleError(void 0);
+										}
+									})]
+								})
+							] }),
 							scheduleError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 								className: board_module_css_default.formError,
 								children: scheduleError
@@ -12197,7 +12621,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									className: board_module_css_default.schedulePreset,
 									value: scheduleZone,
 									"aria-label": t$5("detail.schedule.timeZone"),
-									title: t$5("detail.schedule.timeZoneHint"),
+									title: scheduleMode === "once" ? t$5("detail.schedule.zoneOnceHint") : t$5("detail.schedule.timeZoneHint"),
 									onChange: (event) => {
 										setScheduleZone(event.target.value);
 										setScheduleError(void 0);
@@ -13197,31 +13621,48 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				]
 			});
 		}
-		/** The scheduled-runs editor: enable toggle, cron input + presets, zone, next-run info. */
+		/**
+		* The scheduled-runs editor. A one-shot has one planned instant; a recurring
+		* rule has a cron expression, an optional run cap, and a zone. The editor
+		* shows the rule's own state (next target, run counter, stop/skip record) and
+		* can cancel a future plan.
+		*/
 		function ScheduleSection({ controller, task, pending }) {
 			const schedule = task.schedule;
+			const hostTimeZone = controller.getSnapshot().host?.scheduler.timeZone;
+			const [zone, setZone] = (0, react.useState)(schedule?.timeZone ?? "");
+			const [mode, setMode] = (0, react.useState)(schedule?.mode ?? "cron");
 			const [cron, setCron] = (0, react.useState)(schedule?.cron ?? "0 9 * * *");
+			const [atText, setAtText] = (0, react.useState)(() => schedule?.at === void 0 ? defaultZonedInputValue(Date.now(), schedule?.timeZone ?? hostTimeZone) : zonedInputValue(schedule.at, schedule?.timeZone ?? hostTimeZone));
+			const [maxRunsChoice, setMaxRunsChoice] = (0, react.useState)(() => runCapOption(schedule?.maxRuns));
+			const [maxRunsText, setMaxRunsText] = (0, react.useState)(schedule?.maxRuns === void 0 ? "" : String(schedule.maxRuns));
 			const [enabled, setEnabled] = (0, react.useState)(schedule?.enabled ?? false);
 			const [nextRunAt, setNextRunAt] = (0, react.useState)(schedule?.nextRunAt);
 			const [lastTriggeredAt, setLastTriggeredAt] = (0, react.useState)(schedule?.lastTriggeredAt);
 			const [error, setError] = (0, react.useState)(void 0);
-			const hostTimeZone = controller.getSnapshot().host?.scheduler.timeZone;
-			const [zone, setZone] = (0, react.useState)(schedule?.timeZone ?? "");
 			const now = Date.now();
 			(0, react.useEffect)(() => {
+				setMode(schedule?.mode ?? "cron");
 				setCron(schedule?.cron ?? "0 9 * * *");
+				setZone(schedule?.timeZone ?? "");
+				setAtText(schedule?.at === void 0 ? defaultZonedInputValue(Date.now(), schedule?.timeZone ?? hostTimeZone) : zonedInputValue(schedule.at, schedule?.timeZone ?? hostTimeZone));
+				setMaxRunsChoice(runCapOption(schedule?.maxRuns));
+				setMaxRunsText(schedule?.maxRuns === void 0 ? "" : String(schedule.maxRuns));
 				setEnabled(schedule?.enabled ?? false);
 				setNextRunAt(schedule?.nextRunAt);
 				setLastTriggeredAt(schedule?.lastTriggeredAt);
-				setZone(schedule?.timeZone ?? "");
 				setError(void 0);
 			}, [
 				task.id,
+				hostTimeZone,
+				schedule?.mode,
 				schedule?.enabled,
 				schedule?.cron,
+				schedule?.at,
 				schedule?.timeZone,
 				schedule?.nextRunAt,
-				schedule?.lastTriggeredAt
+				schedule?.lastTriggeredAt,
+				schedule?.maxRuns
 			]);
 			/** Validate + persist the current cron text (Enter or blur). */
 			const saveCron = (value) => {
@@ -13232,19 +13673,113 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					return;
 				}
 				setError(void 0);
-				controller.setSchedule(task.id, { cron: trimmed });
+				controller.setSchedule(task.id, {
+					mode: "cron",
+					cron: trimmed
+				});
+			};
+			/** Validate + persist the one-shot's planned instant. */
+			const saveAt = (value) => {
+				setAtText(value);
+				const at = parseZonedInput(value, effectiveZone);
+				if (at === void 0 || at <= now) {
+					setError(t$5("detail.schedule.atInvalid"));
+					return;
+				}
+				setError(void 0);
+				controller.setSchedule(task.id, {
+					mode: "once",
+					at
+				});
+			};
+			/** Switch the kind of plan, persisting a usable target for the new kind. */
+			const changeMode = (next) => {
+				if (next === "once") {
+					const at = parseZonedInput(atText, effectiveZone);
+					if (at === void 0 || at <= now) {
+						setError(t$5("detail.schedule.atInvalid"));
+						return;
+					}
+					setMode("once");
+					setError(void 0);
+					controller.setSchedule(task.id, {
+						mode: "once",
+						at
+					});
+					return;
+				}
+				const trimmed = cron.trim();
+				if (trimmed === "" || !isValidCron(trimmed)) {
+					setError(t$5("detail.schedule.invalid"));
+					return;
+				}
+				setMode("cron");
+				setError(void 0);
+				controller.setSchedule(task.id, {
+					mode: "cron",
+					cron: trimmed
+				});
 			};
 			/**
 			* Change the rule's zone. `''` clears the stored zone, which is how a user
-			* returns a rule to following the Host zone.
+			* returns a rule to following the Host zone. A one-shot's instant is
+			* absolute, so only its rendered wall clock follows the new zone; a cron
+			* rule's wall clock itself moves with the zone.
 			*/
 			const changeZone = (value) => {
 				setZone(value);
 				setError(void 0);
+				if (mode === "once" && schedule?.at !== void 0) {
+					setAtText(zonedInputValue(schedule.at, value === "" ? hostTimeZone : value));
+					controller.setSchedule(task.id, {
+						mode: "once",
+						timeZone: value === "" ? null : value
+					});
+					return;
+				}
 				controller.setSchedule(task.id, { timeZone: value === "" ? null : value });
 			};
-			/** Arm/disarm the schedule (arming first persists the edited cron). */
+			/** Change the recurring rule's run cap (unlimited, a preset, or a custom value). */
+			const applyMaxRuns = (choice) => {
+				setMaxRunsChoice(choice);
+				setError(void 0);
+				if (choice === "unlimited") {
+					controller.setSchedule(task.id, { maxRuns: null });
+					return;
+				}
+				if (choice === "custom") {
+					setMaxRunsText(schedule?.maxRuns === void 0 ? "" : String(schedule.maxRuns));
+					return;
+				}
+				controller.setSchedule(task.id, { maxRuns: Number(choice) });
+			};
+			/** Persist a custom run cap; a non-positive or fractional value is refused. */
+			const saveCustomMaxRuns = (value) => {
+				setMaxRunsText(value);
+				const parsed = Number(value.trim());
+				if (value.trim() === "" || !Number.isInteger(parsed) || parsed < 1) {
+					setError(t$5("detail.schedule.maxRunsInvalid"));
+					return;
+				}
+				setError(void 0);
+				controller.setSchedule(task.id, { maxRuns: parsed });
+			};
+			/** Arm/disarm the schedule (arming first persists the edited plan). */
 			const toggleEnabled = (next) => {
+				if (next && mode === "once") {
+					const at = parseZonedInput(atText, effectiveZone);
+					if (at === void 0 || at <= now) {
+						setError(t$5("detail.schedule.atInvalid"));
+						return;
+					}
+					setError(void 0);
+					if (controller.setSchedule(task.id, {
+						mode: "once",
+						at,
+						enabled: true
+					}) && !controller.isHostBacked()) setEnabled(true);
+					return;
+				}
 				const trimmed = cron.trim();
 				if (next && (trimmed === "" || !isValidCron(trimmed))) {
 					setError(t$5("detail.schedule.invalid"));
@@ -13256,16 +13791,28 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					...next && trimmed !== schedule?.cron ? { cron: trimmed } : {}
 				}) && !controller.isHostBacked()) setEnabled(next);
 			};
+			/** Drop every future trigger without touching the card's execution history. */
+			const cancelSchedule = () => {
+				setError(void 0);
+				if (controller.setSchedule(task.id, { enabled: false }) && !controller.isHostBacked()) setEnabled(false);
+			};
 			const applyPreset = (preset) => {
 				if (preset === "") return;
 				setCron(preset);
+				setMode("cron");
 				setError(void 0);
-				controller.setSchedule(task.id, { cron: preset });
+				controller.setSchedule(task.id, {
+					mode: "cron",
+					cron: preset
+				});
 			};
 			const effectiveZone = zone === "" ? hostTimeZone : zone;
 			const nextLabel = !enabled || nextRunAt === void 0 ? t$5("detail.schedule.notScheduled") : nextRunAt <= now ? t$5("detail.schedule.dueSoon") : nextRunLabel(nextRunAt, effectiveZone, formatHostTimestamp$1, now);
 			const lastLabel = lastTriggeredAt === void 0 ? "—" : formatHostTimestamp$1(lastTriggeredAt, effectiveZone);
 			const zones = zoneChoices(hostTimeZone, schedule?.timeZone);
+			const budget = schedule === void 0 ? void 0 : budgetLabel(schedule);
+			const ended = schedule === void 0 ? void 0 : endedLabel(schedule);
+			const skipped = schedule === void 0 ? void 0 : skippedLabel(schedule);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: board_module_css_default.detailSection,
 				children: [
@@ -13281,42 +13828,128 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							}
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.enable") })]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: board_module_css_default.scheduleRow,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: `${board_module_css_default.input} ${board_module_css_default.scheduleInput}${error !== void 0 ? ` ${board_module_css_default.scheduleInputInvalid}` : ""}`,
-							value: cron,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: board_module_css_default.scheduleZone,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.mode") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							className: board_module_css_default.schedulePreset,
+							value: mode,
 							disabled: pending,
-							placeholder: "0 9 * * *",
-							spellCheck: false,
-							"aria-label": t$5("detail.schedule.cron"),
+							"aria-label": t$5("detail.schedule.mode"),
 							onChange: (event) => {
-								setCron(event.target.value);
+								changeMode(event.target.value);
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "cron",
+								children: t$5("detail.schedule.mode.cron")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "once",
+								children: t$5("detail.schedule.mode.once")
+							})]
+						})]
+					}),
+					mode === "once" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: board_module_css_default.scheduleZone,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.at") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							className: board_module_css_default.input,
+							type: "datetime-local",
+							value: atText,
+							disabled: pending,
+							"aria-label": t$5("detail.schedule.at"),
+							title: t$5("detail.schedule.atHint"),
+							onChange: (event) => {
+								setAtText(event.target.value);
 								setError(void 0);
 							},
 							onBlur: () => {
-								saveCron(cron);
-							},
-							onKeyDown: (event) => {
-								if (event.key === "Enter") saveCron(cron);
+								saveAt(atText);
 							}
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-							className: board_module_css_default.schedulePreset,
-							value: "",
-							disabled: pending,
-							"aria-label": t$5("detail.schedule.presets"),
-							onChange: (event) => {
-								applyPreset(event.target.value);
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-								value: "",
-								children: [t$5("detail.schedule.presets"), "…"]
-							}), SCHEDULE_PRESETS.map((preset) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: preset.cron,
-								children: t$5(preset.label)
-							}, preset.cron))]
 						})]
-					}),
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: board_module_css_default.scheduleRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: `${board_module_css_default.input} ${board_module_css_default.scheduleInput}${error !== void 0 ? ` ${board_module_css_default.scheduleInputInvalid}` : ""}`,
+								value: cron,
+								disabled: pending,
+								placeholder: "0 9 * * *",
+								spellCheck: false,
+								"aria-label": t$5("detail.schedule.cron"),
+								onChange: (event) => {
+									setCron(event.target.value);
+									setError(void 0);
+								},
+								onBlur: () => {
+									saveCron(cron);
+								},
+								onKeyDown: (event) => {
+									if (event.key === "Enter") saveCron(cron);
+								}
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+								className: board_module_css_default.schedulePreset,
+								value: "",
+								disabled: pending,
+								"aria-label": t$5("detail.schedule.presets"),
+								onChange: (event) => {
+									applyPreset(event.target.value);
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+									value: "",
+									children: [t$5("detail.schedule.presets"), "…"]
+								}), SCHEDULE_PRESETS.map((preset) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: preset.cron,
+									children: t$5(preset.label)
+								}, preset.cron))]
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: board_module_css_default.scheduleZone,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.maxRuns") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+								className: board_module_css_default.schedulePreset,
+								value: maxRunsChoice,
+								disabled: pending,
+								"aria-label": t$5("detail.schedule.maxRuns"),
+								onChange: (event) => {
+									applyMaxRuns(event.target.value);
+								},
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "unlimited",
+										children: t$5("detail.schedule.maxRunsUnlimited")
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "1",
+										children: t$5("detail.schedule.maxRunsValue", { count: "1" })
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "2",
+										children: t$5("detail.schedule.maxRunsValue", { count: "2" })
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "custom",
+										children: t$5("detail.schedule.maxRunsCustom")
+									})
+								]
+							})]
+						}),
+						maxRunsChoice === "custom" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: board_module_css_default.scheduleZone,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.maxRuns") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: board_module_css_default.input,
+								type: "number",
+								min: 1,
+								step: 1,
+								value: maxRunsText,
+								disabled: pending,
+								"aria-label": t$5("detail.schedule.maxRuns"),
+								onChange: (event) => {
+									setMaxRunsText(event.target.value);
+								},
+								onBlur: () => {
+									saveCustomMaxRuns(maxRunsText);
+								}
+							})]
+						})
+					] }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 						className: board_module_css_default.scheduleZone,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t$5("detail.schedule.timeZone") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("select", {
@@ -13324,7 +13957,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							value: zone,
 							disabled: pending,
 							"aria-label": t$5("detail.schedule.timeZone"),
-							title: t$5("detail.schedule.timeZoneHint"),
+							title: mode === "once" ? t$5("detail.schedule.zoneOnceHint") : t$5("detail.schedule.timeZoneHint"),
 							onChange: (event) => {
 								changeZone(event.target.value);
 							},
@@ -13349,6 +13982,25 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							" ",
 							lastLabel
 						]
+					}),
+					budget !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.scheduleMeta,
+						children: budget
+					}),
+					ended !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.scheduleMeta,
+						children: ended
+					}),
+					ended === void 0 && skipped !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.scheduleMeta,
+						children: skipped
+					}),
+					enabled && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: board_module_css_default.ghostButton,
+						disabled: pending,
+						onClick: cancelSchedule,
+						children: t$5("detail.schedule.cancel")
 					})
 				]
 			});

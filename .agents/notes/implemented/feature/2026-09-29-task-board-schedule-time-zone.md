@@ -20,7 +20,7 @@ A schedule rule carries its own IANA zone, and the cron engine resolves wall clo
 
 ### The rule and its persistence
 
-- `ScheduleRule` gains an optional `timeZone?: string`. Absent means the Host zone, which is what a rule written before zones were persisted keeps following.
+- `ScheduleRule` gains an optional `timeZone?: string`. Absent means the Host zone, which is what a rule written before zones were persisted keeps following. The rule's shape has since grown a plan kind and a run budget — `cron` is optional (a one-shot stores `at`), and the rule also carries `runCount`/`maxRuns` with its stop/skip record ([one-shot schedules and run budgets](2026-10-09-task-board-one-shot-and-run-budget.md)); the zone semantics here are unchanged.
 - The ledger schema moves to v4. Migration from v2 or v3 proves every row is structurally valid (a document that would drop or coerce rows still fails loudly and keeps the original file), then stamps the current Host zone onto every rule that stored none. Stamping is what stops an existing rule from following a later `TZ` change; the trigger instant is untouched, because the stored `nextRunAt` already encodes the old zone.
 - `normalizeSchedule` keeps a stored zone only when this runtime resolves it, so a typo or a zone missing from this ICU build is cleared (the rule falls back to the Host zone) instead of failing every later resolve.
 - `applySetSchedule` refuses an unusable zone and takes the Host zone as a parameter, so the fallback is explicit rather than re-derived inside the use case. `applyCreateTask` grows the same parameter and refuses a requested unusable zone instead of silently reinterpreting it.
@@ -73,7 +73,7 @@ What would go stale silently, in the order it is most likely to:
 ## Consequences
 
 - A schedule states its own clock. Changing the Host's `TZ` no longer moves an armed rule, and a user can arm 09:00 in a zone other than the Host's.
-- The ledger is v4 and a v2 or v3 document is migrated on load, stamping the Host zone onto rules that had none. A failed migration still fails loudly and keeps the original file.
+- A v2 or v3 document is migrated on load, stamping the Host zone onto rules that had none (this change introduced v4; the ledger is v6 today and the loader re-stamps only the generations that predate the stored zone). A failed migration still fails loudly and keeps the original file.
 - Wall-clock resolution is now identical to the official schedule service's: gaps are skipped and an ambiguous fall-back time fires once, at the earlier instant. The previous engine's spring-forward behavior was already "normalize forward"; the gap date is now skipped, matching upstream.
 - `0 0 *&#47;2 * 1` and similar star-led day fields paired with a restricted weekday change meaning to the Vixie reading. This is the only cron behavior change; a containment run over 24 expressions found no other expression whose resolution differs.
 - The client computes its next-run preview with the shared engine, so a preview can no longer disagree with what the Host arms. A rule whose zone this runtime cannot resolve falls back to the Host zone rather than breaking the editor.

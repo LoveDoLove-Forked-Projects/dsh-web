@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { dshHome } from './dsh-home.ts'
 import { isValidCron, isValidTimeZone, nextRunAtMs, resolveHostTimeZone } from './core/schedule.ts'
 import { isTaskRecord, parseLedger } from './core/store.ts'
-import { canMoveManually, hasOpenExecution, retainRecentExecutions, settleExecution, settledStatus, startExecution, withStatus, type ExecutionOutcome, type ExecutionRecord, type TaskRecord } from './core/tasks.ts'
+import { canMoveManually, hasOpenExecution, retainRecentExecutions, scheduleExhausted, scheduleRunBudget, settleExecution, settledStatus, startExecution, withSchedule, withStatus, type ExecutionOutcome, type ExecutionRecord, type ScheduleMode, type ScheduleStopReason, type TaskRecord } from './core/tasks.ts'
 import {
   DEFAULT_SUBTASK_DEPTH,
   cascadeTargets,
@@ -18,11 +18,11 @@ import {
 import { applyArchiveTask, applyRestoreTask } from './core/use-cases/task-archive.ts'
 import { applyCreateTask } from './core/use-cases/task-create.ts'
 import { applyDeleteTask } from './core/use-cases/task-delete.ts'
-import { applySetSchedule, applyScheduleNextRun } from './core/use-cases/task-schedule.ts'
+import { applySetSchedule, applyScheduleProgress, type ScheduleProgress } from './core/use-cases/task-schedule.ts'
 import { applySetParent } from './core/use-cases/task-parent.ts'
 import { applyDeleteTag, applyRenameTag } from './core/use-cases/task-tag.ts'
 import { applyUpdateTask, canEditTaskContent, hasContentPatch } from './core/use-cases/task-update.ts'
-import { TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS, TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts'
+import { TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS, TASK_BOARD_SCHEMA_VERSION, TASK_BOARD_ZONE_STAMP_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts'
 import { withoutAcceptanceAnomalies, type ExecutionVerification } from './core/verification.ts'
 import { DEFAULT_SESSION_PERMISSION, effectivePermission, permissionCarriedBy, requiresPermissionConfirmation, type TaskPermission } from './core/handover.ts'
 
@@ -98,7 +98,10 @@ export interface OpenExecutionReference {
 /** Minimal value copy used by the Host scheduler. */
 export interface DueScheduleReference {
   readonly taskId: string
-  readonly cron: string
+  /** Whether this due rule is a recurring cron rule or a single planned instant. */
+  readonly mode: ScheduleMode
+  /** Cron expression of a recurring rule; absent on a one-shot. */
+  readonly cron?: string
   /** Zone this rule's wall clock is read in. */
   readonly timeZone: string
   readonly nextRunAt: number
@@ -415,17 +418,24 @@ function parseHostTasks(values: readonly unknown[]): TaskRecord[] {
     const rawSchedule = rawById.get(task.id)?.schedule
     if (typeof rawSchedule !== 'object' || rawSchedule === null) return task
     const schedule = rawSchedule as Record<string, unknown>
+    // A one-shot carries no cron; its instant is validated by the wire gate and
+    // the store repair, so there is nothing to salvage here.
+    if (schedule.mode === 'once') return task
     if (typeof schedule.cron !== 'string' || isValidCron(schedule.cron)) return task
     return {
       ...task,
       schedule: {
         enabled: false,
+        mode: 'cron',
         cron: schedule.cron,
         ...(typeof schedule.timeZone === 'string' && isValidTimeZone(schedule.timeZone) ? { timeZone: schedule.timeZone } : {}),
         nextRunAt: undefined,
         lastTriggeredAt: typeof schedule.lastTriggeredAt === 'number' && Number.isFinite(schedule.lastTriggeredAt)
           ? schedule.lastTriggeredAt
           : undefined,
+        runCount: typeof schedule.runCount === 'number' && Number.isInteger(schedule.runCount) && schedule.runCount >= 0
+          ? schedule.runCount
+          : 0,
       },
     }
   })
@@ -621,7 +631,13 @@ export class HostTaskLedger {
       if (task.archivedAt !== undefined) continue
       const schedule = task.schedule
       if (schedule === undefined || !schedule.enabled || schedule.nextRunAt === undefined || schedule.nextRunAt > now) continue
-      due.push({ taskId: task.id, cron: schedule.cron, timeZone: scheduleZone(schedule), nextRunAt: schedule.nextRunAt })
+      due.push({
+        taskId: task.id,
+        mode: schedule.mode,
+        ...(schedule.cron === undefined ? {} : { cron: schedule.cron }),
+        timeZone: scheduleZone(schedule),
+        nextRunAt: schedule.nextRunAt,
+      })
     }
     return due
   }
@@ -673,38 +689,120 @@ export class HostTaskLedger {
   /**
    * Open the cascade one due schedule triggers: an empty array means nothing
    * ran (already running, or a participant whose elevated permission is still
-   * unconfirmed), and the rule rolls to its next occurrence either way.
+   * unconfirmed, a one-shot whose instant was missed, or an exhausted budget),
+   * and the rule's own state says which.
+   *
+   * The run budget is enforced HERE, inside the single ledger writer: a rule
+   * whose counter already reached its cap is stopped instead of opened, so no
+   * restart, repeated timer fire or re-arm can overrun it.
+   * @param taskId - the task whose rule came due.
+   * @param triggeredAt - the instant the occurrence came due.
+   * @returns the executions this occurrence opened.
    */
-  openScheduled(taskId: string, nextRunAt: number | undefined, triggeredAt: number): OpenedRun[] {
+  openScheduled(taskId: string, triggeredAt: number): OpenedRun[] {
     const task = this.document.tasks.find(item => item.id === taskId)
     if (task === undefined || task.archivedAt !== undefined) return []
-    const rollForward = (): void => {
-      this.document.tasks = [...applyScheduleNextRun(this.document.tasks, taskId, nextRunAt, task.schedule?.lastTriggeredAt, triggeredAt)]
-      this.commit()
+    const schedule = task.schedule
+    if (schedule === undefined || !schedule.enabled) return []
+
+    // A rule that has spent its budget never opens another run. The stop is
+    // recorded here rather than trusted to the firing timer, so a rule that
+    // was hand-edited into an exhausted state still terminates visibly.
+    if (scheduleExhausted(schedule)) {
+      this.progressSchedule(taskId, {
+        consumed: 0,
+        endedReason: schedule.mode === 'once' ? 'fired' : 'limit',
+      }, triggeredAt)
+      return []
     }
+
     const refusal = this.bindingRefusal(task)
     if (refusal !== undefined) {
       // An unconfirmed above-default permission must never run unattended: the
-      // whole tree is refused and the schedule rolls to the next occurrence,
-      // exactly like the already-running refusal.
+      // whole tree is refused and the occurrence is skipped without consuming
+      // the run budget, exactly like the already-running refusal.
       this.document.scheduler.error = `scheduled run refused for task ${taskId}: ${bindingRefusalMessage(refusal, this.sessionDefaultPermission, 'schedule')}`
-      rollForward()
+      this.skipOccurrence(taskId, 'permission', triggeredAt)
       return []
     }
     if (hasOpenExecution(task)) {
-      rollForward()
+      this.skipOccurrence(taskId, 'busy', triggeredAt)
       return []
     }
-    return this.startCascade(task, triggeredAt, undefined, false, nextRunAt)
+
+    if (schedule.mode === 'once') {
+      // The single planned instant is due: open its one run and stop the rule
+      // in the same commit, so the budget can never produce a second one.
+      return this.startCascade(task, triggeredAt, undefined, false, {
+        consumed: 1,
+        lastTriggeredAt: triggeredAt,
+        endedReason: 'fired',
+      })
+    }
+
+    const next = nextRunAtMs(schedule.cron ?? '', schedule.nextRunAt ?? triggeredAt, scheduleZone(schedule))
+    if (next === undefined) {
+      this.progressSchedule(taskId, { consumed: 0, endedReason: 'no-target' }, triggeredAt)
+      return []
+    }
+    const consumed = schedule.runCount + 1
+    const budget = scheduleRunBudget(schedule)
+    const spent = budget !== undefined && consumed >= budget
+    return this.startCascade(task, triggeredAt, undefined, false, {
+      consumed: 1,
+      nextRunAt: spent ? undefined : next,
+      lastTriggeredAt: triggeredAt,
+      ...(spent ? { endedReason: 'limit' as const } : {}),
+    })
   }
 
+  /**
+   * Record a due occurrence that opened no execution: roll a recurring rule to
+   * its next occurrence (budget untouched), or stop it when there is none. A
+   * one-shot has no second occurrence, so it always stops here with the reason.
+   */
+  private skipOccurrence(taskId: string, reason: ScheduleStopReason, now: number): void {
+    const task = this.document.tasks.find(item => item.id === taskId)
+    const schedule = task?.schedule
+    if (schedule === undefined) return
+    if (schedule.mode === 'once') {
+      this.progressSchedule(taskId, { consumed: 0, endedReason: reason }, now)
+      return
+    }
+    const next = nextRunAtMs(schedule.cron ?? '', schedule.nextRunAt ?? now, scheduleZone(schedule))
+    if (next === undefined) this.progressSchedule(taskId, { consumed: 0, endedReason: 'no-target' }, now)
+    else this.progressSchedule(taskId, { consumed: 0, nextRunAt: next, skippedReason: reason }, now)
+  }
+
+  /** Apply a schedule-occurrence transition and persist it atomically. */
+  private progressSchedule(taskId: string, progress: ScheduleProgress, now: number): void {
+    this.document.tasks = [...applyScheduleProgress(this.document.tasks, taskId, progress, now)]
+    this.commit()
+  }
+
+  /**
+   * Boot / resume recovery: skip every occurrence that came due while the board
+   * was not running through it. A recurring rule rolls to its next future
+   * target; a one-shot whose instant has passed is stopped as missed, because
+   * there is no later occurrence left to run. Rendering the missed occurrence
+   * is deliberately not attempted: the ACL of a card that fired hours ago is
+   * stale, and the board's own recovery contract is "missed triggers are
+   * skipped, never replayed".
+   */
   skipMissed(now: number): void {
     let changed = false
     this.document.tasks = this.document.tasks.map(task => {
       const schedule = task.schedule
       if (schedule === undefined || !schedule.enabled || schedule.nextRunAt === undefined || schedule.nextRunAt > now) return task
       changed = true
-      return { ...task, schedule: { ...schedule, nextRunAt: nextRunAtMs(schedule.cron, now, scheduleZone(schedule)) }, updatedAt: now }
+      if (schedule.mode === 'once') {
+        return withSchedule(task, { enabled: false, nextRunAt: undefined, endedAt: now, endedReason: 'missed' }, now)
+      }
+      const next = nextRunAtMs(schedule.cron ?? '', now, scheduleZone(schedule))
+      if (next === undefined) {
+        return withSchedule(task, { enabled: false, nextRunAt: undefined, endedAt: now, endedReason: 'no-target' }, now)
+      }
+      return withSchedule(task, { nextRunAt: next, skippedAt: now, skippedReason: 'missed' }, now)
     })
     if (changed) this.commit()
   }
@@ -809,7 +907,9 @@ export class HostTaskLedger {
         const sources = new Set(this.document.scheduler.importedSources ?? [])
         if (sources.has(action.sourceId)) return { state: this.state() }
         const invalidScheduleIds = action.tasks
-          .filter(task => task.schedule !== undefined && !isValidCron(task.schedule.cron))
+          .filter(task => task.schedule !== undefined
+            && task.schedule.mode !== 'once'
+            && !isValidCron(task.schedule.cron ?? ''))
           .map(task => task.id)
         const incoming = parseHostTasks(action.tasks)
         const merged = new Map(this.document.tasks.map(task => [task.id, task]))
@@ -830,9 +930,8 @@ export class HostTaskLedger {
       }
       case 'create': {
         if (this.document.tasks.some(task => task.id === action.id)) throw new Error('task id already exists')
-        if (action.input.schedule?.enabled === true && (!isValidCron(action.input.schedule.cron)
-          || !isValidTimeZone(action.input.schedule.timeZone ?? timeZone())
-          || nextRunAtMs(action.input.schedule.cron, now, action.input.schedule.timeZone ?? timeZone()) === undefined)) {
+        const requested = action.input.schedule
+        if (requested?.enabled === true && !this.validScheduleRequest(requested, now)) {
           throw new Error('invalid schedule')
         }
         const input = action.input.freeze === undefined || initiator === undefined || initiator === ''
@@ -1042,6 +1141,31 @@ export class HostTaskLedger {
   }
 
   /**
+   * Whether a creation-time schedule request is usable. A one-shot must carry
+   * a whole-millisecond instant in the future; a recurring rule must carry a
+   * valid expression with a reachable occurrence and, when capped, a positive
+   * whole run budget. An unusable zone is refused rather than reinterpreted as
+   * the Host zone.
+   */
+  private validScheduleRequest(request: {
+    readonly enabled: boolean
+    readonly mode?: ScheduleMode
+    readonly cron?: string
+    readonly at?: number
+    readonly timeZone?: string
+    readonly maxRuns?: number
+  }, now: number): boolean {
+    if (request.timeZone !== undefined && !isValidTimeZone(request.timeZone)) return false
+    if (request.mode === 'once') {
+      return typeof request.at === 'number' && Number.isInteger(request.at) && request.at > now
+    }
+    const cron = (request.cron ?? '').trim()
+    if (cron === '' || !isValidCron(cron)) return false
+    if (request.maxRuns !== undefined && (!Number.isInteger(request.maxRuns) || request.maxRuns < 1)) return false
+    return nextRunAtMs(cron, now, request.timeZone ?? timeZone()) !== undefined
+  }
+
+  /**
    * The binding that makes a run illegal, if any.
    *
    * A plain cascade launches one session per participant, so every participant
@@ -1109,9 +1233,11 @@ export class HostTaskLedger {
    * @param now - clock instant (ms epoch).
    * @param initiator - the DSH session that asked for the run (audit only).
    * @param rerun - true to reset the root to 'todo' before starting it.
-   * @param nextRunAt - when set, the root's schedule also rolls forward.
+   * @param progress - when set, this run was a due occurrence and the root's
+   *   rule is advanced (counter, next target, stop/skip record) in the same
+   *   atomic commit that opened the executions.
    */
-  private startCascade(root: TaskRecord, now: number, initiator?: string, rerun = false, nextRunAt?: number): OpenedRun[] {
+  private startCascade(root: TaskRecord, now: number, initiator?: string, rerun = false, progress?: ScheduleProgress): OpenedRun[] {
     const before = this.document.tasks
     const groupId = crypto.randomUUID()
     // A team-mode root runs as the Team Lead: every other member of the same
@@ -1134,7 +1260,7 @@ export class HostTaskLedger {
     }
     if (runs.length === 0) return []
     let tasks: readonly TaskRecord[] = before.map(task => started.get(task.id) ?? task)
-    if (nextRunAt !== undefined) tasks = applyScheduleNextRun(tasks, root.id, nextRunAt, now, now)
+    if (progress !== undefined) tasks = applyScheduleProgress(tasks, root.id, progress, now)
     this.document.tasks = [...tasks]
     this.commit()
     return runs
@@ -1265,6 +1391,14 @@ export class HostTaskLedger {
     return changed
   }
 
+  /**
+   * Re-align every armed rule at load/import. A recurring rule is recomputed
+   * from the current instant; a one-shot is armed at its planned instant when
+   * that is still in the future, and stopped as missed once it has passed
+   * (there is no later occurrence to run). A recurring rule recomputed past an
+   * occurrence records the skip, so the board can show that a fire was passed
+   * over rather than silently rewinding.
+   */
   private repairSchedules(skipPast: boolean, persist = true): void {
     const now = this.now()
     let changed = false
@@ -1272,15 +1406,32 @@ export class HostTaskLedger {
       const schedule = task.schedule
       if (schedule === undefined || !schedule.enabled) return task
       if (!skipPast && schedule.nextRunAt !== undefined) return task
-      const next = nextRunAtMs(schedule.cron, now, scheduleZone(schedule))
+      if (schedule.mode === 'once') {
+        const at = schedule.at
+        if (at === undefined) {
+          changed = true
+          return withSchedule(task, { enabled: false, nextRunAt: undefined, endedAt: now, endedReason: 'no-target' }, now)
+        }
+        if (at <= now) {
+          changed = true
+          return withSchedule(task, { enabled: false, nextRunAt: undefined, endedAt: now, endedReason: 'missed' }, now)
+        }
+        if (schedule.nextRunAt === at) return task
+        changed = true
+        return withSchedule(task, { nextRunAt: at }, now)
+      }
+      const next = nextRunAtMs(schedule.cron ?? '', now, scheduleZone(schedule))
       if (next === undefined) {
         changed = true
         this.document.scheduler.error = `invalid cron disabled for task: ${task.id}`
-        return { ...task, schedule: { ...schedule, enabled: false, nextRunAt: undefined }, updatedAt: now }
+        return withSchedule(task, { enabled: false, nextRunAt: undefined, endedAt: now, endedReason: 'no-target' }, now)
       }
-      if (schedule.nextRunAt === next) return task
+      const passed = schedule.nextRunAt !== undefined && schedule.nextRunAt <= now
+      if (schedule.nextRunAt === next && !passed) return task
       changed = true
-      return { ...task, schedule: { ...schedule, nextRunAt: next }, updatedAt: now }
+      return withSchedule(task, passed
+        ? { nextRunAt: next, skippedAt: now, skippedReason: 'missed' }
+        : { nextRunAt: next }, now)
     })
     if (changed && persist) this.commit()
   }
@@ -1329,15 +1480,23 @@ export class HostTaskLedger {
     if (!Array.isArray(parsed.tasks) || !parsed.tasks.every(row => isTaskRecord(row))) {
       throw new Error(`v${String(parsed.schemaVersion)} document contains structurally invalid task rows`)
     }
+    // Only generations before the stored zone was introduced (plus the one that
+    // introduced it) get the Host zone stamped: a v5 rule either carries its own
+    // zone or deliberately follows the Host, and re-stamping it would freeze it
+    // to the zone in effect at this load.
+    const stampZone = typeof parsed.schemaVersion === 'number'
+      && parsed.schemaVersion <= TASK_BOARD_ZONE_STAMP_SCHEMA_VERSION
     // Every row passed `isTaskRecord` above, so the stamped rows are still
     // task records; the cast only re-narrows the unknown-typed on-disk array.
-    const rows = (parsed.tasks as readonly unknown[]).map((value) => {
-      const row = value as { schedule?: unknown }
-      const schedule = row.schedule
-      if (typeof schedule !== 'object' || schedule === null) return value
-      if (typeof (schedule as { timeZone?: unknown }).timeZone === 'string') return value
-      return { ...(value as object), schedule: { ...(schedule as object), timeZone: timeZone() } }
-    })
+    const rows = stampZone
+      ? (parsed.tasks as readonly unknown[]).map((value) => {
+          const row = value as { schedule?: unknown }
+          const schedule = row.schedule
+          if (typeof schedule !== 'object' || schedule === null) return value
+          if (typeof (schedule as { timeZone?: unknown }).timeZone === 'string') return value
+          return { ...(value as object), schedule: { ...(schedule as object), timeZone: timeZone() } }
+        })
+      : parsed.tasks
     return this.normalizeDocument({ ...parsed, tasks: rows as TaskRecord[] })
   }
 
@@ -1423,8 +1582,14 @@ export class HostTaskLedger {
       if (typeof value !== 'object' || value === null) return []
       const row = value as { id?: unknown; schedule?: unknown }
       if (typeof row.schedule !== 'object' || row.schedule === null) return []
-      const cron = (row.schedule as { cron?: unknown }).cron
-      return typeof cron !== 'string' || !isValidCron(cron)
+      const rule = row.schedule as { cron?: unknown; mode?: unknown; at?: unknown }
+      // A one-shot has no cron: its instant is what must be usable.
+      if (rule.mode === 'once') {
+        return typeof rule.at === 'number' && Number.isFinite(rule.at)
+          ? []
+          : [typeof row.id === 'string' ? row.id : 'unknown']
+      }
+      return typeof rule.cron !== 'string' || !isValidCron(rule.cron)
         ? [typeof row.id === 'string' ? row.id : 'unknown']
         : []
     })

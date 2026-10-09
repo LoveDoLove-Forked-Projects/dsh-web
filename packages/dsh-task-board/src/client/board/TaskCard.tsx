@@ -274,11 +274,11 @@ function TaskCardInner({
               <span
                 className={css.cardSchedule}
                 title={task.schedule.nextRunAt !== undefined
-                  ? `${t('card.scheduled')} · ${formatHostTimestamp(task.schedule.nextRunAt, timeZone)}`
-                  : t('card.scheduled')}
+                  ? `${t(task.schedule.mode === 'once' ? 'card.scheduledOnce' : 'card.scheduled')} · ${formatHostTimestamp(task.schedule.nextRunAt, timeZone)}`
+                  : t(task.schedule.mode === 'once' ? 'card.scheduledOnce' : 'card.scheduled')}
               >
                 <IconClock size={12} />
-                {t('card.scheduled')}
+                {t(task.schedule.mode === 'once' ? 'card.scheduledOnce' : 'card.scheduled')}
               </span>
             )}
             {latest !== undefined && (

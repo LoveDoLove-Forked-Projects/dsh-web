@@ -87,7 +87,7 @@ describe('continuation card: vertical action -> controller -> ledger -> snapshot
   function makeController(root: string): { controller: BoardController; ledger: HostTaskLedger } {
     const ledger = new HostTaskLedger(root, () => NOW)
     const toSnapshot = (state: { revision: number; tasks: TaskRecord[]; scheduler: TaskBoardSnapshot['scheduler'] }): TaskBoardSnapshot => ({
-      schemaVersion: 5,
+      schemaVersion: 6,
       revision: state.revision,
       tasks: state.tasks,
       scheduler: state.scheduler,

@@ -257,7 +257,7 @@ describe('goal run toggle', () => {
   it('user changing the schedule zone persists it through the controller', async () => {
     // Given a card whose rule is pinned to a zone
     const { container, controller } = await renderDetail(task({
-      schedule: { enabled: true, cron: '0 9 * * *', timeZone: 'Asia/Shanghai', nextRunAt: undefined, lastTriggeredAt: undefined },
+      schedule: { enabled: true, mode: 'cron', cron: '0 9 * * *', timeZone: 'Asia/Shanghai', nextRunAt: undefined, lastTriggeredAt: undefined, runCount: 0 },
     }))
 
     // When the user picks a different zone and then the Host default
@@ -290,5 +290,86 @@ describe('goal run toggle', () => {
     expect(checkbox.checked).toBe(false)
     await act(async () => { checkbox.click() })
     expect(updateTask).toHaveBeenCalledWith('t1', { goalRun: true })
+  })
+})
+
+describe('schedule plan editing', () => {
+  it('user switching a rule to a one-shot persists the planned instant', async () => {
+    // Given a card with no schedule yet
+    const { container, controller } = await renderDetail(task())
+
+    // When the user picks the one-shot plan
+    const modeSelect = [...container.querySelectorAll<HTMLSelectElement>('select')]
+      .find(candidate => candidate.getAttribute('aria-label') === '调度方式')!
+    expect(modeSelect.value).toBe('cron')
+    await act(async () => {
+      modeSelect.value = 'once'
+      modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    // Then the editor offers a datetime field and the switch submitted a
+    // future instant (its default), not a past one
+    const atInput = container.querySelector<HTMLInputElement>('input[type="datetime-local"]')!
+    expect(atInput.getAttribute('aria-label')).toBe('执行时间')
+    expect(controller.setSchedule).toHaveBeenCalledWith('t1', { mode: 'once', at: expect.any(Number) })
+
+    // And a chosen wall clock is parsed in the rule zone and persisted. A
+    // datetime-local reports through `change`, which jsdom does not derive
+    // from an input event.
+    await act(async () => {
+      setFieldValue(atInput, '2030-01-02T03:04')
+      atInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    // React delegates `onBlur` to the bubbling `focusout` event.
+    await act(async () => { atInput.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })
+    expect(controller.setSchedule).toHaveBeenCalledWith('t1', { mode: 'once', at: Date.UTC(2030, 0, 2, 3, 4) })
+  })
+
+  it('user picking a run cap writes it and reads the rule budget', async () => {
+    // Given a rule that already ran once under a two-run cap
+    const { container, controller } = await renderDetail(task({
+      schedule: { enabled: true, mode: 'cron', cron: '* * * * *', nextRunAt: undefined, lastTriggeredAt: undefined, runCount: 1, maxRuns: 2 },
+    }))
+
+    // Then the ledger's own budget is shown, not a client-side guess
+    expect(container.textContent).toContain('1/2')
+
+    // When the user clears the cap
+    const capSelect = [...container.querySelectorAll<HTMLSelectElement>('select')]
+      .find(candidate => candidate.getAttribute('aria-label') === '次数上限')!
+    expect(capSelect.value).toBe('2')
+    await act(async () => {
+      capSelect.value = 'unlimited'
+      capSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(controller.setSchedule).toHaveBeenCalledWith('t1', { maxRuns: null })
+
+    // And cancelling the future plan disarms it
+    const cancel = [...container.querySelectorAll('button')].find(button => button.textContent === '关闭调度')!
+    await act(async () => { cancel.click() })
+    expect(controller.setSchedule).toHaveBeenCalledWith('t1', { enabled: false })
+  })
+
+  it('operator opening a spent one-shot sees the planned instant and the end state', async () => {
+    // Given a one-shot that already fired
+    // When the operator opens its card
+    const { container } = await renderDetail(task({
+      schedule: {
+        enabled: false,
+        mode: 'once',
+        at: Date.UTC(2026, 9, 9, 4, 0),
+        nextRunAt: undefined,
+        lastTriggeredAt: Date.UTC(2026, 9, 9, 4, 0),
+        runCount: 1,
+        endedAt: Date.UTC(2026, 9, 9, 4, 0),
+        endedReason: 'fired',
+      },
+    }))
+
+    // Then the detail states both the planned instant and how it ended
+    const atInput = container.querySelector<HTMLInputElement>('input[type="datetime-local"]')!
+    expect(atInput.value).toBe('2026-10-09T04:00')
+    expect(container.textContent).toContain('调度已结束')
+    expect(container.textContent).toContain('单次计划已执行')
   })
 })

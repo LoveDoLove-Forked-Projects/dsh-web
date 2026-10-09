@@ -305,6 +305,130 @@ describe('TaskBoardHostService scheduling without a browser', () => {
     service.dispose()
   })
 
+  it('user arming a one-shot sees it fire once and arm no further timer', async () => {
+    let now = new Date(2026, 7, 16, 10, 0, 30).getTime()
+    const ledger = new HostTaskLedger(root(), () => now)
+    // Given a one-shot plan armed at 10:02
+    const at = new Date(2026, 7, 16, 10, 2, 0).getTime()
+    ledger.applyRequest('create', {
+      kind: 'create', id: 'once', input: {
+        title: 'Once', description: '', prompt: 'work', schedule: { enabled: true, mode: 'once', at },
+      },
+    })
+    const create = vi.fn(async (_request: GatewayRequest) => ({ sessionId: 'session-once' }))
+    const prompt = vi.fn(async (_request: GatewayRequest) => ({ accepted: true }))
+    const { gateway } = makeGateway(request => {
+      if (request.namespace !== 'session') throw new Error('unexpected namespace')
+      if (request.method === 'create') return create(request)
+      if (request.method === 'rename') return { title: 'Once', seq: 1 }
+      if (request.method === 'prompt') return prompt(request)
+      throw new Error('unexpected gateway call')
+    })
+    const probe = timerProbe()
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      timers: probe.timers,
+      now: () => now,
+    })
+    service.start()
+    // The armed delay is exactly the distance to the planned instant.
+    expect(probe.delay).toBe(at - now)
+
+    // When the planned instant arrives
+    now = at
+    await probe.trigger()
+
+    // Then one real execution was created and the rule spent itself
+    expect(create).toHaveBeenCalledOnce()
+    expect(ledger.state().tasks[0].executions).toHaveLength(1)
+    expect(ledger.state().tasks[0].schedule).toMatchObject({
+      enabled: false, runCount: 1, endedReason: 'fired',
+    })
+    expect(ledger.state().tasks[0].schedule?.nextRunAt).toBeUndefined()
+    // Nothing is armed for later, so the service cannot fire it a second time.
+    expect(probe.delay).toBe(0)
+    service.dispose()
+  })
+
+  it('user capping a recurring rule at two sees it stop after the second fire', async () => {
+    // Given a recurring rule capped at two runs
+    let now = new Date(2026, 7, 16, 10, 0, 30).getTime()
+    const ledger = new HostTaskLedger(root(), () => now)
+    ledger.applyRequest('create', {
+      kind: 'create', id: 'capped', input: {
+        title: 'Capped', description: '', prompt: 'work', schedule: { enabled: true, cron: '* * * * *', maxRuns: 2 },
+      },
+    })
+    let created = 0
+    const { gateway } = makeGateway(request => {
+      if (request.method === 'create') return { sessionId: 'session-' + String(++created) }
+      if (request.method === 'rename') return { title: 'Capped', seq: 1 }
+      if (request.method === 'prompt') return { accepted: true }
+      throw new Error('unexpected gateway call')
+    })
+    const probe = timerProbe()
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      timers: probe.timers,
+      now: () => now,
+    })
+    service.start()
+    expect(probe.delay).toBe(30_000)
+
+    // When the first occurrence fires
+    now = new Date(2026, 7, 16, 10, 1, 0).getTime()
+    await probe.trigger()
+    expect(ledger.state().tasks[0].executions).toHaveLength(1)
+    expect(ledger.state().tasks[0].schedule?.runCount).toBe(1)
+    // Settle the run so the next occurrence has an idle card; the counter is
+    // driven by the scheduler, not by the outcome.
+    ledger.settle('capped', ledger.state().tasks[0].executions[0].id, 'succeeded')
+    expect(probe.delay).toBe(60_000)
+
+    // When the second occurrence fires
+    now = new Date(2026, 7, 16, 10, 2, 0).getTime()
+    await probe.trigger()
+    // Then two executions exist and the rule stopped itself at its cap
+    expect(ledger.state().tasks[0].executions).toHaveLength(2)
+    expect(ledger.state().tasks[0].schedule).toMatchObject({ enabled: false, runCount: 2, endedReason: 'limit' })
+    // The budget is spent: no timer is armed for 10:03:00 or anything later.
+    expect(probe.delay).toBe(0)
+    service.dispose()
+  })
+
+  it('user restarting after a one-shot instant sees the missed plan skipped', async () => {
+    let now = new Date(2026, 7, 16, 10, 0, 30).getTime()
+    const ledger = new HostTaskLedger(root(), () => now)
+    // Given a one-shot plan armed just after the start time
+    const at = new Date(2026, 7, 16, 10, 1, 0).getTime()
+    ledger.applyRequest('create', {
+      kind: 'create', id: 'once', input: {
+        title: 'Once', description: '', prompt: '', schedule: { enabled: true, mode: 'once', at },
+      },
+    })
+    const create = vi.fn()
+    const { gateway } = makeGateway(request => request.method === 'create' ? create(request) : { items: [] })
+    const probe = timerProbe()
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      timers: probe.timers,
+      now: () => now,
+    })
+
+    // When the service starts long after the planned instant
+    now = new Date(2026, 7, 16, 10, 5, 0).getTime()
+    service.start()
+
+    // Then the missed instant is skipped, never replayed, and nothing charged
+    expect(create).not.toHaveBeenCalled()
+    expect(ledger.state().tasks[0].schedule).toMatchObject({ enabled: false, endedReason: 'missed', runCount: 0 })
+    expect(probe.delay).toBe(0)
+    service.dispose()
+  })
+
   it('does not launch an imported archived task with a legacy enabled schedule', async () => {
     const now = new Date(2026, 7, 16, 10, 1, 0).getTime()
     const ledger = new HostTaskLedger(root(), () => now)

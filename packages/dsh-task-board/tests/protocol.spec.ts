@@ -61,6 +61,64 @@ describe('task-board action protocol', () => {
     })).toBeUndefined()
   })
 
+  it('operator setting a one-shot plan or cap gets it carried, unusable values refused', () => {
+    // Given a one-shot plan and a capped recurring rule
+    // When their envelopes are parsed
+    // Then they survive and a malformed instant, cap or mode does not
+    expect(parseActionEnvelope({
+      requestId: 'once-set',
+      action: { kind: 'set-schedule', taskId: 'task-a', patch: { mode: 'once', at: 1_800_000_000_000, enabled: true } },
+    })?.action).toEqual({ kind: 'set-schedule', taskId: 'task-a', patch: { mode: 'once', at: 1_800_000_000_000, enabled: true } })
+    expect(parseActionEnvelope({
+      requestId: 'cap-set',
+      action: { kind: 'set-schedule', taskId: 'task-a', patch: { cron: '0 9 * * *', maxRuns: 2 } },
+    })?.action.kind).toBe('set-schedule')
+    expect(parseActionEnvelope({
+      requestId: 'cap-clear',
+      action: { kind: 'set-schedule', taskId: 'task-a', patch: { maxRuns: null } },
+    })?.action.kind).toBe('set-schedule')
+    expect(parseActionEnvelope({ requestId: 'once-frac', action: { kind: 'set-schedule', taskId: 'task-a', patch: { mode: 'once', at: 1.5 } } })).toBeUndefined()
+    expect(parseActionEnvelope({ requestId: 'cap-zero', action: { kind: 'set-schedule', taskId: 'task-a', patch: { maxRuns: 0 } } })).toBeUndefined()
+    expect(parseActionEnvelope({ requestId: 'mode-bad', action: { kind: 'set-schedule', taskId: 'task-a', patch: { mode: 'later' } } })).toBeUndefined()
+  })
+
+  it('operator creating a card with a one-shot plan gets it carried, an unusable one refused', () => {
+    // Given a creation-time one-shot plan and a capped recurring plan
+    // When each create envelope is parsed
+    // Then the plans survive the gate and a fractional instant does not
+    expect(parseActionEnvelope({
+      requestId: 'create-once',
+      action: { kind: 'create', id: 'task-once', input: { title: 'T', description: '', prompt: '', schedule: { enabled: true, mode: 'once', at: 1_800_000_000_000 } } },
+    })?.action).toEqual({ kind: 'create', id: 'task-once', input: { title: 'T', description: '', prompt: '', schedule: { enabled: true, mode: 'once', at: 1_800_000_000_000 } } })
+    expect(parseActionEnvelope({
+      requestId: 'create-cap',
+      action: { kind: 'create', id: 'task-cap', input: { title: 'T', description: '', prompt: '', schedule: { enabled: true, cron: '* * * * *', maxRuns: 2 } } },
+    })?.action.kind).toBe('create')
+    expect(parseActionEnvelope({
+      requestId: 'create-once-frac',
+      action: { kind: 'create', id: 'task-once-frac', input: { title: 'T', description: '', prompt: '', schedule: { enabled: true, mode: 'once', at: 1.5 } } },
+    })).toBeUndefined()
+  })
+
+  it('operator importing a one-shot rule gets it carried, an unusable one refused', () => {
+    // Given a legacy task and one-shot / capped imports
+    const task = createTask({ title: 'legacy', description: '', prompt: '' }, 1, 'legacy')
+    // When each import envelope is parsed
+    // Then a usable one-shot travels and an unusable plan is refused
+    expect(parseActionEnvelope({
+      requestId: 'import-once',
+      action: { kind: 'import', sourceId: 'browser-a', tasks: [{ ...task, schedule: { enabled: true, mode: 'once', at: 1_800_000_000_000, runCount: 0 } }] },
+    })?.action.kind).toBe('import')
+    expect(parseActionEnvelope({
+      requestId: 'import-once-bad',
+      action: { kind: 'import', sourceId: 'browser-a', tasks: [{ ...task, schedule: { enabled: true, mode: 'once' } }] },
+    })).toBeUndefined()
+    expect(parseActionEnvelope({
+      requestId: 'import-cap-bad',
+      action: { kind: 'import', sourceId: 'browser-a', tasks: [{ ...task, schedule: { enabled: true, cron: '* * * * *', maxRuns: 0 } }] },
+    })).toBeUndefined()
+  })
+
   it('accepts a task-content update patch (host rejects the blank title)', () => {
     expect(parseActionEnvelope({
       requestId: 'content-update',

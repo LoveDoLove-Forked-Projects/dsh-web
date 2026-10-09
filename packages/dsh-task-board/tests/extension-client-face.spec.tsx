@@ -63,7 +63,7 @@ class FakeHostChannel implements TaskBoardTransport {
 
   private snapshot(): TaskBoardSnapshot {
     return {
-      schemaVersion: 5,
+      schemaVersion: 6,
       revision: 1,
       tasks: [...this.tasks],
       scheduler: { timeZone: 'UTC', ledgerId: 'ledger-fake' },

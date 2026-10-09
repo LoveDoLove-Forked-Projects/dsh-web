@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTask, EXECUTION_HISTORY_LIMIT, startExecution, withSchedule, type TaskRecord } from '../src/core/tasks.ts'
 import { HostTaskLedger, processIsAlive, processState, win32StartTimeMs, type PowerShellProbe } from '../src/host-ledger.ts'
-import { resolveHostTimeZone } from '../src/core/schedule.ts'
+import { nextRunAtMs, resolveHostTimeZone } from '../src/core/schedule.ts'
 import { TASK_BOARD_SCHEMA_VERSION } from '../src/protocol.ts'
 import { budgetAttempts, exceptionAttempts, passedAttempt, type ExecutionVerification, type VerificationAttempt } from '../src/core/verification.ts'
 
@@ -187,7 +187,7 @@ describe('HostTaskLedger', () => {
     const recoveredId = ledger.state().scheduler.ledgerId
     expect(ledger.state().tasks).toEqual([])
     expect(ledger.state().scheduler.error).toContain('quarantined')
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ schemaVersion: 5, tasks: [] })
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ schemaVersion: 6, tasks: [] })
     const quarantined = readdirSync(root).find(name => name.startsWith('ledger-v2.json.corrupt-'))
     expect(quarantined).toBeDefined()
     expect(readFileSync(join(root, quarantined!), 'utf8')).toBe('{not json')
@@ -200,18 +200,23 @@ describe('HostTaskLedger', () => {
   it('opens one due execution and rolls a running task without queuing another', () => {
     const root = tempRoot()
     const ledger = new HostTaskLedger(root, () => NOW)
+    // A cron occurrence lands on a wall-clock minute boundary, so the fixture
+    // arms the rule at the boundary the engine itself would choose.
+    const firstDue = nextRunAtMs('* * * * *', NOW)!
     const due = withSchedule(task('scheduled'), {
-      enabled: true, cron: '* * * * *', nextRunAt: NOW, lastTriggeredAt: undefined,
+      enabled: true, cron: '* * * * *', nextRunAt: firstDue, lastTriggeredAt: undefined,
     }, NOW)
     ledger.applyRequest('import', { kind: 'import', sourceId: 'source', tasks: [due] })
-    // openScheduled now answers with the cascade run list: one entry for a
-    // plain task, an empty list when nothing may run.
-    const opened = ledger.openScheduled('scheduled', NOW + 60_000, NOW)
+    // openScheduled answers with the cascade run list: one entry for a plain
+    // task, an empty list when nothing may run.
+    const opened = ledger.openScheduled('scheduled', firstDue)
     expect(opened).toHaveLength(1)
-    expect(ledger.openScheduled('scheduled', NOW + 120_000, NOW + 60_000)).toEqual([])
+    // The first run is still open, so the next occurrence is skipped rather
+    // than queued: no second execution, and the rule rolls one minute forward.
+    expect(ledger.openScheduled('scheduled', firstDue + 60_000)).toEqual([])
     const current = ledger.state().tasks[0]
     expect(current.executions).toHaveLength(1)
-    expect(current.schedule?.nextRunAt).toBe(NOW + 120_000)
+    expect(current.schedule?.nextRunAt).toBe(firstDue + 120_000)
   })
 
   it('derives detached runtime projections without copying settled execution details', () => {
@@ -285,6 +290,7 @@ describe('HostTaskLedger', () => {
     expect(ledger.armedScheduleCount()).toBe(1)
     expect(ledger.dueSchedules(NOW + 60_000)).toEqual([{
       taskId: 'scheduled',
+      mode: 'cron',
       cron: '* * * * *',
       timeZone: expect.any(String),
       nextRunAt: NOW + 30_000,
@@ -787,7 +793,7 @@ describe('HostTaskLedger', () => {
     expect(() => ledger.applyRequest('rerun-archived', {
       kind: 'rerun', taskId: 'archived',
     })).toThrow('archived task is read-only')
-    expect(ledger.openScheduled('archived', NOW + 60_000, NOW)).toEqual([])
+    expect(ledger.openScheduled('archived', NOW)).toEqual([])
     expect(ledger.state().tasks[0].executions).toEqual([])
   })
 
@@ -931,7 +937,7 @@ describe('ledger schema v4 migration', () => {
     // v4 stamps the Host zone onto a pre-v4 rule so the trigger instant it
     // already committed stops following the process TZ. The instant itself is
     // untouched, because the stored nextRunAt already encodes the old zone.
-    expect(migratedScheduled.schedule).toEqual({ enabled: false, cron: '*/5 * * * *', timeZone: expect.any(String), nextRunAt: NOW + 120_000, lastTriggeredAt: NOW - 60_000 })
+    expect(migratedScheduled.schedule).toEqual({ enabled: false, mode: 'cron', cron: '*/5 * * * *', timeZone: expect.any(String), nextRunAt: NOW + 120_000, lastTriggeredAt: NOW - 60_000, runCount: 0 })
     const migratedSettled = state.tasks.find(entry => entry.id === 'legacy-settled')!
     expect(migratedSettled.archivedAt).toBe(NOW - 10)
     expect(migratedSettled.executions).toHaveLength(2)
@@ -940,7 +946,7 @@ describe('ledger schema v4 migration', () => {
     expect(state.scheduler.lastTickAt).toBe(NOW - 1_000)
     // The migration is written back immediately as v4, keeping every field.
     const onDisk = JSON.parse(readFileSync(join(root, 'ledger-v2.json'), 'utf8'))
-    expect(onDisk.schemaVersion).toBe(5)
+    expect(onDisk.schemaVersion).toBe(6)
     expect(onDisk.revision).toBe(41)
     expect(onDisk.tasks).toEqual(state.tasks)
     expect(onDisk.scheduler.ledgerId).toBe('ledger-legacy')
@@ -1008,7 +1014,7 @@ describe('ledger schema v4 migration', () => {
     const ledger = new HostTaskLedger(fresh, () => NOW)
     expect(ledger.state().tasks).toEqual([])
     expect(ledger.state().revision).toBe(0)
-    expect(JSON.parse(readFileSync(join(fresh, 'ledger-v2.json'), 'utf8')).schemaVersion).toBe(5)
+    expect(JSON.parse(readFileSync(join(fresh, 'ledger-v2.json'), 'utf8')).schemaVersion).toBe(6)
     ledger.dispose()
 
     const existing = tempRoot()
@@ -1064,7 +1070,7 @@ describe('ledger schema v4 migration', () => {
     expect(after.revision).toBe(before.revision)
     expect(after.tasks).toEqual(before.tasks)
     expect(after.scheduler.ledgerId).toBe(before.scheduler.ledgerId)
-    expect(JSON.parse(readFileSync(join(root, 'ledger-v2.json'), 'utf8')).schemaVersion).toBe(5)
+    expect(JSON.parse(readFileSync(join(root, 'ledger-v2.json'), 'utf8')).schemaVersion).toBe(6)
     reloaded.dispose()
   })
 })

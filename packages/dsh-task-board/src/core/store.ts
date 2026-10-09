@@ -10,7 +10,7 @@
  * localStorage backend.
  */
 import { isValidCron, isValidTimeZone } from './schedule.ts'
-import { isTaskPermission, isTaskStatus, normalizeTags, normalizeTargetId, type ScheduleRule, type TaskFreeze, type TaskRecord, type TaskPermission, type TaskStatus } from './tasks.ts'
+import { SCHEDULE_STOP_REASONS, isTaskPermission, isTaskStatus, normalizeTags, normalizeTargetId, type ScheduleRule, type ScheduleStopReason, type TaskFreeze, type TaskRecord, type TaskPermission, type TaskStatus } from './tasks.ts'
 import { isExecutionOutcome } from './subtask.ts'
 import type { TaskHandover } from './handover.ts'
 import { sanitizeFreezeSnapshot } from './freeze-snapshot.ts'
@@ -108,29 +108,73 @@ function normalizeStatus(status: unknown): TaskStatus {
   return isTaskStatus(status) ? status : 'todo'
 }
 
+/** A persisted ms timestamp, kept only when it is a usable finite number. */
+function optionalInstant(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/** A persisted positive-integer run cap, or undefined for unlimited/repair. */
+function optionalRunCap(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : undefined
+}
+
+/** A persisted stop reason, kept only when it names a reason this build knows. */
+function optionalStopReason(value: unknown): ScheduleStopReason | undefined {
+  return typeof value === 'string' && SCHEDULE_STOP_REASONS.includes(value as ScheduleStopReason)
+    ? value as ScheduleStopReason
+    : undefined
+}
+
 /**
- * Repair a persisted schedule rule: drop rules without a usable cron string,
- * coerce booleans/numbers, and leave `nextRunAt`/`lastTriggeredAt` undefined
- * when missing (a fresh recompute or the next tick fixes them).
+ * Repair a persisted schedule rule. Both modes are repaired field by field and
+ * a rule that carries no usable plan is dropped (the task row survives):
+ * a recurring rule without a well-formed 5-field cron, or a one-shot without a
+ * finite planned instant. A rule written before `mode` existed is a cron rule.
  */
 function normalizeSchedule(schedule: unknown): ScheduleRule | undefined {
   if (typeof schedule !== 'object' || schedule === null) return undefined
   const rule = schedule as Record<string, unknown>
+  // A stored zone survives only when this runtime can resolve it; an unusable
+  // name is dropped (the rule then follows the Host zone) instead of being
+  // kept to fail every later resolve.
+  const timeZone = typeof rule.timeZone === 'string' && isValidTimeZone(rule.timeZone) ? rule.timeZone : undefined
+  const runCountValue = rule.runCount
+  const runCount = typeof runCountValue === 'number' && Number.isInteger(runCountValue) && runCountValue >= 0
+    ? runCountValue
+    : 0
+  const endedAt = optionalInstant(rule.endedAt)
+  const endedReason = optionalStopReason(rule.endedReason)
+  const skippedAt = optionalInstant(rule.skippedAt)
+  const skippedReason = optionalStopReason(rule.skippedReason)
+  const common = {
+    enabled: rule.enabled === true,
+    ...(timeZone === undefined ? {} : { timeZone }),
+    nextRunAt: optionalInstant(rule.nextRunAt),
+    lastTriggeredAt: optionalInstant(rule.lastTriggeredAt),
+    runCount,
+    ...(endedAt === undefined ? {} : { endedAt }),
+    ...(endedReason === undefined ? {} : { endedReason }),
+    ...(skippedAt === undefined ? {} : { skippedAt }),
+    ...(skippedReason === undefined ? {} : { skippedReason }),
+  }
+  if (rule.mode === 'once') {
+    const at = optionalInstant(rule.at)
+    // A one-shot with no instant can never fire; drop it rather than keep a
+    // rule the scheduler would have to interpret.
+    if (at === undefined) return undefined
+    return { ...common, mode: 'once', at }
+  }
   // Reject (drop) a schedule whose cron is not a well-formed 5-field
   // expression: a malformed rule would otherwise linger as a never-firing
   // schedule instead of being dropped for later repair.
   if (typeof rule.cron !== 'string') return undefined
   if (rule.cron.trim() === '' || !isValidCron(rule.cron)) return undefined
-  // A stored zone survives only when this runtime can resolve it; an unusable
-  // name is dropped (the rule then follows the Host zone) instead of being
-  // kept to fail every later resolve.
-  const timeZone = typeof rule.timeZone === 'string' && isValidTimeZone(rule.timeZone) ? rule.timeZone : undefined
+  const maxRuns = optionalRunCap(rule.maxRuns)
   return {
-    enabled: rule.enabled === true,
+    ...common,
+    mode: 'cron',
     cron: rule.cron,
-    ...(timeZone === undefined ? {} : { timeZone }),
-    nextRunAt: typeof rule.nextRunAt === 'number' ? rule.nextRunAt : undefined,
-    lastTriggeredAt: typeof rule.lastTriggeredAt === 'number' ? rule.lastTriggeredAt : undefined,
+    ...(maxRuns === undefined ? {} : { maxRuns }),
   }
 }
 

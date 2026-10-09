@@ -8,7 +8,19 @@
  * assertions are about shape and containment rather than a fixed list.
  */
 import { describe, expect, it } from 'vitest'
-import { nextRunLabel, relativeTimeLabel, zoneChoices } from '../src/client/schedule-zone.ts'
+import {
+  budgetLabel,
+  defaultZonedInputValue,
+  endedLabel,
+  nextRunLabel,
+  parseZonedInput,
+  relativeTimeLabel,
+  runCapOption,
+  skippedLabel,
+  zonedInputValue,
+  zoneChoices,
+} from '../src/client/schedule-zone.ts'
+import type { ScheduleRule } from '../src/core/tasks.ts'
 
 describe('zoneChoices', () => {
   it('operator picking a zone sees the Host zone first as the clearable default', () => {
@@ -106,6 +118,95 @@ describe('relativeTimeLabel', () => {
     expect(overdue).not.toBe(future)
   })
 })
+
+describe('zoned datetime input', () => {
+  it('operator picking a wall clock gets that zone instant back', () => {
+    // Given a wall clock in an explicit zone
+    const value = '2026-10-09T12:00'
+
+    // When it is parsed and rendered back
+    const parsed = parseZonedInput(value, 'Asia/Shanghai')!
+
+    // Then the instant is the zone reading of that clock, and the field shows
+    // the same wall clock again
+    expect(parsed).toBe(Date.UTC(2026, 9, 9, 4, 0))
+    expect(zonedInputValue(parsed, 'Asia/Shanghai')).toBe(value)
+  })
+
+  it('operator reading one instant in different zones sees each zone wall clock', () => {
+    // Given one instant
+    const instant = Date.UTC(2026, 0, 1, 0, 0)
+
+    // When it is rendered in two zones
+    // Then each zone shows its own wall clock for that instant
+    expect(zonedInputValue(instant, 'UTC')).toBe('2026-01-01T00:00')
+    expect(zonedInputValue(instant, 'Asia/Shanghai')).toBe('2026-01-01T08:00')
+  })
+
+  it('operator picking a wall clock the zone skips is refused instead of moved', () => {
+    // Given a spring-forward gap, a non-date and an out-of-range clock
+    // When each is parsed
+    // Then each is refused rather than silently relocated
+    expect(parseZonedInput('2026-03-08T02:30', 'America/New_York')).toBeUndefined()
+    expect(parseZonedInput('not a date', 'UTC')).toBeUndefined()
+    expect(parseZonedInput('2026-13-40T99:99', 'UTC')).toBeUndefined()
+  })
+
+  it('operator opening a fresh one-shot editor sees a near-future whole minute', () => {
+    // Given a reference instant with seconds on the clock
+    const now = Date.UTC(2026, 9, 9, 3, 15, 30)
+
+    // When the default input value is produced
+    const parsed = parseZonedInput(defaultZonedInputValue(now, 'UTC'), 'UTC')!
+
+    // Then it is strictly in the future and lands on a whole minute
+    expect(parsed).toBeGreaterThan(now)
+    expect(parsed % 60_000).toBe(0)
+  })
+})
+
+describe('run budget and stop labels', () => {
+  const rule = (patch: Partial<ScheduleRule>): ScheduleRule => ({
+    enabled: true, mode: 'cron', cron: '0 9 * * *', nextRunAt: undefined, lastTriggeredAt: undefined, runCount: 0, ...patch,
+  })
+
+  it('operator reads a capped rule as done/total plus remaining, and an uncapped one as a bare count', () => {
+    // Given one capped and one uncapped rule
+    // When each budget line is produced
+    // Then the capped one divides the runs, the uncapped one does not
+    expect(budgetLabel(rule({ runCount: 1, maxRuns: 2 }))).toContain('1/2')
+    expect(budgetLabel(rule({ runCount: 1, maxRuns: 2 }))).toContain('1')
+    expect(budgetLabel(rule({ runCount: 1 }))).not.toContain('/')
+  })
+
+  it('operator reads a distinct reason for a rule that stopped and for one that skipped', () => {
+    // Given rules with different stop and skip reasons
+    const stopped = endedLabel(rule({ endedReason: 'limit' }))
+    const fired = endedLabel(rule({ endedReason: 'fired' }))
+    const skipped = skippedLabel(rule({ skippedReason: 'permission' }))
+
+    // When the labels are produced
+    // Then each reason reads distinctly and an absent record reads as none
+    expect(typeof stopped).toBe('string')
+    expect(stopped).not.toBe(fired)
+    expect(endedLabel(rule({}))).toBeUndefined()
+    expect(endedLabel(rule({ skippedReason: 'busy' }))).toBeUndefined()
+    expect(typeof skipped).toBe('string')
+    expect(skipped).not.toBe(skippedLabel(rule({ skippedReason: 'busy' })))
+    expect(skippedLabel(rule({}))).toBeUndefined()
+  })
+
+  it('operator sees a stored run cap mapped back to its select entry', () => {
+    // Given stored caps of none, one, two and a custom value
+    // When each is mapped to the editor's option
+    // Then the presets are named and anything else is the custom entry
+    expect(runCapOption(undefined)).toBe('unlimited')
+    expect(runCapOption(1)).toBe('1')
+    expect(runCapOption(2)).toBe('2')
+    expect(runCapOption(7)).toBe('custom')
+  })
+})
+
 
 describe('nextRunLabel', () => {
   it('operator reads the next run as an absolute wall clock plus its distance', () => {

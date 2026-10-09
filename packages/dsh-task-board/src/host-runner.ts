@@ -159,12 +159,12 @@ export interface PromptContext {
   /** True when those members run as teammates inside this session (Team Lead). */
   team?: boolean
   /**
-   * Scheduled-run provenance: the instant the cron rule actually fired and the
-   * IANA zone its wall clock was read in. Present only for a cron-triggered
-   * run, so the model can resolve an unqualified date in the run's own terms
-   * instead of guessing from the Host clock (issue #1722).
+   * Scheduled-run provenance: the instant the rule actually fired, its kind,
+   * and the IANA zone its wall clock was read in. Present only for a
+   * timer-triggered run, so the model can resolve an unqualified date in the
+   * run's own terms instead of guessing from the Host clock (issue #1722).
    */
-  schedule?: { triggeredAt: number; timeZone: string; cron: string }
+  schedule?: { triggeredAt: number; timeZone: string; mode: 'cron' | 'once'; cron?: string }
 }
 
 /**
@@ -184,16 +184,20 @@ function peerPromptPreamble(context: PromptContext): string | undefined {
 }
 
 /**
- * The scheduled-run section: this execution was triggered by the card's cron
- * rule rather than by a person. It states the firing instant, the rule's zone,
- * and the rule text, so the run's own clock is unambiguous — the board's
+ * The scheduled-run section: this execution was triggered by the card's
+ * schedule rather than by a person. It states the firing instant, the rule's
+ * zone, and the rule text, so the run's own clock is unambiguous — the board's
  * scheduler fires on a wall clock in a specific IANA zone, which is not
- * necessarily the zone of whatever session the run lands in.
+ * necessarily the zone of whatever session the run lands in. A one-shot says
+ * so explicitly, so the run does not expect a recurrence.
  */
 function schedulePromptPreamble(context: PromptContext): string | undefined {
   const schedule = context.schedule
   if (schedule === undefined) return undefined
   const stamp = new Date(schedule.triggeredAt).toISOString()
+  if (schedule.mode === 'once') {
+    return `本次执行由任务看板的单次定时自动触发：计划时间 ${stamp}（UTC），时区 ${schedule.timeZone}。这是一次性计划，本次执行之后该卡片不会再自动执行。需要判断「今天」「现在」或计算时间窗口时，以该时区的触发时间为准。`
+  }
   return `本次执行由任务看板的定时规则自动触发：触发时间 ${stamp}（UTC），规则时区 ${schedule.timeZone}，cron 表达式 ${schedule.cron}。需要判断「今天」「现在」或计算时间窗口时，以该时区的触发时间为准。`
 }
 

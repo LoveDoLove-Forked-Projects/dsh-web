@@ -23,11 +23,13 @@ import {
   TASK_PERMISSIONS,
   type ExecutionRecord,
   type NewTaskInput,
+  type ScheduleMode,
   type ScheduleRule,
   type TaskPermission,
   type TaskRecord,
   type TaskTag,
 } from '../core/tasks.ts'
+import type { SetSchedulePatch } from '../core/use-cases/task-schedule.ts'
 import type { TaskUpdatePatch } from '../core/use-cases/task-update.ts'
 import type { TaskBoardAction, TaskBoardSnapshot } from '../protocol.ts'
 
@@ -93,11 +95,22 @@ export function callingSessionId(exec: { agent?: unknown }): string | undefined 
 function scheduleView(schedule: ScheduleRule): Record<string, unknown> {
   return {
     enabled: schedule.enabled,
-    cron: schedule.cron,
+    mode: schedule.mode,
+    // A one-shot has no cron, and carries its planned instant instead.
+    ...(schedule.cron === undefined ? {} : { cron: schedule.cron }),
+    ...(schedule.at === undefined ? {} : { at: schedule.at }),
     // Absent means the rule follows the Host zone, which the board view reports.
     ...(schedule.timeZone === undefined ? {} : { timeZone: schedule.timeZone }),
     ...(schedule.nextRunAt === undefined ? {} : { nextRunAt: schedule.nextRunAt }),
     ...(schedule.lastTriggeredAt === undefined ? {} : { lastTriggeredAt: schedule.lastTriggeredAt }),
+    // The run budget: what the scheduler has already opened, its cap (absent =
+    // unlimited), and how the rule stopped or what it last skipped.
+    runCount: schedule.runCount,
+    ...(schedule.maxRuns === undefined ? {} : { maxRuns: schedule.maxRuns }),
+    ...(schedule.endedAt === undefined ? {} : { endedAt: schedule.endedAt }),
+    ...(schedule.endedReason === undefined ? {} : { endedReason: schedule.endedReason }),
+    ...(schedule.skippedAt === undefined ? {} : { skippedAt: schedule.skippedAt }),
+    ...(schedule.skippedReason === undefined ? {} : { skippedReason: schedule.skippedReason }),
   }
 }
 
@@ -442,37 +455,46 @@ function buildScheduleTool(host: TaskBoardToolHost): ToolDefinition {
   return defineTool({
     name: 'task_board_schedule',
     description: [
-      'Arm, change, or disarm a task scheduled runs (5-field cron; day-of-month and day-of-week follow Vixie semantics: both restricted means OR, otherwise AND).',
-      'The cron wall clock is read in the rule stored IANA time zone; omit timeZone to use the Host zone reported by task_board_list/task_board_get. DST gaps are skipped and an ambiguous fall-back time fires once, at the earlier instant.',
+      'Arm, change, or disarm a task scheduled runs. Two kinds of plan exist: a recurring 5-field cron rule (day-of-month and day-of-week follow Vixie semantics: both restricted means OR, otherwise AND), and a one-shot that runs once at a future instant.',
+      'For a one-shot pass mode "once" with at (the planned instant, ms since epoch UTC). For a recurring rule pass mode "cron" (or omit mode) with a cron expression, optionally capped by maxRuns (a positive whole number of scheduled executions; omit for unlimited, pass 0 to clear a cap).',
+      'The wall clock is read in the rule stored IANA time zone; omit timeZone to use the Host zone reported by task_board_list/task_board_get. DST gaps are skipped and an ambiguous fall-back time fires once, at the earlier instant.',
       'A due scheduled task runs the same cascade a manual run does, so a root task runs its whole subtask tree.',
-      'A schedule whose tree contains an unconfirmed above-default permission is refused and rolls to its next occurrence; the reason is reported in the list board summary as schedulerError.',
-      'Missed occurrences during Host downtime are skipped, never queued; a task that is already running skips its occurrence.',
+      'The scheduler counts executions it actually starts; once a rule reaches its run budget it stops itself in the ledger, and a manual run never consumes the budget. A schedule whose tree contains an unconfirmed above-default permission is refused and does not consume the budget; the reason is reported in the list board summary as schedulerError.',
+      'Missed occurrences during Host downtime are skipped, never queued (a one-shot whose instant passed while the Host was down is stopped as missed); a task that is already running skips its occurrence without consuming the budget.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'The task whose schedule changes.' },
       enabled: { type: 'boolean', description: 'Arm (true) or disarm (false) the schedule.' },
-      cron: { type: 'string', description: '5-field cron expression: minute hour day-of-month month day-of-week.' },
+      mode: { type: 'string', enum: ['cron', 'once'], description: 'The kind of plan: "cron" for a recurring rule, "once" for a single future instant. Omit to keep the stored kind.' },
+      cron: { type: 'string', description: '5-field cron expression of a recurring rule: minute hour day-of-month month day-of-week.' },
+      at: { type: 'integer', description: 'Planned instant of a one-shot, in milliseconds since the Unix epoch (UTC). Must be in the future.' },
       timeZone: {
         type: 'string',
-        description: 'IANA zone the cron wall clock is read in (for example Asia/Shanghai). Omit to keep the stored zone, or pass an empty string to clear it back to the Host zone.',
+        description: 'IANA zone the wall clock is read in (for example Asia/Shanghai). Omit to keep the stored zone, or pass an empty string to clear it back to the Host zone.',
       },
+      maxRuns: { type: 'integer', description: 'Maximum scheduled executions of a recurring rule (positive whole number). Omit to keep the stored cap; pass 0 to clear it back to unlimited.' },
     },
     output: { schema: { type: 'json' }, render: renderJson },
     async execute(args, exec) {
-      if (args.enabled === undefined && args.cron === undefined && args.timeZone === undefined) {
-        return refused('nothing-to-change', 'pass enabled and/or cron and/or timeZone')
+      if (args.enabled === undefined && args.mode === undefined && args.cron === undefined && args.at === undefined
+        && args.timeZone === undefined && args.maxRuns === undefined) {
+        return refused('nothing-to-change', 'pass enabled, mode, cron, at, timeZone and/or maxRuns')
       }
       // A missing card must read as a missing card: the ledger reports an
       // unknown id through the same refusal as a malformed cron.
       if (!host.snapshot().tasks.some(task => task.id === args.taskId)) {
         return refused('task-not-found', 'no task with id ' + args.taskId)
       }
-      const patch: { enabled?: boolean; cron?: string; timeZone?: string | null } = {
+      const patch: SetSchedulePatch = {
         ...(args.enabled === undefined ? {} : { enabled: args.enabled }),
+        ...(args.mode === undefined ? {} : { mode: args.mode as ScheduleMode }),
         ...(args.cron === undefined ? {} : { cron: args.cron }),
+        ...(args.at === undefined ? {} : { at: args.at }),
         // An empty string is the documented way to clear the stored zone, so
         // the model never has to emit an explicit null through JSON args.
         ...(args.timeZone === undefined ? {} : { timeZone: args.timeZone === '' ? null : args.timeZone }),
+        // 0 is the documented way to clear a run cap back to unlimited.
+        ...(args.maxRuns === undefined ? {} : { maxRuns: args.maxRuns <= 0 ? null : args.maxRuns }),
       }
       try {
         const snapshot = await host.apply(crypto.randomUUID(), { kind: 'set-schedule', taskId: args.taskId, patch }, callingSessionId(exec))
@@ -596,10 +618,13 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
       schedule: {
         type: 'object',
         additionalProperties: false,
-        description: 'Arm a 5-field cron schedule at creation time (Host local time zone).',
+        description: 'Arm a schedule at creation time. Use mode "once" with at for a single future run, or mode "cron" (or omit mode) with a 5-field cron expression, optionally capped by maxRuns.',
         properties: {
           enabled: { type: 'boolean', required: true, description: 'Whether the schedule is armed.' },
-          cron: { type: 'string', required: true, description: '5-field cron: minute hour day-of-month month day-of-week.' },
+          mode: { type: 'string', enum: ['cron', 'once'], description: 'The kind of plan: "cron" for a recurring rule, "once" for a single future instant.' },
+          cron: { type: 'string', description: '5-field cron of a recurring rule: minute hour day-of-month month day-of-week.' },
+          at: { type: 'integer', description: 'Planned instant of a one-shot, in milliseconds since the Unix epoch (UTC). Must be in the future.' },
+          maxRuns: { type: 'integer', description: 'Maximum scheduled executions of a recurring rule (positive whole number); omit for unlimited.' },
         },
       },
     },
@@ -625,7 +650,15 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
         ...(args.goalRun === false ? { goalRun: false } : {}),
     ...(args.skipVerification === true ? { skipVerification: true } : {}),
         ...(tags.length === 0 ? {} : { tags }),
-        ...(args.schedule === undefined ? {} : { schedule: { enabled: args.schedule.enabled, cron: args.schedule.cron } }),
+        ...(args.schedule === undefined ? {} : {
+          schedule: {
+            enabled: args.schedule.enabled,
+            ...(args.schedule.mode === undefined ? {} : { mode: args.schedule.mode as ScheduleMode }),
+            ...(args.schedule.cron === undefined ? {} : { cron: args.schedule.cron }),
+            ...(args.schedule.at === undefined ? {} : { at: args.schedule.at }),
+            ...(args.schedule.maxRuns === undefined ? {} : { maxRuns: args.schedule.maxRuns }),
+          },
+        }),
       }
       try {
         const snapshot = await host.apply(crypto.randomUUID(), { kind: 'create', id, input }, callingSessionId(exec))

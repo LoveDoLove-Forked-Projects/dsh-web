@@ -7,10 +7,10 @@ import type { BoardController } from '../../core/controller.ts'
 import { isValidCron, nextRunAtMs } from '../../core/schedule.ts'
 import { parseFreezeRequest } from '../../core/freeze-snapshot.ts'
 import { effectiveTaskPermission } from '../../core/subtask.ts'
-import { collectKnownTags, TASK_PERMISSIONS, type TaskPermission, type TaskRecord, type TaskTag } from '../../core/tasks.ts'
+import { collectKnownTags, TASK_PERMISSIONS, type ScheduleMode, type TaskPermission, type TaskRecord, type TaskTag } from '../../core/tasks.ts'
 import { t, type TaskBoardKey } from '../locales.ts'
 import { SCHEDULE_PRESETS } from '../schedule-presets.ts'
-import { nextRunLabel, zoneChoices } from '../schedule-zone.ts'
+import { defaultZonedInputValue, nextRunLabel, parseZonedInput, runCapOption, zonedInputValue, zoneChoices } from '../schedule-zone.ts'
 import { CollapsibleSection, ModalShell, TaskContentFields, TaskTagFields, cleanTags } from './TaskForm.tsx'
 import type { OverlayPhase } from './overlay.tsx'
 import { formatHostTimestamp } from './TaskCard.tsx'
@@ -62,7 +62,15 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   const [goalRun, setGoalRun] = useState(initialTask?.goalRun ?? true)
   const [skipVerification, setSkipVerification] = useState(initialTask?.skipVerification ?? false)
   const [scheduleEnabled, setScheduleEnabled] = useState(initialTask?.schedule?.enabled ?? false)
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>(initialTask?.schedule?.mode ?? 'cron')
   const [scheduleCron, setScheduleCron] = useState(initialTask?.schedule?.cron ?? '')
+  // A duplicate keeps the original card's plan; a fresh one-shot defaults to
+  // the next hour, so the field never opens on a past instant.
+  const [scheduleAt, setScheduleAt] = useState<string>(() => initialTask?.schedule?.mode === 'once' && initialTask.schedule.at !== undefined
+    ? zonedInputValue(initialTask.schedule.at, initialTask.schedule.timeZone)
+    : defaultZonedInputValue(Date.now(), initialTask?.schedule?.timeZone))
+  const [scheduleMaxRunsChoice, setScheduleMaxRunsChoice] = useState<string>(() => runCapOption(initialTask?.schedule?.maxRuns))
+  const [scheduleMaxRunsText, setScheduleMaxRunsText] = useState<string>(initialTask?.schedule?.maxRuns === undefined ? '' : String(initialTask.schedule.maxRuns))
   // '' means "follow the Host zone" (store no zone), which is the default a
   // user gets unless they pick one explicitly.
   const [scheduleZone, setScheduleZone] = useState(initialTask?.schedule?.timeZone ?? '')
@@ -145,10 +153,25 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
    */
   const submit = async (runAfterCreate: boolean): Promise<void> => {
     if (scheduleEnabled) {
-      const cron = scheduleCron.trim()
-      if (cron === '' || !isValidCron(cron)) {
-        setScheduleError(t('detail.schedule.invalid'))
-        return
+      if (scheduleMode === 'once') {
+        const at = parseZonedInput(scheduleAt, scheduleZone === '' ? hostTimeZone : scheduleZone)
+        if (at === undefined || at <= Date.now()) {
+          setScheduleError(t('detail.schedule.atInvalid'))
+          return
+        }
+      } else {
+        const cron = scheduleCron.trim()
+        if (cron === '' || !isValidCron(cron)) {
+          setScheduleError(t('detail.schedule.invalid'))
+          return
+        }
+        if (scheduleMaxRunsChoice === 'custom') {
+          const cap = Number(scheduleMaxRunsText.trim())
+          if (scheduleMaxRunsText.trim() === '' || !Number.isInteger(cap) || cap < 1) {
+            setScheduleError(t('detail.schedule.maxRunsInvalid'))
+            return
+          }
+        }
       }
     }
     // Optional continuation-card snapshot: parse the freeze block through the
@@ -192,7 +215,22 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
       ...(skipVerification ? { skipVerification: true } : {}),
       ...(tagList.length > 0 ? { tags: tagList } : {}),
       schedule: scheduleEnabled
-        ? { enabled: true, cron: scheduleCron.trim(), ...(scheduleZone === '' ? {} : { timeZone: scheduleZone }) }
+        ? scheduleMode === 'once'
+          ? {
+              enabled: true,
+              mode: 'once' as const,
+              at: parseZonedInput(scheduleAt, scheduleZone === '' ? hostTimeZone : scheduleZone)!,
+              ...(scheduleZone === '' ? {} : { timeZone: scheduleZone }),
+            }
+          : {
+              enabled: true,
+              mode: 'cron' as const,
+              cron: scheduleCron.trim(),
+              ...(scheduleMaxRunsChoice === 'unlimited' ? {} : {
+                maxRuns: scheduleMaxRunsChoice === 'custom' ? Number(scheduleMaxRunsText.trim()) : Number(scheduleMaxRunsChoice),
+              }),
+              ...(scheduleZone === '' ? {} : { timeZone: scheduleZone }),
+            }
         : undefined,
     })
     if (task === undefined) {
@@ -218,13 +256,18 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
     onClose()
   }
 
-  // Next-run preview for a valid armed cron (creation-time only), computed in
-  // the selected zone so it matches what the Host will arm.
+  // Next-run preview for the armed plan (creation-time only), computed in the
+  // selected zone so it matches what the Host will arm. A one-shot's next run
+  // IS its planned instant; a recurring rule resolves its next occurrence.
   const hostTimeZone = controller.getSnapshot().host?.scheduler.timeZone
   const scheduleTimeZone = scheduleZone === '' ? hostTimeZone : scheduleZone
-  const scheduleNextRun = scheduleEnabled && scheduleCron.trim() !== '' && isValidCron(scheduleCron)
-    ? nextRunAtMs(scheduleCron, Date.now(), scheduleTimeZone)
-    : undefined
+  const scheduleNextRun = !scheduleEnabled
+    ? undefined
+    : scheduleMode === 'once'
+      ? parseZonedInput(scheduleAt, scheduleTimeZone)
+      : scheduleCron.trim() !== '' && isValidCron(scheduleCron)
+        ? nextRunAtMs(scheduleCron, Date.now(), scheduleTimeZone)
+        : undefined
 
   const modalTitle = parentTask !== undefined
     ? t('new.subtaskTitle')
@@ -270,7 +313,18 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
     : t('new.summary.none')
   const scheduleSummary = !scheduleEnabled
     ? t('new.summary.scheduleOff')
-    : scheduleCron.trim() === '' ? t('new.summary.none') : scheduleCron.trim()
+    : scheduleMode === 'once'
+      ? `${t('detail.schedule.mode.once')} · ${scheduleAt.replace('T', ' ')}`
+      : scheduleCron.trim() === ''
+        ? t('new.summary.none')
+        : [
+            scheduleCron.trim(),
+            ...(scheduleMaxRunsChoice === 'unlimited'
+              ? []
+              : [t('detail.schedule.maxRunsValue', {
+                  count: scheduleMaxRunsChoice === 'custom' ? scheduleMaxRunsText : scheduleMaxRunsChoice,
+                })]),
+          ].join(' · ')
   const parseSummary = parseText.trim() === '' ? t('new.summary.none') : t('new.summary.filled')
 
   return (
@@ -533,6 +587,32 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
         </label>
         {scheduleEnabled && (
           <>
+            <label className={css.scheduleZone}>
+              <span>{t('detail.schedule.mode')}</span>
+              <select
+                className={css.schedulePreset}
+                value={scheduleMode}
+                aria-label={t('detail.schedule.mode')}
+                onChange={event => { setScheduleMode(event.target.value as ScheduleMode); setScheduleError(undefined) }}
+              >
+                <option value="cron">{t('detail.schedule.mode.cron')}</option>
+                <option value="once">{t('detail.schedule.mode.once')}</option>
+              </select>
+            </label>
+            {scheduleMode === 'once' ? (
+              <label className={css.scheduleZone}>
+                <span>{t('detail.schedule.at')}</span>
+                <input
+                  className={css.input}
+                  type="datetime-local"
+                  value={scheduleAt}
+                  aria-label={t('detail.schedule.at')}
+                  title={t('detail.schedule.atHint')}
+                  onChange={event => { setScheduleAt(event.target.value); setScheduleError(undefined) }}
+                />
+              </label>
+            ) : (
+              <>
             <div className={css.scheduleRow}>
               <input
                 className={`${css.input} ${css.scheduleInput}${scheduleError !== undefined ? ` ${css.scheduleInputInvalid}` : ''}`}
@@ -558,6 +638,42 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
                 ))}
               </select>
             </div>
+                <label className={css.scheduleZone}>
+                  <span>{t('detail.schedule.maxRuns')}</span>
+                  <select
+                    className={css.schedulePreset}
+                    value={scheduleMaxRunsChoice}
+                    aria-label={t('detail.schedule.maxRuns')}
+                    onChange={event => {
+                      setScheduleMaxRunsChoice(event.target.value)
+                      setScheduleError(undefined)
+                      if (event.target.value === 'custom') {
+                        setScheduleMaxRunsText(initialTask?.schedule?.maxRuns === undefined ? '' : String(initialTask.schedule.maxRuns))
+                      }
+                    }}
+                  >
+                    <option value="unlimited">{t('detail.schedule.maxRunsUnlimited')}</option>
+                    <option value="1">{t('detail.schedule.maxRunsValue', { count: '1' })}</option>
+                    <option value="2">{t('detail.schedule.maxRunsValue', { count: '2' })}</option>
+                    <option value="custom">{t('detail.schedule.maxRunsCustom')}</option>
+                  </select>
+                </label>
+                {scheduleMaxRunsChoice === 'custom' && (
+                  <label className={css.scheduleZone}>
+                    <span>{t('detail.schedule.maxRuns')}</span>
+                    <input
+                      className={css.input}
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={scheduleMaxRunsText}
+                      aria-label={t('detail.schedule.maxRuns')}
+                      onChange={event => { setScheduleMaxRunsText(event.target.value); setScheduleError(undefined) }}
+                    />
+                  </label>
+                )}
+              </>
+            )}
             {scheduleError !== undefined && <p className={css.formError}>{scheduleError}</p>}
             <label className={css.scheduleZone}>
               <span>{t('detail.schedule.timeZone')}</span>
@@ -565,7 +681,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
                 className={css.schedulePreset}
                 value={scheduleZone}
                 aria-label={t('detail.schedule.timeZone')}
-                title={t('detail.schedule.timeZoneHint')}
+                title={scheduleMode === 'once' ? t('detail.schedule.zoneOnceHint') : t('detail.schedule.timeZoneHint')}
                 onChange={event => { setScheduleZone(event.target.value); setScheduleError(undefined) }}
               >
                 {zoneChoices(hostTimeZone, initialTask?.schedule?.timeZone).map(choice => (

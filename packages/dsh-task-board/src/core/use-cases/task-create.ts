@@ -67,22 +67,43 @@ export function applyCreateTask(
     model: input.model ?? parent.model,
   }
   let task = createTask(effective, now, id)
-  // Arm the requested schedule (new-task dialog): only an enabled rule with
-  // a valid cron is applied; blank, invalid, or disabled requests leave the
-  // task unscheduled.
+  // Arm the requested schedule (new-task dialog). The Host wire gate already
+  // rejects a malformed enabled plan; this arm re-checks it so a direct caller
+  // (a test or an embedder) cannot persist an unusable rule either.
   const requested = input.schedule
-  if (requested?.enabled === true && requested.cron.trim() !== '' && isValidCron(requested.cron)) {
-    const cron = requested.cron.trim()
+  if (requested?.enabled === true) {
     const requestedZone = requested.timeZone
     // An unusable zone is refused rather than silently reinterpreted as the
     // Host zone: the caller asked for a specific wall clock.
     if (requestedZone !== undefined && !isValidTimeZone(requestedZone)) {
       return { task: undefined, tasks, error: 'invalid schedule time zone' }
     }
-    const zone = requestedZone ?? hostTimeZone
-    const nextRunAt = nextRunAtMs(cron, now, zone)
-    if (nextRunAt !== undefined) {
-      task = withSchedule(task, { enabled: true, cron, timeZone: requestedZone, nextRunAt }, now)
+    if (requested.mode === 'once') {
+      const at = requested.at
+      if (at === undefined || !Number.isInteger(at) || at <= now) {
+        return { task: undefined, tasks, error: 'invalid schedule instant' }
+      }
+      task = withSchedule(task, {
+        enabled: true,
+        mode: 'once',
+        at,
+        timeZone: requestedZone,
+        nextRunAt: at,
+        runCount: 0,
+      }, now)
+    } else {
+      const cron = (requested.cron ?? '').trim()
+      if (cron !== '' && isValidCron(cron)) {
+        const maxRuns = requested.maxRuns
+        if (maxRuns !== undefined && (!Number.isInteger(maxRuns) || maxRuns < 1)) {
+          return { task: undefined, tasks, error: 'invalid schedule run cap' }
+        }
+        const zone = requestedZone ?? hostTimeZone
+        const nextRunAt = nextRunAtMs(cron, now, zone)
+        if (nextRunAt !== undefined) {
+          task = withSchedule(task, { enabled: true, mode: 'cron', cron, maxRuns, timeZone: requestedZone, nextRunAt, runCount: 0 }, now)
+        }
+      }
     }
   }
   return { task, tasks: [...tasks, task] }

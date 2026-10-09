@@ -654,6 +654,42 @@ describe('task_board_schedule', () => {
     expect((get.task as { schedule?: unknown }).schedule).toBeUndefined()
   })
 
+  it('user arming a one-shot from the conversation sees its planned instant and budget', async () => {
+    // Given a plain card and a future instant
+    const live = harness()
+    await call(live, 'task_board_create', { title: 'once' })
+    const taskId = await onlyTaskId(live)
+    const at = NOW + 3_600_000
+
+    // When the model arms a single planned instant
+    const armed = await call(live, 'task_board_schedule', { taskId, mode: 'once', at, enabled: true })
+
+    // Then the rule is a one-shot: no cron, one run budgeted, armed at the instant
+    const schedule = armed.schedule as { enabled: boolean; mode: string; at?: number; cron?: string; runCount: number; nextRunAt?: number }
+    expect(schedule.mode).toBe('once')
+    expect(schedule.at).toBe(at)
+    expect(schedule.cron).toBeUndefined()
+    expect(schedule.runCount).toBe(0)
+    expect(schedule.nextRunAt).toBe(at)
+  })
+
+  it('user capping a recurring rule from the conversation carries and clears the cap', async () => {
+    // Given a plain card
+    const live = harness()
+    await call(live, 'task_board_create', { title: 'capped' })
+    const taskId = await onlyTaskId(live)
+
+    // When the model caps the rule and then clears the cap with 0
+    const capped = await call(live, 'task_board_schedule', { taskId, enabled: true, cron: '* * * * *', maxRuns: 2 })
+    expect((capped.schedule as { maxRuns?: number }).maxRuns).toBe(2)
+    const cleared = await call(live, 'task_board_schedule', { taskId, maxRuns: 0 })
+    expect((cleared.schedule as { maxRuns?: number }).maxRuns).toBeUndefined()
+
+    // And a one-shot in the past is refused instead of firing at once
+    const past = await call(live, 'task_board_schedule', { taskId, mode: 'once', at: NOW - 1_000, enabled: true })
+    expect(past.ok).toBe(false)
+  })
+
   it('user arming a schedule on an unknown card is told the card is missing', async () => {
     // Given an empty board
     const live = harness()

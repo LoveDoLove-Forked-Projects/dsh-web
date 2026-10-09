@@ -228,7 +228,7 @@ describe('permission gates on a cascade', () => {
     ledger.applyRequest('create-child', { kind: 'create', id: 'child', input: { title: 'child', description: '', prompt: 'child', parentId: 'root' } })
 
     // When the schedule comes due
-    const opened = ledger.openScheduled('root', NOW + 60_000, NOW)
+    const opened = ledger.openScheduled('root', NOW)
 
     // Then both run under one group
     expect(opened.map(run => run.task.id)).toEqual(['root', 'child'])
@@ -245,12 +245,15 @@ describe('permission gates on a cascade', () => {
       kind: 'create', id: 'child', input: { title: 'child', description: '', prompt: 'child', parentId: 'root', permission: 'danger-full-access' },
     })
 
-    // When the schedule comes due
-    const opened = ledger.openScheduled('root', NOW + 60_000, NOW)
+    // When the scheduled occurrence comes due
+    const due = find(ledger, 'root')!.schedule!.nextRunAt!
+    const opened = ledger.openScheduled('root', due)
 
-    // Then nothing ran, the schedule rolled forward, and the reason is recorded
+    // Then nothing ran, the schedule rolled one occurrence forward without
+    // consuming the run budget, and the reason is recorded
     expect(opened).toEqual([])
-    expect(find(ledger, 'root')?.schedule?.nextRunAt).toBe(NOW + 60_000)
+    expect(find(ledger, 'root')?.schedule?.nextRunAt).toBe(due + 60_000)
+    expect(find(ledger, 'root')?.schedule?.runCount).toBe(0)
     expect(ledger.state().scheduler.error).toContain('unconfirmed')
   })
 })
@@ -446,7 +449,7 @@ describe('Agent Team runs', () => {
     const triggeredAt = Date.UTC(2026, 8, 29, 1, 0)
 
     // When the prompt is built for a cron trigger
-    const scheduled = promptText(root, { schedule: { triggeredAt, timeZone: 'Asia/Shanghai', cron: '0 9 * * *' } })
+    const scheduled = promptText(root, { schedule: { triggeredAt, timeZone: 'Asia/Shanghai', mode: 'cron', cron: '0 9 * * *' } })
 
     // Then the run is told when it fired and in which zone its clock is read
     expect(scheduled).toContain('定时规则自动触发')
@@ -530,7 +533,7 @@ describe('Agent Team runs', () => {
     })
 
     // When the schedule comes due
-    const opened = ledger.openScheduled('root', NOW + 60_000, NOW)
+    const opened = ledger.openScheduled('root', NOW)
 
     // Then nothing ran and the recorded reason names the team-mode limitation
     expect(opened).toEqual([])

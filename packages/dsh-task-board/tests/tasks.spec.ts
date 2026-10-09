@@ -245,7 +245,7 @@ describe('withSchedule', () => {
   it('creates a schedule rule on a task without one and bumps updatedAt', () => {
     const task = sampleTask()
     const scheduled = withSchedule(task, { enabled: true, cron: '0 9 * * *', nextRunAt: NOW + 100 }, NOW + 1)
-    expect(scheduled.schedule).toEqual({ enabled: true, cron: '0 9 * * *', nextRunAt: NOW + 100, lastTriggeredAt: undefined })
+    expect(scheduled.schedule).toEqual({ enabled: true, mode: 'cron', cron: '0 9 * * *', nextRunAt: NOW + 100, lastTriggeredAt: undefined, runCount: 0 })
     expect(scheduled.updatedAt).toBe(NOW + 1)
     expect(task.schedule).toBeUndefined() // original untouched
   })
@@ -257,7 +257,7 @@ describe('withSchedule', () => {
       NOW,
     )
     const rolled = withSchedule(task, { nextRunAt: NOW + 200 }, NOW + 2)
-    expect(rolled.schedule).toEqual({ enabled: true, cron: '0 9 * * *', nextRunAt: NOW + 200, lastTriggeredAt: NOW })
+    expect(rolled.schedule).toEqual({ enabled: true, mode: 'cron', cron: '0 9 * * *', nextRunAt: NOW + 200, lastTriggeredAt: NOW, runCount: 0 })
   })
 
   it('keeps executions and other task fields intact', () => {

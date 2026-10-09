@@ -9,13 +9,13 @@ import type { BoardController, ControllerSnapshot } from '../../core/controller.
 import type { TaskBoardExtensionActionRequest, TaskBoardExtensionDispatch } from '../../core/extension.ts'
 import { useTaskBoardSeats } from '../seats.tsx'
 import { isValidCron } from '../../core/schedule.ts'
-import { MANUAL_STATUSES, TASK_PERMISSIONS, canMoveTask, hasOpenExecution, tagTone, type ExecutionRecord, type TaskPermission, type TaskRecord } from '../../core/tasks.ts'
+import { MANUAL_STATUSES, TASK_PERMISSIONS, canMoveTask, hasOpenExecution, tagTone, type ExecutionRecord, type ScheduleMode, type TaskPermission, type TaskRecord } from '../../core/tasks.ts'
 import { canEditTaskContent } from '../../core/use-cases/task-update.ts'
 import { requiresPermissionConfirmation } from '../../core/handover.ts'
 import { DEFAULT_SUBTASK_DEPTH, directSubtasks, taskDepth } from '../../core/subtask.ts'
 import { t, type TaskBoardKey } from '../locales.ts'
 import { SCHEDULE_PRESETS } from '../schedule-presets.ts'
-import { nextRunLabel, zoneChoices } from '../schedule-zone.ts'
+import { budgetLabel, defaultZonedInputValue, endedLabel, nextRunLabel, parseZonedInput, runCapOption, skippedLabel, zonedInputValue, zoneChoices } from '../schedule-zone.ts'
 import css from '../board.module.css'
 import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { EditTaskModal, EditTagsModal } from './EditTaskModal.tsx'
@@ -213,31 +213,49 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
   )
 }
 
-/** The scheduled-runs editor: enable toggle, cron input + presets, zone, next-run info. */
+/**
+ * The scheduled-runs editor. A one-shot has one planned instant; a recurring
+ * rule has a cron expression, an optional run cap, and a zone. The editor
+ * shows the rule's own state (next target, run counter, stop/skip record) and
+ * can cancel a future plan.
+ */
 function ScheduleSection({ controller, task, pending }: { controller: BoardController; task: TaskRecord; pending: boolean }) {
   const schedule = task.schedule
+  const hostTimeZone = controller.getSnapshot().host?.scheduler.timeZone
+  // The rule's own zone; '' means "follow the Host zone" (no stored zone).
+  const [zone, setZone] = useState<string>(schedule?.timeZone ?? '')
+  const [mode, setMode] = useState<ScheduleMode>(schedule?.mode ?? 'cron')
   const [cron, setCron] = useState(schedule?.cron ?? '0 9 * * *')
+  const [atText, setAtText] = useState<string>(() => schedule?.at === undefined
+    ? defaultZonedInputValue(Date.now(), schedule?.timeZone ?? hostTimeZone)
+    : zonedInputValue(schedule.at, schedule?.timeZone ?? hostTimeZone))
+  const [maxRunsChoice, setMaxRunsChoice] = useState<string>(() => runCapOption(schedule?.maxRuns))
+  const [maxRunsText, setMaxRunsText] = useState<string>(schedule?.maxRuns === undefined ? '' : String(schedule.maxRuns))
   const [enabled, setEnabled] = useState(schedule?.enabled ?? false)
   const [nextRunAt, setNextRunAt] = useState<number | undefined>(schedule?.nextRunAt)
   const [lastTriggeredAt, setLastTriggeredAt] = useState<number | undefined>(schedule?.lastTriggeredAt)
   const [error, setError] = useState<string | undefined>(undefined)
-  const hostTimeZone = controller.getSnapshot().host?.scheduler.timeZone
-  // The rule's own zone; '' means "follow the Host zone" (no stored zone).
-  const [zone, setZone] = useState<string>(schedule?.timeZone ?? '')
   // One clock reading per render pass, so the absolute and relative halves of
   // the label always describe the same instant.
   const now = Date.now()
 
   // Keep the editor in sync when the task record changes underneath (the
-  // schedule rolls forward as runs trigger).
+  // schedule rolls forward as runs trigger, ends at its budget, or is edited
+  // elsewhere).
   useEffect(() => {
+    setMode(schedule?.mode ?? 'cron')
     setCron(schedule?.cron ?? '0 9 * * *')
+    setZone(schedule?.timeZone ?? '')
+    setAtText(schedule?.at === undefined
+      ? defaultZonedInputValue(Date.now(), schedule?.timeZone ?? hostTimeZone)
+      : zonedInputValue(schedule.at, schedule?.timeZone ?? hostTimeZone))
+    setMaxRunsChoice(runCapOption(schedule?.maxRuns))
+    setMaxRunsText(schedule?.maxRuns === undefined ? '' : String(schedule.maxRuns))
     setEnabled(schedule?.enabled ?? false)
     setNextRunAt(schedule?.nextRunAt)
     setLastTriggeredAt(schedule?.lastTriggeredAt)
-    setZone(schedule?.timeZone ?? '')
     setError(undefined)
-  }, [task.id, schedule?.enabled, schedule?.cron, schedule?.timeZone, schedule?.nextRunAt, schedule?.lastTriggeredAt])
+  }, [task.id, hostTimeZone, schedule?.mode, schedule?.enabled, schedule?.cron, schedule?.at, schedule?.timeZone, schedule?.nextRunAt, schedule?.lastTriggeredAt, schedule?.maxRuns])
 
   /** Validate + persist the current cron text (Enter or blur). */
   const saveCron = (value: string): void => {
@@ -248,21 +266,101 @@ function ScheduleSection({ controller, task, pending }: { controller: BoardContr
       return
     }
     setError(undefined)
-    controller.setSchedule(task.id, { cron: trimmed })
+    controller.setSchedule(task.id, { mode: 'cron', cron: trimmed })
+  }
+
+  /** Validate + persist the one-shot's planned instant. */
+  const saveAt = (value: string): void => {
+    setAtText(value)
+    const at = parseZonedInput(value, effectiveZone)
+    if (at === undefined || at <= now) {
+      setError(t('detail.schedule.atInvalid'))
+      return
+    }
+    setError(undefined)
+    controller.setSchedule(task.id, { mode: 'once', at })
+  }
+
+  /** Switch the kind of plan, persisting a usable target for the new kind. */
+  const changeMode = (next: ScheduleMode): void => {
+    if (next === 'once') {
+      const at = parseZonedInput(atText, effectiveZone)
+      if (at === undefined || at <= now) {
+        setError(t('detail.schedule.atInvalid'))
+        return
+      }
+      setMode('once')
+      setError(undefined)
+      controller.setSchedule(task.id, { mode: 'once', at })
+      return
+    }
+    const trimmed = cron.trim()
+    if (trimmed === '' || !isValidCron(trimmed)) {
+      setError(t('detail.schedule.invalid'))
+      return
+    }
+    setMode('cron')
+    setError(undefined)
+    controller.setSchedule(task.id, { mode: 'cron', cron: trimmed })
   }
 
   /**
    * Change the rule's zone. `''` clears the stored zone, which is how a user
-   * returns a rule to following the Host zone.
+   * returns a rule to following the Host zone. A one-shot's instant is
+   * absolute, so only its rendered wall clock follows the new zone; a cron
+   * rule's wall clock itself moves with the zone.
    */
   const changeZone = (value: string): void => {
     setZone(value)
     setError(undefined)
+    if (mode === 'once' && schedule?.at !== undefined) {
+      setAtText(zonedInputValue(schedule.at, value === '' ? hostTimeZone : value))
+      controller.setSchedule(task.id, { mode: 'once', timeZone: value === '' ? null : value })
+      return
+    }
     controller.setSchedule(task.id, { timeZone: value === '' ? null : value })
   }
 
-  /** Arm/disarm the schedule (arming first persists the edited cron). */
+  /** Change the recurring rule's run cap (unlimited, a preset, or a custom value). */
+  const applyMaxRuns = (choice: string): void => {
+    setMaxRunsChoice(choice)
+    setError(undefined)
+    if (choice === 'unlimited') {
+      controller.setSchedule(task.id, { maxRuns: null })
+      return
+    }
+    if (choice === 'custom') {
+      setMaxRunsText(schedule?.maxRuns === undefined ? '' : String(schedule.maxRuns))
+      return
+    }
+    controller.setSchedule(task.id, { maxRuns: Number(choice) })
+  }
+
+  /** Persist a custom run cap; a non-positive or fractional value is refused. */
+  const saveCustomMaxRuns = (value: string): void => {
+    setMaxRunsText(value)
+    const parsed = Number(value.trim())
+    if (value.trim() === '' || !Number.isInteger(parsed) || parsed < 1) {
+      setError(t('detail.schedule.maxRunsInvalid'))
+      return
+    }
+    setError(undefined)
+    controller.setSchedule(task.id, { maxRuns: parsed })
+  }
+
+  /** Arm/disarm the schedule (arming first persists the edited plan). */
   const toggleEnabled = (next: boolean): void => {
+    if (next && mode === 'once') {
+      const at = parseZonedInput(atText, effectiveZone)
+      if (at === undefined || at <= now) {
+        setError(t('detail.schedule.atInvalid'))
+        return
+      }
+      setError(undefined)
+      const submitted = controller.setSchedule(task.id, { mode: 'once', at, enabled: true })
+      if (submitted && !controller.isHostBacked()) setEnabled(true)
+      return
+    }
     const trimmed = cron.trim()
     if (next && (trimmed === '' || !isValidCron(trimmed))) {
       setError(t('detail.schedule.invalid'))
@@ -276,11 +374,19 @@ function ScheduleSection({ controller, task, pending }: { controller: BoardContr
     if (submitted && !controller.isHostBacked()) setEnabled(next)
   }
 
+  /** Drop every future trigger without touching the card's execution history. */
+  const cancelSchedule = (): void => {
+    setError(undefined)
+    const submitted = controller.setSchedule(task.id, { enabled: false })
+    if (submitted && !controller.isHostBacked()) setEnabled(false)
+  }
+
   const applyPreset = (preset: string): void => {
     if (preset === '') return
     setCron(preset)
+    setMode('cron')
     setError(undefined)
-    controller.setSchedule(task.id, { cron: preset })
+    controller.setSchedule(task.id, { mode: 'cron', cron: preset })
   }
 
   // The zone the rule's wall clock is actually read in: its own when set,
@@ -295,6 +401,11 @@ function ScheduleSection({ controller, task, pending }: { controller: BoardContr
   // The rule's own stored zone rides the list even when this runtime's
   // inventory does not carry it, so opening the editor cannot rewrite it.
   const zones = zoneChoices(hostTimeZone, schedule?.timeZone)
+  // The ledger's own view of the budget and stop record: derived here rather
+  // than tracked in local state, so the display cannot drift from the Host.
+  const budget = schedule === undefined ? undefined : budgetLabel(schedule)
+  const ended = schedule === undefined ? undefined : endedLabel(schedule)
+  const skipped = schedule === undefined ? undefined : skippedLabel(schedule)
 
   return (
     <section className={css.detailSection}>
@@ -308,6 +419,35 @@ function ScheduleSection({ controller, task, pending }: { controller: BoardContr
         />
         <span>{t('detail.schedule.enable')}</span>
       </label>
+      <label className={css.scheduleZone}>
+        <span>{t('detail.schedule.mode')}</span>
+        <select
+          className={css.schedulePreset}
+          value={mode}
+          disabled={pending}
+          aria-label={t('detail.schedule.mode')}
+          onChange={event => { changeMode(event.target.value as ScheduleMode) }}
+        >
+          <option value="cron">{t('detail.schedule.mode.cron')}</option>
+          <option value="once">{t('detail.schedule.mode.once')}</option>
+        </select>
+      </label>
+      {mode === 'once' ? (
+        <label className={css.scheduleZone}>
+          <span>{t('detail.schedule.at')}</span>
+          <input
+            className={css.input}
+            type="datetime-local"
+            value={atText}
+            disabled={pending}
+            aria-label={t('detail.schedule.at')}
+            title={t('detail.schedule.atHint')}
+            onChange={event => { setAtText(event.target.value); setError(undefined) }}
+            onBlur={() => { saveAt(atText) }}
+          />
+        </label>
+      ) : (
+        <>
       <div className={css.scheduleRow}>
         <input
           className={`${css.input} ${css.scheduleInput}${error !== undefined ? ` ${css.scheduleInputInvalid}` : ''}`}
@@ -333,6 +473,39 @@ function ScheduleSection({ controller, task, pending }: { controller: BoardContr
           ))}
         </select>
       </div>
+          <label className={css.scheduleZone}>
+            <span>{t('detail.schedule.maxRuns')}</span>
+            <select
+              className={css.schedulePreset}
+              value={maxRunsChoice}
+              disabled={pending}
+              aria-label={t('detail.schedule.maxRuns')}
+              onChange={event => { applyMaxRuns(event.target.value) }}
+            >
+              <option value="unlimited">{t('detail.schedule.maxRunsUnlimited')}</option>
+              <option value="1">{t('detail.schedule.maxRunsValue', { count: '1' })}</option>
+              <option value="2">{t('detail.schedule.maxRunsValue', { count: '2' })}</option>
+              <option value="custom">{t('detail.schedule.maxRunsCustom')}</option>
+            </select>
+          </label>
+          {maxRunsChoice === 'custom' && (
+            <label className={css.scheduleZone}>
+              <span>{t('detail.schedule.maxRuns')}</span>
+              <input
+                className={css.input}
+                type="number"
+                min={1}
+                step={1}
+                value={maxRunsText}
+                disabled={pending}
+                aria-label={t('detail.schedule.maxRuns')}
+                onChange={event => { setMaxRunsText(event.target.value) }}
+                onBlur={() => { saveCustomMaxRuns(maxRunsText) }}
+              />
+            </label>
+          )}
+        </>
+      )}
       {/* A list is used instead of a free-text field so only zones the Host can
           also resolve are offered; the Host zone entry clears the stored value. */}
       <label className={css.scheduleZone}>
@@ -342,7 +515,7 @@ function ScheduleSection({ controller, task, pending }: { controller: BoardContr
           value={zone}
           disabled={pending}
           aria-label={t('detail.schedule.timeZone')}
-          title={t('detail.schedule.timeZoneHint')}
+          title={mode === 'once' ? t('detail.schedule.zoneOnceHint') : t('detail.schedule.timeZoneHint')}
           onChange={event => { changeZone(event.target.value) }}
         >
           {zones.map(choice => (
@@ -355,6 +528,14 @@ function ScheduleSection({ controller, task, pending }: { controller: BoardContr
         {t('detail.schedule.nextRun')} {nextLabel}
         {' · '}{t('detail.schedule.lastTriggered')} {lastLabel}
       </p>
+      {budget !== undefined && <p className={css.scheduleMeta}>{budget}</p>}
+      {ended !== undefined && <p className={css.scheduleMeta}>{ended}</p>}
+      {ended === undefined && skipped !== undefined && <p className={css.scheduleMeta}>{skipped}</p>}
+      {enabled && (
+        <button type="button" className={css.ghostButton} disabled={pending} onClick={cancelSchedule}>
+          {t('detail.schedule.cancel')}
+        </button>
+      )}
     </section>
   )
 }

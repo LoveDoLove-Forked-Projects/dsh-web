@@ -16,7 +16,7 @@ import { hasOpenExecution, withStatus, type NewTaskInput, type TaskRecord, type 
 import { applyArchiveTask, applyRestoreTask } from './use-cases/task-archive.ts'
 import { applyCreateTask } from './use-cases/task-create.ts'
 import { applyDeleteTask } from './use-cases/task-delete.ts'
-import { applyScheduleNextRun as applyScheduleRollForward, applySetSchedule } from './use-cases/task-schedule.ts'
+import { applyScheduleNextRun as applyScheduleRollForward, applySetSchedule, type SetSchedulePatch } from './use-cases/task-schedule.ts'
 import { resolveHostTimeZone } from './schedule.ts'
 import { applySetParent } from './use-cases/task-parent.ts'
 import { applyDeleteTag, applyRenameTag } from './use-cases/task-tag.ts'
@@ -597,15 +597,17 @@ export class BoardController {
   // --- scheduling ---------------------------------------------------------------
 
   /**
-   * Update a task's schedule rule. A blank or invalid cron expression is
-   * rejected (returns false, state untouched). When the rule ends up enabled
-   * the next run instant is computed immediately; a disabled rule carries no
-   * next-run instant. Delegates the domain transition to the schedule use case.
+   * Update a task's schedule rule. An unusable plan (blank or invalid cron, a
+   * one-shot with no future instant, a non-positive run cap) is rejected
+   * (returns false, state untouched). When the rule ends up enabled the next
+   * run instant is computed immediately — a one-shot's next instant IS its
+   * planned instant — and a disabled rule carries none. Delegates the domain
+   * transition to the schedule use case.
    * @param id - the task to schedule.
    * @param patch - fields to change (absent fields keep their current value).
-   * @returns true when applied, false when rejected (invalid cron / unknown task).
+   * @returns true when applied, false when rejected (unknown task / unusable plan).
    */
-  setSchedule(id: string, patch: { enabled?: boolean; cron?: string; timeZone?: string | null }): boolean {
+  setSchedule(id: string, patch: SetSchedulePatch): boolean {
     // The Host zone is the fallback a rule with no stored zone follows: the
     // mirrored snapshot carries it, and a controller without a Host mirror
     // (pure client tests) falls back to the process zone.

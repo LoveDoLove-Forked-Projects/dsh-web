@@ -1,5 +1,4 @@
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
-import { nextRunAtMs } from './core/schedule.ts'
 import { DEFAULT_SESSION_POLL_SECONDS, normalizeSessionPollSeconds, sessionPollMs } from './core/poll-cadence.ts'
 import { reusableSessionId } from './core/session-reuse.ts'
 import { HostTaskLedger, type OpenedRun, type OpenExecutionReference } from './host-ledger.ts'
@@ -10,7 +9,7 @@ import { PowerInhibitor } from './power-inhibitor.ts'
 import { TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardEventPayload, type TaskBoardSnapshot } from './protocol.ts'
 import { TaskBoardExtensionRegistry } from './host/extension-registry.ts'
 import type { TaskBoardExtension } from './core/extension.ts'
-import type { ExecutionOutcome, TaskRecord, TaskStatus } from './core/tasks.ts'
+import type { ExecutionOutcome, ScheduleMode, TaskRecord, TaskStatus } from './core/tasks.ts'
 import { passedAttempt, resolveContract, verificationNeverInvoked, verificationRequired, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 import type { TaskPermission } from './core/handover.ts'
 
@@ -90,7 +89,10 @@ export const NEVER_INVOKED_VERIFICATION_REASON = 'goal 验收未触发：本次�
 export interface ScheduledRunContext {
   triggeredAt: number
   timeZone: string
-  cron: string
+  /** Whether this fire came from a recurring rule or a single planned instant. */
+  mode: ScheduleMode
+  /** Cron expression of a recurring rule; absent on a one-shot. */
+  cron?: string
 }
 
 /**
@@ -811,10 +813,16 @@ export class TaskBoardHostService {
     }
     const before = this.statusMap()
     for (const schedule of this.ledger.dueSchedules(now)) {
-      const next = nextRunAtMs(schedule.cron, schedule.nextRunAt, schedule.timeZone)
+      // The ledger owns both the budget gate and the next target: it refuses a
+      // rule that already spent its runs and stops a one-shot as it fires.
       this.dispatchRuns(
-        this.ledger.openScheduled(schedule.taskId, next, now),
-        { triggeredAt: now, timeZone: schedule.timeZone, cron: schedule.cron },
+        this.ledger.openScheduled(schedule.taskId, now),
+        {
+          triggeredAt: now,
+          timeZone: schedule.timeZone,
+          mode: schedule.mode,
+          ...(schedule.cron === undefined ? {} : { cron: schedule.cron }),
+        },
       )
     }
     this.emitStatusChanges(before)
