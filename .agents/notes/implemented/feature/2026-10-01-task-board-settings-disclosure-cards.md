@@ -74,8 +74,18 @@ from it.
   is one click away and keeps its own fields and hints.
 - The GitHub Issues section starts collapsed, so its repository and credential
   summary needs one click to read; it keeps its own save row for its own namespace.
+  Inside that section the repository list is a second disclosure of its own
+  (`setupDisclosure` in the extension stylesheet, collapsed on arrival): a
+  deployment syncing several repositories showed every row at once and pushed the
+  credential form and the connection test off the column. A row is two lines - the
+  repository name with its take-unassigned and remove buttons beside it, and the
+  inclusion-label, assignee and unassigned chips wrapping on the line below -
+  because one line let the chips be ellipsised to `d...`/`@...` by the actions
+  sharing it (`setupRepositoryHead` / `setupRepositoryTags`). The toggle carries
+  `aria-expanded`/`aria-controls` and names the repository count in its accessible
+  label, and the rows leave the DOM while it is closed.
 - No stored value, wire field, ledger schema or settings key changes: only
-  presentation and two new copy keys.
+  presentation and copy keys.
 - Coverage: `packages/dsh-task-board/tests/settings-card-disclosure.spec.tsx` drives
   the whole disclosure in jsdom (one header while collapsed, three collapsed
   topics after expanding, each topic's controls and the provider seat inside one

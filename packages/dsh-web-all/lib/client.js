@@ -18043,6 +18043,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"setup.inclusionLabelPlaceholder": "标签（默认 dsh）",
 			"setup.repositoriesCount": "已配置 {count} 个仓库：",
 			"setup.repositoriesEmpty": "还没有同步任何仓库。",
+			"setup.repositoriesExpand": "展开仓库列表",
+			"setup.repositoriesCollapse": "收起仓库列表",
 			"setup.repositoriesHint": "带纳入标签、指派给指定账号（@me 表示本机账号），或开启「收无指派」后完全没人指派的 issue 会同步成看板卡片；这里的修改立即生效，无需重启。状态标签映射、PR 草稿策略、轮询间隔等高级项仍可在 profile patch 里声明。",
 			"setup.repositoryAdd": "添加",
 			"setup.repositoryLabel": "仓库",
@@ -18157,6 +18159,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"setup.inclusionLabelPlaceholder": "Label (default dsh)",
 			"setup.repositoriesCount": "{count} repositories configured:",
 			"setup.repositoriesEmpty": "No repository is synchronized yet.",
+			"setup.repositoriesExpand": "Expand the repository list",
+			"setup.repositoriesCollapse": "Collapse the repository list",
 			"setup.repositoriesHint": "Issues carrying the inclusion label, assigned to the configured login (@me means this host account), or — for a repository taking unassigned issues — assigned to nobody at all, become board cards. Changes here apply immediately, with no restart. Advanced knobs (state-label mapping, draft-PR policy, polling interval, ...) stay declarable in the profile patch.",
 			"setup.repositoryAdd": "Add",
 			"setup.repositoryLabel": "Repository",
@@ -18262,7 +18266,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-task-board-github/src/client/github.module.css.mjs
-		const css$11 = ".SUUxSG_detailSection{flex-direction:column;gap:6px;display:flex}.SUUxSG_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}.SUUxSG_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}.SUUxSG_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}.SUUxSG_cardTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}.SUUxSG_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;align-self:flex-start;align-items:center;padding:2px 6px;font-size:12px;line-height:1;display:inline-flex}.SUUxSG_cardLink{cursor:pointer;text-decoration:none}.SUUxSG_cardLink:hover{color:var(--dsw-alias-label-primary);text-decoration:underline}.SUUxSG_cardLink:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}.SUUxSG_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}.SUUxSG_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.SUUxSG_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.SUUxSG_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.SUUxSG_moveRow{flex-wrap:wrap;gap:8px;display:flex}.SUUxSG_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.SUUxSG_field{flex-direction:column;gap:5px;display:flex}.SUUxSG_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.SUUxSG_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.SUUxSG_input:focus{border-color:var(--dsw-alias-state-business-primary)}.SUUxSG_input::placeholder{color:var(--dsw-alias-label-tertiary)}.SUUxSG_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}.SUUxSG_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}.SUUxSG_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.SUUxSG_linkButton:hover{text-decoration:underline}.SUUxSG_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.SUUxSG_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.SUUxSG_primaryButton:disabled{opacity:.5;cursor:default}.SUUxSG_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.SUUxSG_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_ghostButton:disabled{opacity:.45;cursor:default}.SUUxSG_primaryButton:focus-visible,.SUUxSG_ghostButton:focus-visible,.SUUxSG_linkButton:focus-visible,.SUUxSG_input:focus-visible,.SUUxSG_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.SUUxSG_primaryButton,.SUUxSG_ghostButton,.SUUxSG_linkButton,.SUUxSG_input,.SUUxSG_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}.SUUxSG_primaryButton:active:not(:disabled),.SUUxSG_ghostButton:active:not(:disabled),.SUUxSG_linkButton:active:not(:disabled){transform:translateY(1px)}.SUUxSG_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.SUUxSG_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}.SUUxSG_modalTitle{margin:0;font-size:15px;font-weight:700}.SUUxSG_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}.SUUxSG_modalBody>*{flex:none}.SUUxSG_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.SUUxSG_sectionHint{color:var(--dsw-alias-label-secondary);margin:4px 0;font-size:12px;line-height:1.5}.SUUxSG_setupPanel{border-top:1px solid var(--dsw-alias-separator-primary);margin-top:16px;padding-top:12px}.SUUxSG_settingsSummaryTitle{margin:0 0 8px;font-size:13px;font-weight:600}.SUUxSG_setupSection{margin-top:10px}.SUUxSG_setupLine{margin:4px 0;font-size:12px}.SUUxSG_setupHint{opacity:.8;margin:4px 0;font-size:12px}.SUUxSG_setupRow{flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0;display:flex}.SUUxSG_setupRow .SUUxSG_input{flex:220px;min-width:0}.SUUxSG_setupLabelInput{flex:0 140px}.SUUxSG_setupRepository{overflow-wrap:anywhere;flex:220px;align-items:center;gap:6px;min-width:0;font-size:12px;display:inline-flex}.SUUxSG_setupReport{margin-top:4px}@media (width<=720px){.SUUxSG_input{box-sizing:border-box;font-size:16px}.SUUxSG_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}.SUUxSG_modal{box-sizing:border-box;width:100vw;height:100dvh;max-height:none;padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));border:0;border-radius:0}.SUUxSG_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}.SUUxSG_modalFooter>button{flex:120px}}.SUUxSG_promptPanel{border-top:1px solid var(--dsh-task-tag-border);flex-direction:column;gap:6px;margin-top:10px;padding-top:8px;display:flex}.SUUxSG_promptPanel .SUUxSG_detailMeta{margin:0;line-height:1.5}.SUUxSG_promptAnalysis{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);border-radius:8px;flex-direction:column;gap:4px;padding:8px;display:flex}.SUUxSG_promptList{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;margin:0;padding-left:20px;font-size:13px;line-height:1.55}.SUUxSG_promptNotice{flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;display:flex}";
+		const css$11 = ".SUUxSG_detailSection{flex-direction:column;gap:6px;display:flex}.SUUxSG_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}.SUUxSG_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}.SUUxSG_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}.SUUxSG_cardTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}.SUUxSG_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;align-self:flex-start;align-items:center;padding:2px 6px;font-size:12px;line-height:1;display:inline-flex}.SUUxSG_cardLink{cursor:pointer;text-decoration:none}.SUUxSG_cardLink:hover{color:var(--dsw-alias-label-primary);text-decoration:underline}.SUUxSG_cardLink:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}.SUUxSG_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}.SUUxSG_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.SUUxSG_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.SUUxSG_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.SUUxSG_moveRow{flex-wrap:wrap;gap:8px;display:flex}.SUUxSG_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.SUUxSG_field{flex-direction:column;gap:5px;display:flex}.SUUxSG_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.SUUxSG_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.SUUxSG_input:focus{border-color:var(--dsw-alias-state-business-primary)}.SUUxSG_input::placeholder{color:var(--dsw-alias-label-tertiary)}.SUUxSG_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}.SUUxSG_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}.SUUxSG_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.SUUxSG_linkButton:hover{text-decoration:underline}.SUUxSG_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.SUUxSG_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}.SUUxSG_primaryButton:disabled{opacity:.5;cursor:default}.SUUxSG_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.SUUxSG_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_ghostButton:disabled{opacity:.45;cursor:default}.SUUxSG_primaryButton:focus-visible,.SUUxSG_ghostButton:focus-visible,.SUUxSG_linkButton:focus-visible,.SUUxSG_setupDisclosure:focus-visible,.SUUxSG_input:focus-visible,.SUUxSG_scheduleToggle input:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.SUUxSG_primaryButton,.SUUxSG_ghostButton,.SUUxSG_linkButton,.SUUxSG_setupDisclosure,.SUUxSG_input,.SUUxSG_scheduleToggle input{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}.SUUxSG_primaryButton:active:not(:disabled),.SUUxSG_ghostButton:active:not(:disabled),.SUUxSG_setupDisclosure:active:not(:disabled),.SUUxSG_linkButton:active:not(:disabled){transform:translateY(1px)}.SUUxSG_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.SUUxSG_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}.SUUxSG_modalTitle{margin:0;font-size:15px;font-weight:700}.SUUxSG_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}.SUUxSG_modalBody>*{flex:none}.SUUxSG_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.SUUxSG_sectionHint{color:var(--dsw-alias-label-secondary);margin:4px 0;font-size:12px;line-height:1.5}.SUUxSG_setupPanel{border-top:1px solid var(--dsw-alias-separator-primary);margin-top:16px;padding-top:12px}.SUUxSG_settingsSummaryTitle{margin:0 0 8px;font-size:13px;font-weight:600}.SUUxSG_setupSection{margin-top:10px}.SUUxSG_setupLine{margin:4px 0;font-size:12px}.SUUxSG_setupHint{opacity:.8;margin:4px 0;font-size:12px}.SUUxSG_setupRow{flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0;display:flex}.SUUxSG_setupRow .SUUxSG_input{flex:220px;min-width:0}.SUUxSG_setupLabelInput{flex:0 140px}.SUUxSG_setupDisclosure{box-sizing:border-box;width:100%;color:var(--dsw-alias-label-primary);text-align:left;border:1px solid var(--dsw-alias-border-l2);cursor:pointer;background:0 0;border-radius:8px;justify-content:space-between;align-items:center;gap:8px;margin:4px 0;padding:5px 12px;font-family:inherit;font-size:12px;display:flex}.SUUxSG_setupDisclosure:hover{background:var(--dsw-alias-interactive-bg-hover)}.SUUxSG_setupDisclosureText{overflow-wrap:anywhere;min-width:0}.SUUxSG_setupChevron{width:14px;height:14px;color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s,color .16s}.SUUxSG_setupDisclosure:hover .SUUxSG_setupChevron{color:var(--dsw-alias-label-secondary)}.SUUxSG_setupChevronOpen{transform:rotate(180deg)}.SUUxSG_setupRepositoriesBody{margin-top:2px}.SUUxSG_setupRepositoryRow{flex-direction:column;gap:4px;margin:8px 0;display:flex}.SUUxSG_setupRepositoryHead{flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px;display:flex}.SUUxSG_setupRepository{overflow-wrap:anywhere;min-width:0;font-size:12px}.SUUxSG_setupRepositoryActions{flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto;display:flex}.SUUxSG_setupRepositoryTags{flex-wrap:wrap;gap:4px;display:flex}.SUUxSG_setupReport{margin-top:4px}@media (width<=720px){.SUUxSG_input{box-sizing:border-box;font-size:16px}.SUUxSG_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}.SUUxSG_modal{box-sizing:border-box;width:100vw;height:100dvh;max-height:none;padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));border:0;border-radius:0}.SUUxSG_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}.SUUxSG_modalFooter>button{flex:120px}}.SUUxSG_promptPanel{border-top:1px solid var(--dsh-task-tag-border);flex-direction:column;gap:6px;margin-top:10px;padding-top:8px;display:flex}.SUUxSG_promptPanel .SUUxSG_detailMeta{margin:0;line-height:1.5}.SUUxSG_promptAnalysis{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);border-radius:8px;flex-direction:column;gap:4px;padding:8px;display:flex}.SUUxSG_promptList{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;margin:0;padding-left:20px;font-size:13px;line-height:1.55}.SUUxSG_promptNotice{flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;display:flex}";
 		const tagId$11 = "@linxin666/dsh-web-all/packages/dsh-task-board-github/src/client/github.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
 			const tag = document.createElement("style");
@@ -18299,12 +18303,21 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"scheduleToggle": "SUUxSG_scheduleToggle",
 			"sectionHint": "SUUxSG_sectionHint",
 			"settingsSummaryTitle": "SUUxSG_settingsSummaryTitle",
+			"setupChevron": "SUUxSG_setupChevron",
+			"setupChevronOpen": "SUUxSG_setupChevronOpen",
+			"setupDisclosure": "SUUxSG_setupDisclosure",
+			"setupDisclosureText": "SUUxSG_setupDisclosureText",
 			"setupHint": "SUUxSG_setupHint",
 			"setupLabelInput": "SUUxSG_setupLabelInput",
 			"setupLine": "SUUxSG_setupLine",
 			"setupPanel": "SUUxSG_setupPanel",
 			"setupReport": "SUUxSG_setupReport",
+			"setupRepositoriesBody": "SUUxSG_setupRepositoriesBody",
 			"setupRepository": "SUUxSG_setupRepository",
+			"setupRepositoryActions": "SUUxSG_setupRepositoryActions",
+			"setupRepositoryHead": "SUUxSG_setupRepositoryHead",
+			"setupRepositoryRow": "SUUxSG_setupRepositoryRow",
+			"setupRepositoryTags": "SUUxSG_setupRepositoryTags",
 			"setupRow": "SUUxSG_setupRow",
 			"setupSection": "SUUxSG_setupSection",
 			"statusBadge": "SUUxSG_statusBadge"
@@ -19078,6 +19091,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [report, setReport] = (0, react.useState)();
 			const [testError, setTestError] = (0, react.useState)();
 			const [testing, setTesting] = (0, react.useState)(false);
+			const [repositoriesOpen, setRepositoriesOpen] = (0, react.useState)(false);
+			const repositoriesRegionId = (0, react.useId)();
 			const load = (0, react.useCallback)(async () => {
 				try {
 					const next = await api.status();
@@ -19184,6 +19199,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				envName: "GITHUB_TOKEN"
 			};
 			const controlsDisabled = disabled || credentialBusy;
+			const repositoriesHeading = repositories.length === 0 ? t("setup.repositoriesEmpty") : t("setup.repositoriesCount", { count: String(repositories.length) });
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				"data-dsh-part": "github-settings",
 				className: github_module_css_default.setupPanel,
@@ -19307,21 +19323,73 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: github_module_css_default.setupSection,
 						"data-dsh-part": "github-repositories",
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: github_module_css_default.setupLine,
-								children: repositories.length === 0 ? t("setup.repositoriesEmpty") : t("setup.repositoriesCount", { count: String(repositories.length) })
-							}),
-							repositories.map((repository) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: github_module_css_default.setupRow,
-								"data-dsh-part": "github-repository",
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: github_module_css_default.setupRepository,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: github_module_css_default.setupDisclosure,
+							"aria-expanded": repositoriesOpen,
+							"aria-controls": repositoriesRegionId,
+							"aria-label": (repositoriesOpen ? t("setup.repositoriesCollapse") : t("setup.repositoriesExpand")) + ": " + repositoriesHeading,
+							onClick: () => {
+								setRepositoriesOpen(!repositoriesOpen);
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: github_module_css_default.setupDisclosureText,
+								children: repositoriesHeading
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+								width: "14",
+								height: "14",
+								viewBox: "0 0 14 14",
+								fill: "none",
+								xmlns: "http://www.w3.org/2000/svg",
+								className: repositoriesOpen ? github_module_css_default.setupChevron + " " + github_module_css_default.setupChevronOpen : github_module_css_default.setupChevron,
+								"aria-hidden": "true",
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+									d: "M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z",
+									fill: "currentColor"
+								})
+							})]
+						}), repositoriesOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: github_module_css_default.setupRepositoriesBody,
+							id: repositoriesRegionId,
+							children: [
+								repositories.map((repository) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: github_module_css_default.setupRepositoryRow,
+									"data-dsh-part": "github-repository",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: github_module_css_default.setupRepositoryHead,
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											className: github_module_css_default.setupRepository,
+											children: [
+												repository.owner,
+												"/",
+												repository.repository
+											]
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											className: github_module_css_default.setupRepositoryActions,
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: github_module_css_default.ghostButton,
+												"data-dsh-part": "github-repository-unassigned-toggle",
+												"aria-pressed": repository.includeUnassigned === true,
+												disabled: disabled || repositoryBusy,
+												onClick: () => {
+													toggleUnassigned(repository, repository.includeUnassigned !== true);
+												},
+												children: repository.includeUnassigned === true ? t("setup.unassignedOn") : t("setup.unassignedOff")
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: github_module_css_default.ghostButton,
+												"data-dsh-part": "github-repository-remove",
+												disabled: disabled || repositoryBusy,
+												onClick: () => {
+													remove(repository);
+												},
+												children: t("setup.repositoryRemove")
+											})]
+										})]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: github_module_css_default.setupRepositoryTags,
 										children: [
-											repository.owner,
-											"/",
-											repository.repository,
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: github_module_css_default.cardTag,
 												children: repository.inclusionLabel ?? "dsh"
@@ -19337,91 +19405,70 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 												children: t("setup.unassignedChip")
 											})
 										]
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: github_module_css_default.ghostButton,
-										"data-dsh-part": "github-repository-unassigned-toggle",
-										"aria-pressed": repository.includeUnassigned === true,
-										disabled: disabled || repositoryBusy,
-										onClick: () => {
-											toggleUnassigned(repository, repository.includeUnassigned !== true);
-										},
-										children: repository.includeUnassigned === true ? t("setup.unassignedOn") : t("setup.unassignedOff")
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: github_module_css_default.ghostButton,
-										"data-dsh-part": "github-repository-remove",
-										disabled: disabled || repositoryBusy,
-										onClick: () => {
-											remove(repository);
-										},
-										children: t("setup.repositoryRemove")
-									})
-								]
-							}, repository.owner + "/" + repository.repository)),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: github_module_css_default.setupRow,
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										type: "text",
-										className: github_module_css_default.input,
-										"data-dsh-part": "github-repository-input",
-										"aria-label": t("setup.repositoryLabel"),
-										placeholder: t("setup.repositoryPlaceholder"),
-										value: newRepository,
-										spellCheck: false,
-										disabled: disabled || repositoryBusy,
-										onChange: (event) => setNewRepository(event.target.value),
-										onKeyDown: (event) => {
-											if (event.key === "Enter") add();
-										}
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										type: "text",
-										className: github_module_css_default.input + " " + github_module_css_default.setupLabelInput,
-										"data-dsh-part": "github-repository-label-input",
-										"aria-label": t("setup.inclusionLabel"),
-										placeholder: t("setup.inclusionLabelPlaceholder"),
-										value: newLabel,
-										spellCheck: false,
-										disabled: disabled || repositoryBusy,
-										onChange: (event) => setNewLabel(event.target.value)
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										type: "text",
-										className: github_module_css_default.input + " " + github_module_css_default.setupLabelInput,
-										"data-dsh-part": "github-repository-assignee-input",
-										"aria-label": t("setup.assignee"),
-										placeholder: t("setup.assigneePlaceholder"),
-										value: newAssignee,
-										spellCheck: false,
-										disabled: disabled || repositoryBusy,
-										onChange: (event) => setNewAssignee(event.target.value),
-										onKeyDown: (event) => {
-											if (event.key === "Enter") add();
-										}
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: github_module_css_default.primaryButton,
-										"data-dsh-part": "github-repository-add",
-										disabled: disabled || repositoryBusy || newRepository.trim() === "",
-										onClick: add,
-										children: t("setup.repositoryAdd")
-									})
-								]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: github_module_css_default.setupHint,
-								children: t("setup.repositoriesHint")
-							}),
-							repositoryError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-								className: github_module_css_default.formError,
-								children: repositoryError
-							})
-						]
+									})]
+								}, repository.owner + "/" + repository.repository)),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: github_module_css_default.setupRow,
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											type: "text",
+											className: github_module_css_default.input,
+											"data-dsh-part": "github-repository-input",
+											"aria-label": t("setup.repositoryLabel"),
+											placeholder: t("setup.repositoryPlaceholder"),
+											value: newRepository,
+											spellCheck: false,
+											disabled: disabled || repositoryBusy,
+											onChange: (event) => setNewRepository(event.target.value),
+											onKeyDown: (event) => {
+												if (event.key === "Enter") add();
+											}
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											type: "text",
+											className: github_module_css_default.input + " " + github_module_css_default.setupLabelInput,
+											"data-dsh-part": "github-repository-label-input",
+											"aria-label": t("setup.inclusionLabel"),
+											placeholder: t("setup.inclusionLabelPlaceholder"),
+											value: newLabel,
+											spellCheck: false,
+											disabled: disabled || repositoryBusy,
+											onChange: (event) => setNewLabel(event.target.value)
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											type: "text",
+											className: github_module_css_default.input + " " + github_module_css_default.setupLabelInput,
+											"data-dsh-part": "github-repository-assignee-input",
+											"aria-label": t("setup.assignee"),
+											placeholder: t("setup.assigneePlaceholder"),
+											value: newAssignee,
+											spellCheck: false,
+											disabled: disabled || repositoryBusy,
+											onChange: (event) => setNewAssignee(event.target.value),
+											onKeyDown: (event) => {
+												if (event.key === "Enter") add();
+											}
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: github_module_css_default.primaryButton,
+											"data-dsh-part": "github-repository-add",
+											disabled: disabled || repositoryBusy || newRepository.trim() === "",
+											onClick: add,
+											children: t("setup.repositoryAdd")
+										})
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: github_module_css_default.setupHint,
+									children: t("setup.repositoriesHint")
+								}),
+								repositoryError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: github_module_css_default.formError,
+									children: repositoryError
+								})
+							]
+						})]
 					}),
 					statusError !== void 0 && mirror !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: github_module_css_default.setupSection,
