@@ -110,9 +110,9 @@ export function applyUpdateTask(
     if ('reuseSession' in patch) next.reuseSession = patch.reuseSession === true ? true : undefined
     // Team execution is a boolean opt-in with the same clear-by-false rule.
     if ('teamRun' in patch) next.teamRun = patch.teamRun === true ? true : undefined
-    // The /goal opt-in is default-ON: true (or an explicit null) returns the
-    // card to the default and stores nothing, only false pins a plain turn.
-    if ('goalRun' in patch) next.goalRun = patch.goalRun === false ? false : undefined
+    // The /goal opt-in is default-OFF: true joins the goal run, while false
+    // (or an explicit null) returns the card to the default and stores nothing.
+    if ('goalRun' in patch) next.goalRun = patch.goalRun === true ? true : undefined
     // The acceptance opt-out is the mirror image: default OFF, so only true
     // pins a card out of the gate; false (or an explicit null) returns it to
     // inheriting the board-wide switch and stores nothing.

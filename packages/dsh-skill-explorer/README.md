@@ -48,9 +48,13 @@ A visual Skill Explorer for DeepSeek Harness (DSH) Web GUI and desktop client: b
   loader row, so the documented placement (the provider row in a profile
   patch) is manageable too. The plugin never changes the skill loading or
   injection semantics — it is a pure GUI management layer.
-- A skill with no local SKILL.md file (a bundled or runtime registration)
-  is listed with a "No local file" badge instead of silently missing its
-  controls, so it is clear why it cannot be toggled, edited, or deleted.
+- A skill the write routes cannot serve is badged by what actually backs
+  it, instead of silently missing its controls. A plugin provider that
+  reports a real instruction file (the official `SkillSummary.path`) is
+  listed as **"Provided by plugin"** — the file exists, it just sits outside
+  the skill roots this panel scans. Only a registration that reports no file
+  at all is listed as **"No local file"**. Both stay pathless, so neither row
+  offers a toggle, edit, or delete control that would answer 404.
 - A skill is listed only when the official provider would load it: its
   SKILL.md declares a non-empty `name` and `description`, and the name
   satisfies the official skill-name grammar. A file the official provider

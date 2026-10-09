@@ -517,7 +517,9 @@ export class TaskBoardHostService {
       // for the whole execution: a settings edit after this point can only
       // affect executions that start later.
       const globalGoalEnabled = this.goalRunEnabled() === true
-      const goalEnabled = globalGoalEnabled && opened.task.goalRun !== false
+      // The card must ASK for the goal run: the option is off by default, so an
+      // absent value is a plain turn exactly like an explicit false.
+      const goalEnabled = globalGoalEnabled && opened.task.goalRun === true
       // The card's opt-out is a DISTINCT reason, not the board switch: the
       // report must be able to say which of the two turned the gate off.
       const skippedBy: ExecutionVerification['applicability'] = opened.task.skipVerification === true ? 'skipped' : 'disabled'
@@ -527,11 +529,13 @@ export class TaskBoardHostService {
       )
       // An execution that will not become a goal run can never fire the
       // completion gate, so it is marked with the reason that actually applied:
-      // the global switch being off is its OWN reason, distinct from a refused
-      // or unavailable /goal command, and it must never read as an accepted run.
+      // the global switch being off is its OWN reason, distinct from this run
+      // simply not becoming a goal run (the card never opted in, or a refused or
+      // unavailable /goal command), and it must never read as an accepted run.
       // The reason names which switch withheld the goal: the GLOBAL master
-      // switch (this board never arms /goal) is a different fact from this run
-      // simply not becoming a goal run.
+      // switch (this board never arms /goal) is a different fact from the card's
+      // own goal option staying off — which is the default, so it is what an
+      // untouched card gets.
       const notArmed: ExecutionVerification['applicability'] = globalGoalEnabled ? 'goal-unavailable' : 'goal-disabled'
       const initial: ExecutionVerification = {
         contract,

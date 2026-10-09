@@ -138,8 +138,9 @@ describe('create-task dialog regions', () => {
     // When the user reads the region headers
     const container = renderModal()
 
-    // Then each collapsed header summarizes the values it holds
-    expect(regionHeader(container, t('new.section.run')).textContent).toContain(t('new.summary.multiRound'))
+    // Then each collapsed header summarizes the values it holds: the /goal
+    // option is off by default, so the run region reports a single round
+    expect(regionHeader(container, t('new.section.run')).textContent).toContain(t('new.summary.singleRound'))
     // And the execution summary names the preset a run without a pin lands on
     expect(regionHeader(container, t('new.section.execution')).textContent)
       .toContain(t('preset.builtin.standard'))

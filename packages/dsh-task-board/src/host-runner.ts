@@ -374,7 +374,7 @@ export class HostExecutionRunner {
      * already running. Absent means off — the default for every deployment that
      * never touched the switch, including cards written before the option
      * existed. A plain single turn is what an off switch produces; the task-level
-     * `goalRun` still applies on top of it (both must allow a goal).
+     * `goalRun` still applies on top of it (both must ASK for a goal).
      */
     goalEnabled?: boolean
   } = {}): Promise<string> {
@@ -534,10 +534,11 @@ export class HostExecutionRunner {
    * dsh's goal-round driver keeps starting continuation rounds until the agent
    * marks it complete (see {@link goalVerdict} for how the run settles).
    *
-   * Two switches gate the arming, and BOTH must allow it:
+   * Two switches gate the arming, and BOTH must ask for it:
    * - the GLOBAL native-/goal switch (`goalEnabled`, default OFF), frozen when
    *   this execution started; and
-   * - the task's own `goalRun` (absent means on, an explicit false opts out).
+   * - the task's own `goalRun` (absent means off, only an explicit true opts
+   *   the card into a goal run).
    *
    * A refusal (no command dispatcher, no `/goal` command in this cohort, an
    * objective the command rejects) is reported and the run continues as a plain
@@ -551,7 +552,7 @@ export class HostExecutionRunner {
    */
   private async armGoal(sessionId: ExecutionSessionId, task: TaskRecord, context: PromptContext, goalEnabled: boolean): Promise<boolean> {
     if (!goalEnabled) return false
-    if (task.goalRun === false) return false
+    if (task.goalRun !== true) return false
     if (this.commands === undefined) {
       console.warn('[dsh-task-board] no command dispatcher is available; task ' + task.id + ' runs without /goal')
       return false

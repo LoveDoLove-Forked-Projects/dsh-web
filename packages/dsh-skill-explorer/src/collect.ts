@@ -86,6 +86,20 @@ export function rankOf(level: string): number {
   return SKILL_SOURCE_RANK.get(level) ?? UNKNOWN_SOURCE_RANK
 }
 
+/**
+ * How the panel classifies what backs a skill locally.
+ *
+ * - `editable`: a filesystem scan resolved the SKILL.md, so the entry carries
+ *   the `path` the write routes accept.
+ * - `provider-file`: the official registry reports a real instruction file
+ *   (`SkillSummary.path`) that this panel's scan did not resolve. The file
+ *   exists — saying otherwise is issue #1842 — but it is not a path the write
+ *   routes trust, so no row control may be offered for it.
+ * - `virtual`: the registry reports no instruction file at all; "no local
+ *   file" is the accurate statement.
+ */
+export type SkillFileState = 'editable' | 'provider-file' | 'virtual'
+
 /** One skill entry as served to the panel. */
 export interface SkillEntry {
   name: string
@@ -94,6 +108,8 @@ export interface SkillEntry {
   provider?: string
   level: string
   path?: string
+  /** What backs this skill locally (see SkillFileState). */
+  fileState: SkillFileState
   /** True when the skill was discovered through a symlink entry (deletion is not allowed). */
   linked?: boolean
   modelInvocable: boolean
@@ -113,6 +129,15 @@ export interface RegistrySkill {
   whenToUse?: string
   provider?: string
   source: string
+  /**
+   * Absolute instruction file path the provider reports
+   * (`SkillSummary.path` in @deepseek-ai/dsh-skill: "Absolute instruction file
+   * path when supplied by the provider; absent for virtual skills"). This is
+   * the field that distinguishes a provider-backed skill with a real SKILL.md
+   * from a virtual one — NOT `resourceBase`, which names a directory of
+   * relative resources rather than an instruction file.
+   */
+  path?: string
   resourceBase?: { kind: string; path?: string }
   invocation?: { modelInvocable?: boolean; userInvocable?: boolean }
 }
@@ -342,6 +367,7 @@ async function scanSkillRoot(
       provider: 'filesystem',
       level,
       path: file,
+      fileState: 'editable',
       linked,
       // Official frontmatter invocation policy.
       modelInvocable: parsed.disableModelInvocation !== true,
@@ -355,17 +381,21 @@ async function scanSkillRoot(
 
 /** Serialize one registry entry into the panel payload (keeps the source for grouping). */
 function serializeRegistry(skill: RegistrySkill): SkillEntry {
+  // The registry reports the instruction file it actually has (if any). A
+  // registry-only entry never carries a writable path: the write routes only
+  // trust paths from a fresh filesystem scan, so exposing this one would show
+  // toggle/delete controls that always answer 404. It is still the fact the
+  // panel needs, because "a provider file exists" and "no file exists at all"
+  // are different claims and must not both read as "No local file" (#1842).
+  const providerPath = typeof skill.path === 'string' && skill.path.trim() !== '' ? skill.path : undefined
   return {
     name: skill.name,
     description: skill.description,
     whenToUse: skill.whenToUse,
     provider: skill.provider,
     level: REGISTRY_SOURCE_LEVEL.get(skill.source) ?? `other:${skill.source}`,
-    // Registry-only entries (bundled / runtime) have no editable file: the
-    // write routes only trust paths from a fresh filesystem scan, so expose
-    // no path here — otherwise the panel would show toggle/delete controls
-    // that always answer 404.
     path: undefined,
+    fileState: providerPath === undefined ? 'virtual' : 'provider-file',
     // Official invocation semantics: an omitted policy permits both surfaces.
     // dsh-skill register() defaults to { modelInvocable: true,
     // userInvocable: true }, and the filesystem provider resolves omitted

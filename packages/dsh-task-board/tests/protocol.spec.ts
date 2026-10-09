@@ -226,22 +226,22 @@ describe('task-board action protocol', () => {
     })).toBeUndefined()
   })
 
-  it('operator sending the /goal opt-out through create and update gets it accepted', () => {
+  it('operator sending the /goal opt-in through create and update gets it accepted', () => {
     // Given create input and update patches that carry the goal option
     // When the envelopes are parsed
     // Then the boolean is accepted in both, and anything else is refused
     expect(parseActionEnvelope({
-      requestId: 'create-goal-off',
-      action: { kind: 'create', id: 'task-goal', input: { title: 'G', description: '', prompt: 'p', goalRun: false } },
+      requestId: 'create-goal-on',
+      action: { kind: 'create', id: 'task-goal', input: { title: 'G', description: '', prompt: 'p', goalRun: true } },
     })?.action.kind).toBe('create')
 
-    // The opt-out is tri-state: true (or null) returns the card to its default.
-    expect(parseActionEnvelope({
-      requestId: 'update-goal-off',
-      action: { kind: 'update', taskId: 'task-goal', patch: { goalRun: false } },
-    })?.action.kind).toBe('update')
+    // The opt-in is tri-state: false (or null) returns the card to its default.
     expect(parseActionEnvelope({
       requestId: 'update-goal-on',
+      action: { kind: 'update', taskId: 'task-goal', patch: { goalRun: true } },
+    })?.action.kind).toBe('update')
+    expect(parseActionEnvelope({
+      requestId: 'update-goal-off',
       action: { kind: 'update', taskId: 'task-goal', patch: { goalRun: null } },
     })?.action.kind).toBe('update')
     expect(parseActionEnvelope({
@@ -254,17 +254,17 @@ describe('task-board action protocol', () => {
     })).toBeUndefined()
   })
 
-  it('user importing legacy tasks keeps the /goal opt-out on the imported card', () => {
-    // Given a legacy card that opted out of goal runs
-    const task = { ...createTask({ title: 'legacy', description: '', prompt: '' }, 1, 'legacy'), goalRun: false }
+  it('user importing legacy tasks keeps the /goal opt-in on the imported card', () => {
+    // Given a legacy card that opted into goal runs
+    const task = { ...createTask({ title: 'legacy', description: '', prompt: '', goalRun: true }, 1, 'legacy'), goalRun: true }
 
     // When it is imported
     const parsed = parseActionEnvelope({ requestId: 'import-goal', action: { kind: 'import', sourceId: 'browser-a', tasks: [task] } })
 
-    // Then the imported card carries the same opt-out
+    // Then the imported card carries the same opt-in
     expect(parsed?.action.kind).toBe('import')
     if (parsed?.action.kind !== 'import') throw new Error('expected an import action')
-    expect(parsed.action.tasks[0].goalRun).toBe(false)
+    expect(parsed.action.tasks[0].goalRun).toBe(true)
   })
 })
 

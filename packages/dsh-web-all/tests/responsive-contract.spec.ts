@@ -310,4 +310,46 @@ describe('aggregate responsive compat contract', () => {
     cleanup?.()
     expect(document.querySelector('[data-dsh-boot-splash]')).toBeNull()
   })
+
+  // The drawer contract is not a skin decision. The skin-center loader
+  // force-scopes every skin selector under html[data-dsh-skin="<id>"], so a
+  // skin's `body [data-pane='sidebar'] { position: relative; }` (rainy-night,
+  // shuimo-danqing, whale-fantasy, xinghai-heart) is served as
+  // `html[data-dsh-skin="..."] body [data-pane='sidebar']` - 0-2-2 against a
+  // plain 0-2-0 - and `div:has(> [data-slot="sidebar"]) { position: relative
+  // !important; }` (last-exile, porco-rosso, white-snake) is served as
+  // `html[data-dsh-skin="..."] body div:has(...)` - 0-2-3. Without the
+  // important declaration the first shape wins; with it alone the second still
+  // does, because two important declarations fall back to specificity. The
+  // drawer rule therefore carries both: !important AND the redundant :is()
+  // that lifts it to 0-3-0. Either half alone regresses a real skin.
+  it('user on a narrow viewport keeps the drawer contract above any skin override', () => {
+    // Given the mobile breakpoint block declares the sidebar pane as a drawer
+    const mobile = RESPONSIVE_CSS.slice(RESPONSIVE_CSS.indexOf('@media (max-width: 768px)'))
+    const selector = mobile.match(/([^{}]*)\{[^}]*position: absolute !important/)?.[1] ?? ''
+    const drawer = mobile.match(/\[data-dsh-frame\] \[data-pane="sidebar"\][^{]*\{([^}]*)\}/)?.[1] ?? ''
+
+    // When a skin ships its sidebar rule under the loader's scope, then the
+    // drawer must outrank BOTH shapes it can take: 0-2-2 (a plain skin
+    // declaration, beaten by !important) and 0-2-3 (an important skin
+    // declaration, beaten only on specificity)
+    expect(drawer).toContain('position: absolute !important')
+
+    // The :is() is what supplies the third attribute selector, lifting the
+    // rule to 0-3-0 so an equally-important 0-2-3 skin rule loses. It is
+    // redundant as a matcher by construction: it repeats an attribute the
+    // rule already requires. Count across the whole selector - the frame
+    // attribute is a separate ancestor compound, not part of the subject.
+    expect(selector).toContain(':is(')
+    const attributeCount = (selector.match(/\[[^\]]+\]/g) ?? []).length
+    expect(attributeCount).toBeGreaterThanOrEqual(3)
+
+    // The stable substring every other assertion and the shell rely on stays.
+    expect(RESPONSIVE_CSS).toContain('[data-dsh-frame] [data-pane="sidebar"]')
+
+    // The remaining drawer declarations stay as they are
+    expect(drawer).toContain('inset-block: 0')
+    expect(drawer).toContain('z-index: 1100')
+    expect(drawer).toContain('width: min(88vw, 320px) !important')
+  })
 })

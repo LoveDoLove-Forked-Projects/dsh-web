@@ -43,9 +43,9 @@ function renderModal(options: { started?: boolean; goalRunEnabled?: boolean } = 
     executionOptions: { workspaces: [], presets: [], models: [] },
     pendingTaskIds: [],
     // The master native-/goal switch is on: these cases exercise the
-    // task-level option, which the global default (off) would disable. The host
-    // zone matches the runtime's own, so the schedule plan is read in the same
-    // zone the production client resolves.
+    // task-level option taking effect. The host zone matches the runtime's own,
+    // so the schedule plan is read in the same zone the production client
+    // resolves.
     host: {
       revision: 1,
       scheduler: { timeZone: resolveHostTimeZone() },
@@ -72,13 +72,26 @@ function renderModal(options: { started?: boolean; goalRunEnabled?: boolean } = 
   return { container, createTaskConfirmed, runTask, openTask, onClose }
 }
 
-/** The new-task dialog's /goal opt-out checkbox (checked by default). */
+/** The new-task dialog's /goal opt-in checkbox (unchecked by default). */
 function goalCheckbox(container: HTMLElement): HTMLInputElement {
-  // The /goal opt-out lives in the collapsed "run mode" region.
+  // The /goal opt-in lives in the collapsed "run mode" region.
   openFormSection(container, t('new.section.run'))
   const label = [...container.querySelectorAll('label')].find(node => node.textContent?.includes(t('exec.goalRun')))
   if (label === undefined) throw new Error('no /goal option in the new-task dialog')
   return label.querySelector('input') as HTMLInputElement
+}
+
+/** The run-mode region's header button, which carries its collapsed summary. */
+function runSectionHeader(container: HTMLElement): HTMLButtonElement {
+  const header = [...container.querySelectorAll<HTMLButtonElement>('[data-dsh-part="form-section"] > button')]
+    .find(button => (button.textContent ?? '').startsWith(t('new.section.run')))
+  if (header === undefined) throw new Error('no run-mode region in the new-task dialog')
+  return header
+}
+
+/** Collapse the run-mode region again so its header renders the summary. */
+function collapseRunSection(container: HTMLElement): void {
+  act(() => { runSectionHeader(container).dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 }
 
 function actionButton(container: HTMLElement, label: string): HTMLButtonElement {
@@ -139,55 +152,78 @@ describe('new-task "create and run" (#1621)', () => {
     expect(runTask).not.toHaveBeenCalled()
   })
 
-  it('user creating a task sends the default goal run and the opt-out they uncheck', async () => {
+  it('user creating a task sends a plain turn by default and the goal opt-in they check', async () => {
     // Given an open new-task modal
     const { container, createTaskConfirmed } = renderModal()
 
-    // Then the /goal option starts checked, and the default payload stores
-    // nothing for it (absent = on)
+    // Then the /goal option starts unchecked, and the default payload stores
+    // nothing for it (absent = off)
     const checkbox = goalCheckbox(container)
-    expect(checkbox.checked).toBe(true)
+    expect(checkbox.checked).toBe(false)
     const form = container.querySelector('form')!
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     })
     expect((createTaskConfirmed.mock.calls[0]![0] as { goalRun?: boolean }).goalRun).toBeUndefined()
 
-    // When the user unchecks it before creating, the opt-out rides the create
+    // When the user checks it before creating, the opt-in rides the create
     createTaskConfirmed.mockClear()
     await act(async () => { checkbox.click() })
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     })
-    expect((createTaskConfirmed.mock.calls[0]![0] as { goalRun?: boolean }).goalRun).toBe(false)
+    expect((createTaskConfirmed.mock.calls[0]![0] as { goalRun?: boolean }).goalRun).toBe(true)
   })
 
-  it('user with the GLOBAL native /goal switch off sees the new-task option disabled and explained', () => {
+  it('user with the GLOBAL native /goal switch off sees the new-task option usable and explained', async () => {
     // Given an open new-task modal while the master switch is off
-    const { container } = renderModal({ goalRunEnabled: false })
+    const { container, createTaskConfirmed } = renderModal({ goalRunEnabled: false })
 
-    // When the user reads the run-mode region
+    // When the user reads the run-mode region and checks the option anyway
     const checkbox = goalCheckbox(container)
-
-    // Then the option is disabled, the explanation names the master switch, and
-    // the state it holds is untouched (it is still the default, on).
-    expect(checkbox.disabled).toBe(true)
-    expect(checkbox.checked).toBe(true)
+    expect(checkbox.disabled).toBe(false)
+    expect(checkbox.checked).toBe(false)
     expect(container.textContent).toContain(t('settings.goalRunGlobalDisabledTaskOption'))
+    await act(async () => { checkbox.click() })
+
+    // Then the choice is kept and the create carries it: the master switch
+    // decides whether it takes effect, never whether the user may state it.
+    expect(checkbox.checked).toBe(true)
+    const form = container.querySelector('form')!
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect((createTaskConfirmed.mock.calls[0]![0] as { goalRun?: boolean }).goalRun).toBe(true)
   })
 
-  it('user reading the collapsed run summary with the GLOBAL switch off is told this card will run a plain turn', () => {
-    // Given a new-task modal whose master switch is off
+  it('user reading the collapsed run summary with the GLOBAL switch off is told this card will run a plain turn', async () => {
+    // Given a new-task modal whose master switch is off and whose goal option
+    // was checked anyway (the option itself is off by default)
     const { container } = renderModal({ goalRunEnabled: false })
+    const checkbox = goalCheckbox(container)
+    await act(async () => { checkbox.click() })
+    collapseRunSection(container)
 
-    // When the run region stays collapsed
-    const header = [...container.querySelectorAll('button')]
-      .find(node => node.textContent?.includes(t('new.section.run')))!
+    // When the run region is collapsed again
+    const header = runSectionHeader(container)
 
-    // Then its summary reports a single round rather than the stored default,
+    // Then its summary reports a single round rather than the stored preference,
     // because that is what this card will actually do.
     expect(header.textContent).toContain(t('new.summary.singleRound'))
     expect(header.textContent).not.toContain(t('new.summary.multiRound'))
+  })
+
+  it('user reading the collapsed run summary of an opted-in card is told it will run multi-round', () => {
+    // Given a new-task modal whose master switch is on
+    const { container } = renderModal()
+
+    // When the user checks the goal option and collapses the run region
+    const checkbox = goalCheckbox(container)
+    act(() => { checkbox.click() })
+    collapseRunSection(container)
+
+    // Then the summary reports the multi-round goal run the card asked for
+    expect(runSectionHeader(container).textContent).toContain(t('new.summary.multiRound'))
   })
 })
 

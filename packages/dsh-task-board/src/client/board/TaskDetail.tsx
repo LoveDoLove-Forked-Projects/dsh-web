@@ -91,9 +91,9 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
   /** Whether this deployment serves the Agent Teams service. */
   teamRunAvailable: boolean
   /**
-   * Live GLOBAL native-/goal switch. While it is off, the task-level option is
-   * DISABLED with an explanation but its stored value is left exactly as it is,
-   * so turning the global switch back on restores the user's own preference.
+   * Live GLOBAL native-/goal switch. It only decides whether the card's own
+   * preference takes effect: the option stays operable while it is off, the
+   * stored value is never rewritten by it, and the explanation below says so.
    */
   goalRunEnabled: boolean
 }) {
@@ -188,11 +188,11 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
       <label className={css.scheduleToggle}>
         <input
           type="checkbox"
-          checked={task.goalRun !== false}
-          // Disabled while the global switch is off: the stored preference is
-          // never rewritten from here, only its effect is withheld until the
-          // master switch is turned back on.
-          disabled={pending || !goalRunEnabled}
+          checked={task.goalRun === true}
+          // Always operable (only a pending execution locks it): the global
+          // switch decides whether the preference takes effect, never whether
+          // the user may state it, and it never rewrites what is stored here.
+          disabled={pending}
           onChange={event => { controller.updateTask(task.id, { goalRun: event.target.checked }) }}
         />
         <span>{t('exec.goalRun')}</span>

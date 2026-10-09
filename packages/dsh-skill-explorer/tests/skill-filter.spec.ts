@@ -13,6 +13,7 @@ function skill(name: string, description: string, extra: Partial<SkillEntry> = {
     provider: 'filesystem',
     level: 'user-dsh',
     path: '/work/' + name + '/SKILL.md',
+    fileState: 'editable',
     modelInvocable: true,
     userInvocable: true,
     ...extra,

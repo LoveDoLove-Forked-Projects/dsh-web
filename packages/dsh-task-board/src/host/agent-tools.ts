@@ -168,8 +168,8 @@ function taskSummary(
     ...(task.model === undefined ? {} : { model: task.model }),
     ...(task.reuseSession === true ? { reuseSession: true } : {}),
     ...(task.teamRun === true ? { teamRun: true } : {}),
-    // Default-ON switch: only the opt-out is a deviation worth reporting.
-    ...(task.goalRun === false ? { goalRun: false } : {}),
+    // Default-OFF opt-in: only a card that asked for the goal run reports it.
+    ...(task.goalRun === true ? { goalRun: true } : {}),
     // Default-OFF opt-out: the deviation is what a reader must be told.
     ...(task.skipVerification === true ? { skipVerification: true } : {}),
     ...(task.schedule === undefined ? {} : { schedule: scheduleView(task.schedule) }),
@@ -601,7 +601,7 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
       model: { type: 'string', description: 'Pinned model as provider/model (or a model id); omit for the host default or the parent value.' },
       reuseSession: { type: 'boolean', description: 'Continue later runs in the previous execution session instead of a fresh conversation.' },
       teamRun: { type: 'boolean', description: 'Run this task as an Agent Team: running it starts one Team Lead session and the Host spawns a teammate per subtask inside it. Omit or false for one independent session per member. Refused when the deployment serves no Agent Teams service.' },
-      goalRun: { type: 'boolean', description: 'Start each run with dsh built-in /goal so the session keeps working continuation rounds until the goal completes. Default true (omit to keep it); pass false for a single plain turn.' },
+      goalRun: { type: 'boolean', description: 'Start each run with dsh built-in /goal so the session keeps working continuation rounds until the goal completes. Off by default: omit (or pass false) for a single plain turn, and pass true to opt this card in. It only takes effect while the deployment global native /goal switch is on.' },
       skipVerification: { type: 'boolean', description: 'Run this task without the board acceptance gate: update_goal may mark the goal complete without a passing acceptance, and the execution record is marked skipped. Default false (omit to inherit the board-wide acceptance switch). Only affects executions started afterwards.' },
       tags: {
         type: 'array',
@@ -647,7 +647,7 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
         ...(args.model === undefined || args.model === '' ? {} : { model: args.model }),
         ...(args.reuseSession === true ? { reuseSession: true } : {}),
         ...(args.teamRun === true ? { teamRun: true } : {}),
-        ...(args.goalRun === false ? { goalRun: false } : {}),
+        ...(args.goalRun === true ? { goalRun: true } : {}),
     ...(args.skipVerification === true ? { skipVerification: true } : {}),
         ...(tags.length === 0 ? {} : { tags }),
         ...(args.schedule === undefined ? {} : {
@@ -706,7 +706,7 @@ function buildUpdateTool(host: TaskBoardToolHost): ToolDefinition {
       model: { type: 'string', description: 'New pinned model; an empty string clears it.' },
       reuseSession: { type: 'boolean', description: 'Continue later runs in the previous execution session.' },
       teamRun: { type: 'boolean', description: 'Switches this task between a plain cascade (one session per member) and an Agent Team run (Lead session plus a teammate per subtask).' },
-      goalRun: { type: 'boolean', description: 'Whether each run starts with dsh built-in /goal (default true). Pass false to run one plain turn instead.' },
+      goalRun: { type: 'boolean', description: 'Whether each run starts with dsh built-in /goal (default false, one plain turn). Pass true to opt this card in, or false to return it to the default.' },
       skipVerification: { type: 'boolean', description: 'Whether this task runs without the board acceptance gate (default false, inherit the board-wide switch). Pass true to opt out; pass false to opt back in. Only affects executions started afterwards.' },
       tags: {
         type: 'array',
@@ -736,7 +736,7 @@ function buildUpdateTool(host: TaskBoardToolHost): ToolDefinition {
       }
       if (has(args, 'reuseSession')) patch.reuseSession = args.reuseSession === true
       if (has(args, 'teamRun')) patch.teamRun = args.teamRun === true
-      if (has(args, 'goalRun')) patch.goalRun = args.goalRun === false ? false : true
+      if (has(args, 'goalRun')) patch.goalRun = args.goalRun === true ? true : false
       if (has(args, 'skipVerification')) patch.skipVerification = args.skipVerification === true ? true : false
       if (has(args, 'tags')) {
         const tags = args.tags ?? []

@@ -268,9 +268,9 @@ export function parseLedger(raw: string | null): TaskRecord[] {
     task.archivedAt = typeof row.archivedAt === 'number' && Number.isFinite(row.archivedAt) ? row.archivedAt : undefined
     task.permission = isTaskPermission(row.permission) ? row.permission as TaskPermission : undefined
     task.reuseSession = row.reuseSession === true ? true : undefined
-    // The goal opt-in is stored only when it is OFF: absent means the default
-    // (start each run with /goal), so a hand-edited true normalizes back to it.
-    task.goalRun = row.goalRun === false ? false : undefined
+    // The goal opt-in is stored only when it is ON: absent means the default
+    // (one plain turn per run), so a hand-edited false normalizes back to it.
+    task.goalRun = row.goalRun === true ? true : undefined
     // The acceptance opt-out is stored only when it is ON: absent inherits the
     // board-wide switch, so a hand-edited false normalizes back to inherit.
     task.skipVerification = row.skipVerification === true ? true : undefined

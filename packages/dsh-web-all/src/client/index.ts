@@ -84,8 +84,38 @@ html[data-platform="darwin"] body > :is(
     grid-template-rows: 100%;
     padding-bottom: env(safe-area-inset-bottom);
   }
-  [data-dsh-frame] [data-pane="sidebar"] {
-    position: absolute;
+  /* The drawer contract is not a skin decision, and this rule is the END of
+     that argument, not the start of one. Read this before raising it again.
+
+     The skin-center loader force-scopes every skin selector under
+     html[data-dsh-skin="<id>"] (scopeSelectorText prefixes the scope to every
+     head), so a skin rule written as body [data-pane='sidebar'] { position:
+     relative; } is served as html[data-dsh-skin="..."] body
+     [data-pane='sidebar'] - specificity 0-2-2, above a plain 0-2-0. The pane
+     then falls back into the single mobile grid column and pushes the
+     conversation column out of the viewport (measured at a 700px viewport:
+     conversation y=700, height=0 - no usable session area at all).
+
+     position !important settles that case, but !important does not settle
+     everything: when BOTH sides are important the cascade returns to
+     specificity, and a skin rule like
+     div:has(> [data-slot="sidebar"]) { position: relative !important; }
+     (last-exile, porco-rosso, white-snake) is served as
+     html[data-dsh-skin="..."] body div:has(...) - 0-2-3 - which still wins.
+     The :is(...) below is deliberately redundant as a matcher and exists only
+     to lift this rule to 0-3-0 so the drawer beats that shape too. It is
+     verified against all seven affected skins; do not "simplify" it away.
+
+     BOUNDARY: this is the ceiling. If a future skin outranks 0-3-0 here, the
+     correct fix is to repair THAT SKIN, not to raise this specificity again.
+     Positioning the sidebar pane is not a skin's job: those rules want the
+     pane to be a containing block for their own glass layer, and position is
+     a side effect of that intent, not the intent. A skin that needs a
+     containing block should paint its layer inside the pane's slot child
+     instead. Chasing skins here would turn the mobile contract into an arms
+     race the shell cannot win. */
+  [data-dsh-frame] [data-pane="sidebar"]:is([data-pane="sidebar"]) {
+    position: absolute !important;
     inset-block: 0;
     inset-inline-start: 0;
     z-index: 1100;

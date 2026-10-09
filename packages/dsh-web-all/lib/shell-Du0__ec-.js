@@ -1119,6 +1119,59 @@ function isOverrideShape(config) {
 */
 const RETIRED_PLUGINS = /* @__PURE__ */ new Set(["@linxin666/dsh-perf", "@linxin666/dsh-desktop-launcher"]);
 /**
+* Whether a lifecycle transition belongs to the fiber one row mounted.
+*
+* `ctx.plugin()` returns `Object.create(fiber)` — a thin wrapper whose `then`
+* forwards to the fiber's own `await()` — so the mounted handle is NOT the
+* fiber the `internal/status` event reports. The wrapper's prototype is that
+* fiber, which is what makes the two comparable.
+* @param watched - the handle `ctx.plugin()` returned for this row.
+* @param fiber - the fiber an `internal/status` transition reported.
+* @returns whether the transition is this row's own nested plugin.
+*/
+function isNestedFiber(watched, fiber) {
+	return watched === fiber || Object.getPrototypeOf(watched) === fiber;
+}
+/**
+* The fiber, when it can be watched for a start failure that lands LATE.
+*
+* Awaiting the fiber covers the failures that settle while the mount is still
+* in flight. It does NOT cover the shape every real family plugin has: a plugin
+* that declares injected services is created PENDING, so `ctx.plugin()` returns
+* while the plugin body has not run at all — and the promise it returns resolves
+* then. When the injected service finally appears, cordis runs the body, the
+* body throws (the task board's ledger lock: issue #1730/#1850), the fiber goes
+* FAILED — and the shell, having already watched a promise that resolved, hears
+* nothing. The row then keeps its UI entry while `/api/dsh-web-all/degraded`
+* answers an empty ledger, which is exactly the report this covers.
+*
+* So the fiber itself is watched: `fiber.await()` resolves once the fiber
+* settles and rethrows its startup error, whenever that happens. It is only
+* ever consulted on a lifecycle transition, so it adds no polling, and it
+* resolves (rather than throws) for a fiber still waiting for its services, so
+* a healthy row is never recorded as degraded.
+* @param fiber - the nested plugin fiber as `ctx.plugin()` returned it.
+* @returns the watchable face of that fiber, or undefined for a test double.
+*/
+function watchable(fiber) {
+	const candidate = fiber;
+	return candidate !== null && typeof candidate?.await === "function" ? candidate : void 0;
+}
+/**
+* Record a family plugin's start failure, at whichever point it lands.
+*
+* Called on every lifecycle transition of a nested fiber — including the one
+* that fails a plugin whose body only ran once its injected services appeared.
+* A healthy fiber has no startup error, so `await()` resolves and this is a
+* no-op; a fiber that has not finished waiting for its services resolves too,
+* so a row that is merely deferred is never reported as broken.
+* @param spec - the real plugin package name the row named.
+* @param fiber - the nested fiber to settle and inspect.
+*/
+function recordDeferredStartFailure(spec, fiber) {
+	fiber.await().catch((error) => recordDegraded(spec, "start", error));
+}
+/**
 * Apply one shell entry: mount the configured real plugin behind an isolation
 * boundary, and re-mount it whenever the row config changes.
 *
@@ -1203,7 +1256,8 @@ async function apply(ctx, config) {
 			mounted = {
 				spec,
 				config: family,
-				dispose: fiber.dispose
+				dispose: fiber.dispose,
+				fiber: watchable(fiber)
 			};
 			Promise.resolve(fiber).then(() => {}, (error) => recordDegraded(spec, "start", error));
 		} catch (error) {
@@ -1219,9 +1273,14 @@ async function apply(ctx, config) {
 	ctx.on("loader/volatile-update", () => {
 		schedule();
 	});
+	ctx.on("internal/status", (fiber) => {
+		const current = mounted;
+		if (current?.fiber === void 0 || !isNestedFiber(current.fiber, fiber)) return;
+		recordDeferredStartFailure(current.spec, current.fiber);
+	});
 	await schedule();
 }
 //#endregion
 export { inject as i, _resetDegradedRouteForTest as n, apply as r, Config as t };
 
-//# sourceMappingURL=shell-CKmkldkq.js.map
+//# sourceMappingURL=shell-Du0__ec-.js.map
