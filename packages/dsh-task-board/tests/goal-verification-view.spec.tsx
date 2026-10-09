@@ -253,6 +253,10 @@ describe('goal acceptance view', () => {
     expect(text).toContain('保留凭据')
     expect(text).toContain('abc')
     expect(text).toContain('通过')
+    // And the empty finding list is attributed to the cleanup, never to a judge
+    // that reported nothing.
+    expect(text).toContain('详细材料已在通过并成功结算后自动清理（不是裁判未举证）')
+    expect(text).not.toContain('本次裁判没有报告可定位的问题')
   })
 
   it('user whose global /goal switch withheld the goal sees the run marked as not goal-accepted, neither passed nor failed', () => {

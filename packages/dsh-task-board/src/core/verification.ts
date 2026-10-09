@@ -86,6 +86,21 @@ export const VERIFICATION_MIN_QUOTE_CHARS = 12
 export const VERIFICATION_MIN_PROBLEM_CHARS = 4
 
 /**
+ * Longest criterion identifier one persisted finding may name. An identifier,
+ * not prose: the reader rejects anything longer instead of clipping it, because
+ * a mangled id would silently detach the finding from the criterion it judges.
+ */
+export const VERIFICATION_DETAIL_MAX_CRITERION_ID_CHARS = 64
+
+/**
+ * Longest requirement / observation / gap / suggested-action text one finding
+ * keeps. Shared by the WRITER (which clips the judge's attributes to it) and the
+ * READER (which clips a hand-edited document back to it), so the acceptance
+ * detail has one capacity bound rather than two that can drift.
+ */
+export const VERIFICATION_DETAIL_MAX_PROBLEM_CHARS = 400
+
+/**
  * Attempts one execution's acceptance cleanup may spend. Cleanup is started
  * only after the pass record and the settlement are durable, is idempotent,
  * and a failure never revokes the pass; the bound keeps a permanently failing
@@ -988,9 +1003,15 @@ function readAttempt(value: unknown): VerificationAttempt | undefined {
   const routeRow = route as Record<string, unknown>
   if (typeof routeRow.provider !== 'string' || typeof routeRow.model !== 'string') return undefined
   if (routeRow.reasoningEffort !== undefined && typeof routeRow.reasoningEffort !== 'string') return undefined
-  const findings = Array.isArray(row.findings) ? row.findings.filter((item): item is string => typeof item === 'string') : []
+  // Bounded on READ as well as write: a hand-edited document must not be able to
+  // persist unbounded prose in the one legacy field the renderer prints.
+  const findings = (Array.isArray(row.findings) ? row.findings : [])
+    .filter((item): item is string => typeof item === 'string')
+    .slice(0, VERIFICATION_DETAIL_MAX_FINDINGS)
+    .map(item => clipRead(item, VERIFICATION_DETAIL_MAX_PROBLEM_CHARS))
   const criterionFindings: VerificationCriterionFinding[] = []
   if (Array.isArray(row.criterionFindings)) {
+    if (row.criterionFindings.length > VERIFICATION_DETAIL_MAX_FINDINGS) return undefined
     for (const entry of row.criterionFindings) {
       const finding = readCriterionFinding(entry)
       if (finding === undefined) return undefined
@@ -1041,6 +1062,24 @@ function readAttempt(value: unknown): VerificationAttempt | undefined {
 }
 
 /**
+ * Bound one persisted finding's text to what the acceptance itself would have
+ * written.
+ *
+ * The reader is the only other door into the ledger: a hand-edited or
+ * corrupted document could otherwise carry a megabyte of prose in a field the
+ * writer caps at a few hundred characters, and every later render, audit
+ * summary and cleanup pass would pay for it. Clipping on READ (never rejecting)
+ * keeps the block usable and its capacity bounded: the acceptance-only material
+ * the cleanup removes is bounded by construction on both sides.
+ * @param value - the raw persisted text.
+ * @param max - the cap the writer applies to that field.
+ * @returns the bounded text.
+ */
+function clipRead(value: string, max: number): string {
+  return value.length <= max ? value : value.slice(0, max)
+}
+
+/**
  * Repair one persisted structured finding, or undefined when it is unusable.
  * A malformed finding drops the WHOLE acceptance block (fail closed): a
  * persisted veto that cannot be read back could otherwise be counted as
@@ -1052,16 +1091,17 @@ function readCriterionFinding(value: unknown): VerificationCriterionFinding | un
   if (typeof row.criterionId !== 'string' || row.criterionId === '') return undefined
   if (typeof row.requirement !== 'string' || typeof row.observation !== 'string' || typeof row.gap !== 'string') return undefined
   if (typeof row.quote !== 'string') return undefined
+  if (row.criterionId.length > VERIFICATION_DETAIL_MAX_CRITERION_ID_CHARS) return undefined
   const location = row.location
   if (location !== 'task' && location !== 'trajectory' && location !== 'workspace' && location !== 'baseline' && location !== 'unknown') return undefined
   return {
     criterionId: row.criterionId,
-    requirement: row.requirement,
-    observation: row.observation,
-    gap: row.gap,
-    quote: row.quote,
+    requirement: clipRead(row.requirement, VERIFICATION_DETAIL_MAX_PROBLEM_CHARS),
+    observation: clipRead(row.observation, VERIFICATION_DETAIL_MAX_PROBLEM_CHARS),
+    gap: clipRead(row.gap, VERIFICATION_DETAIL_MAX_PROBLEM_CHARS),
+    quote: clipRead(row.quote, VERIFICATION_DETAIL_MAX_QUOTE_CHARS),
     location,
-    ...(typeof row.action === 'string' ? { action: row.action } : {}),
+    ...(typeof row.action === 'string' ? { action: clipRead(row.action, VERIFICATION_DETAIL_MAX_PROBLEM_CHARS) } : {}),
   }
 }
 

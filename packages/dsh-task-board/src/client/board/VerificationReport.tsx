@@ -84,7 +84,7 @@ const AUDIT_STAGE_KEY: Record<AcceptanceAuditRecord['stage'], TaskBoardKey> = {
 }
 
 /** One recorded attempt: a quality verdict, an invalid veto, an anomaly, or a budget stop. */
-function AttemptRow({ attempt }: { attempt: VerificationAttempt }) {
+function AttemptRow({ attempt, detailRemoved }: { attempt: VerificationAttempt, detailRemoved: boolean }) {
   // Everything that is not a quality verdict renders as an anomaly row: a
   // budget stop carries no score either, and an invalid acceptance carries a
   // score the board REFUSED to book, so showing either as a scored failure
@@ -166,7 +166,11 @@ function AttemptRow({ attempt }: { attempt: VerificationAttempt }) {
         </>
       )}
       {!exception && !invalid && attempt.findings.length === 0 && (
-        <span className={css.executionTimes}>{t('verify.noFindings')}</span>
+        // A cleaned attempt has no findings because the acceptance removed them,
+        // not because the judge gave none: saying "the judge reported no
+        // finding" here would invite exactly the misreading the cleanup rule
+        // exists to avoid.
+        <span className={css.executionTimes}>{t(detailRemoved ? 'verify.detailRemoved' : 'verify.noFindings')}</span>
       )}
       <span className={css.executionTimes}>
         {t('verify.evidence', {
@@ -265,7 +269,11 @@ export function VerificationReport({ verification }: { verification: ExecutionVe
       {verification.attempts.length > 0 && (
         <ul className={css.executionList}>
           {[...verification.attempts].reverse().map(attempt => (
-            <AttemptRow key={attempt.at.toString(36) + '-' + attempt.stage + '-' + String(attempt.index)} attempt={attempt} />
+            <AttemptRow
+              key={attempt.at.toString(36) + '-' + attempt.stage + '-' + String(attempt.index)}
+              attempt={attempt}
+              detailRemoved={verification.cleanup?.state === 'cleaned'}
+            />
           ))}
         </ul>
       )}

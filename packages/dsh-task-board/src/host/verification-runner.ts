@@ -16,6 +16,7 @@ import {
   EMPTY_WORK_BASELINE,
   workSlotOfRound,
   VERIFICATION_DETAIL_MAX_FINDINGS,
+  VERIFICATION_DETAIL_MAX_PROBLEM_CHARS,
   VERIFICATION_DETAIL_MAX_QUOTE_CHARS,
   assessAcceptanceValidity,
   type AcceptanceEvidenceText,
@@ -49,7 +50,7 @@ export const VERIFICATION_MAX_FINDING_CHARS = 400
 /** Largest verbatim citation kept from one finding. */
 export const VERIFICATION_MAX_QUOTE_CHARS = VERIFICATION_DETAIL_MAX_QUOTE_CHARS
 /** Largest requirement/observation/gap statement kept from one finding. */
-export const VERIFICATION_MAX_PROBLEM_CHARS = 400
+export const VERIFICATION_MAX_PROBLEM_CHARS = VERIFICATION_DETAIL_MAX_PROBLEM_CHARS
 /** Structured findings kept per judge answer and per acceptance. */
 export const VERIFICATION_MAX_FINDINGS_PER_CALL = 3
 export const VERIFICATION_MAX_FINDINGS = VERIFICATION_DETAIL_MAX_FINDINGS

@@ -16,8 +16,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   EMPTY_WORK_BASELINE,
+  VERIFICATION_DETAIL_MAX_PROBLEM_CHARS,
+  VERIFICATION_DETAIL_MAX_QUOTE_CHARS,
   VERIFICATION_MIN_QUOTE_CHARS,
   assessAcceptanceValidity,
+  normalizeVerification,
   type AcceptanceEvidenceText,
   type VerificationCriterionFinding,
   type VerificationCriterionScore,
@@ -210,5 +213,91 @@ describe('acceptance validity: a veto must be locatable', () => {
     // Then: a fragment that matches almost anything locates nothing
     expect(verdict.valid).toBe(false)
     expect(verdict.valid ? undefined : verdict.reason).toBe('unlocatable-quote')
+  })
+})
+
+describe('acceptance detail: the capacity bound survives a hand-edited ledger', () => {
+  /** One persisted block carrying an over-long finding, as a hand edit could leave it. */
+  function oversizedBlock() {
+    return {
+      contract: { enabled: true, modelSource: 'inherit', preset: 'coding', threshold: 0.65 },
+      attempts: [{
+        index: 1,
+        at: 1_700_000_000_000,
+        stage: 'quality',
+        passed: false,
+        score: 0.1,
+        baseline: 0.1,
+        criteria: [],
+        findings: [],
+        criterionFindings: [{
+          criterionId: 'output_match',
+          requirement: 'r'.repeat(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS * 4),
+          observation: 'o'.repeat(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS * 4),
+          gap: 'g'.repeat(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS * 4),
+          quote: 'q'.repeat(VERIFICATION_DETAIL_MAX_QUOTE_CHARS * 4),
+          location: 'trajectory',
+          action: 'a'.repeat(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS * 4),
+        }],
+        usage: { calls: 6, inputTokens: 1, outputTokens: 1, reasoningTokens: 1 },
+        evidence: { chars: 10, omittedCharacters: 0, entries: 1, hash: 'h' },
+        route: { provider: 'deepseek-official', model: 'deepseek-flash' },
+        channel: 'explicit-tag',
+        rounds: 2,
+      }],
+      applicability: 'enforced',
+    }
+  }
+
+  it('operator loading a block with oversized finding text sees every field clipped to its bound', () => {
+    // Given: a persisted block one hand edit away from a megabyte of prose
+    const before = oversizedBlock()
+    const raw = (before.attempts[0] as { criterionFindings: Array<Record<string, string>> }).criterionFindings[0]!
+
+    // When: the ledger repairs it
+    const repaired = normalizeVerification(before)
+    const kept = repaired?.attempts[0]?.criterionFindings?.[0]
+
+    // Then: the finding is still usable (clipped, not rejected) and every text
+    // field sits at or under the bound the acceptance itself writes. The block
+    // survives, so the criterion it names is still readable.
+    expect(kept?.criterionId).toBe('output_match')
+    expect(kept?.requirement.length).toBe(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS)
+    expect(kept?.observation.length).toBe(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS)
+    expect(kept?.gap.length).toBe(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS)
+    expect(kept?.action?.length).toBe(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS)
+    expect(kept?.quote.length).toBe(VERIFICATION_DETAIL_MAX_QUOTE_CHARS)
+    expect(raw.quote.length).toBeGreaterThan(kept?.quote.length)
+  })
+
+  it('operator loading a legacy findings list that outgrew its bounds sees it clipped to the writer caps', () => {
+    // Given: a persisted block whose LEGACY findings list carries far too many
+    // over-long lines
+    const before = oversizedBlock()
+    ;(before.attempts[0] as { findings: string[] }).findings =
+      Array.from({ length: 40 }, () => 'f'.repeat(VERIFICATION_DETAIL_MAX_PROBLEM_CHARS * 3))
+
+    // When: the ledger repairs it
+    const repaired = normalizeVerification(before)
+    const kept = repaired?.attempts[0]?.findings ?? []
+
+    // Then: the list is bounded in count and in per-line size, matching what the
+    // acceptance itself would have written.
+    expect(kept).toHaveLength(12)
+    expect(kept.every(line => line.length === VERIFICATION_DETAIL_MAX_PROBLEM_CHARS)).toBe(true)
+  })
+
+  it('operator loading a finding whose criterion id was replaced by prose sees the block dropped instead of trusted', () => {
+    // Given: an identifier field carrying unrelated prose
+    const before = oversizedBlock()
+    ;(before.attempts[0] as { criterionFindings: Array<Record<string, string>> }).criterionFindings[0]!.criterionId =
+      'x'.repeat(200)
+
+    // When: the ledger repairs it
+    const repaired = normalizeVerification(before)
+
+    // Then: an identifier that no longer names a criterion drops the block (fail
+    // closed) rather than attaching the veto to a criterion nobody can resolve.
+    expect(repaired).toBeUndefined()
   })
 })

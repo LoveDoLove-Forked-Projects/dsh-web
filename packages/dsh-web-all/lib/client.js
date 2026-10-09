@@ -7296,12 +7296,15 @@ window.__ModuleLoader__.load({
 			const routeRow = route;
 			if (typeof routeRow.provider !== "string" || typeof routeRow.model !== "string") return void 0;
 			if (routeRow.reasoningEffort !== void 0 && typeof routeRow.reasoningEffort !== "string") return void 0;
-			const findings = Array.isArray(row.findings) ? row.findings.filter((item) => typeof item === "string") : [];
+			const findings = (Array.isArray(row.findings) ? row.findings : []).filter((item) => typeof item === "string").slice(0, 12).map((item) => clipRead(item, 400));
 			const criterionFindings = [];
-			if (Array.isArray(row.criterionFindings)) for (const entry of row.criterionFindings) {
-				const finding = readCriterionFinding(entry);
-				if (finding === void 0) return void 0;
-				criterionFindings.push(finding);
+			if (Array.isArray(row.criterionFindings)) {
+				if (row.criterionFindings.length > 12) return void 0;
+				for (const entry of row.criterionFindings) {
+					const finding = readCriterionFinding(entry);
+					if (finding === void 0) return void 0;
+					criterionFindings.push(finding);
+				}
 			}
 			const invalidReason = row.invalidReason;
 			if (invalidReason !== void 0 && invalidReason !== "missing-finding" && invalidReason !== "unlocatable-quote" && invalidReason !== "baseline-finding" && invalidReason !== "vacuous-finding" && invalidReason !== "insufficient-evidence") return void 0;
@@ -7343,6 +7346,23 @@ window.__ModuleLoader__.load({
 			};
 		}
 		/**
+		* Bound one persisted finding's text to what the acceptance itself would have
+		* written.
+		*
+		* The reader is the only other door into the ledger: a hand-edited or
+		* corrupted document could otherwise carry a megabyte of prose in a field the
+		* writer caps at a few hundred characters, and every later render, audit
+		* summary and cleanup pass would pay for it. Clipping on READ (never rejecting)
+		* keeps the block usable and its capacity bounded: the acceptance-only material
+		* the cleanup removes is bounded by construction on both sides.
+		* @param value - the raw persisted text.
+		* @param max - the cap the writer applies to that field.
+		* @returns the bounded text.
+		*/
+		function clipRead(value, max) {
+			return value.length <= max ? value : value.slice(0, max);
+		}
+		/**
 		* Repair one persisted structured finding, or undefined when it is unusable.
 		* A malformed finding drops the WHOLE acceptance block (fail closed): a
 		* persisted veto that cannot be read back could otherwise be counted as
@@ -7354,16 +7374,17 @@ window.__ModuleLoader__.load({
 			if (typeof row.criterionId !== "string" || row.criterionId === "") return void 0;
 			if (typeof row.requirement !== "string" || typeof row.observation !== "string" || typeof row.gap !== "string") return void 0;
 			if (typeof row.quote !== "string") return void 0;
+			if (row.criterionId.length > 64) return void 0;
 			const location = row.location;
 			if (location !== "task" && location !== "trajectory" && location !== "workspace" && location !== "baseline" && location !== "unknown") return void 0;
 			return {
 				criterionId: row.criterionId,
-				requirement: row.requirement,
-				observation: row.observation,
-				gap: row.gap,
-				quote: row.quote,
+				requirement: clipRead(row.requirement, 400),
+				observation: clipRead(row.observation, 400),
+				gap: clipRead(row.gap, 400),
+				quote: clipRead(row.quote, 600),
 				location,
-				...typeof row.action === "string" ? { action: row.action } : {}
+				...typeof row.action === "string" ? { action: clipRead(row.action, 400) } : {}
 			};
 		}
 		/**
@@ -8274,6 +8295,7 @@ window.__ModuleLoader__.load({
 			"verify.location.workspace": "宿主记录的变更",
 			"verify.location.baseline": "空工作基线（不构成否决证据）",
 			"verify.location.unknown": "未标明位置",
+			"verify.detailRemoved": "本条验收的详细材料已在通过并成功结算后自动清理（不是裁判未举证）。",
 			"verify.cleanup.cleaned": "本次执行的验收专用详细材料已在通过并成功结算后自动清理；以下为保留的轻量审计凭据。",
 			"verify.cleanup.pending": "验收专用详细材料待清理（将通过并结算后启动）。",
 			"verify.cleanup.failed": "验收详细材料清理失败（已重试 {attempts} 次）：{error}；通过记录仍然有效，宿主重启后会补清。",
@@ -8697,6 +8719,7 @@ window.__ModuleLoader__.load({
 			"verify.location.workspace": "host-recorded changes",
 			"verify.location.baseline": "empty-work baseline (not evidence against the work)",
 			"verify.location.unknown": "location not named",
+			"verify.detailRemoved": "This attempt detail was cleaned up automatically after the execution passed and settled (the judge did report evidence).",
 			"verify.cleanup.cleaned": "The acceptance-only detail of this execution was cleaned up automatically after it passed and settled; what remains is the lightweight audit credential.",
 			"verify.cleanup.pending": "The acceptance-only detail is pending cleanup (started once the execution passes and settles).",
 			"verify.cleanup.failed": "Cleaning the acceptance detail failed after {attempts} attempts: {error}. The pass record is still valid and the host retries on its next start.",
@@ -13407,7 +13430,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			budget: "verify.cleanup.stage.budget"
 		};
 		/** One recorded attempt: a quality verdict, an invalid veto, an anomaly, or a budget stop. */
-		function AttemptRow({ attempt }) {
+		function AttemptRow({ attempt, detailRemoved }) {
 			const invalid = attempt.stage === "invalid";
 			const exception = attempt.stage !== "quality" && !invalid;
 			const result = exception ? "failed" : attempt.passed ? "succeeded" : "failed";
@@ -13491,7 +13514,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					})] }),
 					!exception && !invalid && attempt.findings.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionTimes,
-						children: t$5("verify.noFindings")
+						children: t$5(detailRemoved ? "verify.detailRemoved" : "verify.noFindings")
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: board_module_css_default.executionTimes,
@@ -13583,7 +13606,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					}),
 					verification.attempts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
 						className: board_module_css_default.executionList,
-						children: [...verification.attempts].reverse().map((attempt) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttemptRow, { attempt }, attempt.at.toString(36) + "-" + attempt.stage + "-" + String(attempt.index)))
+						children: [...verification.attempts].reverse().map((attempt) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttemptRow, {
+							attempt,
+							detailRemoved: verification.cleanup?.state === "cleaned"
+						}, attempt.at.toString(36) + "-" + attempt.stage + "-" + String(attempt.index)))
 					}),
 					verification.cleanup !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CleanupNotice, { cleanup: verification.cleanup })
 				]

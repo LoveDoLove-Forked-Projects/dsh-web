@@ -220,14 +220,18 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   remains (stage, pass flag, time, total and per-criterion scores, the judge
   route, the evidence hash, a one-line problem summary and the cleanup state).
   `withAcceptanceDetailCleared` is idempotent and purely additive to the
-  persisted block: nothing outside that execution's own `verification` field is
-  read or written, so no user file, task artifact, raw session history, host
+  persisted block, and the material itself is bounded by construction: the
+  writer caps the finding count, the citation length and each problem/action
+  field, and the READER clips a hand-edited document back to the same bounds
+  (dropping the block outright when an identifier no longer resolves), so no
+  door into the ledger can persist unbounded acceptance prose. Nothing outside
+  that execution's own `verification` field is read or written, so no user file, task artifact, raw session history, host
   change record or other execution's material is touched. The pass record and
   the settlement are written FIRST; the cleanup runs after and its failure is
   recorded as `cleanup.state: 'failed'` with the error and an attempt count —
   it never revokes the pass. A boot-time catch-up pass completes any cleanup a
-  crash interrupted, and the UI renders the audit credential rather than
-  implying the judge gave no evidence.
+  crash interrupted, and the UI renders the audit credential and labels each
+  emptied attempt as CLEANED rather than as a judge that reported no finding.
 - **GLOBAL native /goal switch, default off.** A new row setting
   `goalRunEnabled` (volatile, schema default `false`) is the master control
   over whether this board starts a run with the built-in `/goal` at all. The
@@ -428,13 +432,17 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   itself: only an explicit `true` is stored, a hand-edited `false` normalizes
   back to inheriting, the action gate accepts it on create and update, and the
   legacy import carries it while still stripping the acceptance block.
-- `tests/verification-validity.spec.ts` (10 scenarios) pins the veto-validity
+- `tests/verification-validity.spec.ts` (13 scenarios) pins the veto-validity
   rule at the pure layer: a failing criterion with no finding, a vacuous
   finding, a citation absent from the reviewed evidence, a citation of the
   empty-work baseline, an unfound second criterion, a workspace citation with
   and without the host's record, and a citation shorter than the locating
   minimum are each rejected with their own reason; a real trajectory citation
-  is accepted.
+  is accepted. It also pins the capacity bound on the READ side: a hand-edited
+  block whose finding text or legacy findings list outgrew what the acceptance
+  writes is clipped back to the same bound (or dropped outright when the
+  criterion identifier no longer resolves), so the persisted detail is bounded
+  by construction on both doors.
 - `tests/verification-cleanup.spec.ts` (8 scenarios) drives the real service,
   ledger and settlement path: a passed execution's findings removed with the
   audit credential and the evidence hash kept, a failed and an invalid
