@@ -167,7 +167,8 @@ skip.
 - `tests/host-service.spec.ts` fires the controllable `HostTimerFace`: a one-shot
   arms at its exact delay, fires once, and leaves no timer armed; a two-run cap
   fires across two timer fires and then arms nothing; a one-shot due while the
-  service was down is skipped on start.
+  service was down is skipped on start; and a scheduled launch that fails spends
+  exactly one run without being retried early.
 - `tests/tasks.spec.ts` and `tests/store.spec.ts` cover the rule transition and
   the v6 repair (a one-shot with no instant is dropped, the counter and stop
   record round-trip). `tests/host-ledger.spec.ts` covers the migration and the

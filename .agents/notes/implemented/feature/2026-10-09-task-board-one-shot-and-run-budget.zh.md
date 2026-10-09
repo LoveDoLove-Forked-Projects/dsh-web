@@ -124,7 +124,7 @@ service 传入，所以「下次何时到期」只有一个事实源。
   后续触发不再开启）、部分消耗的预算跨重启保留、忙跳过不消耗、手动执行不消耗。
 - `tests/host-service.spec.ts` 触发可控的 `HostTimerFace`：一次性按精确延迟
   布防、只触发一次且不再有定时器；两次上限跨两次定时触发后不再布防；停机期间
-  到期的一次性在启动时被跳过。
+  到期的一次性在启动时被跳过；调度启动失败的那次恰好消耗一次预算且不会被提前重试。
 - `tests/tasks.spec.ts` 与 `tests/store.spec.ts` 覆盖规则转换与 v6 修复
   （无时刻的一次性被丢弃、计数与停止记录往返）。`tests/host-ledger.spec.ts`
   覆盖迁移与到期引用投影。`tests/protocol.spec.ts` 覆盖 set-schedule、创建时与

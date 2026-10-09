@@ -429,6 +429,62 @@ describe('TaskBoardHostService scheduling without a browser', () => {
     service.dispose()
   })
 
+  it('user whose scheduled launch fails sees one run spent and no automatic retry', async () => {
+    // Given a recurring rule capped at two runs and a gateway whose session
+    // creation fails
+    let now = new Date(2026, 7, 16, 10, 0, 30).getTime()
+    const ledger = new HostTaskLedger(root(), () => now)
+    ledger.applyRequest('create', {
+      kind: 'create', id: 'capped', input: {
+        title: 'Capped', description: '', prompt: 'work', schedule: { enabled: true, cron: '* * * * *', maxRuns: 2 },
+      },
+    })
+    let failCreate = true
+    const { gateway } = makeGateway(request => {
+      if (request.method === 'create') {
+        if (failCreate) throw new Error('session create failed')
+        return { sessionId: 'session-ok' }
+      }
+      if (request.method === 'rename') return { title: 'Capped', seq: 1 }
+      if (request.method === 'prompt') return { accepted: true }
+      throw new Error('unexpected gateway call')
+    })
+    const probe = timerProbe()
+    const service = new TaskBoardHostService(gateway, {
+      ledger,
+      power: new PowerInhibitor({ platform: 'linux' }),
+      timers: probe.timers,
+      now: () => now,
+    })
+    service.start()
+
+    // When the first occurrence fires and its launch fails
+    now = new Date(2026, 7, 16, 10, 1, 0).getTime()
+    await probe.trigger()
+
+    // Then the failure is recorded, one run of the budget is spent, and the
+    // rule is not retried early: the next timer still targets the next minute
+    const afterFirst = ledger.state().tasks[0]
+    expect(afterFirst.executions).toHaveLength(1)
+    expect(afterFirst.executions[0].result).toBe('failed')
+    expect(afterFirst.schedule?.runCount).toBe(1)
+    expect(afterFirst.schedule?.enabled).toBe(true)
+    expect(probe.delay).toBe(60_000)
+
+    // When the next occurrence fires and its launch succeeds
+    failCreate = false
+    now = new Date(2026, 7, 16, 10, 2, 0).getTime()
+    await probe.trigger()
+
+    // Then the second and final run opened and the rule stopped itself
+    const afterSecond = ledger.state().tasks[0]
+    expect(afterSecond.executions).toHaveLength(2)
+    expect(afterSecond.schedule?.runCount).toBe(2)
+    expect(afterSecond.schedule?.endedReason).toBe('limit')
+    expect(probe.delay).toBe(0)
+    service.dispose()
+  })
+
   it('does not launch an imported archived task with a legacy enabled schedule', async () => {
     const now = new Date(2026, 7, 16, 10, 1, 0).getTime()
     const ledger = new HostTaskLedger(root(), () => now)
