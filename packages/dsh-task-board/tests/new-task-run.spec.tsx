@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NewTaskModal } from '../src/client/board/NewTaskModal.tsx'
 import { openFormSection } from './form-sections.ts'
 import { t } from '../src/client/locales.ts'
+import { parseZonedInput } from '../src/client/schedule-zone.ts'
 import type { BoardController, ControllerSnapshot } from '../src/core/controller.ts'
 import type { TaskRecord } from '../src/core/tasks.ts'
 
@@ -148,5 +149,75 @@ describe('new-task "create and run" (#1621)', () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     })
     expect((createTaskConfirmed.mock.calls[0]![0] as { goalRun?: boolean }).goalRun).toBe(false)
+  })
+})
+
+/** Write a value into a controlled field the way a user would. */
+function setFieldValue(element: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  setter?.call(element, value)
+  element.dispatchEvent(new Event('input', { bubbles: true }))
+  element.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+/** Expand the schedule region and switch scheduled runs on. */
+function enableSchedule(container: HTMLElement): void {
+  openFormSection(container, t('new.section.schedule'))
+  const toggle = [...container.querySelectorAll('label')]
+    .find(node => node.textContent?.includes(t('detail.schedule.enable')))!
+  act(() => { (toggle.querySelector('input') as HTMLInputElement).click() })
+}
+
+function labeledSelect(container: HTMLElement, label: string): HTMLSelectElement {
+  const select = [...container.querySelectorAll<HTMLSelectElement>('select')]
+    .find(candidate => candidate.getAttribute('aria-label') === label)
+  if (select === undefined) throw new Error('no select labelled ' + label)
+  return select
+}
+
+describe('new-task schedule plan (#1851)', () => {
+  it('user creating a one-shot card sends the planned instant and its mode', async () => {
+    // Given an open new-task modal with scheduled runs enabled
+    const { container, createTaskConfirmed } = renderModal()
+    enableSchedule(container)
+
+    // When the user switches to the one-shot plan and picks a future wall clock
+    const modeSelect = labeledSelect(container, t('detail.schedule.mode'))
+    act(() => { modeSelect.value = 'once'; modeSelect.dispatchEvent(new Event('change', { bubbles: true })) })
+    const atInput = container.querySelector<HTMLInputElement>('input[type="datetime-local"]')!
+    act(() => { setFieldValue(atInput, '2030-01-02T03:04') })
+
+    // Then the create payload carries a one-shot plan and no cron expression
+    const form = container.querySelector('form')!
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    const payload = createTaskConfirmed.mock.calls[0]![0] as { schedule?: { enabled?: boolean; mode?: string; at?: number; cron?: string } }
+    expect(payload.schedule?.enabled).toBe(true)
+    expect(payload.schedule?.mode).toBe('once')
+    expect(payload.schedule?.at).toBe(parseZonedInput('2030-01-02T03:04'))
+    expect(payload.schedule?.cron).toBeUndefined()
+  })
+
+  it('user capping a recurring card sends the run limit alongside the expression', async () => {
+    // Given an open new-task modal with scheduled runs enabled
+    const { container, createTaskConfirmed } = renderModal()
+    enableSchedule(container)
+
+    // When the user keeps the recurring plan, sets an expression, and types a
+    // custom run limit
+    const cronInput = container.querySelector<HTMLInputElement>('input[aria-label="' + t('detail.schedule.cron') + '"]')!
+    act(() => { setFieldValue(cronInput, '* * * * *') })
+    const capSelect = labeledSelect(container, t('detail.schedule.maxRuns'))
+    act(() => { capSelect.value = 'custom'; capSelect.dispatchEvent(new Event('change', { bubbles: true })) })
+    const capInput = container.querySelector<HTMLInputElement>('input[type="number"][aria-label="' + t('detail.schedule.maxRuns') + '"]')!
+    act(() => { setFieldValue(capInput, '3') })
+
+    // Then the create payload carries the recurring plan with its cap
+    const form = container.querySelector('form')!
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    const payload = createTaskConfirmed.mock.calls[0]![0] as { schedule?: { mode?: string; cron?: string; maxRuns?: number; at?: number } }
+    expect(payload.schedule?.mode).toBe('cron')
+    expect(payload.schedule?.cron).toBe('* * * * *')
+    expect(payload.schedule?.maxRuns).toBe(3)
+    expect(payload.schedule?.at).toBeUndefined()
   })
 })

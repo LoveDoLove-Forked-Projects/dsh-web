@@ -178,4 +178,6 @@ skip.
   helpers (including a spring-forward gap) and the budget/stop labels, and
   `tests/task-detail-edit.spec.tsx` renders the detail editor: switching to a
   one-shot persists the parsed instant, picking a cap writes it, and a spent
-  rule renders its planned instant and end state.
+  rule renders its planned instant and end state. `tests/new-task-run.spec.tsx`
+  renders the create dialog and pins both create payloads: a one-shot plan with
+  its parsed instant, and a recurring plan with a custom run cap.

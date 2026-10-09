@@ -131,4 +131,6 @@ service 传入，所以「下次何时到期」只有一个事实源。
   导入的线上闸门。`tests/agent-tools.spec.ts` 覆盖工具参数。
   `tests/schedule-zone.spec.ts` 覆盖带时区 datetime 辅助（含春季跳变空洞）与
   预算/停止文案，`tests/task-detail-edit.spec.tsx` 渲染详情编辑器：切换到一次性
-  会持久化解出的时刻、选择上限会写入、花掉的规则会渲染计划时刻与结束状态。
+  会持久化解出的时刻、选择上限会写入、花掉的规则会渲染计划时刻与结束状态；
+  `tests/new-task-run.spec.tsx` 渲染新建对话框并固定两种创建载荷：带解出时刻的
+  一次性计划，以及带自定义次数上限的循环计划。
