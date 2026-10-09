@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HostTaskLedger } from '../src/host-ledger.ts'
-import { NEVER_INVOKED_VERIFICATION_REASON, NO_MATCHING_PASS_VERIFICATION_REASON, TaskBoardHostService } from '../src/host-service.ts'
+import { INVALID_ONLY_VERIFICATION_REASON, NEVER_INVOKED_VERIFICATION_REASON, NO_MATCHING_PASS_VERIFICATION_REASON, TaskBoardHostService } from '../src/host-service.ts'
 import { PowerInhibitor } from '../src/power-inhibitor.ts'
 import { passedAttempt, resolveContract, type ModelCatalogView, type VerificationSettings } from '../src/core/verification.ts'
 
@@ -425,6 +425,50 @@ describe('goal acceptance at settlement', () => {
     expect(execution.result).toBe('failed')
     expect(execution.error).toBe(NEVER_INVOKED_VERIFICATION_REASON)
     expect(h.ledger.getTask('task-a')?.status).toBe('failed')
+  })
+
+  it('user whose only acceptance records were invalid sees the run settle with the invalid reason, not a quality veto', async () => {
+    // Given: a running goal execution whose acceptance only produced invalid
+    // verdicts (the judge answered and could not locate its own rejection)
+    const h = harness()
+    seed(h.ledger)
+    h.service.apply('run-1', { kind: 'run', taskId: 'task-a' })
+    await settleMicrotasks()
+    const execution = executionOf(h)
+    const contract = execution.verification!.contract
+    h.ledger.setVerification('task-a', execution.id, {
+      contract,
+      attempts: [{
+        index: 1,
+        at: NOW + 50,
+        stage: 'invalid',
+        passed: false,
+        score: 0.1,
+        baseline: 0.1,
+        criteria: [],
+        findings: [],
+        criterionFindings: [],
+        usage: { calls: 6, inputTokens: 100, outputTokens: 20, reasoningTokens: 5 },
+        evidence: { chars: 10, omittedCharacters: 0, entries: 1, hash: 'h' },
+        route: contract.route!,
+        channel: 'explicit-tag',
+        rounds: 2,
+        invalidReason: 'missing-finding',
+      }],
+      applicability: 'enforced',
+    })
+    h.goals.phase = 'complete'
+
+    // When: the poll observes the completed goal
+    await h.timer.poll()
+
+    // Then: the terminal reason says the acceptance itself was unusable and
+    // explicitly denies being an evidence-backed quality veto.
+    const settled = executionOf(h)
+    expect(settled.result).toBe('failed')
+    expect(settled.error).toBe(INVALID_ONLY_VERIFICATION_REASON)
+    expect(settled.error).toContain('不是')
+    expect(settled.error).not.toContain('没有匹配的验收通过记录（验收未运行')
   })
 
   it('user reading a failed card is told which of the two directions to investigate', () => {

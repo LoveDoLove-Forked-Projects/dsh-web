@@ -758,6 +758,26 @@ export function verificationNeverInvoked(verification: ExecutionVerification | u
     && verification.failedReason === undefined
 }
 
+/**
+ * Whether this execution's acceptance produced no usable veto at all: it was
+ * enforced, the judge recorded attempts, and every one of them is INVALID.
+ *
+ * Such a run must never be described as an evidence-backed quality veto (issue
+ * #1837's sibling): the judge could not locate its own rejection, so the run
+ * ended for lack of a matching pass rather than because the work was judged
+ * and rejected. The settlement reason names that difference.
+ * @param verification - the execution's persisted acceptance state.
+ * @returns true when nothing but invalid acceptances were recorded.
+ */
+export function verificationOnlyInvalid(verification: ExecutionVerification | undefined): boolean {
+  return verification !== undefined
+    && verification.applicability === 'enforced'
+    && verification.failedReason === undefined
+    && passedAttempt(verification) === undefined
+    && verification.attempts.length > 0
+    && invalidAttempts(verification).length === verification.attempts.length
+}
+
 /** Whether this cycle still has quality budget left. */
 export function hasQualityBudget(verification: ExecutionVerification | undefined): boolean {
   return qualityAttempts(verification).length < MAX_QUALITY_ATTEMPTS

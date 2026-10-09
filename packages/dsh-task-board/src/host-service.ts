@@ -10,7 +10,7 @@ import { TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardEventPay
 import { TaskBoardExtensionRegistry } from './host/extension-registry.ts'
 import type { TaskBoardExtension } from './core/extension.ts'
 import type { ExecutionOutcome, ScheduleMode, TaskRecord, TaskStatus } from './core/tasks.ts'
-import { passedAttempt, resolveContract, verificationNeverInvoked, verificationRequired, withAcceptanceDetailCleared, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
+import { passedAttempt, resolveContract, verificationNeverInvoked, verificationOnlyInvalid, verificationRequired, withAcceptanceDetailCleared, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 import type { TaskPermission } from './core/handover.ts'
 
 /** One teammate the Host asks the Agent Teams service to spawn for a team run. */
@@ -80,6 +80,15 @@ export const NO_MATCHING_PASS_VERIFICATION_REASON = 'goal 验收：本次执行�
  * two investigation directions apart.
  */
 export const NEVER_INVOKED_VERIFICATION_REASON = 'goal 验收未触发：本次执行没有任何验收记录，验收门从未打开——执行会话没有调用 update_goal(action: complete) 来完成目标（常见于只在回复里宣告完成）。这不是质量判负：交付从未被裁判评估。'
+/**
+ * Why an enforced goal execution settled failed while its ONLY acceptance
+ * records are INVALID: the judge answered but could not locate its own
+ * rejection, so the board stopped calling it. This is NOT an evidence-backed
+ * quality veto — the requirement is explicit that such a run must not be
+ * described as one — but the execution still has no matching pass, so it ends
+ * for lack of one, and the reason names that precisely.
+ */
+export const INVALID_ONLY_VERIFICATION_REASON = 'goal 验收无效：本次执行只记录了无效验收（裁判未能给出与任务要求对应、且可定位到本次证据的否决依据），看板已停止调用裁判。这**不是**有证据的质量判负：验收本身不可用，本次运行因没有匹配的通过记录而结束。请检查验收环境与证据可见性，或用 task_board_manage(action=reset-verification) 清除记录的无效验收后重新完成目标。'
 
 /**
  * Provenance of one cron-triggered cascade: when the rule fired and the zone
@@ -731,7 +740,9 @@ export class TaskBoardHostService {
             'failed',
             verificationNeverInvoked(verification)
               ? NEVER_INVOKED_VERIFICATION_REASON
-              : NO_MATCHING_PASS_VERIFICATION_REASON,
+              : verificationOnlyInvalid(verification)
+                ? INVALID_ONLY_VERIFICATION_REASON
+                : NO_MATCHING_PASS_VERIFICATION_REASON,
           )
           continue
         }

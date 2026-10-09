@@ -208,7 +208,11 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   explicit `reset-verification` action the anomaly hold uses, whose
   `withoutAcceptanceAnomalies` also drops the cleanup record) or rerun the
   card. The bound is persisted on the ledger, so a Host restart, a repeated
-  completion call, a new goal round and a plugin reload all reuse it.
+  completion call, a new goal round and a plugin reload all reuse it. A run
+  whose ONLY records are invalid still has no matching pass, so it ends — but
+  with `INVALID_ONLY_VERIFICATION_REASON`, which states that the acceptance
+  itself was unusable and explicitly denies being an evidence-backed quality
+  veto; `verificationOnlyInvalid` is the predicate that draws that line.
 - **Acceptance-only detail is cleaned automatically after a pass.** The
   acceptance mechanism's own bulky material — per-attempt findings, the invalid
   diagnostics, the structured citations — is removed once the execution PASSED
