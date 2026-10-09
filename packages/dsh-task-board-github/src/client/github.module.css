@@ -232,6 +232,7 @@
 .primaryButton:focus-visible,
 .ghostButton:focus-visible,
 .linkButton:focus-visible,
+.setupDisclosure:focus-visible,
 .input:focus-visible,
 .scheduleToggle input:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
@@ -241,6 +242,7 @@
 .primaryButton,
 .ghostButton,
 .linkButton,
+.setupDisclosure,
 .input,
 .scheduleToggle input {
   transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, outline-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
@@ -248,6 +250,7 @@
 
 .primaryButton:active:not(:disabled),
 .ghostButton:active:not(:disabled),
+.setupDisclosure:active:not(:disabled),
 .linkButton:active:not(:disabled) {
   transform: translateY(1px);
 }
@@ -359,14 +362,93 @@
   flex: 0 1 140px;
 }
 
-.setupRepository {
-  display: inline-flex;
+/* Repository disclosure: a deployment syncing several repositories makes the
+   list long, so its heading is the toggle and the rows render only while it is
+   open. The toggle carries the ghost-button surface on the same tokens. */
+.setupDisclosure {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 4px 0;
+  padding: 5px 12px;
+  font-family: inherit;
   font-size: 12px;
-  flex: 1 1 220px;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.setupDisclosure:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.setupDisclosureText {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.setupChevron {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.16s, color 0.16s;
+}
+
+.setupDisclosure:hover .setupChevron {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.setupChevronOpen {
+  transform: rotate(180deg);
+}
+
+.setupRepositoriesBody {
+  margin-top: 2px;
+}
+
+/* One synchronized repository: the name and its actions share the top line,
+   and the chips wrap onto their own line below, so a long label can no longer
+   squeeze them into an ellipsis. */
+.setupRepositoryRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.setupRepositoryHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.setupRepository {
+  font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.setupRepositoryActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.setupRepositoryTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .setupReport {

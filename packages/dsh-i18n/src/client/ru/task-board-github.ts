@@ -92,6 +92,8 @@ export const ru: Record<string, string> = {
   'setup.inclusionLabelPlaceholder': 'Метка (по умолчанию dsh)',
   'setup.repositoriesCount': 'Настроено репозиториев: {count}',
   'setup.repositoriesEmpty': 'Пока ни один репозиторий не синхронизируется.',
+  'setup.repositoriesExpand': 'Развернуть список репозиториев',
+  'setup.repositoriesCollapse': 'Свернуть список репозиториев',
   'setup.repositoriesHint': 'В карточки доски превращаются issue с меткой включения, назначенные на указанный логин (@me — учётная запись этого хоста), а для репозитория, берущего неназначенные issue, — и те, у кого исполнителя нет вовсе. Изменения здесь применяются сразу, без перезапуска. Дополнительные настройки (сопоставление меток состояний, политика черновиков PR, интервал опроса и т. д.) остаются в profile patch.',
   'setup.repositoryAdd': 'Добавить',
   'setup.repositoryLabel': 'Репозиторий',

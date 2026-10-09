@@ -36,7 +36,7 @@ Status: implemented
 ## Consequences
 
 - 看板卡打开后就是三行主题加电源状态行；每个主题一次点击可达，各自的字段与提示保持不变。
-- GitHub Issues 区块默认折叠，因此它的仓库与凭据摘要需要一次点击才能读到；它对自己命名空间仍保留自己的保存行。
-- 不涉及任何存储值、线形字段、账本 schema 或设置键的变化：只有呈现方式与两个新增文案键。
+- GitHub Issues 区块默认折叠，因此它的仓库与凭据摘要需要一次点击才能读到；它对自己命名空间仍保留自己的保存行。该区块内的仓库列表又是它自己的一层折叠（扩展样式表的 `setupDisclosure`，默认收起）：同步多个仓库的部署会把每一行都摊开，把凭据表单与连接测试挤出视线。每行分两行——仓库名与它的「收无指派 / 移除」按钮同行，纳入标签、指派与含无指派的 chip 折到下一行——因为单行时 chip 会被同行的按钮挤压成 `d…`/`@…` 的省略号（`setupRepositoryHead` / `setupRepositoryTags`）。折叠按钮带 `aria-expanded`/`aria-controls`，可访问名包含仓库数量，收起时这些行完全不进 DOM。
+- 不涉及任何存储值、线形字段、账本 schema 或设置键的变化：只有呈现方式与新增文案键。
 - 覆盖：`packages/dsh-task-board/tests/settings-card-disclosure.spec.tsx` 在 jsdom 里驱动整套折叠（折叠时只有一个卡头、展开后三张主题卡均折叠、每个主题的控件以及提供方席位同处一个列表），`packages/dsh-task-board-github/tests/github-ui.spec.tsx` 覆盖被贡献卡片的默认折叠。
 - 单测之外的证据：用一个隔离 home 的宿主（`DSH_HOME=/tmp/dsh-verify`、web profile 的本地聚合、`--port 19400`）经无头 Chrome CDP 驱动，截图存放在 `packages/dsh-task-board/docs/e2e/`（`tb-settings-topics-collapsed.png`、`tb-settings-board-topic-open.png`、`tb-settings-acceptance-topic-open.png`，另附过程记录）。用户自己的宿主从未被重启或重新占端口；刷新页面即可加载重新构建的 bundle。

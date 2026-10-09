@@ -89,6 +89,25 @@ function button(container: HTMLElement, text: string): HTMLButtonElement {
   return found
 }
 
+/** The repository disclosure, in whichever state it currently reads. */
+function repositoriesToggle(container: HTMLElement): HTMLButtonElement {
+  const found = container.querySelector('[data-dsh-part="github-repositories"] button[aria-expanded]')
+  if (found === null) throw new Error('the repository disclosure did not render')
+  return found as HTMLButtonElement
+}
+
+/** The region the disclosure controls, or null while it is collapsed. */
+function repositoriesRegion(container: HTMLElement): HTMLElement | null {
+  const id = repositoriesToggle(container).getAttribute('aria-controls')
+  if (id === null) throw new Error('the toggle names no controlled region')
+  return document.getElementById(id)
+}
+
+/** Open the repository list the way the operator does. */
+async function expandRepositories(container: HTMLElement): Promise<void> {
+  await act(async () => { repositoriesToggle(container).click() })
+}
+
 /** The token input the panel renders. */
 function tokenInput(container: HTMLElement): HTMLInputElement {
   const input = container.querySelector('[data-dsh-part="github-token"]')
@@ -114,6 +133,60 @@ describe('GitHub setup panel', () => {
     expect(tokenInput(container).placeholder).toBe(zh['setup.tokenPlaceholder'])
   })
 
+  it('operator sees the repository list collapsed until the disclosure opens it, and can collapse it again', async () => {
+    // Given a deployment already syncing two repositories, one of them with
+    // both channel chips
+    const { api } = apiDouble([
+      { owner: 'deepseek-ai', repository: 'dsh-web', inclusionLabel: 'dsh', assignee: '@me' },
+      { owner: 'other', repository: 'thing', includeUnassigned: true },
+    ])
+
+    // When the panel renders
+    const container = await renderPanel(api)
+
+    // Then the disclosure is collapsed, counts what is behind it, and neither a
+    // repository row nor the add form is in the document
+    const toggle = repositoriesToggle(container)
+    const heading = zh['setup.repositoriesCount'].replace('{count}', '2')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.textContent).toBe(heading)
+    // The accessible name repeats the visible heading instead of replacing it,
+    // so a screen reader still hears how many repositories are behind the fold
+    expect(toggle.getAttribute('aria-label')).toBe(zh['setup.repositoriesExpand'] + ': ' + heading)
+    expect(container.querySelector('[data-dsh-part="github-repository"]')).toBeNull()
+    expect(container.querySelector('[data-dsh-part="github-repository-input"]')).toBeNull()
+
+    // When the operator opens it
+    await expandRepositories(container)
+
+    // Then the toggle reads expanded, points at the region that now exists, and
+    // that region carries the rows, every chip and the add form
+    const open = repositoriesToggle(container)
+    expect(open.getAttribute('aria-expanded')).toBe('true')
+    expect(open.textContent).toBe(heading)
+    expect(open.getAttribute('aria-label')).toBe(zh['setup.repositoriesCollapse'] + ': ' + heading)
+    if (repositoriesRegion(container) === null) throw new Error('the disclosed region did not render')
+    const regionText = repositoriesRegion(container)?.textContent ?? ''
+    expect(regionText).toContain('deepseek-ai/dsh-web')
+    expect(regionText).toContain('dsh')
+    expect(regionText).toContain(zh['setup.assigneeChip'].replace('{login}', '@me'))
+    expect(regionText).toContain(zh['setup.unassignedChip'])
+    expect(container.querySelectorAll('[data-dsh-part="github-repository"]')).toHaveLength(2)
+    expect(container.querySelector('[data-dsh-part="github-repository-input"]')).toBeInstanceOf(HTMLInputElement)
+
+    // When the operator collapses it again
+    await expandRepositories(container)
+
+    // Then the rows and the add form leave the document, and the toggle is back
+    // to naming the collapsed state with its heading
+    const collapsed = repositoriesToggle(container)
+    expect(collapsed.getAttribute('aria-expanded')).toBe('false')
+    expect(collapsed.getAttribute('aria-label')).toBe(zh['setup.repositoriesExpand'] + ': ' + heading)
+    expect(repositoriesRegion(container)).toBeNull()
+    expect(container.querySelector('[data-dsh-part="github-repository"]')).toBeNull()
+    expect(container.querySelector('[data-dsh-part="github-repository-input"]')).toBeNull()
+  })
+
   it('operator pasting a token stores it through the same-origin API and sees the credential configured', async () => {
     // Given a rendered panel with no credential
     const { api, calls } = apiDouble()
@@ -135,7 +208,8 @@ describe('GitHub setup panel', () => {
     const { api, calls, list } = apiDouble()
     const container = await renderPanel(api)
 
-    // When the operator types a repository and adds it
+    // When the operator opens the list, types a repository and adds it
+    await expandRepositories(container)
     const input = container.querySelector('[data-dsh-part="github-repository-input"]') as HTMLInputElement
     type(input, 'https://github.com/deepseek-ai/dsh-web')
     await act(async () => { button(container, zh['setup.repositoryAdd']).click() })
@@ -152,7 +226,8 @@ describe('GitHub setup panel', () => {
     const { api, list } = apiDouble()
     const container = await renderPanel(api)
 
-    // When the operator types a repository plus an assignee and adds it
+    // When the operator opens the list, then types a repository plus an assignee
+    await expandRepositories(container)
     const input = container.querySelector('[data-dsh-part="github-repository-input"]') as HTMLInputElement
     const assignee = container.querySelector('[data-dsh-part="github-repository-assignee-input"]') as HTMLInputElement
     type(input, 'deepseek-ai/dsh-web')
@@ -171,6 +246,7 @@ describe('GitHub setup panel', () => {
     const container = await renderPanel(api)
 
     // When the same repository is typed again
+    await expandRepositories(container)
     const input = container.querySelector('[data-dsh-part="github-repository-input"]') as HTMLInputElement
     type(input, 'deepseek-ai/dsh-web')
     await act(async () => { button(container, zh['setup.repositoryAdd']).click() })
@@ -185,7 +261,8 @@ describe('GitHub setup panel', () => {
     const { api, calls, list } = apiDouble([{ owner: 'deepseek-ai', repository: 'dsh-web' }, { owner: 'other', repository: 'thing' }])
     const container = await renderPanel(api)
 
-    // When the operator removes one of them
+    // When the operator opens the list and removes one of them
+    await expandRepositories(container)
     const rows = Array.from(container.querySelectorAll('[data-dsh-part="github-repository"]'))
     expect(rows).toHaveLength(2)
     const remove = rows[1]!.querySelector('[data-dsh-part="github-repository-remove"]') as HTMLButtonElement
@@ -201,7 +278,8 @@ describe('GitHub setup panel', () => {
     const { api, list } = apiDouble([{ owner: 'deepseek-ai', repository: 'dsh-web' }])
     const container = await renderPanel(api)
 
-    // When the operator presses that row's take-unassigned button
+    // When the operator opens the list and presses that row's take-unassigned button
+    await expandRepositories(container)
     const toggle = container.querySelector('[data-dsh-part="github-repository-unassigned-toggle"]') as HTMLButtonElement
     expect(toggle.getAttribute('aria-pressed')).toBe('false')
     await act(async () => { toggle.click() })
