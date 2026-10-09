@@ -201,6 +201,100 @@ describe('one-shot schedules', () => {
   })
 })
 
+describe('refunded launch failures', () => {
+  it('operator whose recurring launch failed sees the run refunded and the rule re-armed', () => {
+    // Given a capped rule whose first occurrence opened a run
+    const ledger = new HostTaskLedger(tempRoot(), () => NOW)
+    createCapped(ledger, 'capped', 2)
+    const due = ruleOf(ledger, 'capped').nextRunAt!
+    const opened = ledger.openScheduled('capped', due)
+    expect(opened).toHaveLength(1)
+
+    // When the launch failed before any session existed and the service refunds
+    // that occurrence
+    ledger.refundScheduledOccurrence('capped', due)
+
+    // Then the run is returned, the rule stays armed, and the skip is visible
+    const refunded = ruleOf(ledger, 'capped')
+    expect(refunded.runCount).toBe(0)
+    expect(refunded.enabled).toBe(true)
+    expect(refunded.skippedReason).toBe('launch-failed')
+
+    // And the refunded failure does not consume the budget: two real opens
+    // still fill the cap of two
+    ledger.settle('capped', opened[0].execution.id, 'failed')
+    const second = ledger.openScheduled('capped', refunded.nextRunAt!)
+    ledger.settle('capped', second[0].execution.id, 'succeeded')
+    const third = ledger.openScheduled('capped', ruleOf(ledger, 'capped').nextRunAt!)
+    ledger.settle('capped', third[0].execution.id, 'succeeded')
+    expect(ruleOf(ledger, 'capped').runCount).toBe(2)
+    expect(ruleOf(ledger, 'capped').endedReason).toBe('limit')
+    ledger.dispose()
+  })
+
+  it('operator whose capped rule hit its limit sees that limit lifted when the run is refunded', () => {
+    // Given a rule capped at a single run whose occurrence spent the cap
+    const ledger = new HostTaskLedger(tempRoot(), () => NOW)
+    createCapped(ledger, 'capped', 1)
+    const due = ruleOf(ledger, 'capped').nextRunAt!
+    ledger.openScheduled('capped', due)
+    expect(ruleOf(ledger, 'capped').endedReason).toBe('limit')
+
+    // When that launch failed and the service refunds the occurrence
+    ledger.refundScheduledOccurrence('capped', due)
+
+    // Then the rule is re-armed at its next occurrence with a full budget
+    const restored = ruleOf(ledger, 'capped')
+    expect(restored.runCount).toBe(0)
+    expect(restored.enabled).toBe(true)
+    expect(restored.endedReason).toBeUndefined()
+    expect(restored.endedAt).toBeUndefined()
+    // The refund was observed at the fire instant (due), so the next minute is
+    // the re-armed target.
+    expect(restored.nextRunAt).toBe(due + MINUTE)
+    expect(restored.skippedReason).toBe('launch-failed')
+    ledger.dispose()
+  })
+
+  it('operator whose one-shot launch failed sees it end unspent and never replayed', () => {
+    // Given a one-shot whose instant opened its single run
+    const ledger = new HostTaskLedger(tempRoot(), () => NOW)
+    const at = NOW + MINUTE
+    createOnce(ledger, 'once', at)
+    ledger.openScheduled('once', at)
+    expect(ruleOf(ledger, 'once').endedReason).toBe('fired')
+
+    // When that launch failed before any session existed and the occurrence is
+    // refunded
+    ledger.refundScheduledOccurrence('once', at)
+
+    // Then the plan stopped unspent, with the failure visible, and the past
+    // instant is not replayed
+    const rule = ruleOf(ledger, 'once')
+    expect(rule.runCount).toBe(0)
+    expect(rule.enabled).toBe(false)
+    expect(rule.endedReason).toBe('launch-failed')
+    expect(ledger.openScheduled('once', at + MINUTE)).toEqual([])
+    expect(ledger.state().tasks[0].executions).toHaveLength(1)
+    ledger.dispose()
+  })
+
+  it('operator refunding a task with no rule changes nothing', () => {
+    // Given a plain card with no schedule
+    const ledger = new HostTaskLedger(tempRoot(), () => NOW)
+    ledger.applyRequest('plain', { kind: 'create', id: 'plain', input: { title: 'plain', description: '', prompt: '' } })
+    const before = ledger.state().revision
+
+    // When a launch failure is reported for it
+    ledger.refundScheduledOccurrence('plain', NOW)
+
+    // Then the ledger is untouched
+    expect(ledger.state().revision).toBe(before)
+    expect(ledger.state().tasks[0].schedule).toBeUndefined()
+    ledger.dispose()
+  })
+})
+
 describe('capped recurring schedules', () => {
   it('operator capping a rule at two sees exactly two executions and an automatic stop', () => {
     // Given a rule capped at two runs

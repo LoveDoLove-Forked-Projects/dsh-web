@@ -47,8 +47,8 @@ A rule describes one of two plan kinds and carries its own run budget.
 - `endedAt`/`endedReason` record that a rule stopped itself, and
   `skippedAt`/`skippedReason` record the last occurrence that produced no run.
   Both reasons are stable codes (`fired`, `limit`, `no-target`, `missed`,
-  `busy`, `permission`), never display text: the board renders them through its
-  locale dictionary.
+  `busy`, `permission`, `launch-failed`), never display text: the board renders
+  them through its locale dictionary.
 
 The planned instant of a one-shot is `at`; the scheduler's target
 `nextRunAt` equals it while the rule is armed and is cleared when it is spent.
@@ -65,12 +65,34 @@ nothing else.** Concretely:
   execution, whose plan has no reachable occurrence, or whose occurrence came
   due while the board was not running consumes nothing. The occurrence is
   skipped, the budget is untouched, and the reason is recorded on the rule.
-- A launch that fails AFTER the ledger opened the execution still consumed its
-  run: the execution record exists (settled failed), which is exactly what "one
-  execution was created" means. A failure never triggers an automatic re-run, so
-  it can never push a rule past its cap.
+- A launch that fails BEFORE any session exists created no execution: its run is
+  refunded (the counter steps back down) and the rule keeps — or, when that fire
+  spent the last run, regains — its next target. The occurrence is recorded as
+  `skippedReason: launch-failed` on a recurring rule and `endedReason:
+  launch-failed` on a one-shot, which has no later occurrence to serve. A launch
+  that DID reach a session is a real run and is never refunded. Either way a
+  failure never triggers an immediate re-run, so it can never push a rule past
+  its cap.
 - A settled outcome never moves the counter, so "ran twice, both failed" is two
   runs of a two-run budget, not zero.
+
+### Boundary policies
+
+Each edge the design must answer for has exactly one policy and one visible
+state, and none of them reports a success that did not happen.
+
+| Edge | Run budget | Rule state afterwards | Visible as |
+| --- | --- | --- | --- |
+| Above-default permission still unconfirmed | untouched | recurring rolls one occurrence forward; one-shot stops | `skippedReason` / `endedReason: permission` plus `scheduler.error` |
+| Card already has an open execution | untouched | recurring rolls one occurrence forward; one-shot stops | `skippedReason` / `endedReason: busy` |
+| Instant passed while the board was not running | untouched | recurring rolls forward; one-shot stops | `skippedReason` / `endedReason: missed` |
+| Plan has no reachable occurrence | untouched | stops | `endedReason: no-target` |
+| Launch failed before any session existed | refunded | recurring keeps (or regains) its next target; one-shot stops | `skippedReason` / `endedReason: launch-failed` plus the failed `ExecutionRecord` |
+| Launch reached a session, then the run failed | one run spent | schedule keeps its next target | the failed `ExecutionRecord`; the counter shows the spent run |
+
+A refund is not a replay: the failed occurrence itself is never re-run. A
+recurring rule simply serves its next occurrence, and a one-shot has none, so it
+ends. A rule the user disabled in the meantime is never resurrected by a refund.
 
 ### Where the budget is enforced
 
@@ -86,6 +108,26 @@ contract, with one one-shot-specific consequence: a one-shot whose instant
 passed while the board was down is stopped as `missed` (it has no later
 occurrence to roll to), while a recurring rule rolls forward and records the
 skip.
+
+### Authoritative scheduler and SDK boundary
+
+The authority over board executions is this package's own Host ledger, verified
+by reading the mounted SDK surface and the owning notes rather than assumed.
+`HostExecutionRunner` launches sessions against the ledger's records, so the
+ledger is the only writer that can decide what a card runs and what it has
+already run; the host-wide schedule service (`@deepseek-ai/dsh-schedule`, and
+the optional experimental bundle that carries it) delivers session follow-ups
+from its own store and knows neither this ledger, its permission confirmation
+gate, nor its cascade run groups — the delegation rejection recorded in
+[native panel and timer](../architecture/2026-09-25-task-board-native-panel-and-timer.md)
+and [schedule time zone](2026-09-29-task-board-schedule-time-zone.md) therefore
+still holds. Implementing the one-shot and the budget in this package is what
+uses the authoritative writer instead of adding a second one: no DSH source
+checkout is modified, no SDK cohort is moved, no new service is injected, and
+nothing relies on an execution agent disarming its own rule.
+
+Re-read that rejection if a future SDK grows a surface for running a board task,
+or if the board's authority boundary itself changes.
 
 ### Persistence, wire and surfaces
 
@@ -149,8 +191,10 @@ skip.
   single occurrence; the rule shows `missed` or `busy`. This is the existing
   skip contract extended to a plan with no next occurrence, and it is the one
   place where a user may reasonably expect a retry instead.
-- A run that the scheduler opened but whose launch failed still spends one run of
-  the budget. This follows from counting executions rather than completions.
+- A launch that fails before any session exists is refunded, so a host-side launch
+  failure cannot silently eat a limited budget. The failed attempt still appears in
+  the execution history; only the counter is returned, and the rule serves its next
+  occurrence (a one-shot, having none, ends).
 - Re-enabling a stopped rule resets its budget. The user's act of arming it again
   is what buys a new round, and the exhausted display makes the previous round's
   count visible before that happens.
@@ -167,8 +211,12 @@ skip.
 - `tests/host-service.spec.ts` fires the controllable `HostTimerFace`: a one-shot
   arms at its exact delay, fires once, and leaves no timer armed; a two-run cap
   fires across two timer fires and then arms nothing; a one-shot due while the
-  service was down is skipped on start; and a scheduled launch that fails spends
-  exactly one run without being retried early.
+  service was down is skipped on start; and a scheduled launch that fails before
+  any session exists is refunded, stays armed, and is not retried early.
+  `tests/schedule-once.spec.ts` additionally covers the refund transition: a
+  recurring rule keeps its target, a rule that had stopped at its cap is
+  restored, a one-shot ends unspent without replaying its instant, and a task
+  with no rule is untouched.
 - `tests/tasks.spec.ts` and `tests/store.spec.ts` cover the rule transition and
   the v6 repair (a one-shot with no instant is dropped, the counter and stop
   record round-trip). `tests/host-ledger.spec.ts` covers the migration and the

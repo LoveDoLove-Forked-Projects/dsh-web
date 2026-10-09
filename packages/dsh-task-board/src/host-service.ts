@@ -458,6 +458,8 @@ export class TaskBoardHostService {
   }
 
   private async launch(opened: OpenedRun, others: readonly OpenedRun[] = [], schedule?: ScheduledRunContext): Promise<void> {
+    /** The session this launch attached to the execution, once it exists. */
+    let attached: string | undefined
     try {
       // A team run always mints a fresh Lead session: teammates are immutable
       // children of that session, so reusing an older one would collide on
@@ -497,7 +499,6 @@ export class TaskBoardHostService {
         applicability: team ? 'team-member' : !contract.enabled ? skippedBy : 'goal-unavailable',
       }
       this.ledger.setVerification(opened.task.id, opened.execution.id, initial)
-      let attached: string | undefined
       const sessionId = await this.runner.launch(opened.task, {
         ...(reuseSessionId === undefined ? {} : { reuseSessionId }),
         ...(promptContext === undefined ? {} : { promptContext }),
@@ -516,8 +517,16 @@ export class TaskBoardHostService {
       if (attached === undefined) this.ledger.attachSession(opened.task.id, opened.execution.id, sessionId)
       if (team) for (const teammate of others) this.scheduleTeammate(teammate, sessionId)
     } catch (error) {
-      if (error instanceof SessionLaunchError) {
-        this.ledger.attachSession(opened.task.id, opened.execution.id, error.sessionId)
+      const launchedSession = error instanceof SessionLaunchError ? error.sessionId : undefined
+      if (launchedSession !== undefined) {
+        this.ledger.attachSession(opened.task.id, opened.execution.id, launchedSession)
+      }
+      // A scheduled occurrence that failed before any session existed created
+      // no real execution: refund the run it consumed and record why, so a
+      // failed launch can never silently spend the user's run budget. A manual
+      // run, and a launch that DID reach a session, are never refunded.
+      if (schedule !== undefined && attached === undefined && launchedSession === undefined) {
+        this.ledger.refundScheduledOccurrence(opened.task.id, this.now())
       }
       this.settleAndNotify(opened.task.id, opened.execution.id, 'failed', error instanceof Error ? error.message : String(error))
     }

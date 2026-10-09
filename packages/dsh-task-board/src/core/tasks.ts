@@ -129,10 +129,15 @@ export type ScheduleStopReason =
   | 'busy'
   /** An above-default permission was still unconfirmed, so this occurrence was skipped. */
   | 'permission'
+  /**
+   * A scheduled launch failed before any session existed, so the occurrence
+   * created no execution and its run was refunded rather than spent.
+   */
+  | 'launch-failed'
 
 /** Every stop reason this build understands; the repair and wire gates share it. */
 export const SCHEDULE_STOP_REASONS: readonly ScheduleStopReason[] = [
-  'fired', 'limit', 'no-target', 'missed', 'busy', 'permission',
+  'fired', 'limit', 'no-target', 'missed', 'busy', 'permission', 'launch-failed',
 ]
 
 /**

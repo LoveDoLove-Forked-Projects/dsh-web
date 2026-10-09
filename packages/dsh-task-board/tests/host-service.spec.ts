@@ -429,7 +429,7 @@ describe('TaskBoardHostService scheduling without a browser', () => {
     service.dispose()
   })
 
-  it('user whose scheduled launch fails sees one run spent and no automatic retry', async () => {
+  it('user whose scheduled launch fails sees the run refunded, not silently spent', async () => {
     // Given a recurring rule capped at two runs and a gateway whose session
     // creation fails
     let now = new Date(2026, 7, 16, 10, 0, 30).getTime()
@@ -458,29 +458,35 @@ describe('TaskBoardHostService scheduling without a browser', () => {
     })
     service.start()
 
-    // When the first occurrence fires and its launch fails
+    // When the first occurrence fires and its launch fails before a session
     now = new Date(2026, 7, 16, 10, 1, 0).getTime()
     await probe.trigger()
 
-    // Then the failure is recorded, one run of the budget is spent, and the
-    // rule is not retried early: the next timer still targets the next minute
+    // Then the failure is recorded, the run is refunded rather than spent, and
+    // the rule stays armed at its next occurrence (no immediate retry)
     const afterFirst = ledger.state().tasks[0]
     expect(afterFirst.executions).toHaveLength(1)
     expect(afterFirst.executions[0].result).toBe('failed')
-    expect(afterFirst.schedule?.runCount).toBe(1)
+    expect(afterFirst.schedule?.runCount).toBe(0)
     expect(afterFirst.schedule?.enabled).toBe(true)
+    expect(afterFirst.schedule?.skippedReason).toBe('launch-failed')
     expect(probe.delay).toBe(60_000)
 
-    // When the next occurrence fires and its launch succeeds
+    // When the next two occurrences fire and their launches succeed (each
+    // settled so the following one has an idle card)
     failCreate = false
     now = new Date(2026, 7, 16, 10, 2, 0).getTime()
     await probe.trigger()
+    ledger.settle('capped', ledger.state().tasks[0].executions[1].id, 'succeeded')
+    now = new Date(2026, 7, 16, 10, 3, 0).getTime()
+    await probe.trigger()
 
-    // Then the second and final run opened and the rule stopped itself
-    const afterSecond = ledger.state().tasks[0]
-    expect(afterSecond.executions).toHaveLength(2)
-    expect(afterSecond.schedule?.runCount).toBe(2)
-    expect(afterSecond.schedule?.endedReason).toBe('limit')
+    // Then exactly two real runs were counted and the rule stopped at its cap:
+    // the refunded failure consumed nothing
+    const afterThird = ledger.state().tasks[0]
+    expect(afterThird.executions).toHaveLength(3)
+    expect(afterThird.schedule?.runCount).toBe(2)
+    expect(afterThird.schedule?.endedReason).toBe('limit')
     expect(probe.delay).toBe(0)
     service.dispose()
   })

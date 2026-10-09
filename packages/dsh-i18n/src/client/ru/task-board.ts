@@ -177,6 +177,7 @@ export const ru: Record<string, string> = {
   'detail.schedule.skipped': 'Последний пропуск: {reason}',
   'detail.schedule.stop.busy': 'задача уже выполнялась, поэтому случай был пропущен',
   'detail.schedule.stop.fired': 'разовый план выполнен',
+  'detail.schedule.stop.launch-failed': 'запуск не удался до создания выполнения, поэтому запуск возвращён',
   'detail.schedule.stop.limit': 'достигнут предел запусков',
   'detail.schedule.stop.missed': 'момент был пропущен',
   'detail.schedule.stop.no-target': 'у плана больше нет достижимого момента',

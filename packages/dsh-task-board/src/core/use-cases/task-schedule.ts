@@ -167,6 +167,60 @@ export interface ScheduleProgress {
 }
 
 /**
+ * Refund the one scheduled run an occurrence consumed before its launch failed
+ * without ever creating a session. Nothing ran, so the run budget is restored
+ * and the rule is left able to serve its next occurrence — a launch failure
+ * must never silently spend the user's limited budget.
+ *
+ * A recurring rule keeps its already-rolled-forward target; a fire that ended
+ * the rule at its cap (no target left) is restored and re-armed at the next
+ * occurrence, so a failed launch consumes nothing. A one-shot has no later
+ * occurrence, so it is left stopped with `launch-failed` and its run returned.
+ * A rule the user disabled in the meantime is not resurrected.
+ * @param tasks - current ledger.
+ * @param id - the task whose occurrence is being refunded.
+ * @param now - clock instant (ms epoch).
+ * @param hostTimeZone - zone a rule with no stored zone follows.
+ * @returns the next ledger.
+ */
+export function applyScheduleRefund(
+  tasks: readonly TaskRecord[],
+  id: string,
+  now: number,
+  hostTimeZone: string,
+): readonly TaskRecord[] {
+  return tasks.map(task => {
+    if (task.id !== id || task.archivedAt !== undefined || task.schedule === undefined) return task
+    const rule = task.schedule
+    const runCount = Math.max(rule.runCount - 1, 0)
+    if (rule.mode === 'once') {
+      return withSchedule(task, {
+        enabled: false,
+        runCount,
+        nextRunAt: undefined,
+        endedAt: now,
+        endedReason: 'launch-failed',
+        skippedAt: undefined,
+        skippedReason: undefined,
+      }, now)
+    }
+    const refunded = withSchedule(task, {
+      runCount,
+      skippedAt: now,
+      skippedReason: 'launch-failed',
+    }, now)
+    // The fire already rolled the target forward; only a fire that spent its
+    // last run (target cleared, ended at the cap) needs to be restored.
+    if (rule.nextRunAt !== undefined || rule.endedReason !== 'limit') return refunded
+    const cron = rule.cron ?? ''
+    const next = cron === '' ? undefined : nextRunAtMs(cron, now, rule.timeZone ?? hostTimeZone)
+    return withSchedule(refunded, next === undefined
+      ? { enabled: false, endedAt: now, endedReason: 'no-target' }
+      : { enabled: true, nextRunAt: next, endedAt: undefined, endedReason: undefined }, now)
+  })
+}
+
+/**
  * Record what a due occurrence did to a task's rule: advance the run counter
  * by the executions it opened, set the next target (or stop the rule), and
  * note a terminal reason or a skipped occurrence. Nothing is written for a

@@ -18,7 +18,7 @@ import {
 import { applyArchiveTask, applyRestoreTask } from './core/use-cases/task-archive.ts'
 import { applyCreateTask } from './core/use-cases/task-create.ts'
 import { applyDeleteTask } from './core/use-cases/task-delete.ts'
-import { applySetSchedule, applyScheduleProgress, type ScheduleProgress } from './core/use-cases/task-schedule.ts'
+import { applySetSchedule, applyScheduleProgress, applyScheduleRefund, type ScheduleProgress } from './core/use-cases/task-schedule.ts'
 import { applySetParent } from './core/use-cases/task-parent.ts'
 import { applyDeleteTag, applyRenameTag } from './core/use-cases/task-tag.ts'
 import { applyUpdateTask, canEditTaskContent, hasContentPatch } from './core/use-cases/task-update.ts'
@@ -777,6 +777,26 @@ export class HostTaskLedger {
   /** Apply a schedule-occurrence transition and persist it atomically. */
   private progressSchedule(taskId: string, progress: ScheduleProgress, now: number): void {
     this.document.tasks = [...applyScheduleProgress(this.document.tasks, taskId, progress, now)]
+    this.commit()
+  }
+
+  /**
+   * Refund the one scheduled run an occurrence consumed before its launch
+   * failed without creating a session (see
+   * {@link applyScheduleRefund}). Called by the service on the failed-launch
+   * path only; a manual run and a launch that did reach a session are never
+   * refunded. A no-op for a task with no rule, so a failed cascade member does
+   * not touch anything.
+   * @param taskId - the task whose occurrence is being refunded.
+   * @param now - clock instant (ms epoch).
+   */
+  refundScheduledOccurrence(taskId: string, now: number): void {
+    const before = this.document.tasks.find(item => item.id === taskId)?.schedule
+    if (before === undefined) return
+    const next = applyScheduleRefund(this.document.tasks, taskId, now, timeZone())
+    const after = next.find(item => item.id === taskId)?.schedule
+    if (JSON.stringify(before) === JSON.stringify(after)) return
+    this.document.tasks = [...next]
     this.commit()
   }
 

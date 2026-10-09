@@ -177,7 +177,7 @@ Set `DSH_POWER_SMOKE=1` to opt into the native helper smoke test on Windows, mac
 
 - Missed occurrences during Host downtime, system sleep, or a long pause are skipped and never queued for catch-up.
 - A task that is already running skips its due occurrence and rolls to the next cron match; task runs never overlap or queue. A one-shot has no next match: an instant missed because the card was running or the Host was down stops the rule as skipped, and is never replayed.
-- A capped rule counts executions the Host opened, not successful runs — a launch that failed after the ledger opened it still spends one run — while a manual run never spends the scheduled budget.
+- A capped rule counts the executions the scheduler opened, and a manual run never spends the scheduled budget. A launch that fails before any session exists is refunded, so the rule keeps its next occurrence; a run that did reach a session counts even if it then failed.
 - DST follows the Host local wall clock: a nonexistent spring-forward minute is skipped, and a repeated fall-back minute is not replayed a second time.
 - Power protection prevents only idle system sleep. It deliberately allows display sleep and lock.
 - Lid close, manual sleep, hibernation, shutdown, low-battery forced sleep, and enterprise power policy are outside the guarantee.

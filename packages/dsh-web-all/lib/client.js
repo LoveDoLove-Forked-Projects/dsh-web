@@ -4959,7 +4959,8 @@ window.__ModuleLoader__.load({
 			"no-target",
 			"missed",
 			"busy",
-			"permission"
+			"permission",
+			"launch-failed"
 		];
 		/**
 		* The rule's total run budget: one for a one-shot, the stored cap for a
@@ -7998,6 +7999,7 @@ window.__ModuleLoader__.load({
 			"detail.schedule.stop.missed": "错过执行时刻，已跳过",
 			"detail.schedule.stop.busy": "触发时任务正在运行，已跳过",
 			"detail.schedule.stop.permission": "权限待人工确认，已跳过",
+			"detail.schedule.stop.launch-failed": "启动失败未创建执行，次数已退回",
 			"card.scheduled": "定时",
 			"card.scheduledOnce": "单次",
 			"new.workspace": "工作区",
@@ -8386,6 +8388,7 @@ window.__ModuleLoader__.load({
 			"detail.schedule.stop.missed": "the instant was missed and skipped",
 			"detail.schedule.stop.busy": "the task was already running, so the occurrence was skipped",
 			"detail.schedule.stop.permission": "a permission awaited human confirmation, so the occurrence was skipped",
+			"detail.schedule.stop.launch-failed": "the launch failed before any execution existed, so the run was refunded",
 			"card.scheduled": "scheduled",
 			"card.scheduledOnce": "once",
 			"new.workspace": "Workspace",
