@@ -5,15 +5,16 @@
  * surface needs (its descriptors are keyed by entry id, the family plugins
  * bind by settings namespace).
  *
- * test-standards-allow: bridge handler unit tests over synthetic settings surfaces
+ * test-standards-allow: bridge handler and route unit tests over synthetic settings surfaces
  */
 
-import type { IncomingMessage } from 'node:http'
-import { describe, expect, it } from 'vitest'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { describe, expect, it, vi } from 'vitest'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import type { SettingsForms, SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { isTrustedBridgeRequest, makeBridgeHandlers, WEB_UI_SETTINGS_PROXY_TOKEN_HEADER } from '../src/bridge.ts'
+import { isTrustedBridgeRequest, makeBridgeHandlers, makeBridgeRoutes, WEB_UI_SETTINGS_PROXY_TOKEN_HEADER } from '../src/bridge.ts'
 import type { BridgeProfileEntry } from '../src/bridge.ts'
+import { WEB_UI_SETTINGS_BRIDGE_PREFIX } from '../src/protocol.ts'
 
 /** One fake settings registration the fake surface serves, keyed by profile entry id. */
 interface FakeRegistration {
@@ -380,5 +381,106 @@ describe('bridge mutate', () => {
     if (result.ok) return
     expect(result.code).toBe('settings-rejected')
     expect(writes).toEqual([])
+  })
+})
+
+/** One fake IncomingMessage: loopback socket + Host, optional raw body. */
+function fakeRouteRequest(rawBody?: string): { req: IncomingMessage; destroy: ReturnType<typeof vi.fn> } {
+  const destroy = vi.fn()
+  const req = {
+    method: 'POST',
+    url: WEB_UI_SETTINGS_BRIDGE_PREFIX + '/mutate',
+    socket: { remoteAddress: '127.0.0.1' },
+    headers: {
+      host: '127.0.0.1:3080',
+      ...(rawBody === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    destroy,
+    ...(rawBody === undefined ? {} : {
+      [Symbol.asyncIterator]: async function* iterate() {
+        if (rawBody !== '') yield Buffer.from(rawBody)
+      },
+    }),
+  } as unknown as IncomingMessage
+  return { req, destroy }
+}
+
+/** One fake ServerResponse capturing status/headers/body. */
+function fakeRouteResponse(): { res: ServerResponse; state: { status: number; headers: Record<string, unknown>; body: string } } {
+  const state = { status: 0, headers: {} as Record<string, unknown>, body: '' }
+  const res = {
+    writeHead(status: number, headers: Record<string, unknown> = {}) {
+      state.status = status
+      state.headers = headers
+    },
+    end(payload?: string) { state.body = payload ?? '' },
+  } as unknown as ServerResponse
+  return { res, state }
+}
+
+/** The /mutate route of a bridge table over a surface that always accepts writes. */
+function mutateRoute() {
+  const routes = makeBridgeRoutes({
+    settings: { describe: () => [], writable: true, mutate: async () => {} } as unknown as SettingsForms,
+    readSettingsYaml: () => '',
+  })
+  return routes.find(route => route.path === WEB_UI_SETTINGS_BRIDGE_PREFIX + '/mutate')!
+}
+
+describe('mutate route json body failure contract', () => {
+  it('user posting invalid JSON gets 400 settings-rejected and the request is not destroyed', async () => {
+    // Given: a loopback /mutate request whose body is not JSON
+    const { req, destroy } = fakeRouteRequest('{not json')
+
+    // When: the route handler reads the body
+    const { res, state } = fakeRouteResponse()
+    await mutateRoute().handler(req, res)
+
+    // Then: the refusal envelope answers and the connection stays up
+    expect(state.status).toBe(400)
+    expect(JSON.parse(state.body)).toEqual({ ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+    expect(destroy).not.toHaveBeenCalled()
+  })
+
+  it('user posting an empty body gets 400 settings-rejected and the request is not destroyed', async () => {
+    // Given: a loopback /mutate request with no bytes to read
+    const { req, destroy } = fakeRouteRequest('')
+
+    // When: the route handler reads the body
+    const { res, state } = fakeRouteResponse()
+    await mutateRoute().handler(req, res)
+
+    // Then: the refusal envelope answers and the connection stays up
+    expect(state.status).toBe(400)
+    expect(JSON.parse(state.body)).toEqual({ ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+    expect(destroy).not.toHaveBeenCalled()
+  })
+
+  it('user posting a body past the 64 KiB default cap gets 400 and the request is destroyed', async () => {
+    // Given: a loopback /mutate request one byte past the reader's default cap
+    const { req, destroy } = fakeRouteRequest('x'.repeat(64 * 1024 + 1))
+
+    // When: the route handler reads the body
+    const { res, state } = fakeRouteResponse()
+    await mutateRoute().handler(req, res)
+
+    // Then: the refusal envelope answers and the shared reader tore the connection down
+    expect(state.status).toBe(400)
+    expect(JSON.parse(state.body)).toEqual({ ok: false, code: 'settings-rejected', message: 'unreadable JSON body' })
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('user reading the 400 refusal sees the family JSON headers', async () => {
+    // Given: a loopback /mutate request with an unreadable body
+    const { req, destroy } = fakeRouteRequest('{not json')
+
+    // When: the route handler answers it
+    const { res, state } = fakeRouteResponse()
+    await mutateRoute().handler(req, res)
+
+    // Then: the shared writer's family headers are on the response
+    expect(state.headers['content-type']).toBe('application/json; charset=utf-8')
+    expect(state.headers['referrer-policy']).toBe('no-referrer')
+    expect(destroy).not.toHaveBeenCalled()
   })
 })

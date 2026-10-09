@@ -133,15 +133,21 @@ export const SECRET_RES = [
 
 const TEST_PATH_RE = /(^|\/)(test|tests|__tests__|fixtures?)(\/|$)|(\.test|\.spec)\.[a-z0-9]+$/i
 
-/** CI 门禁序列（对齐 ci.yml，一致性检查在 build 前跑，避免本机路径嵌入 bundle）。 */
+/** CI 门禁序列（对齐 ci.yml 的步骤集合与先后：一致性检查与规则门禁在 build 前跑，
+ * 这样审查工作树上报出的失败与 PR 车道一致，也避免本机路径嵌入 bundle 干扰
+ * libs / sync-shared 的产物比对）。 */
 const BUILD_STEPS = [
   [`install`, `pnpm`, [`install`, `--frozen-lockfile`, `--ignore-scripts`], 20 * 60 * 1000],
   [`typecheck`, `pnpm`, [`typecheck`], 10 * 60 * 1000],
+  [`sync-shared:check`, `pnpm`, [`sync-shared:check`], 5 * 60 * 1000],
+  [`libs:check`, `pnpm`, [`libs:check`], 5 * 60 * 1000],
   [`build`, `pnpm`, [`build`], 20 * 60 * 1000],
   [`test`, `pnpm`, [`test`], 15 * 60 * 1000],
   [`test:scripts`, `pnpm`, [`test:scripts`], 10 * 60 * 1000],
-  [`test:standards`, `pnpm`, [`test:standards`], 5 * 60 * 1000],
+  [`runtime-deps:check`, `pnpm`, [`runtime-deps:check`], 5 * 60 * 1000],
   [`aggregate:check`, `pnpm`, [`aggregate:check`], 10 * 60 * 1000],
+  [`emoji:check`, `pnpm`, [`emoji:check`], 5 * 60 * 1000],
+  [`test:standards`, `pnpm`, [`test:standards`], 5 * 60 * 1000],
   [`docs:check`, `pnpm`, [`docs:check`], 10 * 60 * 1000],
   [`i18n:check`, `pnpm`, [`i18n:check`], 5 * 60 * 1000],
 ]

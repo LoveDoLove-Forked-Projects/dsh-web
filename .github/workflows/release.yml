@@ -73,6 +73,15 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Same pre-build consistency position as ci.yml: both checks compare
+      # COMMITTED artifacts against the committed sources, so they have to run
+      # before Build replaces the working tree with freshly built bytes.
+      - name: Shared host copy consistency
+        run: pnpm sync-shared:check
+
+      - name: Committed lib artifact fingerprints
+        run: pnpm libs:check
+
       - name: Build
         run: pnpm build
 
@@ -90,6 +99,18 @@ jobs:
       # tag pipeline must enforce it too, before anything reaches npm.
       - name: Runtime dependency guard
         run: pnpm runtime-deps:check
+
+      # The three text-scan rule gates ci.yml runs. Without them the one lane
+      # that publishes could ship a tree the pull-request gate would have
+      # rejected (emoji, test-discipline and bilingual-dictionary rules).
+      - name: Emoji rule
+        run: pnpm emoji:check
+
+      - name: Test standards
+        run: pnpm test:standards
+
+      - name: Bilingual dictionary consistency
+        run: pnpm i18n:check
 
       - name: Extract tag version
         id: tag

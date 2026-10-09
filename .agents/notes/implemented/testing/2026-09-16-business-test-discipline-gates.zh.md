@@ -37,7 +37,9 @@ Status: implemented
 - 在 packages/、tests/ 或 desktop/ 下新增或修改测试，必须以角色关键字开头并写明前置条件、动作与结果，否则该 PR 直接变红。机械规则约束所有测试文件，包括工具 lane。
 - 基线是债务账本而非目标：367 个文件、8,968 处违规。减少一处并用 pnpm test:standards:write 重新记录是棘轮；接受新债务同样需要在评审中留下这次可见的编辑。
 - 覆盖率基线覆盖 17 个包，仓库总计 lines 79.73%、statements 75.77%、functions 74.21%、branches 67.64%。90% 分支覆盖率是方向而非现状；门禁的职责是阻止数字下降，逐包表格就是待办清单。分支覆盖率最低的是 dsh-session-archive 54.42%、dsh-ssh 57.76%、dsh-remote-web-ui 58.7%、dsh-market 60.66%、dsh-task-board-github 61.52%。
-- PR CI 增加三步。其中两步是对全树的文本扫描，第三步取代了原有的 Python 步骤，因此 lane 成本只有几秒。
+- PR CI 增加三步。其中两步是对全树的文本扫描，第三步取代了原有的 Python 步骤，因此 lane 成本只有几秒。这三步文本扫描排在 Typecheck 之前：它们不依赖构建，且实测（2026-10-09 runner 计时）install 到 libs:check 的前缀约 30 秒，而 typecheck 33 秒、build 18 秒；规则类违规现在几秒内就以自己的步骤名报出，不再先编译一分钟才变红。
+- tag 车道与 PR CI 跑同一组 pre-build 一致性门禁（sync-shared:check、libs:check），并补齐三条文本规则门禁（emoji / test-standards / i18n），因此发布不再可能上线一棵会被 PR 门禁拒绝的树。
+- scripts/pr-review.mjs 的本地门禁序列与 ci.yml 一致，补上了 sync-shared:check、libs:check、runtime-deps:check 与 emoji:check，外部贡献者在本机看到的失败集合与 PR 车道相同。
 - nightly lane 增加一个定时 workflow，含 30 分钟的覆盖率 job 与 45 分钟的 flake job。它的首次定时运行即其验收运行；workflow 通过 actionlint，两个 job 的命令均在本地执行过。
 - 升级某个包的 vitest 主版本现在必须在同一次改动里升级其覆盖率 provider；provider 不匹配会让 nightly 门禁大声失败，而不是静默不上报。
 - 表情符号门禁的排除集合现在也覆盖被 git 忽略的本地产物（coverage、playwright-report、test-results、.codegraph、.zcode、.pnpm-store、.wrangler、gui-test-screenshots），因此刚跑过 Playwright 的工作区与干净的 CI 检出报告一致。

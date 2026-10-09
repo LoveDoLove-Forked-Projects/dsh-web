@@ -5,12 +5,13 @@
  */
 
 import { createServer, request as httpRequest, type Server } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocket } from 'ws'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { makeRoutes } from '../src/routes.ts'
 import { HostStore } from '../src/store.ts'
 import { SSH_API, type SshHostSummary } from '../src/protocol.ts'
@@ -437,3 +438,106 @@ describe('cluster route', () => {
   })
 })
 
+/** One handler-table entry for a path, from a route table made with the shared store. */
+function handlerFor(path: string, routes: ReturnType<typeof makeRoutes>['routes']) {
+  return routes.find(route => route.kind === 'exact' && route.path === path)!
+}
+
+/** One fake ServerResponse capturing status, headers and body. */
+function fakeJsonResponse(): { res: ServerResponse; state: { status: number; headers: Record<string, unknown>; body: string } } {
+  const state = { status: 0, headers: {} as Record<string, unknown>, body: '' }
+  const res = {
+    writeHead(status: number, headers: Record<string, unknown> = {}) {
+      state.status = status
+      state.headers = headers
+    },
+    end(payload?: string) { state.body = payload ?? '' },
+  } as unknown as ServerResponse
+  return { res, state }
+}
+
+/** One fake IncomingMessage: loopback socket + Host, optional raw body, destroy spy. */
+function fakeJsonRequest(url: string, rawBody?: string): { req: IncomingMessage; destroy: ReturnType<typeof vi.fn> } {
+  const destroy = vi.fn()
+  const req = {
+    method: 'POST',
+    url,
+    socket: { remoteAddress: '127.0.0.1' },
+    headers: {
+      host: '127.0.0.1:3080',
+      ...(rawBody === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    destroy,
+    ...(rawBody === undefined ? {} : {
+      [Symbol.asyncIterator]: async function* iterate() {
+        if (rawBody !== '') yield Buffer.from(rawBody)
+      },
+    }),
+  } as unknown as IncomingMessage
+  return { req, destroy }
+}
+
+describe('json body failure contract', () => {
+  /** A route table over the shared store; the hosts endpoint reads a default 64 KiB body. */
+  const jsonMakes = () => makeRoutes({
+    store: new HostStore(join(dir, 'body-contract-hosts.json')),
+    engine: engine(new StubEngine()),
+    stagingDir: join(dir, 'body-contract-staging'),
+  }).routes
+
+  it('user posting invalid JSON gets 400 and the request is not destroyed', async () => {
+    // Given: a loopback POST to the hosts endpoint whose body is not JSON
+    const { req, destroy } = fakeJsonRequest(SSH_API.hosts, '{not json')
+
+    // When: the registered handler reads the body
+    const { res, state } = fakeJsonResponse()
+    await handlerFor(SSH_API.hosts, jsonMakes()).handler(req, res)
+
+    // Then: the route answers 400 with the invalid-JSON envelope and the connection stays up
+    expect(state.status).toBe(400)
+    expect(JSON.parse(state.body)).toEqual({ error: 'invalid JSON body' })
+    expect(destroy).not.toHaveBeenCalled()
+  })
+
+  it('user posting an empty body gets 400 and the request is not destroyed', async () => {
+    // Given: a loopback POST to the hosts endpoint with no bytes to read
+    const { req, destroy } = fakeJsonRequest(SSH_API.hosts, '')
+
+    // When: the registered handler reads the body
+    const { res, state } = fakeJsonResponse()
+    await handlerFor(SSH_API.hosts, jsonMakes()).handler(req, res)
+
+    // Then: the route answers 400 and the connection stays up
+    expect(state.status).toBe(400)
+    expect(JSON.parse(state.body)).toEqual({ error: 'invalid JSON body' })
+    expect(destroy).not.toHaveBeenCalled()
+  })
+
+  it('user posting a body past the 64 KiB default cap gets 400 and the request is destroyed', async () => {
+    // Given: a loopback POST to the hosts endpoint one byte past the default cap
+    const { req, destroy } = fakeJsonRequest(SSH_API.hosts, 'x'.repeat(64 * 1024 + 1))
+
+    // When: the registered handler reads the body
+    const { res, state } = fakeJsonResponse()
+    await handlerFor(SSH_API.hosts, jsonMakes()).handler(req, res)
+
+    // Then: the route answers 400 and the shared reader tore the connection down
+    expect(state.status).toBe(400)
+    expect(JSON.parse(state.body)).toEqual({ error: 'invalid JSON body' })
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('user reading the 400 refusal sees the family JSON headers', async () => {
+    // Given: a loopback POST to the hosts endpoint with an unreadable body
+    const { req, destroy } = fakeJsonRequest(SSH_API.hosts, '{not json')
+
+    // When: the registered handler answers it
+    const { res, state } = fakeJsonResponse()
+    await handlerFor(SSH_API.hosts, jsonMakes()).handler(req, res)
+
+    // Then: the shared writer's family headers are on the response
+    expect(state.headers['content-type']).toBe('application/json; charset=utf-8')
+    expect(state.headers['referrer-policy']).toBe('no-referrer')
+    expect(destroy).not.toHaveBeenCalled()
+  })
+})

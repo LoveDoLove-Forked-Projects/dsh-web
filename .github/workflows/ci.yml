@@ -47,6 +47,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      # The three rule gates below are tree-wide text scans over hand-written
+      # sources: they need neither the built artifacts nor a type program, yet
+      # they answer the failures a contributor most often has to fix (emoji,
+      # test discipline, dictionary parity). Running them before Typecheck and
+      # Build turns such a violation into a fast, well-named failure instead of
+      # a red run that spent a minute compiling first. The rule itself (ranges,
+      # out-of-scope trees, strict-UTF-8 handling) is a reviewed, unit-tested
+      # script (pnpm test:scripts), so the identical check runs locally too.
+      - name: Emoji rule
+        run: pnpm emoji:check
+
+      - name: Test standards
+        run: pnpm test:standards
+
+      - name: Bilingual dictionary consistency
+        run: pnpm i18n:check
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -74,20 +91,8 @@ jobs:
       - name: Aggregate package consistency
         run: pnpm aggregate:check
 
-      # The rule itself (ranges, out-of-scope trees, strict-UTF-8 handling) is a
-      # reviewed, unit-tested script (pnpm test:scripts), so the identical check
-      # runs locally and in CI.
-      - name: Emoji rule
-        run: pnpm emoji:check
-
-      - name: Test standards
-        run: pnpm test:standards
-
       - name: Documentation consistency
         run: pnpm docs:check
-
-      - name: Bilingual dictionary consistency
-        run: pnpm i18n:check
 
   # Pack the aggregate bundle as an npm tarball, mount it into a REAL DSH
   # instance through the official `dsh plugin --profile web add` channel, and

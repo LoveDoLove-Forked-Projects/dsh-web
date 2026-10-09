@@ -571,7 +571,6 @@ describe('update', () => {
   })
 })
 
-
 describe('custom provider row roots (#1801)', () => {
   /** Isolated host whose skill-filesystem row owns a custom root. */
   function customRowFixture(): {
@@ -751,5 +750,105 @@ describe('registry degradation', () => {
     // Filesystem entries still present.
     const names = payload.groups.flatMap((g: { skills: Array<{ name: string }> }) => g.skills.map((s) => s.name))
     expect(names).toContain('poc-first')
+  })
+})
+
+/** One set-enabled request with a raw (possibly malformed) body, plus its destroy spy. */
+function rawSetEnabledRequest(rawBody: string): { req: IncomingMessage; destroy: ReturnType<typeof vi.fn> } {
+  const destroy = vi.fn()
+  const req = {
+    method: 'POST',
+    url: ROUTES.setEnabled,
+    socket: { remoteAddress: '127.0.0.1' },
+    headers: { host: 'localhost:3080', 'content-type': 'application/json' },
+    destroy,
+    [Symbol.asyncIterator]: async function* iterate() {
+      if (rawBody !== '') yield Buffer.from(rawBody)
+    },
+  } as unknown as IncomingMessage
+  return { req, destroy }
+}
+
+/** One ServerResponse capturing status and headers as well as the body. */
+function responseWithHeaders(): { res: ServerResponse; status: () => number; headers: () => Record<string, unknown>; body: () => string } {
+  const state = { status: 0, headers: {} as Record<string, unknown>, body: '' }
+  const res = {
+    writeHead(status: number, headers: Record<string, unknown> = {}) {
+      state.status = status
+      state.headers = headers
+    },
+    end(body: string) { state.body = body },
+  } as unknown as ServerResponse
+  return { res, status: () => state.status, headers: () => state.headers, body: () => state.body }
+}
+
+describe('set-enabled json body failure contract (128 KiB object-only reader)', () => {
+  it('user posting invalid JSON gets 400 and the request is not destroyed', async () => {
+    // Given: a loopback set-enabled request whose body is not JSON
+    const { req, destroy } = rawSetEnabledRequest('{not json')
+
+    // When: the route handler reads the body
+    const res = responseWithHeaders()
+    await find(ROUTES.setEnabled)!.handler(req, res.res)
+
+    // Then: the route answers 400 and the connection stays up
+    expect(res.status()).toBe(400)
+    expect(JSON.parse(res.body())).toEqual({ error: 'invalid JSON body' })
+    expect(destroy).not.toHaveBeenCalled()
+  })
+
+  it('user posting an empty body gets 400 and the request is not destroyed', async () => {
+    // Given: a loopback set-enabled request with no bytes to read
+    const { req, destroy } = rawSetEnabledRequest('')
+
+    // When: the route handler reads the body
+    const res = responseWithHeaders()
+    await find(ROUTES.setEnabled)!.handler(req, res.res)
+
+    // Then: the route answers 400 and the connection stays up
+    expect(res.status()).toBe(400)
+    expect(JSON.parse(res.body())).toEqual({ error: 'invalid JSON body' })
+    expect(destroy).not.toHaveBeenCalled()
+  })
+
+  it('user posting a non-object payload gets 400 (objectOnly reader) and the request is not destroyed', async () => {
+    // Given: a loopback set-enabled request whose body is a JSON array
+    const { req, destroy } = rawSetEnabledRequest('[]')
+
+    // When: the route handler reads the body
+    const res = responseWithHeaders()
+    await find(ROUTES.setEnabled)!.handler(req, res.res)
+
+    // Then: the object-only reader yields null and the route answers 400
+    expect(res.status()).toBe(400)
+    expect(JSON.parse(res.body())).toEqual({ error: 'invalid JSON body' })
+    expect(destroy).not.toHaveBeenCalled()
+  })
+
+  it('user posting a body past the 128 KiB cap gets 400 and the request is destroyed', async () => {
+    // Given: a loopback set-enabled request one byte past the route family cap
+    const { req, destroy } = rawSetEnabledRequest('x'.repeat(128 * 1024 + 1))
+
+    // When: the route handler reads the body
+    const res = responseWithHeaders()
+    await find(ROUTES.setEnabled)!.handler(req, res.res)
+
+    // Then: the route answers 400 and the shared reader tore the connection down
+    expect(res.status()).toBe(400)
+    expect(JSON.parse(res.body())).toEqual({ error: 'invalid JSON body' })
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('user reading the 400 refusal sees the family JSON headers', async () => {
+    // Given: a loopback set-enabled request with an unreadable body
+    const { req } = rawSetEnabledRequest('{not json')
+
+    // When: the route handler answers it
+    const res = responseWithHeaders()
+    await find(ROUTES.setEnabled)!.handler(req, res.res)
+
+    // Then: the shared writer's family headers are on the response
+    expect(res.headers()['content-type']).toBe('application/json; charset=utf-8')
+    expect(res.headers()['referrer-policy']).toBe('no-referrer')
   })
 })
