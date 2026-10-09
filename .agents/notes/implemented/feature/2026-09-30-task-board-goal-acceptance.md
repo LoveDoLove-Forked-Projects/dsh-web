@@ -369,7 +369,7 @@ verifier's default acceptance ALGORITHM rather than the verifier.
 
 ## Testing
 
-- `tests/goal-verification-gate.spec.ts` (27 scenarios): pass on the first
+- `tests/goal-verification-gate.spec.ts` (36 scenarios): pass on the first
   acceptance, fail-then-repair, second-failure closure with a frozen budget, a
   concurrent completion pair sharing one acceptance, a fresh budget on a rerun,
   the budget surviving a Host restart, an unparseable answer and a thrown judge
@@ -390,7 +390,7 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   route produce a real pass, the reset refused on an execution that only holds a
   quality verdict, a budget stop that opens no judge call and spends no budget,
   and the configured per-call ceiling ending the acceptance as a bounded anomaly.
-- `tests/goal-verification-service.spec.ts` (23 scenarios): the contract
+- `tests/goal-verification-service.spec.ts` (26 scenarios): the contract
   frozen and bound before the prompt, the switch off, `goalRun: false`, a
   refused `/goal`, an explicit route with an unsupported level, a scheduled
   run, the resolved options route, and the settlement rules (completed goal
