@@ -181,6 +181,31 @@ describe('acceptance validity: a veto must be locatable', () => {
     expect(verdict).toEqual({ valid: true })
   })
 
+  it('user whose required artifact is genuinely missing sees the veto accepted when it cites the task it inspected against', () => {
+    // Given: a finding that cites the TASK block, because the required file is
+    // simply absent from the work — the judge inspected for it and found none
+    const input = {
+      criteria: [criterion()],
+      findings: [finding({
+        location: 'task',
+        requirement: 'the task requires dist/index.js to be produced',
+        observation: 'inspection of the workspace found no dist/index.js',
+        gap: 'the required artifact was never produced',
+        quote: 'Ship the build artifact under dist/.',
+      })],
+      evidence: evidence(),
+      omittedCharacters: 0,
+    }
+
+    // When: the validity is assessed
+    const verdict = assessAcceptanceValidity(input)
+
+    // Then: a genuinely missing artifact IS vetoable — the finding states the
+    // requirement, the inspection it performed and the missing fact, and its
+    // citation really occurs in the task block.
+    expect(verdict).toEqual({ valid: true })
+  })
+
   it('operator whose deployment serves no workspace record sees a workspace citation rejected rather than trusted', () => {
     // Given: a finding citing a workspace block the deployment never rendered
     const input = {

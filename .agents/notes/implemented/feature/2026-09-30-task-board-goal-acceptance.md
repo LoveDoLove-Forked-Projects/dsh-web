@@ -432,13 +432,15 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   itself: only an explicit `true` is stored, a hand-edited `false` normalizes
   back to inheriting, the action gate accepts it on create and update, and the
   legacy import carries it while still stripping the acceptance block.
-- `tests/verification-validity.spec.ts` (13 scenarios) pins the veto-validity
+- `tests/verification-validity.spec.ts` (14 scenarios) pins the veto-validity
   rule at the pure layer: a failing criterion with no finding, a vacuous
   finding, a citation absent from the reviewed evidence, a citation of the
   empty-work baseline, an unfound second criterion, a workspace citation with
   and without the host's record, and a citation shorter than the locating
   minimum are each rejected with their own reason; a real trajectory citation
-  is accepted. It also pins the capacity bound on the READ side: a hand-edited
+  is accepted, and so is a GENUINELY missing required artifact when the finding
+  states the requirement, the inspection it performed and the missing fact.
+  It also pins the capacity bound on the READ side: a hand-edited
   block whose finding text or legacy findings list outgrew what the acceptance
   writes is clipped back to the same bound (or dropped outright when the
   criterion identifier no longer resolves), so the persisted detail is bounded
