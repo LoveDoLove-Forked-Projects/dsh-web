@@ -255,6 +255,26 @@ describe('goal acceptance view', () => {
     expect(text).toContain('通过')
   })
 
+  it('user whose global /goal switch withheld the goal sees the run marked as not goal-accepted, neither passed nor failed', () => {
+    // Given: an execution the global switch kept a plain turn, with acceptance
+    // itself configured on
+    const block: ExecutionVerification = {
+      ...verification(),
+      attempts: [],
+      applicability: 'goal-disabled',
+      contract: { enabled: true, modelSource: 'inherit', preset: 'coding', threshold: 0.65 },
+    }
+
+    // When: the report renders
+    const text = render(<VerificationReport verification={block} />)
+
+    // Then: it names the global switch, states that no goal acceptance ran and
+    // that the run is neither accepted nor failed, and never claims a verdict.
+    expect(text).toContain('全局「原生 /goal 执行」总开关关闭')
+    expect(text).toContain('本次未执行 goal 验收')
+    expect(text).not.toContain('判定依据')
+  })
+
   it('user whose card skipped acceptance sees a report that says so', () => {
     // Given: an execution whose CARD opted out of the gate
     const block: ExecutionVerification = {
