@@ -10,7 +10,7 @@ import { TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardEventPay
 import { TaskBoardExtensionRegistry } from './host/extension-registry.ts'
 import type { TaskBoardExtension } from './core/extension.ts'
 import type { ExecutionOutcome, ScheduleMode, TaskRecord, TaskStatus } from './core/tasks.ts'
-import { passedAttempt, resolveContract, verificationNeverInvoked, verificationRequired, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
+import { passedAttempt, resolveContract, verificationNeverInvoked, verificationRequired, withAcceptanceDetailCleared, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 import type { TaskPermission } from './core/handover.ts'
 
 /** One teammate the Host asks the Agent Teams service to spawn for a team run. */
@@ -156,6 +156,8 @@ export class TaskBoardHostService {
   private readonly verificationCatalog: () => Promise<ModelCatalogView | undefined>
   private readonly team: TaskBoardTeamDispatcher | undefined
   private readonly timers: HostTimerFace
+  /** Live reader of the global native-/goal switch; frozen per execution. */
+  private readonly goalRunEnabled: () => boolean
   private lastPowerJson = ''
   private readonly now: () => number
   /** The deployment's workspaces, consulted to resolve a card that pins none. */
@@ -182,6 +184,14 @@ export class TaskBoardHostService {
     team?: TaskBoardTeamDispatcher
     timers?: HostTimerFace
     /**
+     * Live GLOBAL native /goal switch (a volatile config read). Read ONCE per
+     * execution, at launch, and carried by value from then on: a settings edit
+     * made while a run is in flight must not arm, disarm or otherwise change the
+     * goal/acceptance contract of that run. Absent means OFF, which is the
+     * default for every deployment that never configured it.
+     */
+    goalRunEnabled?: () => boolean
+    /**
      * Live acceptance settings (volatile config reads). Absent keeps goal
      * acceptance OFF for every execution this service opens, which is what a
      * programmatic mount without the settings domain gets.
@@ -200,6 +210,7 @@ export class TaskBoardHostService {
     this.timers = options.timers ?? PROCESS_TIMERS
     this.power = options.power ?? new PowerInhibitor()
     this.now = options.now ?? Date.now
+    this.goalRunEnabled = options.goalRunEnabled ?? (() => false)
     this.verificationSettings = options.verificationSettings ?? (() => ({ enabled: false, model: '', reasoningEffort: '' }))
     this.verificationCatalog = options.verificationCatalog ?? (async () => undefined)
     this.extensions = new TaskBoardExtensionRegistry({
@@ -230,6 +241,9 @@ export class TaskBoardHostService {
     this.syncPowerReasons()
     this.pollTimer = this.timers.interval(() => { this.schedulePoll() }, sessionPollMs(this.sessionPollSeconds))
     this.schedulePoll()
+    // Boot is also the cleanup catch-up point: an execution that passed before
+    // the Host stopped may still hold its detail (a crash, a failed write).
+    this.cleanupPendingAcceptanceDetail()
     // Boot is a recovery point: an occurrence armed while the Host was down is
     // not replayed, and each schedule rolls to its next future target. A
     // schedule the Board should have served while running is then armed
@@ -296,6 +310,10 @@ export class TaskBoardHostService {
       sessionDefaultPermission: this.ledger.sessionDefaultPermission,
       maxSubtaskDepth: this.ledger.maxSubtaskDepth,
       teamRunAvailable: this.team !== undefined,
+      // The GLOBAL native-/goal switch is published live for the UI, but the
+      // service freezes its own read at launch: this mirror is for the FORM
+      // (enable/disable + explanation), never for a run already in flight.
+      goalRunEnabled: this.goalRunEnabled(),
       ...(Object.keys(published).length === 0 ? {} : { extensions: published }),
     }
   }
@@ -486,6 +504,11 @@ export class TaskBoardHostService {
       // same contract from an OFF switch: the board-wide switch decides the
       // default, the card decides this execution, and both are read here.
       const settings = this.verificationSettings()
+      // The GLOBAL native-/goal switch is read ONCE here and carried by value
+      // for the whole execution: a settings edit after this point can only
+      // affect executions that start later.
+      const globalGoalEnabled = this.goalRunEnabled() === true
+      const goalEnabled = globalGoalEnabled && opened.task.goalRun !== false
       // The card's opt-out is a DISTINCT reason, not the board switch: the
       // report must be able to say which of the two turned the gate off.
       const skippedBy: ExecutionVerification['applicability'] = opened.task.skipVerification === true ? 'skipped' : 'disabled'
@@ -493,15 +516,26 @@ export class TaskBoardHostService {
         { ...settings, enabled: settings.enabled && opened.task.skipVerification !== true },
         await this.verificationCatalog(),
       )
+      // An execution that will not become a goal run can never fire the
+      // completion gate, so it is marked with the reason that actually applied:
+      // the global switch being off is its OWN reason, distinct from a refused
+      // or unavailable /goal command, and it must never read as an accepted run.
+      // The reason names which switch withheld the goal: the GLOBAL master
+      // switch (this board never arms /goal) is a different fact from this run
+      // simply not becoming a goal run.
+      const notArmed: ExecutionVerification['applicability'] = globalGoalEnabled ? 'goal-unavailable' : 'goal-disabled'
       const initial: ExecutionVerification = {
         contract,
         attempts: [],
-        applicability: team ? 'team-member' : !contract.enabled ? skippedBy : 'goal-unavailable',
+        applicability: team ? 'team-member' : !contract.enabled ? skippedBy : notArmed,
       }
       this.ledger.setVerification(opened.task.id, opened.execution.id, initial)
       const sessionId = await this.runner.launch(opened.task, {
         ...(reuseSessionId === undefined ? {} : { reuseSessionId }),
         ...(promptContext === undefined ? {} : { promptContext }),
+        // The frozen global switch travels with the launch, so the runner's
+        // arming decision is exactly the one made above.
+        goalEnabled,
         // Bind the session to the execution before the prompt is queued, so the
         // completion gate can never observe the agent without its binding.
         onSession: (id) => {
@@ -511,7 +545,7 @@ export class TaskBoardHostService {
         onGoalArmed: (armed) => {
           this.setApplicability(opened.task.id, opened.execution.id, team
             ? 'team-member'
-            : !contract.enabled ? skippedBy : armed ? 'enforced' : 'goal-unavailable')
+            : !contract.enabled ? skippedBy : armed ? 'enforced' : notArmed)
         },
       })
       if (attached === undefined) this.ledger.attachSession(opened.task.id, opened.execution.id, sessionId)
@@ -741,6 +775,73 @@ export class TaskBoardHostService {
       outcome,
       ...(error === undefined ? {} : { error }),
     })
+    // The pass record and the settlement are DURABLE by this point (both are in
+    // the ledger above), so the acceptance-only detail may now be cleaned. A
+    // cleanup failure is recorded against the execution and retried on the next
+    // Host start; it never revokes the pass this settlement just wrote.
+    if (outcome === 'succeeded') this.cleanupAcceptanceDetail(taskId, executionId)
+  }
+
+  /**
+   * Remove one execution's acceptance-only detail after it PASSED and settled.
+   *
+   * Deliberately narrow: only the acceptance mechanism's own per-attempt
+   * material (findings, invalid diagnostics, the bulky judge side) is removed,
+   * and only for THIS execution, keyed by its own id in the ledger it belongs
+   * to. No user file, task artifact, raw session history or other execution's
+   * record is read or written. Idempotent by the record's own state, and it
+   * clearly never touches a run that did not pass (the caller's guard) — a
+   * failed or invalid execution keeps everything a repair or a review needs.
+   * @param taskId - the task whose execution settled.
+   * @param executionId - the settled execution.
+   */
+  private cleanupAcceptanceDetail(taskId: string, executionId: string): void {
+    const execution = this.ledger.getTask(taskId)?.executions.find(entry => entry.id === executionId)
+    const verification = execution?.verification
+    // Only an execution with a REAL pass record is cleaned. An execution whose
+    // acceptance never ran (no block) or was disabled/skipped has nothing this
+    // mechanism created, and a failed one must keep its evidence.
+    if (verification === undefined || passedAttempt(verification) === undefined) return
+    if (verification.cleanup?.state === 'cleaned') return
+    try {
+      const cleaned = withAcceptanceDetailCleared(verification, this.now())
+      if (cleaned === undefined) return
+      this.ledger.setVerification(taskId, executionId, cleaned)
+    } catch (error) {
+      // Record the failure so the UI can say the cleanup is pending and the
+      // Host retries it at start; the pass itself is untouched.
+      const attempts = (verification.cleanup?.attempts ?? 0) + 1
+      this.ledger.setVerification(taskId, executionId, {
+        ...verification,
+        cleanup: {
+          state: 'failed',
+          attempts,
+          startedAt: verification.cleanup?.startedAt ?? this.now(),
+          lastError: error instanceof Error ? error.message : String(error),
+          audit: verification.cleanup?.audit ?? [],
+        },
+      })
+      safeConsoleError('[dsh-task-board] acceptance-detail cleanup failed; it is retried on the next Host start', error)
+    }
+  }
+
+  /**
+   * Catch-up pass: clean the acceptance detail of every execution that PASSED
+   * and settled but whose cleanup did not finish (a crash, a failed write, a
+   * Host killed mid-cleanup).
+   *
+   * The same bounds as any other cleanup apply — only a real pass record on a
+   * settled execution is touched — so this can never delete material belonging
+   * to an execution that did not pass, and never a user file.
+   */
+  private cleanupPendingAcceptanceDetail(): void {
+    for (const task of this.ledger.allTasks()) {
+      for (const execution of task.executions) {
+        if (execution.endedAt === undefined) continue
+        if (execution.result !== 'succeeded') continue
+        this.cleanupAcceptanceDetail(task.id, execution.id)
+      }
+    }
   }
 
   private noteUnreadableInspection(execution: OpenExecutionReference, reason: string | undefined): void {

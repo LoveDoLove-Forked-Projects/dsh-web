@@ -18,12 +18,18 @@ import { collectEvidence } from '../src/host/verification-runner.ts'
 import {
   EMPTY_WORK_BASELINE,
   MAX_EXCEPTION_ATTEMPTS,
+  MAX_INVALID_ATTEMPTS,
   VERIFICATION_THRESHOLD,
   budgetAttempts,
   buildAcceptancePrompt,
   evidenceNonce,
   exceptionAttempts,
+  hasInvalidBudget,
+  invalidAcceptanceFeedback,
+  invalidAttempts,
+  invalidHoldReason,
   normalizeVerification,
+  withoutAcceptanceAnomalies,
   passedAttempt,
   qualityAttempts,
   resolveContract,
@@ -95,11 +101,50 @@ function judgeRuntime(
   }
 }
 
+/**
+ * The exact trajectory text the fixture session hands the judge.
+ *
+ * A veto may only cite what the judge really saw, so the spec's finding double
+ * quotes a passage this string carries: the acceptance's own citation check
+ * then verifies it against the real evidence rather than trusting the fake.
+ */
+const FIXTURE_TOOL_OUTPUT = 'the command printed 42 and exited zero'
+
+/** One session event list whose trajectory carries {@link FIXTURE_TOOL_OUTPUT}. */
+function workingSession(): unknown[] {
+  return [event('tool/result', 2, NOW + 20, { turn: 1, step: 1, message: { content: [{ type: 'text', text: FIXTURE_TOOL_OUTPUT }] } })]
+}
+
+/**
+ * The judge answer for a REJECTING verdict that satisfies the acceptance's
+ * validity rule: one structured finding per criterion the work failed, citing a
+ * passage that really occurs in the trajectory the judge was shown.
+ * @param options - the failing criteria (defaults to every coding criterion).
+ * @returns the raw judge answer text.
+ */
+function rejectingAnswer(options: { criteria?: readonly string[]; call?: number } = {}): string {
+  const names = options.criteria ?? ['Specification Adherence', 'Output Match', 'Error Signal Detection']
+  // The prompt names the slot the WORK occupies that round; the citation must
+  // name the same slot, or the acceptance reads it as a citation of the
+  // empty-work baseline and refuses it.
+  const slot = (options.call ?? 0) % 2 === 1 ? 'TRAJECTORY_B' : 'TRAJECTORY_A'
+  const findings = names.map(name =>
+    '<finding criterion="' + name + '" location="' + slot + '" requirement="the task must produce the verified output" observation="the summary claims success" gap="no command output proves it" quote="' + FIXTURE_TOOL_OUTPUT + '" action="rerun the verification command and read its stdout">the claimed success is not visible in the output</finding>',
+  ).join('\n')
+  return '<score_A> T </score_A>\n<score_B> T </score_B>\n' + findings
+}
+
 /** A model runtime double that answers every judge prompt with the given work grade. */
 function judgeLlm(options: {
   grade?: string
   rounds?: (round: number) => string
   raw?: string
+  /**
+   * Answer builder for a judge that must reject with usable evidence: it
+   * receives the rendered prompt (so it can name the round's own work slot) and
+   * the call index. Takes precedence over `raw`.
+   */
+  reject?: (prompt: string, call: number) => string | undefined
   fail?: (prompt: string, call: number) => Error | undefined
   onCall?: (prompt: string) => void
 }) {
@@ -111,7 +156,8 @@ function judgeLlm(options: {
     const failure = options.fail?.(prompt, index)
     return (async function * () {
       if (failure !== undefined) throw failure
-      const text = options.raw ?? (() => {
+      const rejected = options.reject?.(prompt, index)
+      const text = rejected ?? options.raw ?? (() => {
         // The work sits in slot A on even rounds and in slot B on odd ones,
         // because the gate swaps the two sides for its second round.
         const aBlock = prompt.slice(prompt.indexOf('<<<TRAJECTORY_A'), prompt.indexOf('<<<END_TRAJECTORY_A'))
@@ -237,22 +283,12 @@ describe('goal acceptance gate', () => {
     let quality = 0
     const gate = gateOver({
       ledger: fx.ledger,
-      llm: judgeRuntime((request: { messages: readonly { content: readonly { text?: string }[] }[] }) => {
-        const prompt = request.messages[0]?.content[0]?.text ?? ''
-        const aBlock = prompt.slice(prompt.indexOf('<<<TRAJECTORY_A'), prompt.indexOf('<<<END_TRAJECTORY_A'))
-        const workInA = !aBlock.includes(EMPTY_WORK_BASELINE)
-        const grade = quality === 0 ? 'T' : 'A'
-        const text = workInA
-          ? '<score_A> ' + grade + ' </score_A>\n<score_B> T </score_B>'
-          : '<score_A> T </score_A>\n<score_B> ' + grade + ' </score_B>'
-        return (async function * () {
-          yield { type: 'text-delta', index: 0, text }
-          yield { type: 'finish', reason: { kind: 'stop' } }
-        })()
+      llm: judgeLlm({
+        reject: (_prompt, call) => quality === 0 ? rejectingAnswer({ call }) : undefined,
       }),
       goal: goalDouble('active'),
     })
-    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'run_code', arguments: '{}' })])
+    const agent = agentDouble(fx.sessionId, workingSession())
 
     // When: the agent claims completion with unfinished work
     const first = await gate(completion(agent))
@@ -277,11 +313,12 @@ describe('goal acceptance gate', () => {
   })
 
   it('user whose work fails both acceptances sees the execution judged failed with a frozen budget', async () => {
-    // Given: a judge that always fails the work and a goal service that records blocks
+    // Given: a judge whose veto is backed by a citation of the real trajectory,
+    // and a goal service that records blocks
     const fx = fixture()
     const goal = goalDouble('active')
-    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'T' }), goal })
-    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ reject: (_prompt, call) => rejectingAnswer({ call }) }), goal })
+    const agent = agentDouble(fx.sessionId, workingSession())
 
     // When: the agent claims completion twice
     const first = await gate(completion(agent))
@@ -309,11 +346,11 @@ describe('goal acceptance gate', () => {
     const gate = gateOver({
       ledger: fx.ledger,
       llm: judgeLlm({
-        raw: '<score_A> T </score_A>\n<score_B> T </score_B>\n<finding criterion="Error Signal Detection" evidence="TASK" action="rerun the failing command and read its stderr">the second tool result reports a failure the summary ignored</finding>',
+        reject: (_prompt, call) => rejectingAnswer({ call }),
       }),
       goal,
     })
-    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    const agent = agentDouble(fx.sessionId, workingSession())
 
     // When: the cycle is spent
     await gate(completion(agent))
@@ -326,27 +363,48 @@ describe('goal acceptance gate', () => {
     expect(reason).toContain('空工作基线')
     expect(reason).toContain('Error Signal Detection')
     expect(reason).toContain('可定位问题')
-    expect(reason).toContain('the second tool result reports a failure the summary ignored')
-    expect(reason).toContain('rerun the failing command and read its stderr')
-    expect(goal.blocks[0]).toContain('the second tool result reports a failure the summary ignored')
+    expect(reason).toContain(FIXTURE_TOOL_OUTPUT)
+    expect(reason).toContain('rerun the verification command and read its stdout')
+    expect(goal.blocks[0]).toContain(FIXTURE_TOOL_OUTPUT)
     const verification = verificationOf(fx.ledger)
-    expect(verification.failedReason).toContain('the second tool result reports a failure the summary ignored')
+    expect(verification.failedReason).toContain(FIXTURE_TOOL_OUTPUT)
+    // The veto is only usable because the citation really occurs in the
+    // trajectory the judge was shown; the structured finding is what carries it.
+    expect(verification.attempts[0]?.criterionFindings?.[0]?.location).toBe('trajectory')
   })
 
-  it('user whose judge reports no findings sees a failure reason that says where to look instead of staying silent', async () => {
-    // Given: a judge that fails the work without reporting any finding
+  it('user whose judge rejects without any finding sees an INVALID acceptance and is never asked to repair blindly', async () => {
+    // Given: a judge that scores the work below the threshold and cites nothing
     const fx = fixture()
-    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'T' }), goal: goalDouble('active') })
-    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    const goal = goalDouble('active')
+    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'T' }), goal })
+    const agent = agentDouble(fx.sessionId, workingSession())
 
-    // When: the cycle is spent
-    await gate(completion(agent))
+    // When: the agent claims completion twice, spending both invalid attempts
+    const first = await gate(completion(agent))
     const second = await gate(completion(agent))
 
-    // Then: the reason still points the agent at the criteria and the evidence.
-    const reason = (second as { kind: 'deny', reason: string }).reason
-    expect(reason).toContain('本次验收没有记录可定位的问题')
-    expect(reason).toContain('未达标判据')
+    // Then: neither claim is a quality verdict, the quality budget is untouched,
+    // the card is not failed, and the agent is told the veto itself was
+    // unusable rather than being sent to fix work nothing located.
+    expect(first?.kind).toBe('deny')
+    expect((first as { kind: 'deny', reason: string }).reason).toContain('验收无效')
+    expect((first as { kind: 'deny', reason: string }).reason).toContain('未消耗质量验收额度')
+    expect((first as { kind: 'deny', reason: string }).reason).toContain('请不要据此盲目修改')
+    expect(second?.kind).toBe('deny')
+    expect((second as { kind: 'deny', reason: string }).reason).toContain('等待人工处理')
+    const verification = verificationOf(fx.ledger)
+    expect(invalidAttempts(verification)).toHaveLength(MAX_INVALID_ATTEMPTS)
+    expect(qualityAttempts(verification)).toHaveLength(0)
+    expect(verification.failedReason).toBeUndefined()
+    expect(verificationPhase(verification)).toBe('invalid')
+    expect(goal.blocks).toEqual([])
+
+    // And a third claim spends no judge call at all, so an evidence-free judge
+    // cannot be re-run forever.
+    const third = await gate(completion(agent))
+    expect((third as { kind: 'deny', reason: string }).reason).toContain('等待人工处理')
+    expect(invalidAttempts(verificationOf(fx.ledger))).toHaveLength(MAX_INVALID_ATTEMPTS)
   })
 
   it('user claiming completion twice at once sees one acceptance, not two', async () => {
@@ -390,10 +448,10 @@ describe('goal acceptance gate', () => {
   })
 
   it('user rerunning the task sees a fresh acceptance budget for the new execution', async () => {
-    // Given: an execution whose acceptance cycle is already spent
+    // Given: an execution whose acceptance cycle is already spent on real vetoes
     const fx = fixture()
-    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'T' }), goal: goalDouble('active') })
-    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ reject: (_prompt, call) => rejectingAnswer({ call }) }), goal: goalDouble('active') })
+    const agent = agentDouble(fx.sessionId, workingSession())
     await gate(completion(agent))
     await gate(completion(agent))
     expect(verificationOf(fx.ledger).failedReason).toContain('本次 execution 判失败')
@@ -429,16 +487,16 @@ describe('goal acceptance gate', () => {
       attempts: [],
       applicability: 'enforced',
     })
-    const gate = gateOver({ ledger, llm: judgeLlm({ grade: 'T' }), goal: goalDouble('active') })
-    const agent = agentDouble('session-a', [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    const gate = gateOver({ ledger, llm: judgeLlm({ reject: (_prompt, call) => rejectingAnswer({ call }) }), goal: goalDouble('active') })
+    const agent = agentDouble('session-a', workingSession())
     await gate(completion(agent))
     expect(qualityAttempts(verificationOf(ledger))).toHaveLength(1)
     ledger.dispose()
 
     // When: a fresh Host process loads the same ledger and the agent claims completion again
     const reloaded = new HostTaskLedger(dir, () => NOW)
-    const reloadedGate = gateOver({ ledger: reloaded, llm: judgeLlm({ grade: 'T' }), goal: goalDouble('active') })
-    const revivedAgent = agentDouble('session-a', [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    const reloadedGate = gateOver({ ledger: reloaded, llm: judgeLlm({ reject: (_prompt, call) => rejectingAnswer({ call }) }), goal: goalDouble('active') })
+    const revivedAgent = agentDouble('session-a', workingSession())
     const decision = await reloadedGate(completion(revivedAgent))
 
     // Then: the second acceptance is the LAST one of the cycle, not a fresh first.
@@ -738,20 +796,33 @@ describe('goal acceptance gate', () => {
     const prompts: string[] = []
     const gate = gateOver({
       ledger: fx.ledger,
-      llm: judgeLlm({ rounds: round => round === 0 ? 'A' : 'T', onCall: prompt => { prompts.push(prompt) } }),
+      // The work is graded A on the first round and T on the second, so the
+      // averaged criterion lands mid-scale. The second round carries the
+      // citation the veto needs, so this stays a real quality verdict.
+      llm: judgeLlm({
+        reject: (prompt, call) => {
+          if (call % 2 === 0) {
+            const workInA = !prompt.slice(prompt.indexOf('<<<TRAJECTORY_A'), prompt.indexOf('<<<END_TRAJECTORY_A')).includes(EMPTY_WORK_BASELINE)
+            return workInA ? '<score_A> A </score_A>\n<score_B> T </score_B>' : undefined
+          }
+          return rejectingAnswer({ call })
+        },
+        onCall: prompt => { prompts.push(prompt) },
+      }),
       goal: goalDouble('active'),
     })
-    const agent = agentDouble(fx.sessionId, [event('tool/call', 1, NOW + 10, { turn: 1, step: 1, name: 'bash', arguments: '{}' })])
+    const agent = agentDouble(fx.sessionId, workingSession())
 
     // When: the agent claims completion
     await gate(completion(agent))
 
     // Then: each criterion was judged twice with the A/B slots swapped, and its
-    // score is the average of the two rounds (A=1.0, N=0.315789…).
+    // score is the average of the two rounds (A=1.0, T=0.0).
     const attempt = qualityAttempts(verificationOf(fx.ledger))[0]!
     expect(attempt.rounds).toBe(2)
     expect(attempt.criteria).toHaveLength(3)
     expect(attempt.criteria[0]!.score).toBeCloseTo(0.5, 0.0001)
+    expect(attempt.passed).toBe(false)
     const workIsA = prompts.filter(prompt => !prompt.slice(prompt.indexOf('<<<TRAJECTORY_A'), prompt.indexOf('<<<END_TRAJECTORY_A')).includes(EMPTY_WORK_BASELINE))
     expect(workIsA).toHaveLength(3)
     expect(prompts.length).toBe(6)
@@ -954,3 +1025,156 @@ describe('goal acceptance gate', () => {
     expect(repaired).toBeUndefined()
   })
 })
+
+describe('invalid acceptance: a veto nobody could verify', () => {
+  it('user whose judge vetoes with a citation of the reviewed trajectory sees one quality attempt spent and locatable feedback', async () => {
+    // Given: a judge that vetoes with a finding quoting the reviewed trajectory
+    const fx = fixture()
+    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ reject: (_prompt, call) => rejectingAnswer({ call }) }), goal: goalDouble('active') })
+    const agent = agentDouble(fx.sessionId, workingSession())
+
+    // When: the agent claims completion
+    const decision = await gate(completion(agent))
+
+    // Then: the veto became a REAL quality verdict, so it spent exactly one
+    // quality attempt and the returned feedback carries the citation.
+    expect(decision?.kind).toBe('deny')
+    const reason = (decision as { kind: 'deny', reason: string }).reason
+    expect(reason).toContain(FIXTURE_TOOL_OUTPUT)
+    const verification = verificationOf(fx.ledger)
+    expect(qualityAttempts(verification)).toHaveLength(1)
+    expect(invalidAttempts(verification)).toHaveLength(0)
+    expect(qualityAttempts(verification)[0]?.criterionFindings?.[0]?.location).toBe('trajectory')
+  })
+
+  it('user whose judge vetoes without evidence sees the invalid retries bounded, then a hold and no further judge call', async () => {
+    // Given: a judge that always vetoes with no finding at all
+    const fx = fixture()
+    const goal = goalDouble('active')
+    let calls = 0
+    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'T', onCall: () => { calls += 1 } }), goal })
+    const agent = agentDouble(fx.sessionId, workingSession())
+
+    // When: the agent claims completion three times
+    await gate(completion(agent))
+    const second = await gate(completion(agent))
+    const callsAfterTwo = calls
+    const third = await gate(completion(agent))
+
+    // Then: two invalid acceptances each ran their own judge calls, the third
+    // made none, the quality budget is intact and the card was never failed.
+    expect(callsAfterTwo).toBe(MAX_INVALID_ATTEMPTS * 2 * 3)
+    expect(calls).toBe(callsAfterTwo)
+    const verification = verificationOf(fx.ledger)
+    expect(invalidAttempts(verification)).toHaveLength(MAX_INVALID_ATTEMPTS)
+    expect(qualityAttempts(verification)).toHaveLength(0)
+    expect(hasInvalidBudget(verification)).toBe(false)
+    expect(verification.failedReason).toBeUndefined()
+    expect(verification.applicability).toBe('enforced')
+    expect(verificationPhase(verification)).toBe('invalid')
+    expect(goal.blocks).toEqual([])
+    const reason = (third as { kind: 'deny', reason: string }).reason
+    expect(reason).toContain('验收无效')
+    expect(reason).toContain('等待人工处理')
+    expect(reason).not.toContain('质量判负')
+    expect((second as { kind: 'deny', reason: string }).reason).toContain('未消耗质量验收额度')
+  })
+
+  it('operator reopening the board after a Host restart sees the invalid attempts and their bound preserved', async () => {
+    // Given: an execution that already spent both invalid attempts
+    const dir = scratch()
+    const ledger = new HostTaskLedger(dir, () => NOW)
+    ledger.applyRequest('req-create', { kind: 'create', id: 'task-a', input: { title: 'Ship it', description: '', prompt: 'do work' } })
+    const execution = ledger.applyRequest('req-run', { kind: 'run', taskId: 'task-a' }).runs![0]!.execution
+    ledger.attachSession('task-a', execution.id, 'session-a')
+    ledger.setVerification('task-a', execution.id, {
+      contract: resolveContract({ enabled: true, model: '', reasoningEffort: '' }, catalog()),
+      attempts: [],
+      applicability: 'enforced',
+    })
+    const gate = gateOver({ ledger, llm: judgeLlm({ grade: 'T' }), goal: goalDouble('active') })
+    const agent = agentDouble('session-a', workingSession())
+    await gate(completion(agent))
+    await gate(completion(agent))
+    expect(invalidAttempts(verificationOf(ledger))).toHaveLength(MAX_INVALID_ATTEMPTS)
+    ledger.dispose()
+
+    // When: a fresh Host process loads the same ledger and the agent claims
+    // completion yet again
+    const reloaded = new HostTaskLedger(dir, () => NOW)
+    let calls = 0
+    const reloadedGate = gateOver({ ledger: reloaded, llm: judgeLlm({ grade: 'T', onCall: () => { calls += 1 } }), goal: goalDouble('active') })
+    const decision = await reloadedGate(completion(agentDouble('session-a', workingSession())))
+
+    // Then: the bound survived the restart, so no judge call is made at all and
+    // the execution still is not failed.
+    expect(calls).toBe(0)
+    expect((decision as { kind: 'deny', reason: string }).reason).toContain('等待人工处理')
+    expect(invalidAttempts(verificationOf(reloaded))).toHaveLength(MAX_INVALID_ATTEMPTS)
+    expect(verificationOf(reloaded).failedReason).toBeUndefined()
+    reloaded.dispose()
+  })
+
+  it('user clearing an invalid hold sees the acceptance reopen and a later evidence-backed veto book a quality verdict', async () => {
+    // Given: an execution held after spending its invalid attempts
+    const fx = fixture()
+    const gate = gateOver({ ledger: fx.ledger, llm: judgeLlm({ grade: 'T' }), goal: goalDouble('active') })
+    const agent = agentDouble(fx.sessionId, workingSession())
+    await gate(completion(agent))
+    await gate(completion(agent))
+    const held = verificationOf(fx.ledger)
+    expect(held.failedReason).toBeUndefined()
+    expect(verificationPhase(held)).toBe('invalid')
+
+    // When: the operator clears the recorded invalid acceptances
+    const executionId = fx.ledger.getTask('task-a')!.executions[0]!.id
+    const cleared = withoutAcceptanceAnomalies(held)
+    if (cleared === undefined) throw new Error('the invalid attempts were not cleared')
+    fx.ledger.setVerification('task-a', executionId, cleared)
+
+    // Then: the invalid budget is open again, and a fresh EVIDENCE-BACKED veto
+    // is booked as a quality verdict rather than held.
+    const reopened = verificationOf(fx.ledger)
+    expect(invalidAttempts(reopened)).toHaveLength(0)
+    expect(reopened.failedReason).toBeUndefined()
+    const recovered = gateOver({ ledger: fx.ledger, llm: judgeLlm({ reject: (_prompt, call) => rejectingAnswer({ call }) }), goal: goalDouble('active') })
+    await recovered(completion(agent))
+    expect(qualityAttempts(verificationOf(fx.ledger))).toHaveLength(1)
+    expect(invalidAttempts(verificationOf(fx.ledger))).toHaveLength(0)
+  })
+
+  it('user reading an invalid hold and its retry feedback is told there was no usable veto and no failure', () => {
+    // Given: an invalid attempt and the remaining invalid budget it left
+    const attempt = {
+      index: 1,
+      at: NOW,
+      stage: 'invalid' as const,
+      passed: false,
+      score: 0.1,
+      baseline: 0.1,
+      criteria: [],
+      findings: [],
+      usage: { calls: 6, inputTokens: 10, outputTokens: 5, reasoningTokens: 1 },
+      evidence: { chars: 100, omittedCharacters: 0, entries: 2, hash: 'h' },
+      route: { provider: 'deepseek-official', model: 'deepseek-flash' },
+      channel: 'explicit-tag' as const,
+      rounds: 2,
+      invalidReason: 'missing-finding' as const,
+    }
+
+    // When: the hold reason and the retry feedback are rendered
+    const hold = invalidHoldReason(MAX_INVALID_ATTEMPTS)
+    const feedback = invalidAcceptanceFeedback(attempt, 1)
+
+    // Then: each names the invalid acceptance, the untouched quality budget and
+    // the human action, and neither reads as an evidence-backed quality veto.
+    expect(hold).toContain('验收无效')
+    expect(hold).toContain('等待人工处理')
+    expect(hold).not.toContain('质量判负')
+    expect(feedback).toContain('验收无效')
+    expect(feedback).toContain('未消耗质量验收额度')
+    expect(feedback).toContain('不把本次执行判为失败')
+    expect(feedback).toContain('未达标的判据没有对应的结构化问题反馈')
+  })
+})
+

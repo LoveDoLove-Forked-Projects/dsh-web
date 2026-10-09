@@ -141,7 +141,7 @@ export interface ExecutionOptionsSnapshot {
  * (revision/scheduler/power); a full snapshot also carries the deployment
  * constants the UI reads (session default permission, subtask depth).
  */
-export type HostMirror = Pick<TaskBoardSnapshot, 'revision' | 'scheduler' | 'power' | 'sessionDefaultPermission' | 'maxSubtaskDepth' | 'teamRunAvailable' | 'extensions'>
+export type HostMirror = Pick<TaskBoardSnapshot, 'revision' | 'scheduler' | 'power' | 'sessionDefaultPermission' | 'maxSubtaskDepth' | 'teamRunAvailable' | 'goalRunEnabled' | 'extensions'>
 
 /** Immutable controller snapshot for UI subscriptions. */
 export interface ControllerSnapshot {
@@ -815,6 +815,7 @@ export class BoardController {
     const sessionDefaultPermission = snapshot.sessionDefaultPermission ?? this.hostState?.sessionDefaultPermission
     const maxSubtaskDepth = snapshot.maxSubtaskDepth ?? this.hostState?.maxSubtaskDepth
     const teamRunAvailable = snapshot.teamRunAvailable ?? this.hostState?.teamRunAvailable
+    const goalRunEnabled = snapshot.goalRunEnabled ?? this.hostState?.goalRunEnabled
     const extensions = snapshot.extensions ?? this.hostState?.extensions
     return {
       revision: snapshot.revision,
@@ -823,6 +824,7 @@ export class BoardController {
       ...(sessionDefaultPermission === undefined ? {} : { sessionDefaultPermission }),
       ...(maxSubtaskDepth === undefined ? {} : { maxSubtaskDepth }),
       ...(teamRunAvailable === undefined ? {} : { teamRunAvailable }),
+      ...(goalRunEnabled === undefined ? {} : { goalRunEnabled }),
       ...(extensions === undefined ? {} : { extensions }),
     }
   }

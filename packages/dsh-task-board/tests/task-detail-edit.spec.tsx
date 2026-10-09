@@ -35,6 +35,7 @@ function controllerFake(
   taskRecord: TaskRecord,
   updateTask: (id: string, patch: TaskUpdatePatch) => Promise<boolean> = async () => true,
   teamRunAvailable = true,
+  goalRunEnabled = true,
 ): { controller: BoardController; snapshot: ControllerSnapshot } {
   const snapshot: ControllerSnapshot = {
     tasks: [taskRecord],
@@ -49,6 +50,7 @@ function controllerFake(
       power: { platform: 'linux', phase: 'unsupported', enabled: false, runningSessions: 0, armedSchedules: 0, sessionStateKnown: true },
       sessionDefaultPermission: 'read-only',
       teamRunAvailable,
+      goalRunEnabled,
     },
   }
   const controller = {
@@ -73,8 +75,14 @@ async function renderDetail(
   taskRecord: TaskRecord,
   updateTask?: (id: string, patch: TaskUpdatePatch) => Promise<boolean>,
   teamRunAvailable = true,
+  /**
+   * The live GLOBAL native-/goal switch. It defaults to ON because most cases
+   * here are about the task-level preference; the cases that must observe the
+   * master switch pass it explicitly.
+   */
+  goalRunEnabled = true,
 ): Promise<{ container: HTMLElement; controller: BoardController; snapshot: ControllerSnapshot }> {
-  const { controller, snapshot } = controllerFake(taskRecord, updateTask, teamRunAvailable)
+  const { controller, snapshot } = controllerFake(taskRecord, updateTask, teamRunAvailable, goalRunEnabled)
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -290,6 +298,40 @@ describe('goal run toggle', () => {
     expect(checkbox.checked).toBe(false)
     await act(async () => { checkbox.click() })
     expect(updateTask).toHaveBeenCalledWith('t1', { goalRun: true })
+  })
+
+  it('user with the GLOBAL native /goal switch off sees the task option disabled with an explanation', async () => {
+    // Given: the master switch off and a card that never touched its option
+    const updateTask = vi.fn(async () => true)
+    const { container } = await renderDetail(task(), updateTask, true, false)
+
+    // When: the detail view renders
+    const checkbox = goalCheckbox(container)
+
+    // Then: the stored preference is still shown (checked), the control is
+    // disabled, the explanation says the master switch must be enabled first,
+    // and no edit can be staged from it.
+    expect(checkbox.checked).toBe(true)
+    expect(checkbox.disabled).toBe(true)
+    expect(container.textContent).toContain('全局「原生 /goal 执行」总开关已关闭')
+    expect(updateTask).not.toHaveBeenCalled()
+  })
+
+  it('operator re-enabling the GLOBAL switch sees the card keep the preference it never rewrote', async () => {
+    // Given: a card with the opt-out stored, rendered while the master switch
+    // was off (the stored value is not touched), then rendered again with it on
+    const optedOut = task({ goalRun: false })
+    const off = await renderDetail(optedOut, undefined, true, false)
+    expect(goalCheckbox(off.container).checked).toBe(false)
+    expect(goalCheckbox(off.container).disabled).toBe(true)
+
+    // When: the master switch is turned back on
+    const on = await renderDetail(optedOut, undefined, true, true)
+
+    // Then: the user's own stored preference is exactly what comes back
+    expect(goalCheckbox(on.container).checked).toBe(false)
+    expect(goalCheckbox(on.container).disabled).toBe(false)
+    expect(on.container.textContent).not.toContain('总开关已关闭')
   })
 })
 

@@ -85,6 +85,10 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   const [error, setError] = useState<string | undefined>(undefined)
   const [pending, setPending] = useState(false)
   const [options, setOptions] = useState(controller.getSnapshot().executionOptions)
+  // Live GLOBAL native-/goal switch. The new-task form never rewrites a stored
+  // preference from it: the checkbox is disabled and explained while the master
+  // switch is off, and the user's own choice is what a later re-enable restores.
+  const [goalRunEnabled, setGoalRunEnabled] = useState(controller.getSnapshot().host?.goalRunEnabled === true)
   // "Parse pasted text" (issue #1540) exists only when the deployment carries a
   // parse face; the section stays hidden otherwise.
   const [canParse] = useState(controller.getSnapshot().canParseTask === true)
@@ -107,7 +111,11 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   // The workspace list and preset roster arrive from the runtime after mount;
   // follow them so the pickers never freeze on an empty snapshot.
   useEffect(
-    () => controller.subscribe(() => setOptions(controller.getSnapshot().executionOptions)),
+    () => controller.subscribe(() => {
+      const snapshot = controller.getSnapshot()
+      setOptions(snapshot.executionOptions)
+      setGoalRunEnabled(snapshot.host?.goalRunEnabled === true)
+    }),
     [controller],
   )
 
@@ -305,7 +313,9 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   const tagCount = cleanTags(tags).length
   const labelsSummary = tagCount === 0 ? t('new.summary.none') : t('new.summary.labelCount', { count: String(tagCount) })
   const runSummary = [
-    goalRun ? t('new.summary.multiRound') : t('new.summary.singleRound'),
+    // A card whose goal option is on but whose master switch is off will run one
+    // plain turn: the collapsed line says the truth rather than the stored value.
+    goalRun && goalRunEnabled ? t('new.summary.multiRound') : t('new.summary.singleRound'),
     ...(reuseSession ? [t('exec.reuseSession')] : []),
   ].join(' · ')
   const handoverSummary = freezeText.trim() !== '' || handoverText.trim() !== ''
@@ -521,11 +531,15 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
           <input
             type="checkbox"
             checked={goalRun}
+            // Disabled while the global switch is off; the choice kept in state
+            // (and in a duplicate's template) is never rewritten by it.
+            disabled={!goalRunEnabled}
             onChange={event => { setGoalRun(event.target.checked) }}
           />
           <span>{t('exec.goalRun')}</span>
         </label>
         <p className={css.detailText}>{t('exec.goalRunHint')}</p>
+        {!goalRunEnabled && <p className={css.detailText}>{t('settings.goalRunGlobalDisabledTaskOption')}</p>}
 
         <label className={css.scheduleToggle}>
           <input

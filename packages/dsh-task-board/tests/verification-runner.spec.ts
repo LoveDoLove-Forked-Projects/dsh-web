@@ -1,22 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FinishReason, LlmRuntime, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { EMPTY_WORK_BASELINE } from '../src/core/verification.ts'
 import { collectEvidence, runAcceptance } from '../src/host/verification-runner.ts'
 
 afterEach(() => { vi.useRealTimers() })
 
-function harness(replies: { text?: string; reason: FinishReason }[], options: { blocking?: boolean } = {}) {
+function harness(replies: { text?: string | ((prompt: string) => string); reason: FinishReason }[], options: { blocking?: boolean } = {}) {
   const budgets: number[] = []
   const llm = {
     prepareCall: async (config: { maxTokens: number }) => {
       const index = budgets.push(config.maxTokens) - 1
-      return { config, stream: async function* (request: { signal?: AbortSignal }): AsyncIterable<StreamChunk> {
+      return { config, stream: async function* (request: { signal?: AbortSignal; messages?: readonly { content?: readonly { text?: string }[] }[] }): AsyncIterable<StreamChunk> {
         // A blocking answer ends only when its own per-call signal fires, which
         // is what a route that stopped responding looks like to the runner.
         if (options.blocking === true) {
           await new Promise<void>(resolve => { request.signal?.addEventListener('abort', () => { resolve() }, { once: true }) })
         }
         const reply = replies[Math.min(index, replies.length - 1)]!
-        if (reply.text !== undefined) yield { type: 'text-delta', index: 0, text: reply.text }
+        if (reply.text !== undefined) {
+          const text = typeof reply.text === 'function' ? reply.text(String(request.messages?.[0]?.content?.[0]?.text ?? '')) : reply.text
+          yield { type: 'text-delta', index: 0, text }
+        }
         yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 1 } }
         yield { type: 'finish', reason: reply.reason }
       } }
@@ -26,7 +30,20 @@ function harness(replies: { text?: string; reason: FinishReason }[], options: { 
     evidence: collectEvidence({}, 'test work', 0), threshold: 0.65, index: 1, signal: new AbortController().signal, now: () => 100, ...budgets })
   return { budgets, run }
 }
-const valid = '<score_A>A</score_A><score_B>T</score_B>'
+/**
+ * A verdict that PASSES: the work is graded A and the empty-work baseline T,
+ * whichever slot the round put them in. The judging side of a veto is covered
+ * by the gate spec, which is where the evidence-backed findings live; these
+ * cases are about stream recovery and billing, so they must reach a verdict
+ * that needs no citation at all.
+ * @param prompt - the rendered judge prompt.
+ * @returns the two score tags in the round's own A/B arrangement.
+ */
+function passingAnswer(prompt: string): string {
+  const workInA = !prompt.slice(prompt.indexOf('<<<TRAJECTORY_A'), prompt.indexOf('<<<END_TRAJECTORY_A')).includes(EMPTY_WORK_BASELINE)
+  return workInA ? '<score_A>A</score_A><score_B>T</score_B>' : '<score_A>T</score_A><score_B>A</score_B>'
+}
+const valid: (prompt: string) => string = passingAnswer
 
 describe('judge stream recovery', () => {
   it('operator given reasoning exhausts the cap, when retried, then keeps the configured cap and records all billed calls', async () => {

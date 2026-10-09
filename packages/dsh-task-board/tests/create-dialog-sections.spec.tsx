@@ -47,6 +47,14 @@ function renderModal(initialTask?: TaskRecord): HTMLElement {
       models: [],
     },
     pendingTaskIds: [],
+    // The master native-/goal switch is on: these cases exercise the
+    // task-level option, which the global default (off) would disable.
+    host: {
+      revision: 1,
+      scheduler: { timeZone: 'UTC' },
+      power: { platform: 'linux', phase: 'unsupported', enabled: false, runningSessions: 0, armedSchedules: 0, sessionStateKnown: true },
+      goalRunEnabled: true,
+    },
   }
   const controller = {
     getSnapshot: () => snapshot,

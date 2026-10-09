@@ -113,6 +113,22 @@ export interface Config {
    */
   teamProvider?: string
   /**
+   * GLOBAL native /goal switch (default OFF), the master control over whether
+   * this board starts a run with dsh's built-in /goal at all. A run uses native
+   * /goal only when THIS is on AND the task's own `goalRun` is not off; while
+   * it is off every task runs one plain turn.
+   *
+   * The value is frozen when an execution starts, so toggling it only affects
+   * executions that begin afterwards and never re-writes a task's stored
+   * `goalRun` preference. A run that consequently does not execute native
+   * /goal is marked as such (its acceptance applicability is `goal-disabled`)
+   * and is never reported as a passed goal acceptance or failed for lacking a
+   * completion call. Independent of `goalVerification`; acceptance governs the
+   * completing call of a goal-form run, this switch governs whether the run
+   * becomes a goal run.
+   */
+  goalRunEnabled?: Volatile<boolean>
+  /**
    * Goal acceptance for executions this board starts (default ON). When on,
    * update_goal(action: complete) inside a task execution is refused until an
    * acceptance pass is recorded for that execution: the three coding criteria,
@@ -191,6 +207,8 @@ export interface ConfigInput {
   sessionPollSeconds?: number
   /** Continuable-subagent provider the Agent Teams service composes a teammate from. */
   teamProvider?: string
+  /** Global native /goal switch; default off, frozen per execution. */
+  goalRunEnabled?: boolean
   /** Goal acceptance switch. */
   goalVerification?: boolean
   /** Judge model route for goal acceptance; blank inherits the host default. */
@@ -213,6 +231,7 @@ export const Config: z<ConfigInput, Config> = z.object({
   maxSubtaskDepth: z.number().min(SUBTASK_DEPTH_MIN).max(SUBTASK_DEPTH_MAX).default(DEFAULT_SUBTASK_DEPTH).volatile(),
   sessionPollSeconds: z.number().min(SESSION_POLL_MIN_SECONDS).max(SESSION_POLL_MAX_SECONDS).default(DEFAULT_SESSION_POLL_SECONDS).volatile(),
   teamProvider: z.string().min(1).default(DEFAULT_TEAM_PROVIDER),
+  goalRunEnabled: z.boolean().default(false).volatile(),
   goalVerification: z.boolean().default(true).volatile(),
   goalVerificationModel: z.string().default('').volatile(),
   goalVerificationReasoningEffort: z.string().default('').volatile(),
@@ -222,6 +241,13 @@ export const Config: z<ConfigInput, Config> = z.object({
 
 /** Schema default for the goal-acceptance switch, re-read for hand-built contexts. */
 export const DEFAULT_GOAL_VERIFICATION = true
+
+/**
+ * Schema default for the GLOBAL native-/goal switch, re-read for hand-built
+ * contexts. Deliberately false: a deployment that never configured it (and
+ * every card written before the option existed) runs plain single turns.
+ */
+export const DEFAULT_GOAL_RUN = false
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -497,10 +523,17 @@ function applyImpl(ctx: Context, config?: Config): void {
     const runner = hostForCatalog?.runner
     return runner === undefined ? undefined : normalizeCatalog(await runner.modelCatalog())
   }
+  /**
+   * Live reader of the GLOBAL native-/goal switch. The service calls it exactly
+   * once per execution and carries the value, so a settings edit only reaches
+   * executions that start afterwards.
+   */
+  const goalRunEnabled = (): boolean => readConfigField(config?.goalRunEnabled, DEFAULT_GOAL_RUN)
   const host = new TaskBoardHostService(ctx.typertGateway, {
     workspaceRegistry: ctx.workspaceRegistry,
     sessionDefaultPermission,
     maxSubtaskDepth: maxSubtaskDepth(),
+    goalRunEnabled,
     verificationSettings,
     verificationCatalog,
     timers: resolveHostTimers(ctx),

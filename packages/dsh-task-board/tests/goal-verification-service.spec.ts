@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { HostTaskLedger } from '../src/host-ledger.ts'
 import { NEVER_INVOKED_VERIFICATION_REASON, NO_MATCHING_PASS_VERIFICATION_REASON, TaskBoardHostService } from '../src/host-service.ts'
 import { PowerInhibitor } from '../src/power-inhibitor.ts'
-import { resolveContract, type ModelCatalogView, type VerificationSettings } from '../src/core/verification.ts'
+import { passedAttempt, resolveContract, type ModelCatalogView, type VerificationSettings } from '../src/core/verification.ts'
 
 const NOW = 1_700_000_000_000
 const roots: string[] = []
@@ -119,6 +119,8 @@ interface Harness {
   commandResult: CommandResultLike
   /** The Host clock the test can advance (the scheduler fires on it). */
   clock: { value: number }
+  /** Flip the LIVE global native-/goal switch mid-scenario. */
+  setGoalRunEnabled: (enabled: boolean) => void
 }
 
 /** Build the real service over a gateway double. */
@@ -127,6 +129,13 @@ function harness(overrides: {
   catalog?: ModelCatalogView
   commandResult?: CommandResultLike
   now?: () => number
+  /**
+   * The GLOBAL native-/goal switch this deployment serves. Defaults to ON in
+   * this spec because its subject is the ACCEPTANCE layer, which only exists on
+   * a goal run; the switch's own default and its per-execution freeze are the
+   * subject of `goal-run.spec.ts` and the run-behavior cases here.
+   */
+  goalRunEnabled?: boolean
 } = {}): Harness {
   const clock = { value: overrides.now === undefined ? NOW : overrides.now() }
   const now = (): number => clock.value
@@ -136,6 +145,8 @@ function harness(overrides: {
   const goals = { phase: 'none' }
   const turn = { reason: 'completed' }
   const commandResult: CommandResultLike = overrides.commandResult ?? { kind: 'success' }
+  /** The live global switch; a test may flip it to prove per-execution freezing. */
+  const goalRun = { enabled: overrides.goalRunEnabled ?? true }
   const timer = timers()
   let created = 0
   const gateway = {
@@ -182,9 +193,13 @@ function harness(overrides: {
     commandDispatcher: { execute: async () => commandResult },
     verificationSettings: () => settings,
     verificationCatalog: async () => overrides.catalog ?? catalog(),
+    goalRunEnabled: () => goalRun.enabled,
   })
   service.start()
-  return { service, ledger, settings, timer, goals, turn, commandResult, clock }
+  return {
+    service, ledger, settings, timer, goals, turn, commandResult, clock,
+    setGoalRunEnabled: (enabled: boolean) => { goalRun.enabled = enabled },
+  }
 }
 
 /** Seed one plain task. */
@@ -277,7 +292,7 @@ describe('goal acceptance at execution start', () => {
   })
 
   it('user whose task pins a single plain turn sees no enforcement', async () => {
-    // Given: a card opted out of goal form
+    // Given: a card opted out of goal form while the GLOBAL switch is on
     const h = harness()
     seed(h.ledger, { id: 'task-a', goalRun: false })
 
@@ -287,6 +302,46 @@ describe('goal acceptance at execution start', () => {
 
     // Then: the run never becomes a goal run, and acceptance does not govern it.
     expect(executionOf(h).verification?.applicability).toBe('goal-unavailable')
+  })
+
+  it('user leaving the GLOBAL native /goal switch off sees the execution marked as not goal-verified, neither passed nor failed', async () => {
+    // Given: the global switch at its default (off) with acceptance on
+    const h = harness({ goalRunEnabled: false })
+    seed(h.ledger)
+
+    // When: the user runs the card
+    h.service.apply('run-1', { kind: 'run', taskId: 'task-a' })
+    await settleMicrotasks()
+
+    // Then: the run is a plain single turn, and its OWN reason says the global
+    // switch withheld the goal — never the "goal-unavailable" reason of a
+    // refused command, and never as accepted.
+    const execution = executionOf(h)
+    expect(execution.verification?.applicability).toBe('goal-disabled')
+    expect(execution.verification?.failedReason).toBeUndefined()
+    expect(passedAttempt(execution.verification)).toBeUndefined()
+  })
+
+  it('operator turning the GLOBAL switch off while a run is in flight sees that run keep its frozen goal contract', async () => {
+    // Given: a run started with the switch ON
+    const h = harness({ goalRunEnabled: true })
+    seed(h.ledger)
+    h.service.apply('run-1', { kind: 'run', taskId: 'task-a' })
+    await settleMicrotasks()
+    expect(executionOf(h).verification?.applicability).toBe('enforced')
+
+    // When: the live switch is turned OFF after the execution started
+    h.setGoalRunEnabled(false)
+
+    // Then: the in-flight execution keeps what it froze; only a LATER execution
+    // observes the change. The first run is settled first, exactly as a real
+    // card must be before it can run again.
+    expect(executionOf(h).verification?.applicability).toBe('enforced')
+    h.turn.reason = 'completed'
+    h.ledger.settle('task-a', executionOf(h).id, 'failed', 'settled for the frozen-contract check')
+    h.service.apply('run-2', { kind: 'rerun', taskId: 'task-a' })
+    await settleMicrotasks()
+    expect(executionOf(h).verification?.applicability).toBe('goal-disabled')
   })
 
   it('user whose deployment refuses /goal sees the execution record that acceptance could not be enforced', async () => {

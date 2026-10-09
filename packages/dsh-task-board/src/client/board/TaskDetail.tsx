@@ -82,7 +82,7 @@ function ExecutionRow({ execution, timeZone, onOpen }: { execution: ExecutionRec
 }
 
 /** The execution-target editor: workspace / mode / permission pickers. */
-function ExecutionSettingsSection({ controller, task, pending, executionOptions, teamRunAvailable }: {
+function ExecutionSettingsSection({ controller, task, pending, executionOptions, teamRunAvailable, goalRunEnabled }: {
   controller: BoardController
   task: TaskRecord
   pending: boolean
@@ -90,6 +90,12 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
   executionOptions: ControllerSnapshot['executionOptions']
   /** Whether this deployment serves the Agent Teams service. */
   teamRunAvailable: boolean
+  /**
+   * Live GLOBAL native-/goal switch. While it is off, the task-level option is
+   * DISABLED with an explanation but its stored value is left exactly as it is,
+   * so turning the global switch back on restores the user's own preference.
+   */
+  goalRunEnabled: boolean
 }) {
   const options = executionOptions
   const workspaceId = task.workspaceId ?? ''
@@ -183,12 +189,16 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
         <input
           type="checkbox"
           checked={task.goalRun !== false}
-          disabled={pending}
+          // Disabled while the global switch is off: the stored preference is
+          // never rewritten from here, only its effect is withheld until the
+          // master switch is turned back on.
+          disabled={pending || !goalRunEnabled}
           onChange={event => { controller.updateTask(task.id, { goalRun: event.target.checked }) }}
         />
         <span>{t('exec.goalRun')}</span>
       </label>
       <p className={css.detailText}>{t('exec.goalRunHint')}</p>
+      {!goalRunEnabled && <p className={css.detailText}>{t('settings.goalRunGlobalDisabledTaskOption')}</p>}
       <label className={css.scheduleToggle}>
         <input
           type="checkbox"
@@ -801,6 +811,7 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
                 pending={pending}
                 executionOptions={snapshot.executionOptions}
                 teamRunAvailable={snapshot.host?.teamRunAvailable === true}
+                goalRunEnabled={snapshot.host?.goalRunEnabled === true}
               />
               <ScheduleSection controller={controller} task={current} pending={pending} />
             </>

@@ -8,6 +8,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NewTaskModal } from '../src/client/board/NewTaskModal.tsx'
+import { resolveHostTimeZone } from '../src/core/schedule.ts'
 import { openFormSection } from './form-sections.ts'
 import { t } from '../src/client/locales.ts'
 import { parseZonedInput } from '../src/client/schedule-zone.ts'
@@ -27,7 +28,7 @@ afterEach(() => {
 /** The Host-confirmed task; the modal only reads its id back. */
 const created = { id: 'task-new' } as TaskRecord
 
-function renderModal(options: { started?: boolean } = {}): {
+function renderModal(options: { started?: boolean; goalRunEnabled?: boolean } = {}): {
   container: HTMLElement
   createTaskConfirmed: ReturnType<typeof vi.fn>
   runTask: ReturnType<typeof vi.fn>
@@ -41,6 +42,16 @@ function renderModal(options: { started?: boolean } = {}): {
     selectedTaskId: undefined,
     executionOptions: { workspaces: [], presets: [], models: [] },
     pendingTaskIds: [],
+    // The master native-/goal switch is on: these cases exercise the
+    // task-level option, which the global default (off) would disable. The host
+    // zone matches the runtime's own, so the schedule plan is read in the same
+    // zone the production client resolves.
+    host: {
+      revision: 1,
+      scheduler: { timeZone: resolveHostTimeZone() },
+      power: { platform: 'linux', phase: 'unsupported', enabled: false, runningSessions: 0, armedSchedules: 0, sessionStateKnown: true },
+      goalRunEnabled: options.goalRunEnabled ?? true,
+    },
   }
   const createTaskConfirmed = vi.fn(async () => created)
   const runTask = vi.fn(async () => options.started ?? true)
@@ -149,6 +160,34 @@ describe('new-task "create and run" (#1621)', () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     })
     expect((createTaskConfirmed.mock.calls[0]![0] as { goalRun?: boolean }).goalRun).toBe(false)
+  })
+
+  it('user with the GLOBAL native /goal switch off sees the new-task option disabled and explained', () => {
+    // Given an open new-task modal while the master switch is off
+    const { container } = renderModal({ goalRunEnabled: false })
+
+    // When the user reads the run-mode region
+    const checkbox = goalCheckbox(container)
+
+    // Then the option is disabled, the explanation names the master switch, and
+    // the state it holds is untouched (it is still the default, on).
+    expect(checkbox.disabled).toBe(true)
+    expect(checkbox.checked).toBe(true)
+    expect(container.textContent).toContain(t('settings.goalRunGlobalDisabledTaskOption'))
+  })
+
+  it('user reading the collapsed run summary with the GLOBAL switch off is told this card will run a plain turn', () => {
+    // Given a new-task modal whose master switch is off
+    const { container } = renderModal({ goalRunEnabled: false })
+
+    // When the run region stays collapsed
+    const header = [...container.querySelectorAll('button')]
+      .find(node => node.textContent?.includes(t('new.section.run')))!
+
+    // Then its summary reports a single round rather than the stored default,
+    // because that is what this card will actually do.
+    expect(header.textContent).toContain(t('new.summary.singleRound'))
+    expect(header.textContent).not.toContain(t('new.summary.multiRound'))
   })
 })
 

@@ -212,7 +212,7 @@ describe('handover bundle: runner override and prompt preamble', () => {
     const runnerWithPermission = new HostExecutionRunner(gateway, {
       execute: async (_sessionId, line) => { dispatched.push(line); return { kind: 'success', text: 'ok' } as const },
     })
-    await runnerWithPermission.launch(task)
+    await runnerWithPermission.launch(task, { goalEnabled: true })
     expect(dispatched[0]).toBe('/permission danger-full-access')
     // The default goal run arms /goal with the same composed prompt (preamble
     // included), so the objective the agent continues toward is what it read.

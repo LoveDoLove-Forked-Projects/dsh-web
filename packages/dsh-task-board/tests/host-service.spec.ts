@@ -916,6 +916,9 @@ describe('TaskBoardHostService poll heartbeat', () => {
       ledger,
       power: new PowerInhibitor({ platform: 'linux' }),
       now: () => now,
+      // The native-/goal master switch is on: this case asserts that every
+      // member of a cascade arms its own goal.
+      goalRunEnabled: () => true,
       commandDispatcher: {
         execute: async (_sessionId, line) => { permissions.push(line); return { kind: 'success', text: 'ok' } as const },
       },

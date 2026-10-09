@@ -6892,6 +6892,7 @@ window.__ModuleLoader__.load({
 				const sessionDefaultPermission = snapshot.sessionDefaultPermission ?? this.hostState?.sessionDefaultPermission;
 				const maxSubtaskDepth = snapshot.maxSubtaskDepth ?? this.hostState?.maxSubtaskDepth;
 				const teamRunAvailable = snapshot.teamRunAvailable ?? this.hostState?.teamRunAvailable;
+				const goalRunEnabled = snapshot.goalRunEnabled ?? this.hostState?.goalRunEnabled;
 				const extensions = snapshot.extensions ?? this.hostState?.extensions;
 				return {
 					revision: snapshot.revision,
@@ -6900,6 +6901,7 @@ window.__ModuleLoader__.load({
 					...sessionDefaultPermission === void 0 ? {} : { sessionDefaultPermission },
 					...maxSubtaskDepth === void 0 ? {} : { maxSubtaskDepth },
 					...teamRunAvailable === void 0 ? {} : { teamRunAvailable },
+					...goalRunEnabled === void 0 ? {} : { goalRunEnabled },
 					...extensions === void 0 ? {} : { extensions }
 				};
 			}
@@ -7223,6 +7225,19 @@ window.__ModuleLoader__.load({
 		function exceptionAttempts(verification) {
 			return verification === void 0 ? [] : verification.attempts.filter((attempt) => attempt.stage === "exception");
 		}
+		/**
+		* Invalid acceptances spent by this cycle: a veto whose required evidence was
+		* missing, unlocatable, or aimed at the empty-work baseline. They are NOT
+		* quality verdicts, so they never close the cycle and never fail the card; the
+		* bound is what keeps an evidence-free judge from re-running forever.
+		*/
+		function invalidAttempts(verification) {
+			return verification === void 0 ? [] : verification.attempts.filter((attempt) => attempt.stage === "invalid");
+		}
+		/** Whether this cycle still has invalid-acceptance budget left. */
+		function hasInvalidBudget(verification) {
+			return invalidAttempts(verification).length < 2;
+		}
 		/** The quality attempt that passed, when one did. */
 		function passedAttempt(verification) {
 			return qualityAttempts(verification).find((attempt) => attempt.passed);
@@ -7238,7 +7253,7 @@ window.__ModuleLoader__.load({
 			if (verification.failedReason !== void 0) return "failed";
 			if (passedAttempt(verification) !== void 0) return "passed";
 			if (verification.inFlight === true) return "verifying";
-			if (qualityAttempts(verification).length === 0) return "executing";
+			if (qualityAttempts(verification).length === 0) return hasInvalidBudget(verification) ? "executing" : "invalid";
 			return hasQualityBudget(verification) ? "repairing" : "failed";
 		}
 		/** Whether an unknown value carries every field a persisted attempt needs. */
@@ -7246,7 +7261,7 @@ window.__ModuleLoader__.load({
 			if (typeof value !== "object" || value === null) return void 0;
 			const row = value;
 			if (typeof row.index !== "number" || typeof row.at !== "number") return void 0;
-			if (row.stage !== "quality" && row.stage !== "exception" && row.stage !== "budget") return void 0;
+			if (row.stage !== "quality" && row.stage !== "exception" && row.stage !== "budget" && row.stage !== "invalid") return void 0;
 			if (typeof row.passed !== "boolean") return void 0;
 			if (typeof row.score !== "number" || !Number.isFinite(row.score)) return void 0;
 			if (typeof row.baseline !== "number" || !Number.isFinite(row.baseline)) return void 0;
@@ -7282,6 +7297,14 @@ window.__ModuleLoader__.load({
 			if (typeof routeRow.provider !== "string" || typeof routeRow.model !== "string") return void 0;
 			if (routeRow.reasoningEffort !== void 0 && typeof routeRow.reasoningEffort !== "string") return void 0;
 			const findings = Array.isArray(row.findings) ? row.findings.filter((item) => typeof item === "string") : [];
+			const criterionFindings = [];
+			if (Array.isArray(row.criterionFindings)) for (const entry of row.criterionFindings) {
+				const finding = readCriterionFinding(entry);
+				if (finding === void 0) return void 0;
+				criterionFindings.push(finding);
+			}
+			const invalidReason = row.invalidReason;
+			if (invalidReason !== void 0 && invalidReason !== "missing-finding" && invalidReason !== "unlocatable-quote" && invalidReason !== "baseline-finding" && invalidReason !== "vacuous-finding" && invalidReason !== "insufficient-evidence") return void 0;
 			return {
 				index: row.index,
 				at: row.at,
@@ -7314,7 +7337,33 @@ window.__ModuleLoader__.load({
 				},
 				channel: "explicit-tag",
 				rounds: typeof row.rounds === "number" ? row.rounds : 2,
-				...typeof row.error === "string" ? { error: row.error } : {}
+				...typeof row.error === "string" ? { error: row.error } : {},
+				...criterionFindings.length === 0 ? {} : { criterionFindings },
+				...typeof invalidReason === "string" ? { invalidReason } : {}
+			};
+		}
+		/**
+		* Repair one persisted structured finding, or undefined when it is unusable.
+		* A malformed finding drops the WHOLE acceptance block (fail closed): a
+		* persisted veto that cannot be read back could otherwise be counted as
+		* evidence it no longer holds.
+		*/
+		function readCriterionFinding(value) {
+			if (typeof value !== "object" || value === null) return void 0;
+			const row = value;
+			if (typeof row.criterionId !== "string" || row.criterionId === "") return void 0;
+			if (typeof row.requirement !== "string" || typeof row.observation !== "string" || typeof row.gap !== "string") return void 0;
+			if (typeof row.quote !== "string") return void 0;
+			const location = row.location;
+			if (location !== "task" && location !== "trajectory" && location !== "workspace" && location !== "baseline" && location !== "unknown") return void 0;
+			return {
+				criterionId: row.criterionId,
+				requirement: row.requirement,
+				observation: row.observation,
+				gap: row.gap,
+				quote: row.quote,
+				location,
+				...typeof row.action === "string" ? { action: row.action } : {}
 			};
 		}
 		/**
@@ -7362,7 +7411,7 @@ window.__ModuleLoader__.load({
 				};
 			}
 			const applicability = row.applicability;
-			if (applicability !== "enforced" && applicability !== "disabled" && applicability !== "skipped" && applicability !== "goal-unavailable" && applicability !== "team-member") return void 0;
+			if (applicability !== "enforced" && applicability !== "disabled" && applicability !== "skipped" && applicability !== "goal-unavailable" && applicability !== "team-member" && applicability !== "goal-disabled") return void 0;
 			const attempts = [];
 			if (!Array.isArray(row.attempts)) return void 0;
 			for (const entry of row.attempts) {
@@ -7371,6 +7420,8 @@ window.__ModuleLoader__.load({
 				attempts.push(attempt);
 			}
 			if (typeof row.failedReason === "string" && row.failedReason === "") return void 0;
+			const cleanup = readCleanupRecord(row.cleanup);
+			if (row.cleanup !== void 0 && cleanup === void 0) return void 0;
 			return {
 				contract: {
 					enabled: contractRow.enabled,
@@ -7385,7 +7436,98 @@ window.__ModuleLoader__.load({
 				...row.inFlight === true ? { inFlight: true } : {},
 				applicability,
 				...typeof row.failedReason === "string" ? { failedReason: row.failedReason } : {},
-				...typeof row.failedAt === "number" && Number.isFinite(row.failedAt) ? { failedAt: row.failedAt } : {}
+				...typeof row.failedAt === "number" && Number.isFinite(row.failedAt) ? { failedAt: row.failedAt } : {},
+				...cleanup === void 0 ? {} : { cleanup }
+			};
+		}
+		/**
+		* Repair the persisted cleanup record, or undefined when it is unusable. The
+		* record is the audit trail the UI reads to tell "the judge gave its evidence
+		* and it was cleaned up" apart from "the judge produced no evidence at all",
+		* so a malformed one drops the whole block (fail closed).
+		*/
+		function readCleanupRecord(value) {
+			if (typeof value !== "object" || value === null) return void 0;
+			const row = value;
+			if (row.state !== "pending" && row.state !== "cleaned" && row.state !== "failed") return void 0;
+			if (typeof row.attempts !== "number" || !Number.isInteger(row.attempts) || row.attempts < 0) return void 0;
+			if (typeof row.startedAt !== "number" || !Number.isFinite(row.startedAt)) return void 0;
+			if (row.cleanedAt !== void 0 && (typeof row.cleanedAt !== "number" || !Number.isFinite(row.cleanedAt))) return void 0;
+			if (row.lastError !== void 0 && typeof row.lastError !== "string") return void 0;
+			if (!Array.isArray(row.audit)) return void 0;
+			const audit = [];
+			for (const entry of row.audit) {
+				const parsed = readAuditRecord(entry);
+				if (parsed === void 0) return void 0;
+				audit.push(parsed);
+			}
+			return {
+				state: row.state,
+				attempts: row.attempts,
+				startedAt: row.startedAt,
+				...typeof row.cleanedAt === "number" ? { cleanedAt: row.cleanedAt } : {},
+				...typeof row.lastError === "string" ? { lastError: row.lastError } : {},
+				audit
+			};
+		}
+		/** Repair one persisted audit credential, or undefined when it is unusable. */
+		function readAuditRecord(value) {
+			if (typeof value !== "object" || value === null) return void 0;
+			const row = value;
+			if (row.stage !== "quality" && row.stage !== "exception" && row.stage !== "budget" && row.stage !== "invalid") return void 0;
+			if (typeof row.passed !== "boolean") return void 0;
+			if (typeof row.at !== "number" || !Number.isFinite(row.at)) return void 0;
+			if (typeof row.score !== "number" || !Number.isFinite(row.score)) return void 0;
+			if (typeof row.baseline !== "number" || !Number.isFinite(row.baseline)) return void 0;
+			if (!Array.isArray(row.criteria)) return void 0;
+			const criteria = [];
+			for (const entry of row.criteria) {
+				if (typeof entry !== "object" || entry === null) return void 0;
+				const criterion = entry;
+				if (typeof criterion.id !== "string" || typeof criterion.name !== "string") return void 0;
+				if (typeof criterion.score !== "number" || !Number.isFinite(criterion.score)) return void 0;
+				if (typeof criterion.baseline !== "number" || !Number.isFinite(criterion.baseline)) return void 0;
+				if (typeof criterion.threshold !== "number" || !Number.isFinite(criterion.threshold)) return void 0;
+				criteria.push({
+					id: criterion.id,
+					name: criterion.name,
+					score: criterion.score,
+					baseline: criterion.baseline,
+					threshold: criterion.threshold,
+					passed: criterion.passed === true
+				});
+			}
+			if (typeof row.evidenceHash !== "string") return void 0;
+			const route = row.route;
+			if (typeof route !== "object" || route === null) return void 0;
+			const routeRow = route;
+			if (typeof routeRow.provider !== "string" || typeof routeRow.model !== "string") return void 0;
+			const usage = row.usage;
+			if (typeof usage !== "object" || usage === null) return void 0;
+			const usageRow = usage;
+			if (typeof usageRow.calls !== "number" || typeof usageRow.inputTokens !== "number" || typeof usageRow.outputTokens !== "number" || typeof usageRow.reasoningTokens !== "number") return void 0;
+			return {
+				stage: row.stage,
+				passed: row.passed,
+				at: row.at,
+				score: row.score,
+				baseline: row.baseline,
+				criteria,
+				evidenceHash: row.evidenceHash,
+				route: {
+					provider: routeRow.provider,
+					model: routeRow.model,
+					...typeof routeRow.reasoningEffort === "string" ? { reasoningEffort: routeRow.reasoningEffort } : {}
+				},
+				...typeof row.error === "string" ? { error: row.error } : {},
+				...typeof row.findingSummary === "string" ? { findingSummary: row.findingSummary } : {},
+				usage: {
+					calls: usageRow.calls,
+					inputTokens: usageRow.inputTokens,
+					outputTokens: usageRow.outputTokens,
+					reasoningTokens: usageRow.reasoningTokens,
+					...usageRow.usageIncomplete === true ? { usageIncomplete: true } : {}
+				}
 			};
 		}
 		/** Sum the attempts of one execution. */
@@ -7393,6 +7535,7 @@ window.__ModuleLoader__.load({
 			const totals = {
 				quality: 0,
 				exceptions: 0,
+				invalid: 0,
 				calls: 0,
 				inputTokens: 0,
 				outputTokens: 0,
@@ -7402,6 +7545,7 @@ window.__ModuleLoader__.load({
 			if (verification === void 0) return totals;
 			for (const attempt of verification.attempts) {
 				if (attempt.stage === "quality") totals.quality += 1;
+				else if (attempt.stage === "invalid") totals.invalid += 1;
 				else totals.exceptions += 1;
 				totals.calls += attempt.usage.calls;
 				totals.inputTokens += attempt.usage.inputTokens;
@@ -8069,6 +8213,11 @@ window.__ModuleLoader__.load({
 			"settings.maxSubtaskDepth": "子任务深度上限",
 			"settings.maxSubtaskDepthHint": "默认 1：一个任务只允许一层子任务，子任务不能再创建或关联子任务。最大 3。执行父任务会并发执行它的整棵子任务树，层级越深，一次执行开启的会话越多。",
 			"settings.maxSubtaskDepthOption": "{depth} 层",
+			"settings.runBehaviorTitle": "运行行为",
+			"settings.runBehaviorCardHint": "全局原生 /goal 执行开关（总开关，默认关闭）。",
+			"settings.goalRunGlobal": "全局启用 DSH 原生 /goal 执行",
+			"settings.goalRunGlobalHint": "默认关闭。关闭时所有任务都按普通单回合执行，不调用 dsh 内置的 /goal；只有这里开启、且任务级「以 /goal 开始执行」未被关闭时，才执行原生 /goal。开关按执行启动时冻结，只影响之后新开的执行。",
+			"settings.goalRunGlobalDisabledTaskOption": "全局「原生 /goal 执行」总开关已关闭：任务级选项暂不生效，也不会被改写；开启总开关后恢复你原有的任务级偏好。本次执行按普通单回合进行，未执行 goal 验收。",
 			"settings.goalVerificationTitle": "任务验收",
 			"settings.goalVerification": "启用任务验收",
 			"settings.goalVerificationCardHint": "验收开关、裁判模型与判据阈值。",
@@ -8098,6 +8247,7 @@ window.__ModuleLoader__.load({
 			"running.repairing": "验收未通过修复中",
 			"running.verificationPassed": "验收通过",
 			"running.verificationFailed": "验收未通过",
+			"running.verificationInvalid": "验收无效，等待处理",
 			"verify.title": "验收报告",
 			"verify.status.passed": "通过",
 			"verify.status.failed": "未通过",
@@ -8105,6 +8255,33 @@ window.__ModuleLoader__.load({
 			"verify.status.verifying": "验收中",
 			"verify.status.pending": "待验收",
 			"verify.status.off": "本次执行未启用验收",
+			"verify.status.invalid": "验收无效",
+			"verify.status.invalidHeld": "验收无效，等待人工处理",
+			"verify.attemptInvalid": "第 {index} 次验收无效",
+			"verify.invalidReason.missing-finding": "未达标的判据没有对应的结构化问题反馈",
+			"verify.invalidReason.unlocatable-quote": "问题反馈引用的位置不存在于本次裁判所见的证据中",
+			"verify.invalidReason.baseline-finding": "问题反馈指向空工作基线，而不是本次执行的工作",
+			"verify.invalidReason.vacuous-finding": "问题反馈为空或空泛评价，没有说明实际观测与差异",
+			"verify.invalidReason.insufficient-evidence": "裁判看到的证据不足（例如轨迹被截断），无法支撑否决",
+			"verify.invalidReason.unknown": "未产生可用的质量判定",
+			"verify.invalidCounts": "有效质量判定 {quality}/{max} · 无效验收 {invalid}/{maxInvalid} · 验收异常 {exceptions}/{max}",
+			"verify.invalidDetail": "无效原因：{reason}",
+			"verify.criterionFindings": "结构化问题反馈（判据 · 引用位置 · 实际引用）",
+			"verify.criterionFinding": "{criterion} · {location}：“{quote}”",
+			"verify.criterionFindingFull": "{criterion} · {location}：“{quote}” 要求：{requirement} 观测：{observation} 差异：{gap}",
+			"verify.location.task": "任务要求",
+			"verify.location.trajectory": "执行轨迹",
+			"verify.location.workspace": "宿主记录的变更",
+			"verify.location.baseline": "空工作基线（不构成否决证据）",
+			"verify.location.unknown": "未标明位置",
+			"verify.cleanup.cleaned": "本次执行的验收专用详细材料已在通过并成功结算后自动清理；以下为保留的轻量审计凭据。",
+			"verify.cleanup.pending": "验收专用详细材料待清理（将通过并结算后启动）。",
+			"verify.cleanup.failed": "验收详细材料清理失败（已重试 {attempts} 次）：{error}；通过记录仍然有效，宿主重启后会补清。",
+			"verify.cleanup.audit": "保留凭据：第 {index} 次 · {stage} · 分数 {score} · 证据哈希 {hash}",
+			"verify.cleanup.stage.quality": "质量判定",
+			"verify.cleanup.stage.invalid": "无效验收",
+			"verify.cleanup.stage.exception": "验收异常",
+			"verify.cleanup.stage.budget": "时间预算耗尽",
 			"verify.summary": "总分 {score}（阈值 {threshold}）· 空工作基线 {baseline}",
 			"verify.criteria": "逐项判据",
 			"verify.criterion": "{name}：{score}（阈值 {threshold}）",
@@ -8126,6 +8303,7 @@ window.__ModuleLoader__.load({
 			"verify.applicability.goalUnavailable": "本次执行未成为 goal 执行（/goal 被拒绝或不可用），验收未强制执行。",
 			"verify.applicability.skipped": "该任务卡勾选了「跳过验收」，本次执行未经验收判定。",
 			"verify.applicability.teamMember": "团队执行成员：由 Lead 的团队汇总证据统一验收。",
+			"verify.applicability.goalDisabled": "本次执行启动时全局「原生 /goal 执行」总开关关闭，按普通单回合执行：本次未执行 goal 验收，既不算已验收通过，也不因此判失败。",
 			"verify.effortFallback": "推理强度回退：{requested} → {resolved}",
 			"verify.thresholdValue": "{value}%",
 			"detail.parent": "父任务",
@@ -8458,6 +8636,11 @@ window.__ModuleLoader__.load({
 			"settings.maxSubtaskDepth": "Subtask depth limit",
 			"settings.maxSubtaskDepthHint": "Default 1: a task may carry one level of subtasks, and a subtask cannot create or link further subtasks. Maximum 3. Running a task also runs its whole subtask tree concurrently, and every extra level opens more sessions per run.",
 			"settings.maxSubtaskDepthOption": "{depth} levels",
+			"settings.runBehaviorTitle": "Run behavior",
+			"settings.runBehaviorCardHint": "The global native /goal switch (master control, off by default).",
+			"settings.goalRunGlobal": "Global: run tasks with dsh native /goal",
+			"settings.goalRunGlobalHint": "Off by default. While off, every task runs one plain turn and never calls dsh built-in /goal; a run uses native /goal only when this is on AND the task-level option is not turned off (see the task option below). The switch is frozen when an execution starts, so it only affects runs opened afterwards.",
+			"settings.goalRunGlobalDisabledTaskOption": "The global native /goal switch is off: the task-level option has no effect right now and is never rewritten; turning the global switch back on restores your per-task preference. This execution runs one plain turn and performs no goal acceptance.",
 			"settings.goalVerificationTitle": "Task acceptance",
 			"settings.goalVerification": "Enable task acceptance",
 			"settings.goalVerificationCardHint": "The switch, the judge model and the criteria threshold.",
@@ -8487,6 +8670,7 @@ window.__ModuleLoader__.load({
 			"running.repairing": "Fixing a failed acceptance",
 			"running.verificationPassed": "Acceptance passed",
 			"running.verificationFailed": "Acceptance failed",
+			"running.verificationInvalid": "Invalid acceptance, waiting for a human",
 			"verify.title": "Acceptance report",
 			"verify.status.passed": "Passed",
 			"verify.status.failed": "Failed",
@@ -8494,6 +8678,33 @@ window.__ModuleLoader__.load({
 			"verify.status.verifying": "Verifying",
 			"verify.status.pending": "Not yet verified",
 			"verify.status.off": "Acceptance was off for this execution",
+			"verify.status.invalid": "Invalid acceptance",
+			"verify.status.invalidHeld": "Invalid acceptance, waiting for a human",
+			"verify.attemptInvalid": "Invalid acceptance {index}",
+			"verify.invalidReason.missing-finding": "A failing criterion carries no structured finding of its own",
+			"verify.invalidReason.unlocatable-quote": "A finding cites a passage that is not in the evidence the judge saw",
+			"verify.invalidReason.baseline-finding": "A finding points at the empty-work baseline instead of this execution's work",
+			"verify.invalidReason.vacuous-finding": "A finding is empty or a generic evaluation with no observation or difference",
+			"verify.invalidReason.insufficient-evidence": "The judge saw too little evidence (for example a truncated trace) to support a veto",
+			"verify.invalidReason.unknown": "No usable quality verdict was produced",
+			"verify.invalidCounts": "Valid quality verdicts {quality}/{max} · invalid acceptances {invalid}/{maxInvalid} · anomalies {exceptions}/{max}",
+			"verify.invalidDetail": "Invalid because: {reason}",
+			"verify.criterionFindings": "Structured findings (criterion · cited location · verbatim citation)",
+			"verify.criterionFinding": "{criterion} · {location}: \"{quote}\"",
+			"verify.criterionFindingFull": "{criterion} · {location}: \"{quote}\" requirement: {requirement} observed: {observation} gap: {gap}",
+			"verify.location.task": "task statement",
+			"verify.location.trajectory": "execution trajectory",
+			"verify.location.workspace": "host-recorded changes",
+			"verify.location.baseline": "empty-work baseline (not evidence against the work)",
+			"verify.location.unknown": "location not named",
+			"verify.cleanup.cleaned": "The acceptance-only detail of this execution was cleaned up automatically after it passed and settled; what remains is the lightweight audit credential.",
+			"verify.cleanup.pending": "The acceptance-only detail is pending cleanup (started once the execution passes and settles).",
+			"verify.cleanup.failed": "Cleaning the acceptance detail failed after {attempts} attempts: {error}. The pass record is still valid and the host retries on its next start.",
+			"verify.cleanup.audit": "Kept credential: attempt {index} · {stage} · score {score} · evidence hash {hash}",
+			"verify.cleanup.stage.quality": "quality verdict",
+			"verify.cleanup.stage.invalid": "invalid acceptance",
+			"verify.cleanup.stage.exception": "acceptance anomaly",
+			"verify.cleanup.stage.budget": "time budget exhausted",
 			"verify.summary": "Total {score} (threshold {threshold}) · empty-work baseline {baseline}",
 			"verify.criteria": "Per-criterion scores",
 			"verify.criterion": "{name}: {score} (threshold {threshold})",
@@ -8515,6 +8726,7 @@ window.__ModuleLoader__.load({
 			"verify.applicability.goalUnavailable": "This execution never became a goal run (/goal was refused or unavailable), so acceptance was not enforced.",
 			"verify.applicability.skipped": "This card checked Skip acceptance, so the execution was never judged.",
 			"verify.applicability.teamMember": "Team member: the Lead team-summary evidence is accepted as one execution.",
+			"verify.applicability.goalDisabled": "The global native /goal switch was off when this execution started, so it ran one plain turn: no goal acceptance was performed, which neither counts as a pass nor fails the run.",
 			"verify.effortFallback": "Reasoning effort fallback: {requested} → {resolved}",
 			"verify.thresholdValue": "{value}%",
 			"detail.parent": "Parent task",
@@ -9677,7 +9889,8 @@ window.__ModuleLoader__.load({
 			verifying: "running.verifying",
 			repairing: "running.repairing",
 			passed: "running.verificationPassed",
-			failed: "running.verificationFailed"
+			failed: "running.verificationFailed",
+			invalid: "running.verificationInvalid"
 		};
 		/**
 		* The acceptance label for one open execution, or undefined when acceptance
@@ -11986,6 +12199,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [error, setError] = (0, react.useState)(void 0);
 			const [pending, setPending] = (0, react.useState)(false);
 			const [options, setOptions] = (0, react.useState)(controller.getSnapshot().executionOptions);
+			const [goalRunEnabled, setGoalRunEnabled] = (0, react.useState)(controller.getSnapshot().host?.goalRunEnabled === true);
 			const [canParse] = (0, react.useState)(controller.getSnapshot().canParseTask === true);
 			const [parseText, setParseText] = (0, react.useState)("");
 			const [parseModel, setParseModel] = (0, react.useState)(() => readParseModelPreference());
@@ -11996,7 +12210,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const workspaceKnown = workspaceId === "" || options.workspaces.some((item) => item.workspaceId === workspaceId);
 			const modeKnown = mode === "" || options.presets.some((item) => item.id === mode);
 			const modelKnown = model === "" || parseModels.some((item) => item.id === model);
-			(0, react.useEffect)(() => controller.subscribe(() => setOptions(controller.getSnapshot().executionOptions)), [controller]);
+			(0, react.useEffect)(() => controller.subscribe(() => {
+				const snapshot = controller.getSnapshot();
+				setOptions(snapshot.executionOptions);
+				setGoalRunEnabled(snapshot.host?.goalRunEnabled === true);
+			}), [controller]);
 			(0, react.useEffect)(() => {
 				if (parseModel === "" || parseModels.length === 0) return;
 				if (parseModels.some((option) => option.id === parseModel)) return;
@@ -12136,7 +12354,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			].join(" · ");
 			const tagCount = cleanTags(tags).length;
 			const labelsSummary = tagCount === 0 ? t$5("new.summary.none") : t$5("new.summary.labelCount", { count: String(tagCount) });
-			const runSummary = [goalRun ? t$5("new.summary.multiRound") : t$5("new.summary.singleRound"), ...reuseSession ? [t$5("exec.reuseSession")] : []].join(" · ");
+			const runSummary = [goalRun && goalRunEnabled ? t$5("new.summary.multiRound") : t$5("new.summary.singleRound"), ...reuseSession ? [t$5("exec.reuseSession")] : []].join(" · ");
 			const handoverSummary = freezeText.trim() !== "" || handoverText.trim() !== "" ? t$5("new.summary.filled") : t$5("new.summary.none");
 			const scheduleSummary = !scheduleEnabled ? t$5("new.summary.scheduleOff") : scheduleMode === "once" ? `${t$5("detail.schedule.mode.once")} · ${scheduleAt.replace("T", " ")}` : scheduleCron.trim() === "" ? t$5("new.summary.none") : [scheduleCron.trim(), ...scheduleMaxRunsChoice === "unlimited" ? [] : [t$5("detail.schedule.maxRunsValue", { count: scheduleMaxRunsChoice === "custom" ? scheduleMaxRunsText : scheduleMaxRunsChoice })]].join(" · ");
 			const parseSummary = parseText.trim() === "" ? t$5("new.summary.none") : t$5("new.summary.filled");
@@ -12420,6 +12638,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 									type: "checkbox",
 									checked: goalRun,
+									disabled: !goalRunEnabled,
 									onChange: (event) => {
 										setGoalRun(event.target.checked);
 									}
@@ -12428,6 +12647,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 								className: board_module_css_default.detailText,
 								children: t$5("exec.goalRunHint")
+							}),
+							!goalRunEnabled && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: board_module_css_default.detailText,
+								children: t$5("settings.goalRunGlobalDisabledTaskOption")
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 								className: board_module_css_default.scheduleToggle,
@@ -13154,11 +13377,39 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			verifying: "verify.status.verifying",
 			repairing: "verify.status.failed",
 			passed: "verify.status.passed",
-			failed: "verify.status.failed"
+			failed: "verify.status.failed",
+			invalid: "verify.status.invalidHeld"
 		};
-		/** One recorded attempt: a quality verdict, an anomaly, or a budget stop. */
+		/** Evidence location → locale key, for one structured finding's citation. */
+		const LOCATION_KEY = {
+			task: "verify.location.task",
+			trajectory: "verify.location.trajectory",
+			workspace: "verify.location.workspace",
+			baseline: "verify.location.baseline",
+			unknown: "verify.location.unknown"
+		};
+		/** Invalid reason → locale key. */
+		function invalidReasonKey(attempt) {
+			switch (attempt.invalidReason) {
+				case "missing-finding": return "verify.invalidReason.missing-finding";
+				case "unlocatable-quote": return "verify.invalidReason.unlocatable-quote";
+				case "baseline-finding": return "verify.invalidReason.baseline-finding";
+				case "vacuous-finding": return "verify.invalidReason.vacuous-finding";
+				case "insufficient-evidence": return "verify.invalidReason.insufficient-evidence";
+				default: return "verify.invalidReason.unknown";
+			}
+		}
+		/** Audit stage → locale key (the lightweight credential after cleanup). */
+		const AUDIT_STAGE_KEY = {
+			quality: "verify.cleanup.stage.quality",
+			invalid: "verify.cleanup.stage.invalid",
+			exception: "verify.cleanup.stage.exception",
+			budget: "verify.cleanup.stage.budget"
+		};
+		/** One recorded attempt: a quality verdict, an invalid veto, an anomaly, or a budget stop. */
 		function AttemptRow({ attempt }) {
-			const exception = attempt.stage !== "quality";
+			const invalid = attempt.stage === "invalid";
+			const exception = attempt.stage !== "quality" && !invalid;
 			const result = exception ? "failed" : attempt.passed ? "succeeded" : "failed";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
 				className: board_module_css_default.executionRow,
@@ -13167,16 +13418,20 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionBadge,
 						"data-result": result,
-						children: exception ? t$5("verify.status.exception") : attempt.passed ? t$5("verify.status.passed") : t$5("verify.status.failed")
+						children: invalid ? t$5("verify.status.invalid") : exception ? t$5("verify.status.exception") : attempt.passed ? t$5("verify.status.passed") : t$5("verify.status.failed")
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: board_module_css_default.executionTimes,
 						children: [
-							exception ? t$5("verify.attemptException", { index: String(attempt.index) }) : t$5("verify.attempt", { index: String(attempt.index) }),
+							invalid ? t$5("verify.attemptInvalid", { index: String(attempt.index) }) : exception ? t$5("verify.attemptException", { index: String(attempt.index) }) : t$5("verify.attempt", { index: String(attempt.index) }),
 							" · ",
 							routeLabel(attempt),
-							!exception && " · " + t$5("verify.rounds", { rounds: String(attempt.rounds) })
+							!exception && !invalid && " · " + t$5("verify.rounds", { rounds: String(attempt.rounds) })
 						]
+					}),
+					invalid && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: board_module_css_default.executionTimes,
+						children: t$5("verify.invalidDetail", { reason: t$5(invalidReasonKey(attempt)) })
 					}),
 					attempt.error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionTimes,
@@ -13207,6 +13462,23 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							}, criterion.id))
 						})
 					] }),
+					(attempt.criterionFindings ?? []).length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: board_module_css_default.executionTimes,
+						children: t$5("verify.criterionFindings")
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+						className: board_module_css_default.executionList,
+						children: (attempt.criterionFindings ?? []).map((finding, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", {
+							className: board_module_css_default.executionTimes,
+							children: t$5("verify.criterionFindingFull", {
+								criterion: finding.criterionId,
+								location: t$5(LOCATION_KEY[finding.location]),
+								quote: finding.quote,
+								requirement: finding.requirement,
+								observation: finding.observation,
+								gap: finding.gap
+							})
+						}, findingKey(attempt, index)))
+					})] }),
 					attempt.findings.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionTimes,
 						children: t$5("verify.findings")
@@ -13217,7 +13489,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							children: finding
 						}, findingKey(attempt, index)))
 					})] }),
-					!exception && attempt.findings.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					!exception && !invalid && attempt.findings.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionTimes,
 						children: t$5("verify.noFindings")
 					}),
@@ -13255,7 +13527,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			if (phase === "off" && verification.contract.enabled === false && verification.applicability !== "skipped") return null;
 			const totals = verificationTotals(verification);
 			const route = verification.contract.route;
-			const applicabilityKey = verification.applicability === "disabled" ? "verify.applicability.disabled" : verification.applicability === "skipped" ? "verify.applicability.skipped" : verification.applicability === "goal-unavailable" ? "verify.applicability.goalUnavailable" : verification.applicability === "team-member" ? "verify.applicability.teamMember" : void 0;
+			const applicabilityKey = verification.applicability === "disabled" ? "verify.applicability.disabled" : verification.applicability === "skipped" ? "verify.applicability.skipped" : verification.applicability === "goal-unavailable" ? "verify.applicability.goalUnavailable" : verification.applicability === "goal-disabled" ? "verify.applicability.goalDisabled" : verification.applicability === "team-member" ? "verify.applicability.teamMember" : void 0;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: board_module_css_default.executionTimes,
 				children: [
@@ -13270,9 +13542,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionTimes,
-						children: t$5("verify.counts", {
+						children: t$5("verify.invalidCounts", {
 							quality: String(qualityAttempts(verification).length),
 							max: String(2),
+							invalid: String(invalidAttempts(verification).length),
+							maxInvalid: String(2),
 							exceptions: String(exceptionAttempts(verification).length)
 						})
 					}),
@@ -13310,9 +13584,40 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					verification.attempts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
 						className: board_module_css_default.executionList,
 						children: [...verification.attempts].reverse().map((attempt) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttemptRow, { attempt }, attempt.at.toString(36) + "-" + attempt.stage + "-" + String(attempt.index)))
-					})
+					}),
+					verification.cleanup !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CleanupNotice, { cleanup: verification.cleanup })
 				]
 			});
+		}
+		/**
+		* Retention notice of one execution's acceptance detail.
+		*
+		* It exists so a reader never mistakes a cleaned-up report for a judge that
+		* produced no evidence: the notice says the detail WAS produced and was removed
+		* by the automatic cleanup, and lists the lightweight credential that survives.
+		* A pending or failed cleanup is reported the same way — never as a missing
+		* verdict and never as a revoked pass.
+		*/
+		function CleanupNotice({ cleanup }) {
+			const key = cleanup.state === "cleaned" ? "verify.cleanup.cleaned" : cleanup.state === "failed" ? "verify.cleanup.failed" : "verify.cleanup.pending";
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+				className: board_module_css_default.executionTimes,
+				children: cleanup.state === "failed" ? t$5(key, {
+					attempts: String(cleanup.attempts),
+					error: cleanup.lastError ?? ""
+				}) : t$5(key)
+			}), cleanup.audit.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+				className: board_module_css_default.executionList,
+				children: cleanup.audit.map((record, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+					className: board_module_css_default.executionTimes,
+					children: [t$5("verify.cleanup.audit", {
+						index: String(index + 1),
+						stage: t$5(AUDIT_STAGE_KEY[record.stage]),
+						score: percent(record.score),
+						hash: record.evidenceHash.slice(0, 12)
+					}), record.findingSummary === void 0 ? "" : " · " + record.findingSummary]
+				}, record.at.toString(36) + "-" + record.stage + "-" + String(index)))
+			})] });
 		}
 		//#endregion
 		//#region ../dsh-task-board/src/client/board/ClampedMarkdown.tsx
@@ -13434,7 +13739,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			});
 		}
 		/** The execution-target editor: workspace / mode / permission pickers. */
-		function ExecutionSettingsSection({ controller, task, pending, executionOptions, teamRunAvailable }) {
+		function ExecutionSettingsSection({ controller, task, pending, executionOptions, teamRunAvailable, goalRunEnabled }) {
 			const options = executionOptions;
 			const workspaceId = task.workspaceId ?? "";
 			const mode = task.mode ?? "";
@@ -13581,7 +13886,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 							type: "checkbox",
 							checked: task.goalRun !== false,
-							disabled: pending,
+							disabled: pending || !goalRunEnabled,
 							onChange: (event) => {
 								controller.updateTask(task.id, { goalRun: event.target.checked });
 							}
@@ -13590,6 +13895,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: board_module_css_default.detailText,
 						children: t$5("exec.goalRunHint")
+					}),
+					!goalRunEnabled && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.detailText,
+						children: t$5("settings.goalRunGlobalDisabledTaskOption")
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 						className: board_module_css_default.scheduleToggle,
@@ -14360,7 +14669,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 										task: current,
 										pending,
 										executionOptions: snapshot.executionOptions,
-										teamRunAvailable: snapshot.host?.teamRunAvailable === true
+										teamRunAvailable: snapshot.host?.teamRunAvailable === true,
+										goalRunEnabled: snapshot.host?.goalRunEnabled === true
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ScheduleSection, {
 										controller,
 										task: current,
@@ -16110,6 +16420,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					booleanField$3("preventIdleSleep"),
 					subtaskDepthField(),
 					sessionPollField(),
+					booleanField$3("goalRunEnabled"),
 					booleanField$3("goalVerification"),
 					judgeModelField(),
 					judgeEffortField()
@@ -16124,6 +16435,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					preventIdleSleep: this.form.field("preventIdleSleep"),
 					maxSubtaskDepth: this.form.field("maxSubtaskDepth"),
 					sessionPollSeconds: this.form.field("sessionPollSeconds"),
+					goalRunEnabled: this.form.field("goalRunEnabled"),
 					goalVerification: this.form.field("goalVerification"),
 					goalVerificationModel: this.form.field("goalVerificationModel"),
 					goalVerificationReasoningEffort: this.form.field("goalVerificationReasoningEffort")
@@ -16359,6 +16671,32 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									}
 								})
 							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(PluginSettingsCard$3, {
+							t,
+							titleKey: "settings.runBehaviorTitle",
+							descriptionKey: "settings.runBehaviorCardHint",
+							defaultOpen: false,
+							hideFooter: true,
+							state: nestedShell,
+							onSave: props.save,
+							onDiscard: props.discard,
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField$3, {
+								id: "settings-task-board-goal-run",
+								label: t("settings.goalRunGlobal"),
+								hint: t("settings.goalRunGlobalHint"),
+								inheritLabel: t("settings.inherit"),
+								onLabel: t("settings.on"),
+								offLabel: t("settings.off"),
+								...fieldProps,
+								...state.goalRunEnabled,
+								onEdit: (text) => {
+									props.edit("goalRunEnabled", text);
+								},
+								onReset: () => {
+									props.resetField("goalRunEnabled");
+								}
+							})
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(PluginSettingsCard$3, {
 							t,

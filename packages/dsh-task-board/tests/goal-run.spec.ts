@@ -147,14 +147,15 @@ describe('goalObjective', () => {
 
 describe('goal run arming', () => {
   it('user running a card queues the instruction before the goal is armed', async () => {
-    // Given a card that never touched the goal option, and a board with commands
+    // Given a card that never touched the goal option, the GLOBAL native-/goal
+    // switch ON, and a board with commands
     const order: string[] = []
     const promptPayloads: unknown[] = []
     const commands = { execute: vi.fn(async (_sessionId: string, line: string) => { order.push('command:' + goalLine(line)); return { kind: 'success' as const } }) }
     const gateway = launchGateway(order, promptPayloads)
 
     // When the card runs
-    await expect(new HostExecutionRunner(gateway, commands).launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'))).resolves.toBe('session-a')
+    await expect(new HostExecutionRunner(gateway, commands).launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), { goalEnabled: true })).resolves.toBe('session-a')
 
     // Then the instruction turn is queued first and the goal extends it
     expect(order).toEqual(['create', 'rename', 'prompt', 'command:do work'])
@@ -162,7 +163,8 @@ describe('goal run arming', () => {
   })
 
   it('user running a tagged card arms the goal with the whole composed prompt', async () => {
-    // Given a card whose prompt carries a tag hint, and a run that names a peer
+    // Given a card whose prompt carries a tag hint, a run that names a peer, and
+    // the global switch ON
     const order: string[] = []
     const commands = { execute: vi.fn(async (_sessionId: string, line: string) => { order.push(goalLine(line)); return { kind: 'success' as const } }) }
     const task: TaskRecord = {
@@ -171,7 +173,7 @@ describe('goal run arming', () => {
 
     // When the card runs
     await new HostExecutionRunner(launchGateway(order), commands)
-      .launch(task, { promptContext: { peers: [{ id: 'child', title: 'Child' }] } })
+      .launch(task, { promptContext: { peers: [{ id: 'child', title: 'Child' }] }, goalEnabled: true })
 
     // Then the objective is exactly what the session received
     expect(order.at(-1)).toContain('标签提示')
@@ -180,13 +182,13 @@ describe('goal run arming', () => {
   })
 
   it('user opting out of the goal option gets one plain turn', async () => {
-    // Given a card with the opt-out stored
+    // Given a card with the opt-out stored and the global switch ON
     const order: string[] = []
     const commands = { execute: vi.fn(async () => ({ kind: 'success' as const })) }
     const task: TaskRecord = { ...createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), goalRun: false }
 
     // When the card runs
-    await new HostExecutionRunner(launchGateway(order), commands).launch(task)
+    await new HostExecutionRunner(launchGateway(order), commands).launch(task, { goalEnabled: true })
 
     // Then no command is dispatched at all
     expect(order).toEqual(['create', 'rename', 'prompt'])
@@ -200,7 +202,7 @@ describe('goal run arming', () => {
 
     // When the card runs
     const launched = await new HostExecutionRunner(launchGateway(order), commands)
-      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'))
+      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), { goalEnabled: true })
 
     // Then the session is launched with the prompt and the run survives
     expect(launched).toBe('session-a')
@@ -213,11 +215,61 @@ describe('goal run arming', () => {
 
     // When the card runs
     const launched = await new HostExecutionRunner(launchGateway(order))
-      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'))
+      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), { goalEnabled: true })
 
     // Then the prompt is still queued and the session exists
     expect(launched).toBe('session-a')
     expect(order).toContain('prompt')
+  })
+
+  it('user leaving the GLOBAL native /goal switch at its default gets one plain turn for every card', async () => {
+    // Given a default deployment (no goalEnabled) and a board with commands
+    const order: string[] = []
+    const commands = { execute: vi.fn(async (_sessionId: string, line: string) => { order.push('command:' + goalLine(line)); return { kind: 'success' as const } }) }
+
+    // When a card that never touched its own option runs
+    await new HostExecutionRunner(launchGateway(order), commands)
+      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'))
+
+    // Then no /goal is dispatched: the global switch alone decides, and off is
+    // the default for every deployment that never configured it.
+    expect(order).toEqual(['create', 'rename', 'prompt'])
+    expect(commands.execute).not.toHaveBeenCalled()
+  })
+
+  it('operator running with both switches on sees the goal armed, and turning either off obtains a plain turn', async () => {
+    // Given a board with commands
+    const arm = async (options: { goalEnabled: boolean; goalRun?: boolean }): Promise<string[]> => {
+      const order: string[] = []
+      const commands = { execute: vi.fn(async (_sessionId: string, line: string) => { order.push('command:' + goalLine(line)); return { kind: 'success' as const } }) }
+      const task: TaskRecord = { ...createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), ...(options.goalRun === undefined ? {} : { goalRun: options.goalRun }) }
+      await new HostExecutionRunner(launchGateway(order), commands).launch(task, { goalEnabled: options.goalEnabled })
+      return order
+    }
+
+    // When each of the two-switch combinations runs
+    const both = await arm({ goalEnabled: true })
+    const globalOff = await arm({ goalEnabled: false })
+    const taskOff = await arm({ goalEnabled: true, goalRun: false })
+
+    // Then native /goal runs only when BOTH allow it.
+    expect(both).toContain('command:do work')
+    expect(globalOff).toEqual(['create', 'rename', 'prompt'])
+    expect(taskOff).toEqual(['create', 'rename', 'prompt'])
+  })
+
+  it('user turning the global switch off while a run is in flight sees that run keep its armed goal', async () => {
+    // Given a launch whose global switch was frozen ON when it started
+    const order: string[] = []
+    const commands = { execute: vi.fn(async (_sessionId: string, line: string) => { order.push('command:' + goalLine(line)); return { kind: 'success' as const } }) }
+
+    // When the launch runs with its frozen value
+    await new HostExecutionRunner(launchGateway(order), commands)
+      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), { goalEnabled: true })
+
+    // Then the frozen decision is what ran: nothing re-reads a live setting, so
+    // a later edit can neither disarm this run nor change its contract.
+    expect(order).toContain('command:do work')
   })
 })
 

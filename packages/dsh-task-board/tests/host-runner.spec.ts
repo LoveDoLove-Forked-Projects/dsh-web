@@ -116,7 +116,7 @@ describe('HostExecutionRunner', () => {
         throw new Error('unexpected gateway call')
       }),
     }
-    await expect(new HostExecutionRunner(gateway, commands, workspaceRegistry()).launch(configuredTask())).resolves.toBe('session-a')
+    await expect(new HostExecutionRunner(gateway, commands, workspaceRegistry()).launch(configuredTask(), { goalEnabled: true })).resolves.toBe('session-a')
     // The permission pin precedes the prompt; the /goal arming follows it, so
     // the session's first turn carries the instruction verbatim.
     expect(order).toEqual(['preset', 'create', 'rename', 'permission', 'prompt', 'goal'])
@@ -158,7 +158,7 @@ describe('HostExecutionRunner', () => {
       }),
     }
     await expect(
-      new HostExecutionRunner(gateway, commands, workspaceRegistry()).launch(configuredTask(), { reuseSessionId: 'session-existing' }),
+      new HostExecutionRunner(gateway, commands, workspaceRegistry()).launch(configuredTask(), { reuseSessionId: 'session-existing', goalEnabled: true }),
     ).resolves.toBe('session-existing')
     // The pinned permission is re-asserted on the existing session; no
     // create/rename reaches the gateway at all.

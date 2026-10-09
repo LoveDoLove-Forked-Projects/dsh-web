@@ -86,6 +86,14 @@ export interface TaskBoardSnapshot {
    */
   teamRunAvailable?: boolean
   /**
+   * Live GLOBAL native-/goal switch. The browser uses it to disable the
+   * task-level option (and explain that the global switch must be turned on
+   * first) WITHOUT rewriting anyone's stored per-task preference; the Host
+   * freezes its own read per execution, so this mirror never governs a run in
+   * flight.
+   */
+  goalRunEnabled?: boolean
+  /**
    * Read-only summaries published by running extensions, keyed by extension id.
    * The board forwards them verbatim; it never interprets their shape.
    */

@@ -109,6 +109,12 @@ export interface TaskBoardSettings {
   maxSubtaskDepth?: number
   /** Roster-poll cadence in seconds while the board has work to reconcile. */
   sessionPollSeconds?: number
+  /**
+   * GLOBAL native /goal switch (default off): the master control over whether
+   * this board starts a run with dsh's built-in /goal at all. Frozen per
+   * execution.
+   */
+  goalRunEnabled?: boolean
   /** Goal acceptance for this board's executions (default on). */
   goalVerification?: boolean
   /** Judge model route for goal acceptance; blank inherits the host default. */
@@ -129,6 +135,8 @@ export interface TaskBoardSettingsCardState extends CardShell {
   maxSubtaskDepth: CardFieldState
   /** Roster-poll cadence field. */
   sessionPollSeconds: CardFieldState
+  /** GLOBAL native /goal switch. */
+  goalRunEnabled: CardFieldState
   /** Goal-acceptance switch. */
   goalVerification: CardFieldState
   /** Judge model route field. */
@@ -160,6 +168,7 @@ export class TaskBoardSettingsCardController {
       booleanField('preventIdleSleep'),
       subtaskDepthField(),
       sessionPollField(),
+      booleanField('goalRunEnabled'),
       booleanField('goalVerification'),
       judgeModelField(),
       judgeEffortField(),
@@ -175,6 +184,7 @@ export class TaskBoardSettingsCardController {
       preventIdleSleep: this.form.field('preventIdleSleep'),
       maxSubtaskDepth: this.form.field('maxSubtaskDepth'),
       sessionPollSeconds: this.form.field('sessionPollSeconds'),
+      goalRunEnabled: this.form.field('goalRunEnabled'),
       goalVerification: this.form.field('goalVerification'),
       goalVerificationModel: this.form.field('goalVerificationModel'),
       goalVerificationReasoningEffort: this.form.field('goalVerificationReasoningEffort'),
@@ -394,6 +404,30 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
             {...state.maxSubtaskDepth}
             onEdit={(text) => { props.edit('maxSubtaskDepth', text) }}
             onReset={() => { props.resetField('maxSubtaskDepth') }}
+          />
+        </PluginSettingsCard>
+
+        <PluginSettingsCard
+          t={t}
+          titleKey="settings.runBehaviorTitle"
+          descriptionKey="settings.runBehaviorCardHint"
+          defaultOpen={false}
+          hideFooter
+          state={nestedShell}
+          onSave={props.save}
+          onDiscard={props.discard}
+        >
+          <BooleanField
+            id="settings-task-board-goal-run"
+            label={t('settings.goalRunGlobal')}
+            hint={t('settings.goalRunGlobalHint')}
+            inheritLabel={t('settings.inherit')}
+            onLabel={t('settings.on')}
+            offLabel={t('settings.off')}
+            {...fieldProps}
+            {...state.goalRunEnabled}
+            onEdit={(text) => { props.edit('goalRunEnabled', text) }}
+            onReset={() => { props.resetField('goalRunEnabled') }}
           />
         </PluginSettingsCard>
 

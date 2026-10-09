@@ -23,6 +23,9 @@ export const VERIFICATION_PHASE_KEY: Record<VerificationPhase, TaskBoardKey> = {
   repairing: 'running.repairing',
   passed: 'running.verificationPassed',
   failed: 'running.verificationFailed',
+  // Held for a human: the judge produced no usable veto, so this is NOT the
+  // quality-failure label.
+  invalid: 'running.verificationInvalid',
 }
 
 /**

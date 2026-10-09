@@ -360,7 +360,24 @@ export class HostExecutionRunner {
    * @param options - optional session to continue in.
    * @returns the session id the execution runs in.
    */
-  async launch(task: TaskRecord, options: { reuseSessionId?: string; promptContext?: PromptContext; onSession?: (sessionId: string) => void; onGoalArmed?: (armed: boolean) => void } = {}): Promise<string> {
+  async launch(task: TaskRecord, options: {
+    reuseSessionId?: string
+    promptContext?: PromptContext
+    onSession?: (sessionId: string) => void
+    onGoalArmed?: (armed: boolean) => void
+    /**
+     * GLOBAL native /goal switch, resolved by the caller ONCE per execution and
+     * carried here so the decision is frozen for this launch.
+     *
+     * Frozen deliberately: a settings edit made while the run is in flight must
+     * not arm, disarm or otherwise change the goal/acceptance contract of a run
+     * already running. Absent means off — the default for every deployment that
+     * never touched the switch, including cards written before the option
+     * existed. A plain single turn is what an off switch produces; the task-level
+     * `goalRun` still applies on top of it (both must allow a goal).
+     */
+    goalEnabled?: boolean
+  } = {}): Promise<string> {
     // A handover bundle overrides the legacy pin fields: the bundle is the
     // authoritative execution triplet for a continuation card (issue #5). A
     // card that pins nothing is resolved to the deployment's most recently used
@@ -400,7 +417,7 @@ export class HostExecutionRunner {
         // at the gate without its binding.
         options.onSession?.(reused)
         await this.assertReusedPreset(reused, mode)
-        await this.pinAndPrompt(reused, task, permission, options.promptContext, options.onGoalArmed)
+        await this.pinAndPrompt(reused, task, permission, options.promptContext, options.onGoalArmed, options.goalEnabled === true)
       } catch (error) {
         throw new SessionLaunchError(reused, error)
       }
@@ -414,7 +431,7 @@ export class HostExecutionRunner {
     options.onSession?.(sessionId)
     try {
       await this.invoke('session', 'rename', { sessionId, title: task.title })
-      await this.pinAndPrompt(sessionId, task, permission, options.promptContext, options.onGoalArmed)
+      await this.pinAndPrompt(sessionId, task, permission, options.promptContext, options.onGoalArmed, options.goalEnabled === true)
     } catch (error) {
       throw new SessionLaunchError(sessionId, error)
     }
@@ -460,6 +477,7 @@ export class HostExecutionRunner {
     permission: TaskPermission | undefined,
     context: PromptContext = {},
     onGoalArmed?: (armed: boolean) => void,
+    goalEnabled = false,
   ): Promise<void> {
     if (permission !== undefined) {
       if (this.commands === undefined) throw new Error('permission command dispatcher is unavailable')
@@ -488,7 +506,7 @@ export class HostExecutionRunner {
       mode: 'queue' as const,
       content: [{ type: 'text' as const, text: promptText(task, context) }],
     })
-    const armed = await this.armGoal(sessionId, task, context)
+    const armed = await this.armGoal(sessionId, task, context, goalEnabled)
     onGoalArmed?.(armed)
   }
 
@@ -516,13 +534,23 @@ export class HostExecutionRunner {
    * dsh's goal-round driver keeps starting continuation rounds until the agent
    * marks it complete (see {@link goalVerdict} for how the run settles).
    *
-   * Opt-out: a task whose `goalRun` is an explicit false runs one plain turn.
+   * Two switches gate the arming, and BOTH must allow it:
+   * - the GLOBAL native-/goal switch (`goalEnabled`, default OFF), frozen when
+   *   this execution started; and
+   * - the task's own `goalRun` (absent means on, an explicit false opts out).
+   *
    * A refusal (no command dispatcher, no `/goal` command in this cohort, an
-   * objective the command rejects) is reported and the run continues as that
-   * plain turn: the task was asked to run, and a missing goal mode must not
-   * lose the work.
+   * objective the command rejects) is reported and the run continues as a plain
+   * turn: the task was asked to run, and a missing goal mode must not lose the
+   * work.
+   * @param sessionId - the session to arm in.
+   * @param task - the task being run.
+   * @param context - the run's prompt context.
+   * @param goalEnabled - the GLOBAL switch, frozen for this execution.
+   * @returns whether `/goal` was really armed.
    */
-  private async armGoal(sessionId: ExecutionSessionId, task: TaskRecord, context: PromptContext): Promise<boolean> {
+  private async armGoal(sessionId: ExecutionSessionId, task: TaskRecord, context: PromptContext, goalEnabled: boolean): Promise<boolean> {
+    if (!goalEnabled) return false
     if (task.goalRun === false) return false
     if (this.commands === undefined) {
       console.warn('[dsh-task-board] no command dispatcher is available; task ' + task.id + ' runs without /goal')

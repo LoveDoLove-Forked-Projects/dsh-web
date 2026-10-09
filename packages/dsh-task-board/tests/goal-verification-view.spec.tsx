@@ -177,6 +177,84 @@ describe('goal acceptance view', () => {
     expect(text).toBe('')
   })
 
+  it('user reading an INVALID acceptance row sees why the veto was unusable without reading it as a failure', () => {
+    // Given: an execution whose acceptance produced an invalid verdict, with a
+    // structured finding that is still kept for the human review
+    const base = verification()
+    const block: ExecutionVerification = {
+      ...base,
+      attempts: [{
+        ...base.attempts[0]!,
+        stage: 'invalid',
+        passed: false,
+        invalidReason: 'missing-finding',
+        error: '验收无效：没有可定位的问题',
+        criterionFindings: [{
+          criterionId: 'output_match',
+          requirement: 'the build must emit dist/index.js',
+          observation: 'the artifact is missing',
+          gap: 'the task asked for it and none was produced',
+          quote: 'npm run build exited 0',
+          location: 'trajectory',
+          action: 'rerun the verification command',
+        }],
+      }],
+    }
+
+    // When: the report renders
+    const text = render(<VerificationReport verification={block} />)
+
+    // Then: it names the invalid acceptance and its reason, shows the structured
+    // finding with its location, and never claims the run failed or passed.
+    expect(text).toContain('无效验收')
+    expect(text).toContain('未达标的判据没有对应的结构化问题反馈')
+    expect(text).toContain('执行轨迹')
+    expect(text).toContain('npm run build exited 0')
+    expect(text).toContain('the build must emit dist/index.js')
+    expect(text).not.toContain('判定依据')
+  })
+
+  it('user whose accepted execution was cleaned up sees the audit credential instead of a claim that the judge gave nothing', () => {
+    // Given: a passed, settled execution whose acceptance detail was cleaned
+    const base = verification()
+    const block: ExecutionVerification = {
+      ...base,
+      attempts: [{
+        ...base.attempts[1]!,
+        findings: [],
+        criterionFindings: [],
+      }],
+      cleanup: {
+        state: 'cleaned',
+        attempts: 1,
+        startedAt: 1_700_000_000_400,
+        cleanedAt: 1_700_000_000_500,
+        audit: [{
+          stage: 'quality',
+          passed: true,
+          at: 1_700_000_000_200,
+          score: 0.8,
+          baseline: 0,
+          criteria: base.attempts[1]!.criteria,
+          evidenceHash: 'abc',
+          route: base.attempts[1]!.route,
+          findingSummary: '已移除的可定位问题 1 条',
+          usage: { calls: 6, inputTokens: 120, outputTokens: 25, reasoningTokens: 6 },
+        }],
+      },
+    }
+
+    // When: the report renders
+    const text = render(<VerificationReport verification={block} />)
+
+    // Then: the cleanup is stated as a cleanup, and the kept credential shows
+    // the verdict and the evidence hash the pass is bound to.
+    expect(text).toContain('验收专用详细材料已在通过并成功结算后自动清理')
+    expect(text).toContain('保留凭据')
+    expect(text).toContain('abc')
+    expect(text).toContain('通过')
+  })
+
   it('user whose card skipped acceptance sees a report that says so', () => {
     // Given: an execution whose CARD opted out of the gate
     const block: ExecutionVerification = {
