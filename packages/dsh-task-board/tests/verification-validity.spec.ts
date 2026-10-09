@@ -241,6 +241,35 @@ describe('acceptance validity: a veto must be locatable', () => {
   })
 })
 
+describe('acceptance validity: the live incident this rule was written for', () => {
+  it('operator whose acceptance vetoed a run it could not see is told the acceptance is INVALID, not that the work failed', () => {
+    // The real values the PRE-CHANGE Host recorded for this very session on
+    // 2026-10-09: total 0.7018 (above the threshold) but one criterion
+    // (Output Match) at 0.6316, ZERO findings, and 3,769,011 of 3,849,011
+    // evidence characters omitted. The old code booked that as a quality
+    // verdict and told the agent to repair; it is exactly the evidence-free
+    // veto this rule exists to refuse.
+    const verdict = assessAcceptanceValidity({
+      criteria: [
+        { id: 'specification', name: 'Specification Adherence', score: 0.6842, baseline: 0, threshold: 0.65, passed: true },
+        { id: 'output_match', name: 'Output Match', score: 0.6316, baseline: 0, threshold: 0.65, passed: false },
+        { id: 'error_signals', name: 'Error Signal Detection', score: 0.7895, baseline: 0, threshold: 0.65, passed: true },
+      ],
+      findings: [],
+      evidence: { task: 'the task statement', trajectory: 'a window of the trace', workspace: '' },
+      omittedCharacters: 3_769_011,
+    })
+
+    // Given: that recorded verdict IS the input above
+    // When:  the validity of the veto is assessed
+    // Then: the veto is attributable to the truncated review, so the run is
+    //       held as an invalid acceptance instead of being judged and repaired
+    expect(verdict.valid).toBe(false)
+    expect(verdict.valid ? undefined : verdict.reason).toBe('insufficient-evidence')
+    expect(verdict.valid ? '' : verdict.detail).toContain('truncated')
+  })
+})
+
 describe('acceptance detail: the capacity bound survives a hand-edited ledger', () => {
   /** One persisted block carrying an over-long finding, as a hand edit could leave it. */
   function oversizedBlock() {
