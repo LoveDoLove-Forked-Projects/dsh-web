@@ -33,7 +33,7 @@ import { TaskBoardSettingsCard, TaskBoardSettingsCardController, type TaskBoardS
 import { en, zh, setRuntimeTranslate, type TaskBoardKey } from './locales.ts'
 import { HttpTaskBoardHostTransport } from './host-api.ts'
 import { reportDailyHeartbeat } from './telemetry.ts'
-import { installBoardCard } from './board-card-seat.ts'
+import { installPluginCard } from './plugin-card-seat.ts'
 import { createServedEntryForm } from './settings-entry-form.ts'
 import { TaskBoardClientService } from './service.ts'
 import {
@@ -238,7 +238,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => () => { clientService.detach() }, 'task-board: extension service')
 
   const settingsCard = new TaskBoardSettingsCardController(settingsForm, request => clientService.dispatch(request))
-  installBoardCard(ctx, {
+  installPluginCard(ctx, {
     bundle: '@linxin666/dsh-client-ui-task-board',
     id: 'task-board',
     order: 110,

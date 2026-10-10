@@ -1,6 +1,6 @@
 # Agent Note: Make each package's invariant companion match what it ships
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -21,12 +21,13 @@ The two packages that emit nothing publish a subpath that cannot resolve: a comp
 
 The web profile composes no invariants service (the git-graph companion's header records it), so none of the six loads in this deployment. The surface still matters twice: to compositions that do mount the registry, and as the npm contract each package publishes.
 
-## Proposal
+## Decision
 
-1. Keep the two working companions (`dsh-git-graph`, `dsh-remote-web-ui`) unchanged.
-2. For each of the four packages whose companion cannot work, choose one of two honest states: delete the declaration (remove `src/invariant.ts` where it exists, remove the `./invariant` export, and remove any entry-list line), or make it a real companion with the cordis shape those two use. The stubs' own text — "no assertions, nothing to check at runtime" — argues for deletion in all four.
-3. Fix `scripts/plugin-template` so a scaffolded package cannot start in that state: either scaffold `src/invariant.ts` in the real shape and list it in the tsdown entries, or drop the export block from the template manifest.
-4. Make the shared preset's comment describe what exists: either add the check it names (a script or test asserting that every package declaring `./invariant` emits it) or state the convention without claiming a gate.
+Six of the family packages declared the `./invariant` subpath and four of them could not serve it. Those four declarations are gone: `dsh-i18n` (which never had a source), `dsh-session-id` (which never emitted the file), and `dsh-ssh` and `dsh-task-board` (whose four-line stubs never registered anything). Their `src/invariant.ts` files are deleted and `dsh-ssh` and `dsh-task-board` no longer list the entry in their tsdown configs.
+
+The two working companions stay: `dsh-git-graph` and `dsh-remote-web-ui` keep the cordis shape — `name`, `inject: ['invariants']`, and an `apply` that registers an installer through `ctx.invariants` — and both still emit `lib/invariant.js`.
+
+`scripts/plugin-template` no longer scaffolds the export block, so a new package cannot start in the state `dsh-i18n` was in, and `shared/tsdown.client.ts` no longer claims a package-invariants gate this repository does not implement. `packages/AGENTS.md` states the obligation in its place: a package that declares `./invariant` must publish a companion the registry can load.
 
 ## Context & Efficiency Impact
 
@@ -49,7 +50,7 @@ The gain is that the subpath stops meaning two different things: after the chang
 - **Drop the convention from the repository entirely**, including the two working companions, the template block and the shared-preset comment. Rejected: `dsh-git-graph` and `dsh-remote-web-ui` ship companions the registry can load, and the convention is official; the loss would be the one seam a composition uses to check a family package.
 - **Only fix the template.** Rejected as insufficient: it stops new packages inheriting the defect while leaving the current four exactly as they are.
 
-## Acceptance criteria
+## Testing
 
 - Every package that declares `./invariant` either ships a companion the registry can load — `name`, `inject: ['invariants']`, an `apply` that registers an installer, and `lib/invariant.js` in its build output — or does not declare the subpath.
 - A package scaffolded by `scripts/plugin-new` starts in one of those two states, and the template's README and AGENTS text describe what it builds.

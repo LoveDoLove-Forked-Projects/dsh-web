@@ -76,13 +76,6 @@ const MANIFEST = [
     targets: SETTINGS_ENTRY_FORM_CONSUMERS.map(pkg => `packages/${pkg}/src/client/settings-entry-form.ts`),
   },
   {
-    file: 'poll-guard.ts',
-    source: 'shared/host/poll-guard.ts',
-    targets: [
-      'packages/dsh-git-graph/src/host/poll-guard.ts',
-    ],
-  },
-  {
     file: 'dsh-home.ts',
     source: 'shared/host/dsh-home.ts',
     targets: [
@@ -99,11 +92,6 @@ const MANIFEST = [
     ],
   },
   {
-    file: 'git-runner.ts',
-    source: 'shared/host/git-runner.ts',
-    targets: ['packages/dsh-git-graph/src/host/git-runner.ts'],
-  },
-  {
     // Tool-surface conventions: the prompt-section order band, the
     // visibility-gated guidance provider, and the per-agent scoped install
     // lifecycle shared by every package that registers model-facing tools.
@@ -113,13 +101,6 @@ const MANIFEST = [
       'packages/dsh-ssh/src/tool-surface.ts',
       'packages/dsh-task-board/src/tool-surface.ts',
       'packages/dsh-task-board-github/src/tool-surface.ts',
-    ],
-  },
-  {
-    file: 'legacy-migration.ts',
-    source: 'shared/host/legacy-migration.ts',
-    targets: [
-      'packages/dsh-plugin-manager/src/host/legacy-migration.ts',
     ],
   },
   {
@@ -158,11 +139,6 @@ const MANIFEST = [
       'packages/dsh-web-settings/src/client/telemetry.ts',
       'packages/dsh-update/src/client/telemetry.ts',
     ],
-  },
-  {
-    file: 'sse-leader.ts',
-    source: 'shared/client/sse-leader.ts',
-    targets: ['packages/dsh-git-graph/src/client/sse-leader.ts'],
   },
   {
     // Main-view Session derivation: the Client Session Controller dropped its

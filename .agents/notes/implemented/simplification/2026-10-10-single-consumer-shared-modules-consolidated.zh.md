@@ -1,6 +1,6 @@
 # Agent Note: 把四个单消费方共享模块合并回各自的消费方
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -26,13 +26,13 @@ Doctor 的移除还留下了四处对已删消费方的描述，如今已与已�
 - `docs/publish-prep.md` 仍把 Doctor 迁移及其受限 `cmd.exe` shim 描述为冻结契约的一部分。
 - `docs/architecture.md` 仍列出一个 `shared/client/` 已不再持有的 `sidebar-entry` 客户端模块，`packages/AGENTS.md` 也仍把 poll-guard 列为家族共享模块。
 
-## Proposal
+## Decision
 
-1. 对这四个模块，各自以消费包内的副本作为该模块唯一的家：删除生成头注释、删除共享源、删除 `scripts/sync-shared.mjs` 中的条目。
-2. 把三份共享 spec 随模块一起搬迁——`shared/tests/poll-guard.spec.ts` 与 `shared/tests/git-runner.spec.ts` 移入 `packages/dsh-git-graph/tests/`，`shared/tests/legacy-migration.spec.ts` 移入 `packages/dsh-plugin-manager/tests/`——并在 `scripts/test-standards-baseline.json` 中改写它们的键。`shared/client/sse-leader.ts` 今天没有 spec，也不新增。
-3. 调整 `scripts/sync-shared.test.mjs` 中钉住的副本数：总数 110 变 106，`/src/client/` 桶 44 变 43，宿主桶 49 变 46；各条目的理由注释去掉不再同步的模块。
-4. 在同一次改动中修复上述四处过时描述，使任何文档都不再声称一个已不再发布的消费方。
-5. 不改任何 import：各消费包继续从同一相对路径导入，因此没有调用点、导出或运行时行为发生迁移。
+这四个模块现在各自只有一个家。`packages/dsh-git-graph/src/host/poll-guard.ts`、`packages/dsh-git-graph/src/host/git-runner.ts`、`packages/dsh-git-graph/src/client/sse-leader.ts` 与 `packages/dsh-plugin-manager/src/host/legacy-migration.ts` 是去掉生成头注释的手写源文件；`shared/host/poll-guard.ts`、`shared/host/git-runner.ts`、`shared/host/legacy-migration.ts` 与 `shared/client/sse-leader.ts` 已删除，`scripts/sync-shared.mjs` 不再持有它们的条目，清单因此是 18 个源，门禁断言 106 份副本（客户端 43、宿主 46）。
+
+三份 spec 随模块搬迁——poll-guard 与 git-runner 进入 `packages/dsh-git-graph/tests/`，legacy-migration 进入 `packages/dsh-plugin-manager/tests/`——相对导入改写为 `../src/host/`，`scripts/test-standards-baseline.json` 中它们的键换成新路径并保留原有计数。没有任何调用点改动导入。
+
+比消费方活得更久的那些描述已修复：模块头注释、双语[旧聚合包自动迁移记录](../feature/2026-08-24-automatic-legacy-aggregate-migration.md)、`docs/publish-prep.md`，以及 `docs/architecture.md` 与 `packages/AGENTS.md` 的共享层段落；后者还写下了本次改动确立的规则：只有一个消费方的模块归该包所有，不进 `shared/`。
 
 ## Context & Efficiency Impact
 
@@ -57,7 +57,7 @@ Doctor 的移除还留下了四处对已删消费方的描述，如今已与已�
 - **把清单条目的 source 直接指向消费方副本，使源与目标同一个文件。** 否决：自我复制是空操作，条目、生成头规则与计数注释都还在，却什么也没有断言。
 - **同时合并其余未同步的重复文件**（四份 `css-modules.d.ts` 变体与四对重复的 `vitest.config.ts`）。暂缓：它们是 5 到 32 行的逐包配置，重复既不影响阅读也不增加维护，为这几行引入一个共享目的地反而是新增机制。
 
-## Acceptance criteria
+## Testing
 
 - `node scripts/sync-shared.mjs --check` 与 `pnpm test:scripts` 按新计数（106 份副本、43 份客户端、46 份宿主）通过，且 `shared/` 不再包含 `host/poll-guard.ts`、`host/git-runner.ts`、`host/legacy-migration.ts` 与 `client/sse-leader.ts`。
 - `shared`、`dsh-git-graph` 与 `dsh-plugin-manager` 的 `pnpm typecheck` 与 `pnpm test` 通过；三份搬迁后的 spec 在新包的 vitest 工程中运行且用例数不变（4、7、3），`pnpm test:standards` 接受改写后的基线键。

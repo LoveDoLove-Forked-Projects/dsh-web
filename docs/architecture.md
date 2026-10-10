@@ -144,15 +144,15 @@ flowchart LR
 
 ## 共享层与同步管线
 
-[shared/](../shared/tsdown.client.ts) 是跨包事实源：构建预设与平台模块表之外，`host/` 提供 dsh-home 解析、mount-once、poll-guard、run-guarded、loopback 等宿主侧模块，`client/` 提供设置卡三件套、侧栏入口、sse-leader 等浏览器侧模块。[scripts/sync-shared.mjs](../scripts/sync-shared.mjs) 把副本生成进各消费包（带 generated 头，禁手改），`test:scripts` 的 drift 门禁防副本漂移。两个包（dsh-market、dsh-web-all）提交 `lib/` 构建产物，卫星仓各自在自己的 CI 里守同样的规则，指纹由 `libs:write` 记录、`libs:check` 把关。
+[shared/](../shared/tsdown.client.ts) 是跨包事实源：构建预设与平台模块表之外，`host/` 提供 dsh-home 解析、mount-once、http、loopback 等宿主侧模块，`client/` 提供设置卡三件套、telemetry、main-session 等浏览器侧模块；只被一个包使用的模块归该包所有，不进 `shared/`。权威清单是 [scripts/sync-shared.mjs](../scripts/sync-shared.mjs) 的 manifest：它把副本生成进各消费包（带 generated 头，禁手改），`test:scripts` 的 drift 门禁防副本漂移。两个包（dsh-market、dsh-web-all）提交 `lib/` 构建产物，卫星仓各自在自己的 CI 里守同样的规则，指纹由 `libs:write` 记录、`libs:check` 把关。
 
 ```mermaid
 flowchart LR
     subgraph sharedbox["shared/（唯一事实源）"]
         PRESET["tsdown.client.ts 构建预设"]
         PLATFORM["web-platform.ts 平台模块表"]
-        HOSTM["host/：dsh-home、mount-once、poll-guard、loopback 等"]
-        CLIENTM["client/：设置卡三件套、sidebar-entry、sse-leader 等"]
+        HOSTM["host/：dsh-home、mount-once、http、loopback 等"]
+        CLIENTM["client/：设置卡三件套、telemetry、main-session 等"]
     end
     sharedbox -- "scripts/sync-shared.mjs 生成副本（generated 头）" --> PKGS["消费包 src/ 内同步副本"]
     GATE["test:scripts drift 门禁"] -.-> PKGS

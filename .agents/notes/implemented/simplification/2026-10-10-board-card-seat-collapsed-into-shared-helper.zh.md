@@ -1,6 +1,6 @@
 # Agent Note: 把看板卡片席位收进共享的插件卡助手
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -12,13 +12,13 @@ Status: proposed
 
 代价不只是重复的行数。由于看板入口从不调用 `installPluginCard`，该包内同步副本自己没有任何调用方，于是家族的席位决策被维护在两处，改一处必须手工对照另一处。
 
-## Proposal
+## Decision
 
-1. 给共享的 `PluginCardSeat` 增加可选的 `children` 字段，并在两个席位注册分支中以助手已用于 `order`、`label`、`inject` 的条件展开形式转发它。
-2. 用 `node scripts/sync-shared.mjs` 重新生成三个消费方副本。
-3. 删除 `packages/dsh-task-board/src/client/board-card-seat.ts`，把 `packages/dsh-task-board/src/client/index.ts` 改为调用 `installPluginCard`，调用点保留同样的 `children` 声明。
-4. 席位选择、重入闩锁、`slots/changed` 对账与拒绝告警完全保持共享助手今天的实现。
-5. 同步刷新席位记录（双语）的事实——助手实际回退到的官方席位键，以及今天共享该决策的三个包——使记录与本次合并所编辑的模块一致。
+共享的 `PluginCardSeat` 增加可选的 `children: Record<string, unknown>` 字段，并以助手已用于 `order`、`label`、`inject` 的条件展开形式在两个席位注册分支转发。`packages/dsh-task-board/src/client/board-card-seat.ts` 已删除，`packages/dsh-task-board/src/client/index.ts` 改为经 `installPluginCard` 注册它的设置卡，并为 `task-board.settings.section` 保留同样的 `children` 声明。
+
+席位选择、重入闩锁、`slots/changed` 对账与拒绝告警都归共享助手，因此家族里"卡片如何选席位"只剩一份实现，而看板包内那份同步副本终于有了调用方。
+
+双语[席位记录](../bug-fix/2026-09-17-family-plugin-card-seat-follows-the-loaded-group.md)已刷新：它写的官方 keyed 席位是 `plugins.bundle.config`（0.1.6-alpha.2 cohort 移除了 `settings.plugin.item`），共享该决策的包就是 manifest 里列出的那三个。
 
 ## Context & Efficiency Impact
 
@@ -44,7 +44,7 @@ Status: proposed
 - **让看板自带席位常量而不使用家族助手。** 否决：席位键与家族组探测是所有家族卡片必须共用的一份决策；逐包复制正是"卡片落进错误席位"的来源。
 - **同时合并看板其余本地席位助手**（settings-entry-form 绑定与 task-board-github 卡片）。暂缓：它们今天没有共享对应物，为它们新建一个反而要加清单条目，是增加义务而不是消除义务。
 
-## Acceptance criteria
+## Testing
 
 - `node scripts/sync-shared.mjs --check` 通过，三份消费方副本都带有可选的 `children` 字段。
 - `packages/dsh-task-board/src/client/board-card-seat.ts` 不再存在，`packages/dsh-task-board/src/client/index.ts` 经 `installPluginCard` 注册卡片，并保留同样的 `children` 声明。

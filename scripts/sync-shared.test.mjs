@@ -39,9 +39,9 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // tool-surface.ts adds three copies in host halves (ssh, task-board,
   // task-board-github); they sit at a package root rather than under
   // src/host/, so the bucket below does not claim them.
-  assert.equal(entries.length, 110)
+  assert.equal(entries.length, 106)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 44)
+  assert.equal(clientTrio.length, 43)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')
@@ -49,7 +49,7 @@ test('copies cover the settings trio for all consumers plus host and http helper
     || entry.target.includes('/src/pair-access.ts')
     || entry.target.includes('/src/agent/')
     || entry.target.endsWith('/packages/dsh-task-board/src/http.ts'))
-  assert.equal(hostCopies.length, 49)
+  assert.equal(hostCopies.length, 46)
 })
 
 test('checkSync detects drift and applySync repairs it', async () => {

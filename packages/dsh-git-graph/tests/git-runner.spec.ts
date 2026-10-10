@@ -3,7 +3,7 @@
  * degrade mode (spawn/run failures become exitCode 127 runs), and throw mode.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { subprocessRunner, type GitRunner, type SubprocessServiceLike } from '../host/git-runner.ts'
+import { subprocessRunner, type GitRunner, type SubprocessServiceLike } from '../src/host/git-runner.ts'
 
 interface FakeHandle {
   done: Promise<{ exitCode: number | null }>

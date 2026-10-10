@@ -136,9 +136,10 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
  * half.
  * @param id - plugin id (package name), stamped into the __ModuleLoader__.load
  * handoff and onto the injected style tags.
- * @param libEntry - node-half entries, spelled at the call site so the
- * package-invariants gate can see `src/invariant.ts` (or the tsc emit path) in
- * each package's own tsdown.config.ts.
+ * @param libEntry - node-half entries, spelled at the call site rather than
+ * derived from the source tree, so each package's own tsdown.config.ts states
+ * exactly what its node half emits, including a `./invariant` companion when
+ * the package ships one.
  * @param options - phase placement, lib overrides, companion Node configs.
  * @returns ENV-selected tsdown config for the current build face.
  */

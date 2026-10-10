@@ -5,7 +5,7 @@ import {
   isLegacyAggregate,
   legacyMigrationFor,
   targetSpecForLegacy,
-} from '../host/legacy-migration.ts'
+} from '../src/host/legacy-migration.ts'
 
 describe('legacy aggregate migration registry', () => {
   it('maps only the known legacy aggregate', () => {

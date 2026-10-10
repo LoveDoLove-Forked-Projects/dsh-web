@@ -17319,40 +17319,33 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				return false;
 			}
 		}
-		//#endregion
-		//#region ../dsh-task-board/src/client/board-card-seat.ts
-		/**
-		* Board-owned variant of the family plugin-card seat that can declare child
-		* slots on the registration.
-		*
-		* The shared `installPluginCard` helper owns seat selection but cannot forward
-		* a `children` declaration, and the task board's settings card declares the
-		* `task-board.settings.section` seat a provider renders into. This wrapper
-		* reuses the shared seat decision (`familyGroupLoaded` and the two seat keys)
-		* and adds the declaration; it should collapse back into the shared helper once
-		* that helper accepts children.
-		*
-		* @module dsh-task-board/client/board-card-seat
-		*/
+		/** Report a refused registration instead of leaving the user with no card. */
 		function warnRefusedSeat$2(seat, error) {
 			try {
 				console.warn(`[dsh-web] plugin card registration into "${seat}" was refused; the card will not render`, error);
 			} catch {}
 		}
 		/**
-		* Contribute the board's settings card to the seat this host renders, declaring
-		* the child slots it owns. Mirrors the shared helper's reconcile discipline: the
-		* entry moves when the family group appears, and is never in two seats at once.
+		* Contribute one family plugin card to the seat this host renders, following
+		* the group if it loads later. The entry is disposed and re-registered on a
+		* seat change, never duplicated.
 		* @param ctx - client context (its slot registry decides the seat).
-		* @param seat - the card contribution and its children declaration.
+		* @param seat - the card contribution.
 		*/
-		function installBoardCard(ctx, seat) {
+		function installPluginCard$2(ctx, seat) {
 			const slots = ctx.slots;
 			const component = seat.component;
 			const inject = seat.inject;
 			let dispose;
 			let current;
+			/**
+			* Re-entrancy latch. The registry emits a change event synchronously from
+			* inside both `register` and the previous entry's disposer, so an unguarded
+			* reconcile would re-enter itself mid-move and register the card twice into
+			* the seat it is leaving ("already has an entry for key ...").
+			*/
 			let reconciling = false;
+			/** Reconcile the contribution with the currently live seat (no-op when unchanged). */
 			const reconcile = () => {
 				if (reconciling) return;
 				const target = familyGroupLoaded$2(ctx) ? FAMILY_PLUGIN_CARD_SEAT$2 : OFFICIAL_PLUGIN_CARD_SEAT$2;
@@ -17369,13 +17362,13 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						...seat.order === void 0 ? {} : { order: seat.order },
 						...seat.label === void 0 ? {} : { label: seat.label },
 						locale: seat.locale,
-						children: seat.children,
+						...seat.children === void 0 ? {} : { children: seat.children },
 						...seat.inject === void 0 ? {} : { inject }
 					} : {
 						name: OFFICIAL_PLUGIN_CARD_SEAT$2,
 						key: seat.bundle,
 						locale: seat.locale,
-						children: seat.children,
+						...seat.children === void 0 ? {} : { children: seat.children },
 						...seat.inject === void 0 ? {} : { inject }
 					}, component);
 					current = target;
@@ -17667,7 +17660,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				clientService.detach();
 			}, "task-board: extension service");
 			const settingsCard = new TaskBoardSettingsCardController(settingsForm, (request) => clientService.dispatch(request));
-			installBoardCard(ctx, {
+			installPluginCard$2(ctx, {
 				bundle: "@linxin666/dsh-client-ui-task-board",
 				id: "task-board",
 				order: 110,
@@ -28298,11 +28291,13 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						...seat.order === void 0 ? {} : { order: seat.order },
 						...seat.label === void 0 ? {} : { label: seat.label },
 						locale: seat.locale,
+						...seat.children === void 0 ? {} : { children: seat.children },
 						...seat.inject === void 0 ? {} : { inject }
 					} : {
 						name: OFFICIAL_PLUGIN_CARD_SEAT$1,
 						key: seat.bundle,
 						locale: seat.locale,
+						...seat.children === void 0 ? {} : { children: seat.children },
 						...seat.inject === void 0 ? {} : { inject }
 					}, component);
 					current = target;
@@ -47911,11 +47906,13 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						...seat.order === void 0 ? {} : { order: seat.order },
 						...seat.label === void 0 ? {} : { label: seat.label },
 						locale: seat.locale,
+						...seat.children === void 0 ? {} : { children: seat.children },
 						...seat.inject === void 0 ? {} : { inject }
 					} : {
 						name: OFFICIAL_PLUGIN_CARD_SEAT,
 						key: seat.bundle,
 						locale: seat.locale,
+						...seat.children === void 0 ? {} : { children: seat.children },
 						...seat.inject === void 0 ? {} : { inject }
 					}, component);
 					current = target;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PollGuard, type PollTimers } from '../host/poll-guard.ts'
+import { PollGuard, type PollTimers } from '../src/host/poll-guard.ts'
 
 /** Deterministic manual clock: set() records the callback+delay, fire() runs it. */
 class FakeTimers implements PollTimers {

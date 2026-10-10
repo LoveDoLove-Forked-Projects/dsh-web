@@ -1,6 +1,6 @@
 # Agent Note: 让每个包的 invariant 伴生模块与它实际发布的内容一致
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -21,12 +21,13 @@ Status: proposed
 
 web profile 不组合任何 invariants 服务（git-graph 伴生模块的文件头已记录这一点），因此这六个在本部署中一个也不会加载。该表面仍然重要，且重要两次：对确实挂载注册表的 composition，以及作为每个包发布的 npm 契约。
 
-## Proposal
+## Decision
 
-1. 两个可用的伴生模块（`dsh-git-graph`、`dsh-remote-web-ui`）保持不动。
-2. 对四个伴生模块无法工作的包，各自在两种诚实状态中选一个：删除声明（有源文件的删掉 `src/invariant.ts`，删掉 `./invariant` 导出，并移除入口清单里的对应行），或按那两个包的形态把它做成真正的伴生模块。空壳自己的文字——"no assertions, nothing to check at runtime"——支持四个都删除。
-3. 修正 `scripts/plugin-template`，使脚手架出来的包不会以该状态起步：要么按真实形态脚手架出 `src/invariant.ts` 并列入 tsdown 入口，要么从模板清单中删掉该导出块。
-4. 让共享预设的注释描述真实存在的东西：要么补上它所命名的那道检查（一个脚本或测试，断言每个声明 `./invariant` 的包都产出了它），要么只陈述约定而不声称存在门禁。
+家族里有六个包声明了 `./invariant` 子路径，其中四个无法提供它。这四处声明已删除：`dsh-i18n`（从来没有源文件）、`dsh-session-id`（从未产出该文件），以及 `dsh-ssh` 与 `dsh-task-board`（四行空壳从不注册任何东西）。它们的 `src/invariant.ts` 已删除，`dsh-ssh` 与 `dsh-task-board` 的 tsdown 入口清单也不再列它。
+
+两个可用的伴生模块保留：`dsh-git-graph` 与 `dsh-remote-web-ui` 保持 cordis 形态——`name`、`inject: ['invariants']`，以及经 `ctx.invariants` 注册安装器的 `apply`——并继续产出 `lib/invariant.js`。
+
+`scripts/plugin-template` 不再脚手架该导出块，新包因此不会再从 `dsh-i18n` 当初的状态起步；`shared/tsdown.client.ts` 也不再声称存在一道本仓没有实现的 package-invariants 门禁。`packages/AGENTS.md` 改为写下这项义务：声明 `./invariant` 的包必须发布注册表能加载的伴生模块。
 
 ## Context & Efficiency Impact
 
@@ -49,7 +50,7 @@ web profile 不组合任何 invariants 服务（git-graph 伴生模块的文件�
 - **把该约定整体从仓库移除**，包括两个可用的伴生模块、模板里的导出块与共享预设的注释。否决：`dsh-git-graph` 与 `dsh-remote-web-ui` 发布的伴生模块注册表确实能加载，且该约定是官方的；损失将是 composition 用来检查家族包的唯一接缝。
 - **只修模板。** 否决（不足以构成修复）：它阻止新包继承缺陷，却把现有四个原样留下。
 
-## Acceptance criteria
+## Testing
 
 - 每个声明 `./invariant` 的包，要么发布注册表能加载的伴生模块——`name`、`inject: ['invariants']`、一个会注册安装器的 `apply`，且构建产物里有 `lib/invariant.js`——要么不声明该子路径。
 - 由 `scripts/plugin-new` 脚手架出的包从上述两种状态之一起步，模板的 README 与 AGENTS 文字描述它实际构建的东西。

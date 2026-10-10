@@ -1,5 +1,5 @@
 # Bilingual-pair consistency record (docs/i18n.md): the git blob hash of each
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with git hash-object.
-2026-10-10-invariant-companion-surface-honest.md: 022752dfbc9271d0897373c80a066a1d8dbf5ea0
-2026-10-10-invariant-companion-surface-honest.zh.md: d9511d007627c59a9af102b0852cd69915375d79
+2026-10-10-invariant-companion-surface-honest.md: 9374d82d4349bb4ac98b182cf41e8ed1eb242bc8
+2026-10-10-invariant-companion-surface-honest.zh.md: 00aa8bad4d7f8cf0efd5edea42cb83aa48f6ae0c

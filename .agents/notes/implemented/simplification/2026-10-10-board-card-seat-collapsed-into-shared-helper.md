@@ -1,6 +1,6 @@
 # Agent Note: Collapse the board card seat into the shared plugin-card helper
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -12,13 +12,13 @@ The seat's own decision record has also drifted from what ships. [The seat note]
 
 The cost is not only the duplicated lines. Because the board's entry never calls `installPluginCard`, the package's synced copy of the helper has no caller of its own, so the family's seat decision is maintained in two places and a fix to one has to be mirrored by hand into the other.
 
-## Proposal
+## Decision
 
-1. Add an optional `children` field to the shared `PluginCardSeat`, then forward it in both registration branches with the conditional-spread form the helper already uses for `order`, `label` and `inject`.
-2. Regenerate the three consumer copies with `node scripts/sync-shared.mjs`.
-3. Delete `packages/dsh-task-board/src/client/board-card-seat.ts` and switch `packages/dsh-task-board/src/client/index.ts` to `installPluginCard`, keeping the same `children` declaration at the call site.
-4. Keep seat selection, the re-entrancy latch, the `slots/changed` reconciliation and the refusal warning exactly as the shared helper implements them today.
-5. Refresh the seat note's facts in both languages — the official seat key the helper falls back to, and the three packages that share the decision today — so the record matches the module the collapse edits.
+The shared `PluginCardSeat` carries an optional `children: Record<string, unknown>` field, forwarded in both registration branches with the same conditional-spread form the helper already uses for `order`, `label` and `inject`. `packages/dsh-task-board/src/client/board-card-seat.ts` is deleted and `packages/dsh-task-board/src/client/index.ts` registers its settings card through `installPluginCard`, keeping the same `children` declaration for `task-board.settings.section`.
+
+Seat selection, the re-entrancy latch, the `slots/changed` reconciliation and the refusal warning are the shared helper's, so the family has one implementation of "how a card picks its seat" and the board's copy of the helper finally has a caller.
+
+[The seat note](../bug-fix/2026-09-17-family-plugin-card-seat-follows-the-loaded-group.md) is refreshed in both languages: the official keyed seat it names is `plugins.bundle.config` (the 0.1.6-alpha.2 cohort removed `settings.plugin.item`), and the packages that share the decision are the three the manifest lists.
 
 ## Context & Efficiency Impact
 
@@ -44,7 +44,7 @@ The gain is one implementation of "how a family card picks its seat" instead of 
 - **Give the board its own seat constants rather than using the family helper.** Rejected: the seat keys and the family-group probe are the one decision every family card must share; a per-package copy is what produces cards that land in the wrong seat.
 - **Also collapse the remaining board-local seat helpers** (the settings-entry-form binding and the task-board-github card). Deferred: those have no shared counterpart today, and creating one would add a manifest entry rather than remove an obligation.
 
-## Acceptance criteria
+## Testing
 
 - `node scripts/sync-shared.mjs --check` passes and the three consumer copies carry the optional `children` field.
 - `packages/dsh-task-board/src/client/board-card-seat.ts` no longer exists, and `packages/dsh-task-board/src/client/index.ts` registers its card through `installPluginCard` with the same `children` declaration.

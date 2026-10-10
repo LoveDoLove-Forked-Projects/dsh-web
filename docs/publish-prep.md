@@ -33,7 +33,7 @@
 
 ## 兼容性边界
 
-所有 `web-ui-*` bundle id、`dsh-web-ui-market`、`/api/dsh-web-ui-settings` 与 `dsh-web-ui-settings-proxy-token` 请求头保持冻结。Doctor 迁移与插件管理器迁移采用共享映射；Doctor 经受限 `cmd.exe` 参数调用 Windows `.cmd` shim。直接执行 `dsh web` 旁路 Doctor 迁移。皮肤中心对当前工坊安装保持来源验证路径，仅当已安装 manifest 与钩子字节匹配审查通过的生成标识时才恢复预置钩子效果；该门禁已随皮肤中心迁至 dsh-skins 仓。创意工坊目录包含声明式 `whalechan-harness` 皮肤（本地 CC BY-NC-SA 4.0 资产，无执行钩子），其细粒度生成类选择器作为明确记录的前端重新构建兼容性边界保留。
+所有 `web-ui-*` bundle id、`dsh-web-ui-market`、`/api/dsh-web-ui-settings` 与 `dsh-web-ui-settings-proxy-token` 请求头保持冻结。旧聚合包迁移由插件管理器的更新路径经共享映射执行。皮肤中心对当前工坊安装保持来源验证路径，仅当已安装 manifest 与钩子字节匹配审查通过的生成标识时才恢复预置钩子效果；该门禁已随皮肤中心迁至 dsh-skins 仓。创意工坊目录包含声明式 `whalechan-harness` 皮肤（本地 CC BY-NC-SA 4.0 资产，无执行钩子），其细粒度生成类选择器作为明确记录的前端重新构建兼容性边界保留。
 
 本版本具有全新安装、单元迁移与 Linux CI 挂载证据。
 

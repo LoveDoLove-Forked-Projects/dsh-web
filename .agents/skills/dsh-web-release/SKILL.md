@@ -38,9 +38,9 @@ whenToUse: Explicit dsh-web release/publish requests; release-pipeline, automati
   `scripts/verify-registry.mjs` 断言每个家族包的 tag 版本都能从 registry 解析
   （带重试预算，覆盖 npm 传播延迟）。开关曾因家族跟踪未上 npm 的
   `@deepseek-ai/*` alpha cohort 而被暂停（决策记录
-  `.agents/notes/implemented/process/2026-08-28-pause-release-npm-publish-unstable-dsh-alpha.md`，
+  `.agents/notes/archived/process/2026-08-28-pause-release-npm-publish-unstable-dsh-alpha.md`，
   恢复记录
-  `.agents/notes/implemented/process/2026-08-30-restore-npm-publish-alpha.2.md`）。
+  `.agents/notes/archived/process/2026-08-30-restore-npm-publish-alpha.2.md`）。
   若将来 cohort 再次无法从 registry 解析，把开关改回 `'false'`，tag 推送即退回
   GitHub-Release-only（此时 mount smoke 的 auto 模式以 workspace 打包的 file:
   tarball 验证本 tag 构建）。
@@ -74,7 +74,7 @@ whenToUse: Explicit dsh-web release/publish requests; release-pipeline, automati
 
 将每个变更归类为：无需迁移的向后兼容、带确定性迁移的兼容变更、或必须阻断自动升级的不兼容变更。带迁移的变更必须满足：目标资源先可用、只有官方写入器修改 profile、旧数据在目标安装并通过启动 / dump-config 预检前不删除、迁移可重复执行、失败能恢复备份、失败后不会留下双挂载 / 重复 row / 半写配置。
 
-当前 `@linxin666/dsh-web-ui-all` → `@linxin666/dsh-web-all` 过渡以 `shared/host/legacy-migration.ts` 和对应 Agent Note 为迁移映射的事实源；只有在过渡窗口仍有效且目标包已从 registry 验证可读时才双发布旧名，窗口结束后停止旧包发布并执行 deprecate，不要无条件重复发布已占用版本，也不要手工改写当前包替代迁移测试。
+当前 `@linxin666/dsh-web-ui-all` → `@linxin666/dsh-web-all` 过渡以 `packages/dsh-plugin-manager/src/host/legacy-migration.ts` 和对应 Agent Note 为迁移映射的事实源；只有在过渡窗口仍有效且目标包已从 registry 验证可读时才双发布旧名，窗口结束后停止旧包发布并执行 deprecate，不要无条件重复发布已占用版本，也不要手工改写当前包替代迁移测试。
 
 ### 0.2 自动升级验证矩阵
 

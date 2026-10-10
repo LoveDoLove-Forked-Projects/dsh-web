@@ -85,6 +85,11 @@ export interface PluginCardSeat {
   label?: () => string
   /** Locale namespace the card renders with. */
   locale: string
+  /**
+   * Child slots this card declares and renders. Forwarded to whichever seat
+   * the host renders; absent for a card that declares none.
+   */
+  children?: Record<string, unknown>
   /** Business-face factory of the registration. */
   inject?: () => object
   /**
@@ -161,12 +166,14 @@ export function installPluginCard(ctx: PluginCardContext, seat: PluginCardSeat):
           ...(seat.order === undefined ? {} : { order: seat.order }),
           ...(seat.label === undefined ? {} : { label: seat.label }),
           locale: seat.locale,
+          ...(seat.children === undefined ? {} : { children: seat.children }),
           ...(seat.inject === undefined ? {} : { inject }),
         }
         : {
           name: OFFICIAL_PLUGIN_CARD_SEAT,
           key: seat.bundle,
           locale: seat.locale,
+          ...(seat.children === undefined ? {} : { children: seat.children }),
           ...(seat.inject === undefined ? {} : { inject }),
         }) as never, component) as () => void
       current = target

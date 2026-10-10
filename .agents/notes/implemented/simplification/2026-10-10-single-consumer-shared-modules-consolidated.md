@@ -1,6 +1,6 @@
 # Agent Note: Consolidate the four single-consumer shared modules into their consumers
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -26,13 +26,13 @@ The Doctor removal also left four descriptions of its deleted consumer behind, w
 - `docs/publish-prep.md` still describes the Doctor migration and its constrained `cmd.exe` shim as part of the frozen contract.
 - `docs/architecture.md` still lists a `sidebar-entry` client module that `shared/client/` no longer carries, and `packages/AGENTS.md` still names poll-guard as a family-shared module.
 
-## Proposal
+## Decision
 
-1. For each of the four modules, keep the consumer package's copy as the module's only home: delete the generated-file header, delete the shared source, and delete the entry in `scripts/sync-shared.mjs`.
-2. Move the three shared specs with their modules — `shared/tests/poll-guard.spec.ts` and `shared/tests/git-runner.spec.ts` into `packages/dsh-git-graph/tests/`, `shared/tests/legacy-migration.spec.ts` into `packages/dsh-plugin-manager/tests/` — and rename their keys in `scripts/test-standards-baseline.json`. `shared/client/sse-leader.ts` has no spec today and gains none.
-3. Retarget the copy counts asserted in `scripts/sync-shared.test.mjs`: 110 copies becomes 106, the `/src/client/` bucket 44 becomes 43, the host bucket 49 becomes 46; the entries' rationale comments drop the modules that are no longer synced.
-4. Repair the four stale descriptions in the same change, so no document claims a consumer that no longer ships.
-5. Change no import: each consumer keeps importing the same relative path, so no call site, export or runtime behavior moves.
+The four modules now have one home each. `packages/dsh-git-graph/src/host/poll-guard.ts`, `packages/dsh-git-graph/src/host/git-runner.ts`, `packages/dsh-git-graph/src/client/sse-leader.ts` and `packages/dsh-plugin-manager/src/host/legacy-migration.ts` are hand-written sources without a generated header; `shared/host/poll-guard.ts`, `shared/host/git-runner.ts`, `shared/host/legacy-migration.ts` and `shared/client/sse-leader.ts` are gone, and `scripts/sync-shared.mjs` no longer carries their entries, so the manifest holds 18 sources and the gate asserts 106 copies (43 client, 46 host).
+
+The three specs moved with their modules — poll-guard and git-runner into `packages/dsh-git-graph/tests/`, legacy-migration into `packages/dsh-plugin-manager/tests/` — their relative imports now read `../src/host/`, and their `scripts/test-standards-baseline.json` entries carry the new paths with the same recorded counts. No import at a call site changed.
+
+The descriptions that outlived their consumer are repaired: the module header, [the legacy aggregate migration note](../feature/2026-08-24-automatic-legacy-aggregate-migration.md) in both languages, `docs/publish-prep.md`, and the shared-layer sections of `docs/architecture.md` and `packages/AGENTS.md`, which now also state the rule this change establishes: a module with one consumer belongs to that package, not to `shared/`.
 
 ## Context & Efficiency Impact
 
@@ -57,7 +57,7 @@ The gain is on the maintenance path. Today an editor of poll-guard, git-runner, 
 - **Point each manifest entry at the consumer copy, so source and target are the same file.** Rejected: a self-copy is a no-op that keeps the entry, the generated-header rule and the count comments while asserting nothing.
 - **Also consolidate the remaining non-synced duplicates** (four `css-modules.d.ts` variants and four duplicated `vitest.config.ts` pairs). Deferred: they are 5 to 32 lines of per-package configuration whose duplication costs nothing to read, and a shared destination would add a mechanism for a handful of lines.
 
-## Acceptance criteria
+## Testing
 
 - `node scripts/sync-shared.mjs --check` and `pnpm test:scripts` pass with the new counts (106 copies, 43 client, 46 host), and `shared/` no longer contains `host/poll-guard.ts`, `host/git-runner.ts`, `host/legacy-migration.ts` or `client/sse-leader.ts`.
 - `pnpm typecheck` and `pnpm test` pass for `shared`, `dsh-git-graph` and `dsh-plugin-manager`; the three moved specs run in their new package's vitest project with the same case counts (4, 7 and 3) and `pnpm test:standards` accepts the renamed baseline keys.
