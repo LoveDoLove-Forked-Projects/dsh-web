@@ -49,6 +49,13 @@ export interface InventorySources {
    * not re-read unchanged files.
    */
   projcacheFiles?: Map<string, ProjcacheFileEntry | null>
+  /**
+   * Optional prebuilt sessions-root index. The service passes one so nearby
+   * passes (a batch request each chunk plus the refresh that follows it) reuse
+   * the same directory walk instead of re-walking an unchanged tree; absent
+   * means this pass walks the tree itself.
+   */
+  dirIndex?: SessionDirIndex
 }
 
 /** Enrichment facts from one per-session projection-cache file. */
@@ -208,7 +215,7 @@ export async function buildInventory(sources: InventorySources, signal: AbortSig
     }
   }
 
-  const dirIndex = indexSessionDirs(join(sources.dshHome, 'sessions'))
+  const dirIndex = sources.dirIndex ?? indexSessionDirs(join(sources.dshHome, 'sessions'))
   for (const id of dirIndex.byId.keys()) add(id).hasDir = true
 
   const projcache = readProjcacheIndex(sources.dshHome)

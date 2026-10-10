@@ -129,3 +129,27 @@ Selection made on a pre-fix page (bare ids) is pruned by the inventory refresh
 (rows are canonical) and the user re-selects. Unit-covered: bare feed ids →
 canonical rows + parent links + archive flags; bare id through the delete
 route cleans the bare archive-set entry; path-unsafe ids still 400.
+
+## Follow-up 3 (same day): one directory walk per user action
+
+**Problem.** Every inventory pass re-walked the whole sessions root to sum each session directory's file sizes (`indexSessionDirs`). On the maintainer's install that walk measured ~12.5 ms per pass over 444 session directories (of which ~11.6 ms is the recursive size sum; `realpath` ~4.2 ms, `stat` ~1.5 ms, `readdir` ~0.7 ms), and every pass also re-read the per-session projection-cache fallback (~28 ms cold over 442 files). One user action triggers several passes: a 442-target batch splits into chunks of 200, each chunk request rebuilds the inventory, and the client reloads the inventory once more afterwards — four passes for one delete. A single row **Preview** rebuilt the full inventory to display one row the panel already held. Measured: four passes 80.3 ms with the walk repeated, 52.2 ms for two.
+
+**Decision.** `InventorySources.dirIndex` accepts a prebuilt index; the service supplies one from `DirIndexCache` (`dir-index-cache.ts`), a one-entry, 2 s TTL memo of the sessions-root scan that the owner invalidates itself after a physical delete removes storage. The pass still walks the tree on its own when no index is supplied, so `buildInventory` keeps its existing contract. Reuse is bounded rather than permanent: the window is short, one scan is always one call away, and nothing polls.
+
+**Measured effect** (444 real session directories; the four-pass sequence one batch delete performs):
+
+| Sequence | Before | After |
+| --- | --- | --- |
+| Four inventory passes (one batch delete) | 80.3 ms | 42.6 ms |
+| Two inventory passes | 52.2 ms | — |
+
+The remaining cost is the projection-cache fallback reads, which `projcacheFiles` already memoizes per id; the directory walk no longer repeats inside the window.
+
+**Alternatives considered.**
+
+- **`readdirSync(path, { withFileTypes: true })` to drop one `stat` per subdirectory**: implemented and benchmarked, and **slower** — 6.93 ms versus 6.60 ms for the same 444 directories. Rejected on measurement.
+- **A permanent directory index**: rejected — sizes and the directory map would go stale after external deletion, and correctness here decides what the delete pipeline is allowed to remove.
+- **Slowing the client's chunking or dropping the post-batch refresh**: rejected — those exist so an interrupted batch lands in a retryable state and the panel reflects it; the redundant work is the repeat walk, not the refresh.
+- **A TTL on the inventory response itself**: rejected as a larger behavioral change (it would also mask concurrent external changes) where the scan reuse removes the measured cost with no wire-visible difference.
+
+**Consequences.** Sizes and the directory map can be up to 2 s behind an external deletion; the service's own deletes invalidate immediately. `preview()` still builds its own inventory and remains a candidate for a later reducer. Verified: 14 package test files / 104 tests pass, typecheck (both programs) and build pass, `test:standards`, `docs:check`, `i18n:check`, `emoji:check` and `sync-shared --check` pass. New coverage `tests/dir-index-cache.spec.ts`, 5 cases: one scan across passes inside the window, a fresh scan once it lapses, explicit invalidation removing deleted storage, a newly added directory discovered after the window, and identical rows whether the pass walks the tree or is handed the index. Negative control: neutering `invalidate()` fails the invalidation case and ignoring the TTL fails two cases. Host-half change; it reaches the GUI only after the user restarts the DSH service.

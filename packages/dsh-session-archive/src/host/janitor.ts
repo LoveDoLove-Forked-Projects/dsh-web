@@ -39,7 +39,8 @@ import {
   type AutoStateDocument,
   type LedgerDocument,
 } from './ledger.ts'
-import { canonicalSessionId, deleteRdbSession, isSessionRdb, rdbDbPaths, removeSessionDir } from './session-files.ts'
+import { DirIndexCache } from './dir-index-cache.ts'
+import { canonicalSessionId, deleteRdbSession, indexSessionDirs, isSessionRdb, rdbDbPaths, removeSessionDir } from './session-files.ts'
 import { dshHome as resolveDshHome } from '../dsh-home.ts'
 import { archiveSession, removeFromWorkspaceRows, unarchiveSessions, unarchiveSeamAvailable } from './workspace-store.ts'
 
@@ -72,6 +73,16 @@ export interface ArchiveServiceOptions {
 const PREVIEW_MESSAGE_CAP = 6
 const PREVIEW_TEXT_CAP = 400
 
+/**
+ * How long one sessions-root directory scan may be reused. The panel loads the
+ * inventory, then issues one batch request per chunk (each rebuilding the
+ * inventory), then refreshes; every one of those passes re-walked the same
+ * unchanged tree. The window covers that burst without letting a scan go stale
+ * enough to matter for the sizes and directory map it supplies, and the
+ * service invalidates the cache itself after a physical delete.
+ */
+const DIR_INDEX_TTL_MS = 2_000
+
 export class ArchiveService {
   private readonly ctx: Context
   private readonly dshHome: string
@@ -83,6 +94,16 @@ export class ArchiveService {
   private config: ResolvedAutoConfig = resolveAutoConfig(undefined)
   /** Per-session projection-cache file facts, memoized across inventory passes. */
   private readonly projcacheFiles = new Map<string, ProjcacheFileEntry | null>()
+  /**
+   * Sessions-root directory index reused across nearby inventory passes. The
+   * scan is the dominant cost of a pass, and one user action triggers several
+   * (a chunk per batch request plus the refresh that follows). Invalidation
+   * after a physical delete keeps the reuse from reporting removed storage.
+   */
+  private readonly dirIndex = new DirIndexCache({
+    ttlMs: DIR_INDEX_TTL_MS,
+    scan: () => indexSessionDirs(join(this.dshHome, 'sessions')),
+  })
 
   private loaded = false
   private disposed = false
@@ -178,6 +199,7 @@ export class ArchiveService {
       dshHome: this.dshHome,
       ledger: this.ledger,
       projcacheFiles: this.projcacheFiles,
+      dirIndex: this.dirIndex.get(),
     }
   }
 
@@ -459,6 +481,10 @@ export class ArchiveService {
         results.set(id, { id, status: 'failed', reason: 'error', detail: error instanceof Error ? error.message.slice(0, 200) : String(error) })
       }
     }
+
+    // The directories this batch removed are gone from here on; a later
+    // inventory pass must re-walk rather than reuse the batch's own scan.
+    if (deleted.size > 0) this.dirIndex.invalidate()
 
     // 4. Projection cache (index entry + per-session file), both spellings.
     await this.scrubProjcache(deleted, built.nativeIds)
