@@ -566,10 +566,16 @@ describe('liangshen-tool-catalog', () => {
     const text = catalogText((await preStep(harness, agent)).messages)
     expect(text).toContain('- `run_code({ code: string, description: string })`')
     expect(text).toContain('<inactive_namespaces>')
-    // 'both' is the one presentation that leaves the registry unrestricted: the
-    // page is on the NATIVE wire only, so the SDK inside a program still reaches
-    // a paged namespace before activation. Only 'ptc' pages the whole surface.
-    expect(text).toContain('Paged-out namespaces below stay off the NATIVE wire but stay reachable through the SDK inside a program even before activation')
+    // 'both' is the one presentation that leaves the registry unrestricted, so
+    // the SDK inside a program still reaches a paged namespace before
+    // activation. Only 'ptc' pages the whole surface. The summary states that
+    // reachability itself instead of leaving it to the program contract, and it
+    // names the wire as the reason rather than claiming a paging exemption.
+    expect(text).toContain('Paged-out namespaces stay off the NATIVE direct-call surface but stay reachable through the SDK inside a program even before activation')
+    expect(text).toContain('the reachability the wire itself carries rather than an exemption paging grants')
+    // The paged summary distinguishes the two code presentations on reachability.
+    expect(text).toContain('Only the direct-call surface is paged here: a program still reaches these namespaces before activation')
+    expect(text).not.toContain('unreachable from inside a program too')
   })
 
   test('stays native and says nothing about run_code without a PTC runtime', async () => {
@@ -754,6 +760,60 @@ describe('liangshen-tool-catalog', () => {
     expect(paged).toContain('<inactive_namespaces>')
     expect(paged).toContain('`tool_activate({ namespace: "github" })`')
     expect(paged).toContain('This is the current on-wire list')
+  })
+
+  test('operator sees the paged summary state its reachability per presentation', () => {
+    // Given one paged-out namespace and the three presentations, When the
+    // operator's catalog renders each of them, Then every presentation names
+    // its own reachability next to the summary, so the model never has to
+    // derive it from the program contract further down.
+    const inactive = [
+      { namespace: 'github', count: 2, sample: 'mcp__github__create_issue', description: 'Create a GitHub issue.' },
+    ]
+    const native = renderCatalogText([], 'native', inactive)
+    const ptc = renderCatalogText([], 'ptc', inactive)
+    const both = renderCatalogText([], 'both', inactive)
+
+    // Each presentation names its own reachability next to the summary.
+    expect(native).toContain('This presentation carries no program transport, so the wire is the only surface these namespaces can be reached through.')
+    expect(ptc).toContain('The page covers the whole surface here, not the wire alone: these namespaces are unreachable from inside a program too until they are activated.')
+    expect(both).toContain('Only the direct-call surface is paged here: a program still reaches these namespaces before activation, and activating one returns its tools to the direct-call surface as well.')
+
+    // The sentences are mutually exclusive: a model in one presentation never
+    // reads another presentation's claim.
+    expect(native).not.toContain('unreachable from inside a program too')
+    expect(native).not.toContain('Only the direct-call surface is paged here')
+    expect(ptc).not.toContain('Only the direct-call surface is paged here')
+    expect(ptc).not.toContain('This presentation carries no program transport')
+    expect(both).not.toContain('unreachable from inside a program too')
+    expect(both).not.toContain('This presentation carries no program transport')
+
+    // Nothing paged means no summary and no reachability sentence at all.
+    expect(renderCatalogText([], 'both')).not.toContain('direct-call surface is paged')
+    expect(renderCatalogText([], 'ptc')).not.toContain('unreachable from inside a program')
+  })
+
+  test('operator sees repeated renders of one tool surface be byte-identical', () => {
+    // Given one tool surface and the three presentations, When the catalog
+    // renders that surface twice and then renders an equal copy of it, Then the
+    // bytes match every time, because the catalog is republished only when its
+    // text changes; the paged summary and the program notes are part of it.
+    const entries = [
+      { name: 'run_code', signature: '({ code: string, description: string })', description: 'Run a program.' },
+      { name: 'bash', signature: '({ command: string })', description: 'Shell.' },
+      { name: 'mcp__github__create_issue', signature: '()', description: 'Issue.', namespace: 'github' },
+    ]
+    const inactive = [
+      { namespace: 'codegraph', count: 1, sample: 'mcp__codegraph__explore', description: 'Explore the graph.' },
+    ]
+    for (const presentation of PRESENTATION_MODES) {
+      const first = renderCatalogText(entries, presentation, inactive)
+      expect(renderCatalogText(entries, presentation, inactive)).toBe(first)
+      // A fresh, equal entry list renders the same bytes too: nothing in the
+      // renderer depends on object identity or iteration order.
+      const copy = entries.map(entry => ({ ...entry }))
+      expect(renderCatalogText(copy, presentation, inactive.map(ns => ({ ...ns })))).toBe(first)
+    }
   })
 
   test('groups activated paged families under their namespace heading', () => {

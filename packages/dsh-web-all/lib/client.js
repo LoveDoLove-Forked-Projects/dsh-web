@@ -46619,6 +46619,44 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			return error instanceof Error ? error.message : String(error);
 		}
 		//#endregion
+		//#region ../dsh-liangshen/src/client/LiangShenMark.tsx
+		/**
+		* Render the LiangShen card mark.
+		* @returns the 18x18 lever mark, in the current text color.
+		*/
+		function LiangShenMark() {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+				width: "18",
+				height: "18",
+				viewBox: "0 0 18 18",
+				fill: "none",
+				"aria-hidden": "true",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+					x: "3.6",
+					y: "13.2",
+					width: "8.8",
+					height: "2.8",
+					rx: "1.4",
+					fill: "currentColor"
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", {
+					transform: "rotate(20 8 14.4)",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+						x: "6.5",
+						y: "4.6",
+						width: "3",
+						height: "9.8",
+						rx: "1.5",
+						fill: "currentColor"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "8",
+						cy: "4.4",
+						r: "2.9",
+						fill: "currentColor"
+					})]
+				})]
+			});
+		}
+		//#endregion
 		//#region \0dsh-css:packages/dsh-liangshen/src/client/settings-card.module.css.mjs
 		const css$4 = "._9t79wq_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}._9t79wq_card:hover{border-color:var(--dsw-alias-label-dimmed)}._9t79wq_cardOpen{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}._9t79wq_header{appearance:none;box-sizing:border-box;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:12px;align-items:center;gap:13px;padding:16px;display:flex}._9t79wq_header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}._9t79wq_headerStatic{box-sizing:border-box;border-radius:12px;align-items:center;gap:13px;width:100%;padding:16px;display:flex}._9t79wq_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}._9t79wq_mark{background:var(--dsw-alias-bg-module-platform);width:34px;height:34px;color:var(--dsw-alias-label-secondary);border-radius:10px;flex:none;place-items:center;transition:color .16s;display:grid}._9t79wq_header:hover ._9t79wq_mark,._9t79wq_cardOpen ._9t79wq_mark{color:var(--dsw-alias-label-primary)}._9t79wq_name{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:1.4}._9t79wq_description{color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.5}._9t79wq_pending{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}._9t79wq_chevron{color:var(--dsw-alias-label-tertiary);flex:none;width:16px;height:16px;transition:transform .16s,color .16s}._9t79wq_header:hover ._9t79wq_chevron{color:var(--dsw-alias-label-secondary)}._9t79wq_chevronOpen{transform:rotate(180deg)}._9t79wq_body{border-top:1px solid var(--dsw-alias-border-l2);margin:0 16px;padding-bottom:8px}._9t79wq_readOnly{color:var(--dsw-alias-label-secondary);margin:12px 0 0;font-size:12px;line-height:1.5}._9t79wq_notExposed{color:var(--dsw-alias-state-warn-primary);margin:12px 0 0;font-size:12px;line-height:1.5}._9t79wq_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}._9t79wq_failed{min-width:0;color:var(--dsw-alias-state-error-primary,#b42318);text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0;font-size:12px;line-height:1.5;overflow:hidden}._9t79wq_discard,._9t79wq_save{appearance:none;font:inherit;cursor:pointer;border:1px solid #0000;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}._9t79wq_discard{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}._9t79wq_discard:hover:not(:disabled){color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}._9t79wq_save{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}._9t79wq_discard:disabled,._9t79wq_save:disabled{opacity:.4;cursor:default}._9t79wq_discard:focus-visible,._9t79wq_save:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}._9t79wq_field{flex-direction:column;gap:6px;padding:12px 0;display:flex}._9t79wq_field+._9t79wq_field{border-top:1px solid var(--dsw-alias-border-l2)}._9t79wq_head{align-items:center;gap:8px;display:flex}._9t79wq_label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:13px;font-weight:500;line-height:1.5}._9t79wq_badges{align-items:center;gap:8px;display:inline-flex}._9t79wq_badge{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}._9t79wq_reset{font:inherit;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;padding:0;font-size:12px;line-height:1.5}._9t79wq_reset:hover:not(:disabled){color:var(--dsw-alias-label-primary)}._9t79wq_reset:disabled{cursor:default}._9t79wq_reset:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px;outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}._9t79wq_input,._9t79wq_select{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}._9t79wq_input:focus-visible,._9t79wq_select:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none}._9t79wq_input:disabled,._9t79wq_select:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}._9t79wq_inputInvalid{border:1px solid var(--dsw-alias-state-error-primary,#b42318);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}._9t79wq_inputInvalid:focus-visible{outline:2px solid var(--dsw-alias-state-error-primary,#b42318);outline-offset:1px;border-color:var(--dsw-alias-state-error-primary,#b42318)}._9t79wq_selectWrap{position:relative}._9t79wq_selectButton{appearance:none;text-align:left;cursor:pointer;justify-content:space-between;align-items:center;gap:8px;width:100%;display:flex}._9t79wq_selectLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}._9t79wq_selectChevron{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}._9t79wq_selectChevronOpen{transform:rotate(180deg)}._9t79wq_selectPopup{z-index:40;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);max-height:240px;box-shadow:0 8px 24px var(--dsw-alias-bg-mask-2);opacity:0;border-radius:8px;flex-direction:column;padding:4px;transition:opacity .1s,transform .1s;display:flex;position:absolute;top:calc(100% + 4px);left:0;right:0;overflow-y:auto;transform:translateY(-4px)}._9t79wq_selectPopupOpen{opacity:1;transform:none}._9t79wq_selectPopupClose{opacity:0;pointer-events:none;transform:translateY(-4px)}._9t79wq_selectOption{color:var(--dsw-alias-label-primary);cursor:pointer;white-space:nowrap;text-overflow:ellipsis;border-radius:6px;flex-shrink:0;padding:6px 10px;font-size:13px;line-height:1.5;overflow:hidden}._9t79wq_selectOption:hover,._9t79wq_selectOptionActive{background:var(--dsw-alias-interactive-bg-hover)}._9t79wq_selectOptionSelected{color:var(--dsw-alias-brand-primary);background:color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 10%, transparent);font-weight:500}._9t79wq_invalid{color:var(--dsw-alias-state-error-primary,#b42318);margin:0;font-size:12px;line-height:1.5}._9t79wq_hint{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:1.5}@media (prefers-reduced-motion:reduce){._9t79wq_card,._9t79wq_header,._9t79wq_mark,._9t79wq_chevron,._9t79wq_chevronOpen,._9t79wq_discard,._9t79wq_save,._9t79wq_selectChevron,._9t79wq_selectChevronOpen,._9t79wq_selectPopup{transition:none}}";
 		const tagId$4 = "@linxin666/dsh-web-all/packages/dsh-liangshen/src/client/settings-card.module.css";
@@ -47482,6 +47520,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					booleanField("enabled"),
 					booleanField("announceToAgent"),
 					choiceField("presentation", PRESENTATION_CHOICES),
+					booleanField("dispatcher"),
 					booleanField("guardEnabled"),
 					choiceField("guardSensitivity", SENSITIVITY_CHOICES),
 					numberField("guardStallReasoningChars", {
@@ -47505,6 +47544,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					enabled: this.form.field("enabled"),
 					announceToAgent: this.form.field("announceToAgent"),
 					presentation: this.form.field("presentation"),
+					dispatcher: this.form.field("dispatcher"),
 					guardEnabled: this.form.field("guardEnabled"),
 					guardSensitivity: this.form.field("guardSensitivity"),
 					guardStallReasoningChars: this.form.field("guardStallReasoningChars"),
@@ -47546,6 +47586,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				t,
 				titleKey: "settings.title",
 				descriptionKey: "settings.description",
+				icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LiangShenMark, {}),
 				defaultOpen: false,
 				state,
 				renderChildrenWhenNotExposed: true,
@@ -47601,6 +47642,21 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						}
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField, {
+						id: "settings-liangshen-dispatcher",
+						label: t("settings.dispatcher"),
+						hint: t("settings.dispatcherHint"),
+						onLabel: t("settings.on"),
+						offLabel: t("settings.off"),
+						...fieldProps,
+						...state.dispatcher,
+						onEdit: (text) => {
+							props.edit("dispatcher", text);
+						},
+						onReset: () => {
+							props.resetField("dispatcher");
+						}
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField, {
 						id: "settings-liangshen-guard-enabled",
 						label: t("settings.guardEnabled"),
 						hint: t("settings.guardEnabledHint"),
@@ -47637,7 +47693,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						numeric: true,
 						label: t("settings.guardStallChars"),
 						hint: t("settings.guardStallCharsHint"),
-						placeholder: "8000",
+						placeholder: t("settings.guardAdaptive"),
 						...fieldProps,
 						...state.guardStallReasoningChars,
 						onEdit: (text) => {
@@ -47652,7 +47708,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						numeric: true,
 						label: t("settings.guardGlobalCap"),
 						hint: t("settings.guardGlobalCapHint"),
-						placeholder: "4",
+						placeholder: t("settings.guardAdaptive"),
 						...fieldProps,
 						...state.guardGlobalStallCap,
 						onEdit: (text) => {
@@ -47667,7 +47723,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						numeric: true,
 						label: t("settings.guardEchoFailures"),
 						hint: t("settings.guardEchoFailuresHint"),
-						placeholder: "3",
+						placeholder: t("settings.guardAdaptive"),
 						...fieldProps,
 						...state.guardEchoFailures,
 						onEdit: (text) => {
@@ -47712,6 +47768,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"settings.announceToAgentHint": "开启后向每一轮 agent 系统提示注入本插件公告；默认关闭以保持提示词干净。",
 			"settings.presentation": "工具面呈现方式",
 			"settings.presentationHint": "写入本插件声明的预设的 tool-catalog 行：both（出厂默认）让原生清单与 run_code 同驻（原生直调优先）；native 保持原生工具清单；ptc 把 wire 收拢为 run_code。改动立即生效，但已开始的会话保持其已声明的组合。",
+			"settings.dispatcher": "调度者身份",
+			"settings.dispatcherHint": "开启后本模式按调度 Agent 工作：先分诊复杂度（L0/L1 直接执行，L2 走完整流程），L2 任务先澄清访谈再规划，由主代理派发子代理并逐层审查与验收。与工具面呈现方式无关，只决定身份与流程纪律。出厂默认开启；关闭后回到仅含工作纪律的极简 persona。",
 			"settings.on": "开",
 			"settings.off": "关",
 			"settings.inherit": "继承（跟随部署默认）",
@@ -47731,18 +47789,19 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"presentation.native": "native（原生工具清单）",
 			"presentation.both": "both（两者同驻）",
 			"settings.guardEnabled": "启用退化熔断器",
-			"settings.guardEnabledHint": "运行时检测思考退化（连续零产出长思考 / 同参重复失败），触发时注入熔断提示并临时下调推理档位。关闭后不干预任何请求。",
+			"settings.guardEnabledHint": "运行时检测思考退化（连续零产出长思考 / 同参重复失败），触发时注入熔断提示；仅停摆信号额外临时下调推理档位（max→high，不下探到甜区以下）。关闭后不干预任何请求。",
 			"settings.guardStallChars": "单步暴走字符阈值",
-			"settings.guardStallCharsHint": "单条推理达到该字符数且零产出即触发熔断（按 V4.1 官方 384K 最大输出校准；默认 8000，约 2-4K 思考 token）。",
+			"settings.guardStallCharsHint": "留空即按推理档位自适应：max 档 8000 / high 档 12000 / low 档 20000 字符（按 V4.1 官方 384K 最大输出校准，约 2-4K 思考 token），再按灵敏度预设缩放。填写本字段则以该固定值覆盖所有档位。",
 			"settings.guardGlobalCap": "慢烧连续步数",
-			"settings.guardGlobalCapHint": "连续多少步有真实推理但零产出触发慢烧熔断（默认 4；步数越小越敏感，真实长调查建议调大）。",
+			"settings.guardGlobalCapHint": "留空即按灵敏度预设缩放（均衡档为 4）；provider 不持久化推理文本的会话也以此为兜底步骤计数。填写本字段则以该固定值覆盖。步数越小越敏感，真实长调查建议调大。",
 			"settings.guardSensitivity": "熔断灵敏度",
-			"settings.guardSensitivityHint": "整体缩放熔断阈值：保守（更少打断，阈值×1.5）、均衡（出厂校准值）、激进（更早触发，阈值×0.5）。阈值随推理档位自适应：max 档 8000 / high 档 12000 / low 档 20000 字符。",
+			"settings.guardSensitivityHint": "整体缩放熔断阈值：保守（更少打断，阈值×1.5）、均衡（出厂校准值）、激进（更早触发，阈值×0.5）。仅在对应细调字段留空时生效——阈值随推理档位自适应：max 档 8000 / high 档 12000 / low 档 20000 字符。",
 			"sensitivity.conservative": "保守（少打断）",
 			"sensitivity.balanced": "均衡（默认）",
 			"sensitivity.aggressive": "激进（早触发）",
 			"settings.guardEchoFailures": "同参连续失败次数",
-			"settings.guardEchoFailuresHint": "同一工具以相同参数连续失败多少次触发空转熔断（默认 3）。"
+			"settings.guardEchoFailuresHint": "留空即按灵敏度预设缩放（均衡档为 3）；填写本字段则以该固定值覆盖。空转信号只注入熔断消息，不下调推理档位。",
+			"settings.guardAdaptive": "自适应"
 		};
 		/** English counterpart; the key set mirrors {@link zh} exactly. */
 		const en$4 = {
@@ -47769,6 +47828,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"settings.announceToAgentHint": "Adds this plugin announcement to every agent system prompt; off by default so prompts stay clean.",
 			"settings.presentation": "Wire presentation",
 			"settings.presentationHint": "Written into the tool-catalog row of the preset this plugin declares: both (the shipped default) keeps the roster and run_code co-resident (direct native calls first); native keeps the native roster; ptc collapses the wire to run_code. A change re-declares the preset immediately; sessions that already started keep the composition they declared.",
+			"settings.dispatcher": "Dispatcher identity",
+			"settings.dispatcherHint": "When on, the mode works as a dispatcher agent: it triages complexity first (L0/L1 work is done directly, an L2 task runs the full flow), clarifies an L2 task through an interview before planning, and the lead agent dispatches subagents and reviews and accepts them layer by layer. It is unrelated to the wire presentation and decides identity and process discipline only. On by default; switching it off returns the prompt to the bare persona with its working discipline.",
 			"settings.on": "On",
 			"settings.off": "Off",
 			"settings.inherit": "Inherit (deployment default)",
@@ -47788,18 +47849,19 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"presentation.native": "native (native tool roster)",
 			"presentation.both": "both (both co-resident)",
 			"settings.guardEnabled": "Degeneration circuit breaker",
-			"settings.guardEnabledHint": "Detects reasoning degeneration at runtime (consecutive zero-output long reasoning / repeated identical-argument failures), injecting a breaker message and stepping the reasoning effort down when it fires. Disabled means requests are never touched.",
+			"settings.guardEnabledHint": "Detects reasoning degeneration at runtime (consecutive zero-output long reasoning / repeated identical-argument failures) and injects a breaker message; only a stall also steps the reasoning effort down (max to high, never below the sweet spot). Disabled means requests are never touched.",
 			"settings.guardStallChars": "Runaway reasoning character floor",
-			"settings.guardStallCharsHint": "One reasoning block reaching this many characters with no output fires the breaker (calibrated against V4.1's official 384K max output; default 8000, roughly 2-4K thinking tokens).",
+			"settings.guardStallCharsHint": "Leave empty to adapt to the reasoning effort: 8000 at max / 12000 at high / 20000 at low characters (calibrated against V4.1's official 384K max output, roughly 2-4K thinking tokens), then scaled by the sensitivity preset. Setting a value pins it for every effort level.",
 			"settings.guardGlobalCap": "Slow-burn step count",
-			"settings.guardGlobalCapHint": "Consecutive output-free steps of real reasoning that fire the slow-burn ladder (default 4; lower is more sensitive — raise it for genuinely long investigations).",
+			"settings.guardGlobalCapHint": "Leave empty to scale with the sensitivity preset (4 at balanced); it is also the fallback step count for a session whose provider persists no reasoning text. Setting a value pins it. Lower is more sensitive — raise it for genuinely long investigations.",
 			"settings.guardSensitivity": "Breaker sensitivity",
-			"settings.guardSensitivityHint": "Scales every breaker threshold: conservative (fewer interruptions, x1.5), balanced (the calibrated defaults), aggressive (fires earlier, x0.5). Thresholds adapt to the reasoning effort: 8000 at max / 12000 at high / 20000 at low.",
+			"settings.guardSensitivityHint": "Scales every breaker threshold: conservative (fewer interruptions, x1.5), balanced (the calibrated defaults), aggressive (fires earlier, x0.5). It applies only where the matching fine-tuning field is left empty — thresholds adapt to the reasoning effort: 8000 at max / 12000 at high / 20000 at low.",
 			"sensitivity.conservative": "Conservative (fewer interruptions)",
 			"sensitivity.balanced": "Balanced (default)",
 			"sensitivity.aggressive": "Aggressive (fires earlier)",
 			"settings.guardEchoFailures": "Identical-argument failures",
-			"settings.guardEchoFailuresHint": "Identical-argument failures of the same tool in a row that fire the echo ladder (default 3)."
+			"settings.guardEchoFailuresHint": "Leave empty to scale with the sensitivity preset (3 at balanced); setting a value pins it. An echo only injects the breaker message — it never steps the reasoning effort down.",
+			"settings.guardAdaptive": "Adaptive"
 		};
 		//#endregion
 		//#region ../dsh-liangshen/src/client/plugin-card-seat.ts

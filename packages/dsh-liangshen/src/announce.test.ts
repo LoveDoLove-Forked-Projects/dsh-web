@@ -200,11 +200,12 @@ describe('dsh-liangshen preset declaration', () => {
     const { host } = await mount({ presentation: 'ptc', guardEnabled: false, guardEchoFailures: 5 })
     const rows = host.declarations[0]!.definition.plugins as readonly { id?: string, config?: Record<string, unknown> }[]
     expect(rows.find(row => row.id === 'tool-catalog')?.config?.['presentation']).toBe('ptc')
+    // The echo override the operator committed is written; the two overrides
+    // nobody set stay out of the row entirely, so the guard resolves them from
+    // the session's reasoning effort and the sensitivity preset.
     expect(rows.find(row => row.id === 'guard')?.config).toEqual({
       enabled: false,
       sensitivity: 'balanced',
-      stallReasoningChars: 8000,
-      globalStallCap: 4,
       echoFailures: 5,
     })
   })

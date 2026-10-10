@@ -100,6 +100,9 @@ describe('liangshen preset composition', () => {
     // own agent-instructions row; the other two sources stay opt-in.
     expect(row('minimal-prompt')).toContain('instructionSource: host')
     expect(row('minimal-prompt')).toContain('instructionMaxBytes: 65536')
+    // The dispatcher block ships on: the factory row pins the switch ON, and
+    // the switch shapes the prompt only, never the wire presentation.
+    expect(row('minimal-prompt')).toContain('dispatcher: true')
     expect(row('tool-catalog')).toContain('descriptionMaxLength: 200')
   })
 

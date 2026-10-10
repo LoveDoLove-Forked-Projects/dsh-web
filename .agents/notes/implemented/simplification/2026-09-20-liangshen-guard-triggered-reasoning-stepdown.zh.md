@@ -19,14 +19,14 @@ Status: implemented
 | 介入时机 | 每个阶段边界都切换 | **仅熔断器检测到退化信号时**（连续零产出长思考、同参数重复失败），平时一行请求都不改 |
 | 默认值 | 默认关闭的休眠配置 | 无常驻配置；降档是熔断动作的一部分，由 guard 触发自动发生 |
 | 前缀缓存 | 每阶段边界都破坏 | 只在熔断瞬间破坏一次——此时会话已失控，缓存成本远低于死循环烧掉的 token |
-| 降档目标 | 固定执行档 low | 当前档位的下一档（max→high→low），避免 low 档的懒惰/忘指令体感 |
+| 降档目标 | 固定执行档 low | 只从 max 降一档（max→high，停在甜区）；细节由 [2026-10-10 note](../../bug-fix/2026-10-10-liangshen-guard-thresholds-and-stepdown.zh.md) 取代 |
 | 设置卡 | 三个档位控件 | 不恢复，维持原 note 的简化 |
 | 载体 | 独立 `reasoning-effort.mjs` | 并入 `guard.mjs`，经 `agent/request` 水位临时改写，窗口默认 3 个请求 |
 
 ## Decision
 
 - 不恢复 `reasoning-effort.mjs` 与其设置卡控件；
-- 在 `presets/liangshen/guard.mjs` 内实现「熔断触发 → 注入熔断消息 + 经 `agent/request` 水位把 reasoningEffort 降一档，窗口 3 个请求」；
+- 在 `presets/liangshen/guard.mjs` 内实现「熔断触发 → 注入熔断消息，并在停摆信号（成因为推理预算过剩）下经 `agent/request` 水位把 reasoningEffort 降一档（max→high，阶梯终点），窗口 3 个请求」；空转信号只注入消息。收窄后的降档目标与信号分派由 [2026-10-10 note](../../bug-fix/2026-10-10-liangshen-guard-thresholds-and-stepdown.zh.md) 拥有；
 - guard 对请求的改写严格限于已触发熔断的 episode 窗口内，无信号时为纯 pass-through，满足原 note 对前缀缓存与用户显式档位的约束。
 
 ## Consequences

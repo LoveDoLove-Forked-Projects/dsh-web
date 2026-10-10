@@ -40,6 +40,7 @@ function baseState(overrides: Partial<LiangShenSettingsCardState> = {}): LiangSh
     enabled: field,
     announceToAgent: field,
     presentation: field,
+    dispatcher: field,
     ...overrides,
   }
 }
@@ -77,6 +78,25 @@ function openChoices(id: string): HTMLElement[] {
   return Array.from(listbox!.querySelectorAll('[role="option"]')) as HTMLElement[]
 }
 
+/**
+ * Open one boolean field's popup and return the option carrying a label.
+ *
+ * The shared card renders a custom trigger plus a listbox under the default
+ * appearance, so a boolean field is driven by clicking rather than by
+ * `change`. A field that is not rendered, opens nothing, or offers no such
+ * option throws instead of asserting on a nullable lookup.
+ */
+function optionFor(id: string, label: string): HTMLElement {
+  const trigger = document.getElementById(id)
+  if (trigger === null) throw new Error(`field ${id} is not rendered`)
+  fireEvent.click(trigger)
+  const listbox = document.querySelector('[role="listbox"]')
+  if (listbox === null) throw new Error(`field ${id} opened no listbox`)
+  const option = Array.from(listbox.querySelectorAll('[role="option"]')).find(node => node.textContent === label)
+  if (option === undefined) throw new Error(`field ${id} offers no ${label} option`)
+  return option as HTMLElement
+}
+
 describe('LiangShenSettingsCard', () => {
   it('renders every field the Host schema carries', () => {
     renderCard(baseState())
@@ -84,9 +104,40 @@ describe('LiangShenSettingsCard', () => {
       'settings-liangshen-enabled',
       'settings-liangshen-announce',
       'settings-liangshen-presentation',
+      'settings-liangshen-dispatcher',
     ]) {
       expect(document.getElementById(id), id).not.toBeNull()
     }
+  })
+
+  it('operator sees the mode mark on the card header, painted in the current color', () => {
+    // Given the card rendered with a fixed snapshot, When the operator reads
+    // the header mark, Then it is an 18px inline SVG whose shapes all take the
+    // surrounding text color: the mark follows the active theme instead of
+    // carrying a color of its own, and it stays out of the accessibility tree.
+    renderCard(baseState())
+    const mark = document.querySelector('svg[viewBox="0 0 18 18"]')
+    expect(mark?.getAttribute('fill'), 'mark canvas').toBe('none')
+    expect(mark?.getAttribute('aria-hidden'), 'mark accessibility').toBe('true')
+    const painted = Array.from(mark?.querySelectorAll('rect, circle, path') ?? []).map(shape => shape.getAttribute('fill'))
+    expect(painted.length, 'mark shapes').toBeGreaterThan(0)
+    expect(painted.every(fill => fill === 'currentColor'), 'mark shape colors').toBe(true)
+  })
+
+  it('operator gets a mark whose lever parts stay attached and inside the tile', () => {
+    // Given the card rendered with a fixed snapshot, When the operator reads
+    // the mark's geometry, Then the arm is tilted off vertical so the pulled
+    // lever reads as a lever, its base still overlaps the foot so the parts
+    // read as one object, and every shape stays inside the 18x18 tile instead
+    // of being clipped by it.
+    renderCard(baseState())
+    const rod = document.querySelector('svg[viewBox="0 0 18 18"] g rect')!
+    const rotation = rod.closest('g')!.getAttribute('transform')!
+    expect(rotation).toMatch(/^rotate\(([\d.]+) 8 14\.4\)$/)
+    expect(Number(/^rotate\(([\d.]+)/.exec(rotation)![1])).toBeGreaterThan(0)
+    const footTop = Number(document.querySelector('svg[viewBox="0 0 18 18"] > rect')!.getAttribute('y'))
+    const armBase = Number(rod.getAttribute('y')) + Number(rod.getAttribute('height'))
+    expect(armBase, 'arm base over the foot').toBeGreaterThan(footTop)
   })
 
   it('offers the presentation choices with the inherit option leading', () => {
@@ -138,6 +189,77 @@ describe('LiangShenSettingsCard', () => {
     } finally {
       controller.dispose()
     }
+  })
+
+  it('operator sees the three guard overrides offered as empty, adaptive fields', () => {
+    // Given the card rendered with every guard field unset, When the operator
+    // reads the three numeric controls, Then each renders empty with the
+    // "adaptive" placeholder rather than a factory number: leaving them empty is
+    // what keeps the guard's effort-adaptive thresholds in charge.
+    renderCard(baseState())
+    for (const id of [
+      'settings-liangshen-guard-stall-chars',
+      'settings-liangshen-guard-global-cap',
+      'settings-liangshen-guard-echo',
+    ]) {
+      const input = document.getElementById(id)
+      expect(input?.tagName, id).toBe('INPUT')
+      expect((input as HTMLInputElement).value, id).toBe('')
+      expect((input as HTMLInputElement).placeholder, id).toBe('settings.guardAdaptive')
+    }
+  })
+
+  it('operator can clear a guard override back to the adaptive default', () => {
+    // Given a guard override the user layer already stores, When the operator
+    // resets that field, Then the card stages a clear so saving drops the key
+    // and the guard's adaptive resolution applies again.
+    const resetField = vi.fn()
+    const state = baseState({ guardStallReasoningChars: { text: '5000', overridden: true, invalid: false } })
+    const props = {
+      t: (key: string) => key,
+      useLiangShenSettingsCard: (select: (snapshot: LiangShenSettingsCardState) => LiangShenSettingsCardState) => select(state),
+      edit: vi.fn(),
+      resetField,
+      save: vi.fn(),
+      discard: vi.fn(),
+    } as unknown as LiangShenSettingsCardProps
+    render(<LiangShenSettingsCard {...props} />)
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    // Then the reset control for that one field writes the clear.
+    const field = document.getElementById('settings-liangshen-guard-stall-chars')!.closest('div')!
+    fireEvent.click(Array.from(field.querySelectorAll('button')).find((button) => button.textContent === 'settings.reset')!)
+    expect(resetField).toHaveBeenCalledWith('guardStallReasoningChars')
+  })
+
+  it('operator can turn the dispatcher identity on from the card', () => {
+    // Given the card rendered with the dispatcher field left at its inherit
+    // state, When the operator picks On in that field, Then the card stages the
+    // boolean write that adds the dispatcher rules section to the preset.
+    const { edit } = renderCard(baseState())
+    fireEvent.click(optionFor('settings-liangshen-dispatcher', 'settings.on'))
+    expect(edit).toHaveBeenCalledWith('dispatcher', 'true')
+  })
+
+  it('operator can clear the dispatcher identity back to the deployment default', () => {
+    // Given a dispatcher value the user layer already stores, When the operator
+    // resets that field, Then the card stages a clear so saving drops the key
+    // and the mode keeps its minimal persona.
+    const resetField = vi.fn()
+    const state = baseState({ dispatcher: { text: 'true', overridden: true, invalid: false } })
+    const props = {
+      t: (key: string) => key,
+      useLiangShenSettingsCard: (select: (snapshot: LiangShenSettingsCardState) => LiangShenSettingsCardState) => select(state),
+      edit: vi.fn(),
+      resetField,
+      save: vi.fn(),
+      discard: vi.fn(),
+    } as unknown as LiangShenSettingsCardProps
+    render(<LiangShenSettingsCard {...props} />)
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    // Then the reset control in that one field's header writes the clear.
+    const head = document.querySelector('label[for="settings-liangshen-dispatcher"]')!.closest('div')!
+    fireEvent.click(Array.from(head.querySelectorAll('button')).find((button) => button.textContent === 'settings.reset')!)
+    expect(resetField).toHaveBeenCalledWith('dispatcher')
   })
 
   it('keeps the exported choice lists aligned with the Host schema', () => {

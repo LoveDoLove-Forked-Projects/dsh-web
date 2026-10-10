@@ -19,14 +19,14 @@ The earlier note's third reason for removal was "the persona's reflection-fuse d
 | When it acts | Every phase boundary | **Only when the breaker detects degeneration** (consecutive zero-output long reasoning, identical-argument repeated failures); otherwise not a single request is touched |
 | Default | Dormant opt-in config | No standing config; the step-down is part of firing the breaker, automatic |
 | Prefix cache | Broken at every phase boundary | Broken once at the fire moment — the session is already out of control, and the cache cost is far below the tokens a loop burns |
-| Step-down target | Fixed execution level low | One notch below the current level (max→high→low), avoiding low's lazy/forgetful feel |
+| Step-down target | Fixed execution level low | One notch below max only (max→high, stopping at the sweet spot); superseded in detail by [the 2026-10-10 note](../../bug-fix/2026-10-10-liangshen-guard-thresholds-and-stepdown.md) |
 | Settings card | Three effort controls | Not restored; the earlier simplification stands |
 | Carrier | Standalone `reasoning-effort.mjs` | Folded into `guard.mjs`, rewriting via the `agent/request` waterfall for a 3-request window |
 
 ## Decision
 
 - Do not restore `reasoning-effort.mjs` or its settings-card controls;
-- Implement in `presets/liangshen/guard.mjs`: on a breaker fire, inject the breaker message and step `reasoningEffort` one notch down through the `agent/request` waterfall for a window of 3 requests;
+- Implement in `presets/liangshen/guard.mjs`: on a breaker fire, inject the breaker message, and — for a stall signal, whose cause is an over-large reasoning budget — step `reasoningEffort` one notch down (`max` to `high`, the ladder's end) through the `agent/request` waterfall for a window of 3 requests; an echo signal gets the message alone. The narrowed target and signal split are owned by [the 2026-10-10 note](../../bug-fix/2026-10-10-liangshen-guard-thresholds-and-stepdown.md);
 - The guard rewrites a request strictly inside a fired episode's window and is a pure pass-through otherwise, satisfying the earlier note's constraints on prefix-cache stability and the user's explicit level.
 
 ## Consequences

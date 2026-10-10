@@ -339,6 +339,10 @@ describe('gentle paging under the collapsed ptc wire', () => {
     const text = await h.catalog(agent)
     expect(text).toContain('<inactive_namespaces>')
     expect(text).toContain('stay reachable through the SDK inside a program even before activation')
+    // The summary itself says which surface is paged, rather than leaving the
+    // difference to the program note further down the catalog.
+    expect(text).toContain('Only the direct-call surface is paged here')
+    expect(text).not.toContain('unreachable from inside a program too')
     expect(text).toContain('Call `tool_activate({ namespace: "github" })`')
   })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { foldGuardSignal, renderGuardMessage, resolveThresholds, stepDownEffort, STALL_REASONING_CHARS_BY_EFFORT, DEFAULT_STALL_REASONING_CHARS, name } from '../presets/liangshen/guard.mjs'
+import { foldGuardSignal, renderGuardMessage, resolveThresholds, stepDownEffort, apply, STALL_REASONING_CHARS_BY_EFFORT, DEFAULT_STALL_REASONING_CHARS, DEFAULT_BLIND_STALL_CAP, name } from '../presets/liangshen/guard.mjs'
 
 /** Build a step's events: optional reasoning chars, optional output. */
 function step(reasoningChars, { toolCall = false, visibleText = false } = {}) {
@@ -7,6 +7,23 @@ function step(reasoningChars, { toolCall = false, visibleText = false } = {}) {
   if (reasoningChars > 0) {
     events.push({ type: 'assistant/message', data: { message: { content: [{ type: 'reasoning', text: 'x'.repeat(reasoningChars) }] } } })
   }
+  if (visibleText) {
+    events.push({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'done' }] } } })
+  }
+  if (toolCall) {
+    events.push({ type: 'tool/call', data: { name: 'read', callId: 'c1', arguments: '{}' } })
+    events.push({ type: 'tool/result', data: { callId: 'c1', message: { content: [{ type: 'text', text: 'ok' }] } } })
+  }
+  return events
+}
+
+/**
+ * Build a step whose reasoning block carries NO text — the shape a provider
+ * persists on a route that keeps only the signature.
+ */
+function redactedStep({ toolCall = false, visibleText = false } = {}) {
+  const events = [{ type: 'step/start' }]
+  events.push({ type: 'assistant/message', data: { message: { content: [{ type: 'reasoning', text: '', signature: 'sig' }] } } })
   if (visibleText) {
     events.push({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'done' }] } } })
   }
@@ -133,6 +150,68 @@ describe('guard foldGuardSignal', () => {
   })
 })
 
+describe('guard blind-route STALL fallback', () => {
+  it('operator still gets a stall on a session that never persisted reasoning text', () => {
+    // Given four consecutive output-free steps whose reasoning blocks carry a
+    // signature and an empty string — the redacted-route shape, where every
+    // character measure reads zero.
+    const events = [
+      ...redactedStep({}), ...redactedStep({}), ...redactedStep({}), ...redactedStep({}),
+    ]
+    // When the fold runs, Then the step-count fallback fires STALL where the
+    // character ladders structurally cannot.
+    const verdict = foldGuardSignal(events)
+    expect(verdict.signal).toBe('stall')
+    expect(verdict.blind).toBe(true)
+  })
+
+  it('operator gets no blind fallback while the session still produces reasoning text', () => {
+    // Given the same four output-free steps, but carrying reasoning TEXT.
+    const events = [...step(300, {}), ...step(300, {}), ...step(300, {}), ...step(300, {})]
+    // When the fold runs, Then the session is not blind: its own slow-burn
+    // ladder is what decides, and it reports the slow-burn shape.
+    const verdict = foldGuardSignal(events)
+    expect(verdict.blind).toBe(false)
+    expect(verdict.detail).toContain('slow burn')
+  })
+
+  it('operator gets no blind fallback from a stream with no reasoning block at all', () => {
+    // Given output-free steps that carried no reasoning block (tool acks), and
+    // an empty stream.
+    const acks = [
+      { type: 'step/start' },
+      { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '' }] } } },
+      { type: 'step/start' },
+      { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '' }] } } },
+      { type: 'step/start' },
+      { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '' }] } } },
+      { type: 'step/start' },
+      { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '' }] } } },
+    ]
+    // When the fold runs, Then a session with nothing to measure is not read as
+    // a degenerate one.
+    expect(foldGuardSignal(acks).signal).toBeUndefined()
+    expect(foldGuardSignal(acks).blind).toBe(false)
+    expect(foldGuardSignal([]).blind).toBe(false)
+  })
+
+  it('operator sees the blind streak reset by any output and honour the cap', () => {
+    // Given three redacted output-free steps, then a step with a tool call.
+    const interrupted = [
+      ...redactedStep({}), ...redactedStep({}), ...redactedStep({}),
+      ...redactedStep({ toolCall: true }),
+    ]
+    // When the fold runs, Then the streak reset and no stall is reported.
+    expect(foldGuardSignal(interrupted).signal).toBeUndefined()
+    // Given three redacted output-free steps only, Then the default cap of 4
+    // has not been reached either.
+    expect(foldGuardSignal([...redactedStep({}), ...redactedStep({}), ...redactedStep({})]).signal).toBeUndefined()
+    expect(DEFAULT_BLIND_STALL_CAP).toBe(4)
+    // And the cap is the caller's to lower.
+    expect(foldGuardSignal([...redactedStep({}), ...redactedStep({}), ...redactedStep({})], { blindStallCap: 3 }).signal).toBe('stall')
+  })
+})
+
 describe('guard resolveThresholds (adaptive by effort and sensitivity)', () => {
   it('operator sees the floor follow the current reasoning effort', () => {
     // Given each named effort and an unknown one.
@@ -155,6 +234,12 @@ describe('guard resolveThresholds (adaptive by effort and sensitivity)', () => {
     expect(resolveThresholds({ sensitivity: 'conservative' }).globalStallCap).toBe(6)
     expect(resolveThresholds({ sensitivity: 'balanced' }).globalStallCap).toBe(4)
     expect(resolveThresholds({ sensitivity: 'aggressive' }).globalStallCap).toBe(2)
+    // The blind fallback is the slow-burn ladder's degraded stand-in, so it
+    // carries the same scaled cap.
+    expect(resolveThresholds({ sensitivity: 'conservative' }).blindStallCap).toBe(6)
+    expect(resolveThresholds({ sensitivity: 'balanced' }).blindStallCap).toBe(4)
+    expect(resolveThresholds({ sensitivity: 'aggressive' }).blindStallCap).toBe(2)
+    expect(resolveThresholds({ globalStallCap: 7 }).blindStallCap).toBe(7)
   })
 
   it('operator fine-tuning overrides win over the adaptive table', () => {
@@ -179,11 +264,13 @@ describe('guard resolveThresholds (adaptive by effort and sensitivity)', () => {
 })
 
 describe('guard stepDownEffort', () => {
-  it('operator steps one notch down the ladder and leaves unknown levels alone', () => {
-    // Given the known ladder and levels outside it.
-    // When a step-down is computed, Then known levels move one notch and the rest stay untouched.
+  it('operator only ever steps max down, and the ladder stops at the sweet spot', () => {
+    // Given the known ladder and every level outside it.
+    // When a step-down is computed, Then only max moves, and it moves to high:
+    // nothing is ever lowered BELOW the model's measured 60-80 sweet spot, so
+    // a session the user explicitly put on high keeps that level.
     expect(stepDownEffort('max')).toBe('high')
-    expect(stepDownEffort('high')).toBe('low')
+    expect(stepDownEffort('high')).toBeUndefined()
     expect(stepDownEffort('low')).toBeUndefined()
     expect(stepDownEffort('off')).toBeUndefined()
     expect(stepDownEffort(undefined)).toBeUndefined()
@@ -197,6 +284,83 @@ describe('guard renderGuardMessage', () => {
     expect(renderGuardMessage({ signal: 'stall' })).toContain('no tool call')
     expect(renderGuardMessage({ signal: 'echo' })).toContain('identical arguments')
     expect(renderGuardMessage({ signal: 'stall' })).toContain('[Circuit Breaker]')
+  })
+})
+
+describe('guard fire behaviour (signal to action)', () => {
+  /** A fake agent whose session replays one event stream. */
+  const agent = (events) => ({ session: { events } })
+
+  /**
+   * Mount the plugin over a fake context and return the two edges the breaker
+   * hangs on: the request waterfall and the pre-step hook.
+   */
+  function mount(config) {
+    const handlers = new Map()
+    const warnings = []
+    const ctx = {
+      on: (event, listener) => { handlers.set(event, listener) },
+      logger: { warn: (message) => { warnings.push(message) } },
+    }
+    apply(ctx, config)
+    return {
+      warnings,
+      /** Run one pre-step for the agent; returns the decision the host sees. */
+      preStep: (target) => handlers.get('agent/pre-step')({ agent: target }, async () => ({ kind: 'enter', messages: [] })),
+      /** Run one request through the waterfall with the given resolved effort. */
+      request: (target, effort) => handlers.get('agent/request')({ agent: target }, async () => ({ reasoningEffort: effort })),
+    }
+  }
+
+  it('operator gets the breaker message but NO step-down when an echo fires', async () => {
+    // Given a session stuck on one identical failing call, on max effort.
+    const target = agent([...failingCall('a'), ...failingCall('b'), ...failingCall('c')])
+    const guard = mount({})
+    // When the breaker fires, Then the message is injected...
+    const decision = await guard.preStep(target)
+    expect(decision.messages).toHaveLength(1)
+    expect(decision.messages[0].content[0].text).toContain('[Circuit Breaker]')
+    // ...and the request is left exactly as the route resolved it: an echo is a
+    // broken call, so weakening the model is not the remedy.
+    await expect(guard.request(target, 'max')).resolves.toEqual({ reasoningEffort: 'max' })
+  })
+
+  it('operator gets the breaker message AND the step-down when a stall fires', async () => {
+    // Given a session in the runaway zero-output shape, on max effort.
+    const target = agent([...step(384000, {})])
+    const guard = mount({})
+    // When the breaker fires, Then the message is injected...
+    const decision = await guard.preStep(target)
+    expect(decision.messages).toHaveLength(1)
+    // ...and the next request is stepped one notch down, but never below high.
+    await expect(guard.request(target, 'max')).resolves.toEqual({ reasoningEffort: 'high' })
+    await expect(guard.request(target, 'high')).resolves.toEqual({ reasoningEffort: 'high' })
+    // The window is bounded: after the configured requests the route's own
+    // effort resumes untouched.
+    await expect(guard.request(target, 'max')).resolves.toEqual({ reasoningEffort: 'high' })
+    await expect(guard.request(target, 'max')).resolves.toEqual({ reasoningEffort: 'max' })
+  })
+
+  it('operator is told once when a session\'s stall detection is degraded to step counts', async () => {
+    // Given a redacted-route session with no reasoning text anywhere.
+    const target = agent([
+      ...redactedStep({}), ...redactedStep({}), ...redactedStep({}), ...redactedStep({}),
+    ])
+    const guard = mount({})
+    // When the fold runs twice, Then the degradation is reported exactly once.
+    await guard.preStep(target)
+    await guard.preStep(target)
+    const blind = guard.warnings.filter((line) => line.includes('degraded to step counts'))
+    expect(blind).toHaveLength(1)
+  })
+
+  it('operator gets no degradation notice for a session that carries reasoning text', async () => {
+    // Given a session whose steps carry reasoning text.
+    const target = agent([...step(300, {}), ...step(300, {})])
+    const guard = mount({})
+    // When the fold runs, Then nothing claims a degraded stall detection.
+    await guard.preStep(target)
+    expect(guard.warnings.filter((line) => line.includes('degraded to step counts'))).toHaveLength(0)
   })
 })
 

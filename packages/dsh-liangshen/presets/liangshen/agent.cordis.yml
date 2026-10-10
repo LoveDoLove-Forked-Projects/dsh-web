@@ -121,6 +121,14 @@
 # default keeps the upstream contract. Set `keepPlanPolicy: false` to drop
 # plan mode's policy section as well.
 #
+# `dispatcher` (default false) is orthogonal to `presentation`: it changes the
+# PROMPT, not the wire. On, the persona section additionally carries the
+# dispatcher rule block (./dispatcher-rules.mjs) after the workspace line, so
+# the session's deliverable becomes the plan, the task book, the review verdict,
+# and the hand-off, and the mode's own discipline stays in force underneath
+# those rules. Off, the assembled prompt is byte-for-byte what it was before
+# the switch existed.
+#
 # `tool-catalog` owns the wire presentation and the model-visible catalog.
 # `presentation` selects the SDK ToolPresentationMode for the session's whole
 # lifetime: `'ptc'` (default) collapses the wire to the `run_code` transport
@@ -160,6 +168,11 @@
     keepPlanPolicy: true
     instructionSource: host
     instructionMaxBytes: 65536
+    # Append the dispatcher rule block to the persona (orthogonal to the wire
+    # presentation): the session dispatches, plans, reviews, and hands off
+    # instead of writing the code itself. On by default; the switch is what
+    # returns a session to the bare persona.
+    dispatcher: true
 
 - id: tool-catalog
   name: ./tool-catalog.mjs
@@ -174,21 +187,24 @@
 
 # The runtime degeneration circuit breaker: folds a stall (consecutive zero-
 # output long-reasoning steps) or echo (identical-argument tool failures)
-# signal from the durable session event stream and fires once per episode —
-# injecting a breaker message at pre-step and stepping the reasoning effort
-# one notch down for the next few requests. With no signal it never rewrites
+# signal from the durable session event stream and fires once per episode,
+# injecting a breaker message at pre-step. A STALL also steps the reasoning
+# effort one notch down (max -> high, never below the sweet spot) for the next
+# few requests; an echo only gets the message. With no signal it never rewrites
 # a request, so the route's explicit effort and the prefix cache stay
 # untouched. This is the outside force the persona's reflection fuse cannot
 # be: see DSH discussion #5976 and the Agent Note that constrains dynamic
 # reasoning effort to this triggered-only form.
+#
+# The character floor and the two caps are deliberately NOT set here: absent,
+# the guard resolves them per request from the session's reasoning effort
+# (8000 at max / 12000 at high / 20000 at low) and scales them by the
+# sensitivity preset. Setting one here would pin it for every effort level.
 - id: guard
   name: ./guard.mjs
   config:
     enabled: true
     sensitivity: 'balanced'
-    stallReasoningChars: 8000
-    globalStallCap: 4
-    echoFailures: 3
 
 # The paging activation handle the catalog points at: with `pagedToolPatterns`
 # non-empty this row is what lets `tool_activate({ namespace })` bring one
