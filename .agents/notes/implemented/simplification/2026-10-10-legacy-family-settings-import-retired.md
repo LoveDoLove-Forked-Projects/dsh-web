@@ -1,6 +1,6 @@
 # Agent Note: Retire the dsh-web-settings legacy family-settings import
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -13,13 +13,15 @@ The repair runs in the plugin, after composition settles (`src/index.ts:197-199`
 
 No document outside the notes names the support window the repair serves: `grep -rn '0.1.7' docs/*.md packages/AGENTS.md` returns nothing, and the four symbols re-exported at `src/index.ts:34-44` have no consumer outside the module's own spec.
 
-## Proposal
+## Decision
 
-1. Delete `src/legacy-import.ts` and `tests/legacy-import.spec.ts`, the wiring in `src/index.ts` (the import, the public re-exports, `settingsYamlCandidatePaths` and the imported-document reader, `importLegacyFamilySettings`), and the README's "Legacy settings import" section in all three bilingual files.
-2. Leave the loopback bridge and every other surface of the package untouched.
-3. Declare the marker document `dsh-web-settings-legacy-import.json` inert: it is neither written nor read again, and no cleanup job is added for it.
+The owner confirmed the removal. `packages/dsh-web-settings/src/legacy-import.ts` (532 lines) and `packages/dsh-web-settings/tests/legacy-import.spec.ts` (487 lines) are deleted, and `src/index.ts` drops the module import, the four re-exports and four types, the activation-time call and `importLegacyFamilySettings` itself — 222 lines become 184.
 
-The open question decides the change: does any supported upgrade path still carry un-adopted family sections in `settings.yaml.imported`? The engine floor does not answer it, so the owner chooses between retiring the repair with this proposal and keeping it while the package states the window it serves.
+The settings-document readers stay: `settingsYamlCandidatePaths`, `readSettingsYamlDocument`, `importedSettingsYamlPath` and `settingsYamlFallbackPath` also feed the bridge's `readSettingsYaml`, so the proposal's item to delete them was wrong and the change keeps them.
+
+The marker document `$DSH_HOME/dsh-web-settings-legacy-import.json` is inert: nothing writes or reads it, and no cleanup job was added. The README trio loses the feature bullet, the 39-line "Legacy settings import" section and the two import-scoped limitation bullets in both languages, and the pair sidecar is re-recorded.
+
+The consequence the owner accepted: a profile that crosses from a 0.1.7-era host with family sections still un-adopted keeps them in `settings.yaml.imported`, and those values read as their schema defaults.
 
 ## Context & Efficiency Impact
 
@@ -44,11 +46,12 @@ The context gain is that `dsh-web-settings` stops carrying two unrelated jobs: t
 - **Keep the repair but drop the public re-exports and the four types.** Rejected as insufficient: those are a dozen lines of the cost, while the file, its spec and the durable document are the obligation.
 - **Move the repair into a one-off script the user runs.** Rejected: it relocates the same logic to a tool nobody invokes, and a user who never runs it loses exactly the settings the repair exists to save.
 
-## Acceptance criteria
+## Testing
 
-- If the owner confirms that no supported upgrade path carries un-adopted family sections: `legacy-import.ts`, its spec, the `src/index.ts` wiring, the re-exports and the README section in all three bilingual files are gone, with the pair hashes re-recorded; `pnpm --filter dsh-web-settings test typecheck` passes; `importLegacyFamilySections`, `LEGACY_IMPORT_MARKER_FILE` and `settings.yaml.imported` no longer appear in any shipped source or document outside the notes' history.
-- If the owner keeps the repair: `packages/dsh-web-settings/README.md` and its Chinese counterpart state the host window the repair serves, the marker document it writes, and the condition under which it can be deleted.
-- Either way `pnpm docs:check`, `pnpm i18n:check` and `pnpm emoji:check` pass, and any change to the package's client sources is followed by the aggregate rebuild and fingerprint re-record its `lib/` requires.
+- `pnpm --filter ./packages/dsh-web-settings typecheck` and its 87 tests pass; no test imported the removed module or its re-exports.
+- `pnpm docs:check` passes with the re-recorded `README.i18n.yaml`; the two README sides lost the same 39 section lines and the same three bullets.
+- `pnpm i18n:check` and `pnpm emoji:check` pass, and `pnpm test:scripts` stays green.
+- A search for `legacy-import`, `importLegacyFamilySections`, `LEGACY_IMPORT_MARKER_` and `readLegacyImportMarkerState` outside `.agents/notes/` returns nothing.
 
 ## Risks
 

@@ -1,6 +1,6 @@
 # Agent Note: 退役 dsh-web-settings 的旧版家族设置导入
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -13,13 +13,15 @@ Status: proposed
 
 除记录之外没有任何文档写明该修复服务的支持窗口：`grep -rn '0.1.7' docs/*.md packages/AGENTS.md` 无命中；`src/index.ts:34-44` 再导出的四个符号，除模块自己的 spec 外没有消费方。
 
-## Proposal
+## Decision
 
-1. 删除 `src/legacy-import.ts` 与 `tests/legacy-import.spec.ts`、`src/index.ts` 中的接线（导入、公开再导出、`settingsYamlCandidatePaths` 与改名后文档的读取、`importLegacyFamilySettings`），以及三个双语 README 文件中的 "Legacy settings import" 一节。
-2. 保留 loopback 桥与该包其余全部表面不动。
-3. 声明标记文档 `dsh-web-settings-legacy-import.json` 为惰性：不再写入也不再读取，也不新增清理任务。
+所有者确认删除。`packages/dsh-web-settings/src/legacy-import.ts`（532 行）与 `packages/dsh-web-settings/tests/legacy-import.spec.ts`（487 行）已删除，`src/index.ts` 去掉该模块的导入、四个再导出与四个类型、activation 期的调用以及 `importLegacyFamilySettings` 本身——222 行变为 184 行。
 
-决定这项改动的是一个开放问题：是否仍有受支持的升级路径会在 `settings.yaml.imported` 中带着未被收养的家族 section？引擎下限回答不了它，因此由所有者在本提案与"保留修复、同时在包内写明它服务的窗口"之间选择。
+设置文档的读取函数保留：`settingsYamlCandidatePaths`、`readSettingsYamlDocument`、`importedSettingsYamlPath` 与 `settingsYamlFallbackPath` 同时供 bridge 的 `readSettingsYaml` 使用，因此提案中"一并删除它们"的条目是错的，本次改动保留它们。
+
+标记文档 `$DSH_HOME/dsh-web-settings-legacy-import.json` 成为惰性文件：没有任何代码写它或读它，也没有新增清理任务。README 三件套在两种语言中删掉特性条目、39 行的「旧版设置导入」一节与两条与该导入相关的已知限制，并重录配对记录。
+
+所有者接受的代价：某个从 0.1.7 时代宿主跨过来、且家族 section 仍未被收养的 profile，会让这些值继续留在 `settings.yaml.imported` 中，并按 schema 默认值呈现。
 
 ## Context & Efficiency Impact
 
@@ -44,11 +46,12 @@ Status: proposed
 - **保留修复，只删掉公开再导出与四个类型。** 否决（不足以构成简化）：它们只是成本中的十几行，真正的义务是模块本体、它的 spec 与那份持久文档。
 - **把修复移进一个用户手动执行的一次性脚本。** 否决：那是把同一套逻辑挪到一个没人会跑的工具里，而不跑的用户恰好会丢掉该修复本来要救回的设置。
 
-## Acceptance criteria
+## Testing
 
-- 若所有者确认已无受支持的升级路径会带着未被收养的家族 section：`legacy-import.ts`、它的 spec、`src/index.ts` 的接线、再导出，以及三个双语文件中的 README 一节全部消失并重录配对 hash；`pnpm --filter dsh-web-settings test typecheck` 通过；`importLegacyFamilySections`、`LEGACY_IMPORT_MARKER_FILE` 与 `settings.yaml.imported` 不再出现在记录历史之外的任何已发布源码或文档中。
-- 若所有者保留该修复：`packages/dsh-web-settings/README.md` 及其中文对应文件写明该修复服务的宿主窗口、它写入的标记文档，以及可以删除它的条件。
-- 无论哪种结果，`pnpm docs:check`、`pnpm i18n:check` 与 `pnpm emoji:check` 均通过；任何对该包 client 源码的改动都随后重建聚合包并重录其 `lib/` 所需的指纹。
+- `pnpm --filter ./packages/dsh-web-settings typecheck` 与该包的 87 个测试通过；没有任何测试导入被删除的模块或其再导出。
+- `pnpm docs:check` 在重录 `README.i18n.yaml` 后通过；两份 README 各删掉相同的 39 行小节与相同的三条条目。
+- `pnpm i18n:check` 与 `pnpm emoji:check` 通过，`pnpm test:scripts` 保持绿色。
+- 在 `.agents/notes/` 之外搜索 `legacy-import`、`importLegacyFamilySections`、`LEGACY_IMPORT_MARKER_` 与 `readLegacyImportMarkerState` 均无命中。
 
 ## Risks
 

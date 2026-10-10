@@ -1191,3 +1191,30 @@ test('worker attests only the asset space and only a bounded path list', async (
   }), { ASSET_ATTEST_SECRET: 'shared-secret', ASSETS: assets }, context())
   assert.equal(get.status, 405)
 })
+
+test('every served API path is described by the single surface table', async () => {
+  const { API_ROUTES } = await import('../market/worker/src/api-surface.js')
+  const { readFileSync } = await import('node:fs')
+
+  // Given the router that decides what is served and the table that decides
+  // what is described; when a route is added to one and not the other; then
+  // this test fails, because the two must stay the same set.
+  const router = readFileSync(new URL('../market/worker/src/index.js', import.meta.url), 'utf8')
+  // `/api-docs.html` is the human page beside the API, not an API route.
+  const isApiRoute = (path) => path === '/api' || path.startsWith('/api/')
+  const served = new Set()
+  for (const match of router.matchAll(/path === '(\/api[^']*)'/g)) {
+    if (isApiRoute(match[1])) served.add(match[1])
+  }
+  for (const match of router.matchAll(/path\.startsWith\('(\/api[^']*)'\)/g)) {
+    // A prefix route is documented as its one concrete shape.
+    served.add(match[1] === '/api/skin-center/v2/skins/' ? '/api/skin-center/v2/skins/{skinId}/{asset}' : match[1])
+  }
+
+  const described = new Set(API_ROUTES.map((route) => route.path))
+  const undocumented = [...served].filter((path) => !described.has(path)).sort()
+  const unserved = [...described].filter((path) => !served.has(path)).sort()
+
+  assert.deepEqual(undocumented, [], 'served paths missing from api-surface.js')
+  assert.deepEqual(unserved, [], 'api-surface.js paths the router does not serve')
+})

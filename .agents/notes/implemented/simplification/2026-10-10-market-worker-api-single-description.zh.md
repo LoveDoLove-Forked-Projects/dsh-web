@@ -1,6 +1,6 @@
 # Agent Note: 让市场 worker 的公开 API 只有一个描述权威
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -10,11 +10,13 @@ Status: proposed
 
 `scripts/market-worker.test.mjs` 钉住的是 catalog 的形状而不是它的覆盖度，这正是缺口得以存活的原因：新增一条路由而不写描述条目，不会有任何东西失败。
 
-## Proposal
+## Decision
 
-1. 让路由器成为描述权威：在 `index.js` 中放一张路由表，把每条路径与方法同它的处理函数和一行描述配对，并由该表生成 `/openapi.json`、文档页与 RFC 9727 catalog。
-2. 手写的文字只作为路由表中的逐路由描述保留，使人工内容以"内容"而不是"第二套结构"的形式存活。
-3. 在 `scripts/market-worker.test.mjs` 中补上覆盖度断言：路由器提供的每条路径都有条目，每个条目都能解析到处理函数。
+`market/worker/src/api-surface.js` 是描述权威：每条路由一个 `API_ROUTES` 条目，携带方法、路径、OpenAPI summary、OpenAPI operation 对象，以及人读页面的中文说明与状态列。表中列出 18 条路由，其中四条是路由器已在提供、而两份文档都没写的：`/api/asset-attest`、`/api/install-batch`、`/api/relay/register` 与 `/api/relay/unregister`。
+
+`openapi.js`（205 行变 27 行）与 `api-doc.js`（54 行变 56 行）改为从该表组装输出，不再各自持有清单；页面保留外壳与示例，所提供的文档保留目录所链接的形状，`api-catalog.js` 不变。
+
+`scripts/market-worker.test.mjs` 新增一个测试：它从路由器源码推导已提供的 API 路径（`path ===` 与 `path.startsWith` 字面量，排除 `/api-docs.html` 页面并把皮肤中心前缀映射为其文档化形状），当该集合与表在两个方向上不一致时失败。
 
 ## Context & Efficiency Impact
 
@@ -37,11 +39,11 @@ Status: proposed
 - **删掉 OpenAPI 文档，只提供人读页面。** 否决：该文档是首页所链接公开表面的机器可读半边，删它是移除能力而不是移除重复。
 - **保留漂移，只在页面里补写这五条缺失路由。** 否决：这种漂移是机械性的，会随之后的每条路由复发，而单表正是要消除它。
 
-## Acceptance criteria
+## Testing
 
-- `/openapi.json`、`/api-docs.html` 与 `/.well-known/api-catalog` 由路由器的路由表产出，且 17 条已提供的 `/api/...` 路径全部出现在文档中。
-- 新增一条没有描述条目的路由，或某个条目失去处理函数时，`scripts/market-worker.test.mjs` 失败。
-- `pnpm test:scripts` 与 `pnpm market:check` 通过；若所提供的文档属于构建产物，则重新生成并提交 `market/dist`。
+- `node --test scripts/market-worker.test.mjs` 60 个用例全绿，含新增的覆盖度测试；`pnpm test:scripts` 373 个全绿。
+- `/openapi.json` 现在有 18 条路径（此前 14 条），`/api-docs.html` 渲染 18 行。
+- `pnpm market:check` 报告 `market/dist` 已是最新：worker 从 `src` 提供这些文档，已提交的站点构建未被改动。
 
 ## Risks
 

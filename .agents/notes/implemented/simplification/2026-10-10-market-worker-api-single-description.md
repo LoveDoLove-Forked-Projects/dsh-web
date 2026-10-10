@@ -1,6 +1,6 @@
 # Agent Note: Give the market worker's public API one description authority
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -10,11 +10,13 @@ Measured against the router, the document already lags. `index.js` handles 17 li
 
 `scripts/market-worker.test.mjs` pins the catalog's shape but not its coverage, which is why the gap survived: nothing fails when a route is added without a description entry.
 
-## Proposal
+## Decision
 
-1. Make the router the description authority: a route table in `index.js` that pairs each path and method with its handler and its one-line description, and emit `/openapi.json`, the docs page and the RFC 9727 catalog from that table.
-2. Keep curated prose only as per-route description text inside the table, so the hand-written parts survive as content rather than as a second structure.
-3. Add the coverage assertion to `scripts/market-worker.test.mjs`: every path the router serves has an entry, and every entry resolves to a handler.
+`market/worker/src/api-surface.js` is the description authority: one `API_ROUTES` entry per route, carrying the method, the path, the OpenAPI summary, the OpenAPI operation object, and the curated Chinese prose plus status column of the human page. The table lists 18 routes, including the four the router served while neither document described them: `/api/asset-attest`, `/api/install-batch`, `/api/relay/register` and `/api/relay/unregister`.
+
+`openapi.js` (205 lines to 27) and `api-doc.js` (54 to 56) assemble their output from that table instead of carrying their own lists; the page keeps its chrome and its examples, the served documents keep the shapes the catalog links to, and `api-catalog.js` is unchanged.
+
+`scripts/market-worker.test.mjs` gains one test: it derives the served API paths from the router source (`path ===` and `path.startsWith` literals, excluding the `/api-docs.html` page and mapping the skin-center prefix to its documented shape) and fails when that set and the table disagree in either direction.
 
 ## Context & Efficiency Impact
 
@@ -37,11 +39,11 @@ The maintenance gain is that adding a route no longer requires remembering two o
 - **Delete the OpenAPI document and serve only the human page.** Rejected: the document is the machine-readable half of a public surface the homepage links, and the change would remove a capability rather than a duplicate.
 - **Leave the drift and document the five missing routes in the page only.** Rejected: the drift is mechanical and recurs with every future route, which is what the single table removes.
 
-## Acceptance criteria
+## Testing
 
-- `/openapi.json`, `/api-docs.html` and `/.well-known/api-catalog` are produced from the router's route table, and all 17 served `/api/...` paths appear in the document.
-- `scripts/market-worker.test.mjs` fails when a route is added without a description entry or an entry loses its handler.
-- `pnpm test:scripts` and `pnpm market:check` pass, and the committed `market/dist` is regenerated if the served documents are part of the built output.
+- `node --test scripts/market-worker.test.mjs` passes 60 tests, including the new coverage test; `pnpm test:scripts` passes 373.
+- `/openapi.json` carries 18 paths (14 before) and `/api-docs.html` renders 18 rows.
+- `pnpm market:check` reports `market/dist` up to date: the worker serves its documents from `src`, so the committed site build is untouched.
 
 ## Risks
 
