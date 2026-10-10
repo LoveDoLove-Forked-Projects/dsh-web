@@ -77,6 +77,9 @@ function configuredTask(): TaskRecord {
     workspaceId: 'workspace-a',
     mode: 'preset-a',
     permission: 'workspace-write',
+    // The native-/goal option is OFF by default; the cases that launch with the
+    // frozen global switch on assert the arming, so this card opts in.
+    goalRun: true,
   }
 }
 

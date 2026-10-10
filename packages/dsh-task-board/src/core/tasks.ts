@@ -428,9 +428,11 @@ export interface TaskRecord {
    * armed with the composed execution prompt as its objective. The session then
    * keeps working automatic continuation rounds until the agent marks the goal
    * complete, and this board settles the execution on the goal's own end
-   * instead of at the first turn end. Absent means ON — the option is checked
-   * by default, so only an explicit `false` runs the task as a single plain
-   * turn. A session whose `/goal` command is refused still runs the prompt.
+   * instead of at the first turn end. Absent means OFF — the option is
+   * unchecked by default, so only an explicit `true` joins the goal run and
+   * every card that never touched it (including every card written before the
+   * field existed) runs one plain turn. A session whose `/goal` command is
+   * refused still runs the prompt.
    */
   goalRun?: boolean
   /**
@@ -538,8 +540,8 @@ export interface NewTaskInput {
   /** Run the subtree as an Agent Team (Team Lead session plus one teammate per direct subtask). */
   teamRun?: boolean
   /**
-   * Start the execution with dsh's built-in `/goal`. Absent/true keeps the
-   * default (goal run); an explicit false requests a single plain turn.
+   * Start the execution with dsh's built-in `/goal`. Absent means the default
+   * (one plain turn); only an explicit true joins the goal run.
    */
   goalRun?: boolean
   /**
@@ -699,10 +701,10 @@ export function createTask(input: NewTaskInput, now: number, id: string): TaskRe
     model: normalizeTargetId(input.model),
     reuseSession: input.reuseSession === true ? true : undefined,
     teamRun: input.teamRun === true ? true : undefined,
-    // Default ON: only an explicit false is stored, so a card that never
+    // Default OFF: only an explicit true is stored, so a card that never
     // touched the option (and every card written before the field existed)
-    // keeps starting its runs with /goal.
-    goalRun: input.goalRun === false ? false : undefined,
+    // keeps running one plain turn.
+    goalRun: input.goalRun === true ? true : undefined,
     // Default OFF: only an explicit true is stored, so a card that never
     // touched the option inherits the board-wide acceptance switch exactly as
     // every card written before the field existed does.

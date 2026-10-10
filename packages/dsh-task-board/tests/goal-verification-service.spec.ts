@@ -132,8 +132,9 @@ function harness(overrides: {
   /**
    * The GLOBAL native-/goal switch this deployment serves. Defaults to ON in
    * this spec because its subject is the ACCEPTANCE layer, which only exists on
-   * a goal run; the switch's own default and its per-execution freeze are the
-   * subject of `goal-run.spec.ts` and the run-behavior cases here.
+   * a goal run (the seeded cards opt in through their own `goalRun`); the
+   * switch's own default and its per-execution freeze are the subject of
+   * `goal-run.spec.ts` and the run-behavior cases here.
    */
   goalRunEnabled?: boolean
 } = {}): Harness {
@@ -203,6 +204,11 @@ function harness(overrides: {
 }
 
 /** Seed one plain task. */
+/**
+ * Seed one plain task. The native-/goal option is OFF by default, and every
+ * case in this spec is about the acceptance layer that only exists on a goal
+ * run, so the seed OPTS IN unless a case says otherwise.
+ */
 function seed(ledger: HostTaskLedger, input: { id: string, goalRun?: boolean, skipVerification?: boolean, schedule?: { enabled: boolean, cron: string } } = { id: 'task-a' }): void {
   ledger.applyRequest('seed-' + input.id, {
     kind: 'create',
@@ -211,7 +217,7 @@ function seed(ledger: HostTaskLedger, input: { id: string, goalRun?: boolean, sk
       title: 'Ship it',
       description: '',
       prompt: 'do work',
-      ...(input.goalRun === undefined ? {} : { goalRun: input.goalRun }),
+      goalRun: input.goalRun ?? true,
       ...(input.skipVerification === undefined ? {} : { skipVerification: input.skipVerification }),
       ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
     },
@@ -291,8 +297,9 @@ describe('goal acceptance at execution start', () => {
     expect(execution.verification?.applicability).toBe('enforced')
   })
 
-  it('user whose task pins a single plain turn sees no enforcement', async () => {
-    // Given: a card opted out of goal form while the GLOBAL switch is on
+  it('user whose task never opted into the goal option sees no enforcement', async () => {
+    // Given: a card that never touched the option (off by default) while the
+    // GLOBAL switch is on
     const h = harness()
     seed(h.ledger, { id: 'task-a', goalRun: false })
 
@@ -666,7 +673,7 @@ describe('goal acceptance at settlement', () => {
   })
 
   it('user running a plain-turn task sees the historical turn verdict settle it', async () => {
-    // Given: a card pinned to a single plain turn
+    // Given: a card that never opted into the goal option
     const h = harness()
     seed(h.ledger, { id: 'task-a', goalRun: false })
     h.service.apply('run-1', { kind: 'run', taskId: 'task-a' })

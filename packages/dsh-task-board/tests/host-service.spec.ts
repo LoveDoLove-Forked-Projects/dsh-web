@@ -894,10 +894,10 @@ describe('TaskBoardHostService poll heartbeat', () => {
     const now = new Date(2026, 7, 16, 10, 0, 30).getTime()
     const ledger = new HostTaskLedger(root(), () => now)
     ledger.applyRequest('create-parent', {
-      kind: 'create', id: 'parent', input: { title: 'Parent', description: '', prompt: 'work', permission: 'read-only' },
+      kind: 'create', id: 'parent', input: { title: 'Parent', description: '', prompt: 'work', permission: 'read-only', goalRun: true },
     })
     ledger.applyRequest('create-child', {
-      kind: 'create', id: 'child', input: { title: 'Child', description: '', prompt: 'child work', parentId: 'parent' },
+      kind: 'create', id: 'child', input: { title: 'Child', description: '', prompt: 'child work', parentId: 'parent', goalRun: true },
     })
     const sessions: string[] = []
     const permissions: string[] = []
@@ -916,8 +916,9 @@ describe('TaskBoardHostService poll heartbeat', () => {
       ledger,
       power: new PowerInhibitor({ platform: 'linux' }),
       now: () => now,
-      // The native-/goal master switch is on: this case asserts that every
-      // member of a cascade arms its own goal.
+      // The native-/goal master switch is on AND both cards opted in: the
+      // option is off by default, so this case asserts that every member of a
+      // cascade that asked for it arms its own goal.
       goalRunEnabled: () => true,
       commandDispatcher: {
         execute: async (_sessionId, line) => { permissions.push(line); return { kind: 'success', text: 'ok' } as const },
@@ -934,8 +935,8 @@ describe('TaskBoardHostService poll heartbeat', () => {
     })
     expect([...sessions].sort()).toEqual(['session-1', 'session-2'])
     expect(permissions.filter(line => line.startsWith('/permission')).sort()).toEqual(['/permission read-only', '/permission read-only'])
-    // Every member of the run also arms its own goal (the option is on by
-    // default), each with that member's own composed prompt.
+    // Every member of the run also arms its own goal (each card opted in),
+    // each with that member's own composed prompt.
     expect(permissions.filter(line => line.startsWith('/goal '))).toHaveLength(2)
     expect(ledger.state().tasks.map(task => task.status)).toEqual(['running', 'running'])
     service.dispose()

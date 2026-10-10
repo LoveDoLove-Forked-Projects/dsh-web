@@ -160,7 +160,7 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   able to say WHICH of the two turned the gate off, and a report that renders
   nothing at all would let a user read "the board switch is off" into a card
   they themselves opted out. Only the explicit `true` is persisted (mirroring
-  `goalRun`, which persists only its explicit `false`), the option appears in
+  `goalRun`, which persists only its explicit `true`), the option appears in
   the new-task form and the task detail beside the other card-level execution
   switches, and it is exposed on `task_board_create` / `task_board_update`
   like every other card option. It is an execution-time decision, not a
@@ -235,8 +235,9 @@ verifier's default acceptance ALGORITHM rather than the verifier.
 - **GLOBAL native /goal switch, default off.** A new row setting
   `goalRunEnabled` (volatile, schema default `false`) is the master control
   over whether this board starts a run with the built-in `/goal` at all. The
-  effective condition is the global switch AND the task's own `goalRun` not
-  being off; with the global switch off every card runs one plain turn. The
+  effective condition is the global switch AND the task's own `goalRun` being
+  ON: both sides must ASK for the goal run, and the card side defaults to off
+  (see below), so with the global switch off every card runs one plain turn. The
   value is read ONCE per execution at launch and carried by value into the
   runner, so a live settings edit only affects executions that start afterwards
   and never arms, disarms or re-judges a run in flight — it covers the manual,
@@ -244,11 +245,27 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   became a goal run is recorded with its own applicability reason
   (`goal-disabled`), distinct from a refused/unavailable `/goal`
   (`goal-unavailable`), so it is neither reported as accepted nor failed for
-  lacking `update_goal(action: complete)`. The task-level option is disabled
-  with an explanation while the master switch is off and its stored value is
-  never rewritten, so re-enabling restores the user's own preference; the
-  collapsed run summary reports a single round when the master switch withholds
-  it. The switch is independent of the acceptance switch.
+  lacking `update_goal(action: complete)`. The task-level option stays
+  OPERABLE while the master switch is off, with an explanation of what the
+  switch withholds, and its stored value is never rewritten, so re-enabling
+  applies the user's own preference; the collapsed run summary reports a single
+  round when the master switch withholds it. The switch is independent of the
+  acceptance switch.
+- **The per-card goal option defaults OFF.** `TaskRecord.goalRun` is an
+  opt-IN: only an explicit `true` is persisted (creation, update and the load
+  normalizer all store nothing else), the runner arms `/goal` only for a card
+  whose value IS `true`, and the Host service gates on the same test. Absent
+  and `false` therefore behave identically — a card that never touched the
+  option, including every card written before the field existed, runs one plain
+  turn, and the board never begins a multi-round goal run after an upgrade
+  without the user asking for it card by card. The detail-view checkbox is
+  checked only for `true`, the new-task dialog starts unchecked and sends
+  `goalRun: true` only when checked, and `task_board_create` /
+  `task_board_update` follow the same rule (the tool view reports the card's
+  `goalRun: true` as the deviation worth naming). Neither the checkbox nor the
+  tool face is disabled by the global switch: that switch decides whether the
+  preference takes effect, never whether it can be stated, and it never rewrites
+  the stored value.
 
 ## Alternatives considered
 
@@ -340,8 +357,8 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   history, reruns and scheduled occurrences each carry their own report, and the
   per-execution contract is the reason a settings edit mid-run changes nothing
   for the run already going.
-- The gate deliberately does not touch plain chat, a task pinned to
-  `goalRun: false`, or a run whose `/goal` was refused: those are not goal
+- The gate deliberately does not touch plain chat, a card that never opted
+  into `goalRun`, or a run whose `/goal` was refused: those are not goal
   executions, and their records say which case applies.
 - A card that opted out is a COST decision the user makes per card, and it is
   recorded as such: `skipVerification` travels through the legacy import the
@@ -359,12 +376,13 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   veto — but it means an unhelpful judge route needs the same explicit human
   action the anomaly hold already required, and the settings copy tells the
   user to look at the judge/evidence plumbing first.
-- The global switch defaults OFF, so an existing deployment that upgrades
-  starts running plain single turns until the user turns it on. That is the
-  requested default and it is the safe direction for quota: no card silently
-  begins a multi-round goal run after an upgrade. The task-level `goalRun`
-  preference is preserved untouched throughout, so re-enabling the master
-  switch restores exactly what each card had.
+- The global switch defaults OFF and the per-card option defaults OFF, so an
+  existing deployment that upgrades starts running plain single turns, and a
+  card only becomes a goal run when the user opts that card in AND the global
+  switch is on. That is the requested default and it is the safe direction for
+  quota: no card silently begins a multi-round goal run after an upgrade. A
+  card's stored `goalRun` preference is preserved untouched throughout, so a
+  master switch turned back on applies exactly what each card asked for.
 - Cleanup deletes only what the acceptance mechanism itself wrote, and it
   keeps the hash of the judged evidence: a later review can still prove WHICH
   evidence backed a pass, but the per-criterion prose is gone. The stored
@@ -395,7 +413,8 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   quality verdict, a budget stop that opens no judge call and spends no budget,
   and the configured per-call ceiling ending the acceptance as a bounded anomaly.
 - `tests/goal-verification-service.spec.ts` (26 scenarios): the contract
-  frozen and bound before the prompt, the switch off, `goalRun: false`, a
+  frozen and bound before the prompt, the switch off, a card that did not opt
+  into `goalRun`, a
   refused `/goal`, an explicit route with an unsupported level, a scheduled
   run, the resolved options route, and the settlement rules (completed goal
   without a pass fails, paused goal fails, unreadable projection fails, a pass
@@ -469,10 +488,13 @@ verifier's default acceptance ALGORITHM rather than the verifier.
   behaving like every other boolean field.
 - `tests/goal-run.spec.ts`, `tests/task-detail-edit.spec.tsx`,
   `tests/new-task-run.spec.tsx` and `tests/goal-verification-service.spec.ts`
-  cover the two-level switch: the global default producing a plain turn for a
-  card that never touched anything, the four combinations of the two switches,
-  a frozen value keeping an in-flight run's goal while a later execution sees
-  the change, the `goal-disabled` applicability being neither a pass nor a
-  failure, the task-level option disabled and explained under a closed master
-  switch while its stored preference survives, and the collapsed run summary
-  reporting a single round.
+  cover the two-level switch: the global default producing a plain turn, the
+  card-level default producing a plain turn even with the global switch on, a
+  cleared value behaving exactly like one that never opted in, the four
+  combinations of the two switches, a frozen value keeping an in-flight run's
+  goal while a later execution sees the change, the `goal-disabled`
+  applicability being neither a pass nor a failure, the task-level option
+  staying operable and explained under a closed master switch (with the edit it
+  stages accepted and its stored preference surviving), and the collapsed run
+  summary reporting a single round when the master switch withholds the goal
+  and a multi-round goal when the card asked for it.

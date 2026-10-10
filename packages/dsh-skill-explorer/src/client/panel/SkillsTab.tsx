@@ -18,6 +18,26 @@ function providerLabel(provider: string): string {
   return key in zh ? tt(key) : provider
 }
 
+/**
+ * The local-file badge for a row that the write routes cannot serve.
+ *
+ * A skill with a plugin-supplied file and a skill with no file at all are
+ * different facts (issue #1842): the first is "Provided by plugin", only the
+ * second is "No local file". Both are pathless, so neither offers controls.
+ * @param skill - the row's entry.
+ * @returns the badge copy and its tooltip.
+ */
+function localFileBadge(skill: SkillEntry): { label: string; tooltip: string } {
+  return skill.fileState === 'provider-file'
+    ? { label: tt('list.providerFile'), tooltip: tt('list.providerFileTooltip') }
+    : { label: tt('list.noFile'), tooltip: tt('list.noFileTooltip') }
+}
+
+/** The explanation shown under a row the write routes cannot serve. */
+function localFileHint(skill: SkillEntry): string {
+  return skill.fileState === 'provider-file' ? tt('list.providerFileHint') : tt('list.noFileHint')
+}
+
 /** Marks shown next to a skill (model/user invocable). */
 function invokableMarks(skill: SkillEntry): string {
   const marks: string[] = []
@@ -72,6 +92,8 @@ function SkillRow({ skill, api, onChanged, onEdit }: { skill: SkillEntry; api: S
   }
 
   const isIsolated = skill.isActiveWorkspace === false
+  // Computed once per render: a row with a writable path needs neither.
+  const fileBadge = skill.path === undefined ? localFileBadge(skill) : undefined
 
   return (
     <article className={`${css.skillRow}${isIsolated ? ` ${css.skillIsolated}` : ''}`} data-dsh-part="skill-row">
@@ -91,8 +113,8 @@ function SkillRow({ skill, api, onChanged, onEdit }: { skill: SkillEntry; api: S
           </span>
         )}
         {skill.linked === true && <span className={css.badge}>{tt('list.linked')}</span>}
-        {skill.path === undefined && (
-          <span className={css.badge} title={tt('list.noFileTooltip')}>{tt('list.noFile')}</span>
+        {fileBadge !== undefined && (
+          <span className={css.badge} title={fileBadge.tooltip}>{fileBadge.label}</span>
         )}
         {(skill.modelInvocable || skill.userInvocable) && (
           <span className={`${css.badge} ${css.badgeInvokable}`} title={tt('list.invokableTooltip')}>
@@ -129,7 +151,7 @@ function SkillRow({ skill, api, onChanged, onEdit }: { skill: SkillEntry; api: S
         <p className={css.skillWhen}>{tt('list.when', { when: skill.whenToUse })}</p>
       )}
       {skill.path !== undefined && <div className={css.skillPath}>{skill.path}</div>}
-      {skill.path === undefined && <p className={css.skillWhen}>{tt('list.noFileHint')}</p>}
+      {skill.path === undefined && <p className={css.skillWhen}>{localFileHint(skill)}</p>}
       {error !== undefined && <p className={css.banner} data-kind="error">{error}</p>}
     </article>
   )

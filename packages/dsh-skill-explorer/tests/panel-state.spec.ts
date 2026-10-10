@@ -13,7 +13,7 @@ import { PanelController, SKILL_EXPLORER_PANEL_ID } from '../src/client/panel/co
 
 /** A skill row the editor can be opened for. */
 function skill(name: string): SkillEntry {
-  return { name, description: '', level: 'user', modelInvocable: true, userInvocable: true }
+  return { name, description: '', level: 'user', fileState: 'editable', modelInvocable: true, userInvocable: true }
 }
 
 /** A controller plus the panel ids it asked the layout to select. */

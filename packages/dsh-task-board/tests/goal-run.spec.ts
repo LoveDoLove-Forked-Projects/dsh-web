@@ -1,7 +1,8 @@
 /**
  * Goal-driven runs: the runner arms dsh's built-in /goal after queueing the
- * task prompt (the option is on by default), and the inspection loop settles
- * the execution from the goal's own end rather than the first turn end.
+ * task prompt (only for a card that opted in; the option is off by default),
+ * and the inspection loop settles the execution from the goal's own end rather
+ * than the first turn end.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { createTask, type TaskRecord } from '../src/core/tasks.ts'
@@ -147,7 +148,7 @@ describe('goalObjective', () => {
 
 describe('goal run arming', () => {
   it('user running a card queues the instruction before the goal is armed', async () => {
-    // Given a card that never touched the goal option, the GLOBAL native-/goal
+    // Given a card that opted into the goal option, the GLOBAL native-/goal
     // switch ON, and a board with commands
     const order: string[] = []
     const promptPayloads: unknown[] = []
@@ -155,7 +156,7 @@ describe('goal run arming', () => {
     const gateway = launchGateway(order, promptPayloads)
 
     // When the card runs
-    await expect(new HostExecutionRunner(gateway, commands).launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), { goalEnabled: true })).resolves.toBe('session-a')
+    await expect(new HostExecutionRunner(gateway, commands).launch(createTask({ title: 'Run me', description: '', prompt: 'do work', goalRun: true }, 1, 'task-a'), { goalEnabled: true })).resolves.toBe('session-a')
 
     // Then the instruction turn is queued first and the goal extends it
     expect(order).toEqual(['create', 'rename', 'prompt', 'command:do work'])
@@ -168,7 +169,7 @@ describe('goal run arming', () => {
     const order: string[] = []
     const commands = { execute: vi.fn(async (_sessionId: string, line: string) => { order.push(goalLine(line)); return { kind: 'success' as const } }) }
     const task: TaskRecord = {
-      ...createTask({ title: 'Run me', description: '', prompt: 'do work', tags: [{ name: 'line', promptPrefix: 'output to /tmp' }] }, 1, 'task-a'),
+      ...createTask({ title: 'Run me', description: '', prompt: 'do work', goalRun: true, tags: [{ name: 'line', promptPrefix: 'output to /tmp' }] }, 1, 'task-a'),
     }
 
     // When the card runs
@@ -181,16 +182,32 @@ describe('goal run arming', () => {
     expect(order.at(-1)).toContain('Child')
   })
 
-  it('user opting out of the goal option gets one plain turn', async () => {
-    // Given a card with the opt-out stored and the global switch ON
+  it('user leaving the goal option alone gets one plain turn even with the GLOBAL switch on', async () => {
+    // Given a card that never touched the option (absent = off) and the global
+    // switch ON
     const order: string[] = []
     const commands = { execute: vi.fn(async () => ({ kind: 'success' as const })) }
-    const task: TaskRecord = { ...createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), goalRun: false }
+    const task: TaskRecord = createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a')
 
     // When the card runs
     await new HostExecutionRunner(launchGateway(order), commands).launch(task, { goalEnabled: true })
 
-    // Then no command is dispatched at all
+    // Then no command is dispatched at all: the card must ASK for the goal run,
+    // and the option is off by default.
+    expect(order).toEqual(['create', 'rename', 'prompt'])
+    expect(commands.execute).not.toHaveBeenCalled()
+  })
+
+  it('user explicitly clearing the goal option on a card that had it keeps one plain turn', async () => {
+    // Given a card whose stored opt-in was cleared (absent) and the switch ON
+    const order: string[] = []
+    const commands = { execute: vi.fn(async () => ({ kind: 'success' as const })) }
+    const task: TaskRecord = { ...createTask({ title: 'Run me', description: '', prompt: 'do work', goalRun: true }, 1, 'task-a'), goalRun: undefined }
+
+    // When the card runs
+    await new HostExecutionRunner(launchGateway(order), commands).launch(task, { goalEnabled: true })
+
+    // Then the cleared value behaves exactly like a card that never opted in
     expect(order).toEqual(['create', 'rename', 'prompt'])
     expect(commands.execute).not.toHaveBeenCalled()
   })
@@ -200,9 +217,9 @@ describe('goal run arming', () => {
     const order: string[] = []
     const commands = { execute: vi.fn(async () => ({ kind: 'error' as const, text: 'A goal is already active.' })) }
 
-    // When the card runs
+    // When an opted-in card runs
     const launched = await new HostExecutionRunner(launchGateway(order), commands)
-      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), { goalEnabled: true })
+      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work', goalRun: true }, 1, 'task-a'), { goalEnabled: true })
 
     // Then the session is launched with the prompt and the run survives
     expect(launched).toBe('session-a')
@@ -213,9 +230,9 @@ describe('goal run arming', () => {
     // Given a deployment whose runner got no command dispatcher
     const order: string[] = []
 
-    // When the card runs
+    // When an opted-in card runs
     const launched = await new HostExecutionRunner(launchGateway(order))
-      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), { goalEnabled: true })
+      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work', goalRun: true }, 1, 'task-a'), { goalEnabled: true })
 
     // Then the prompt is still queued and the session exists
     expect(launched).toBe('session-a')
@@ -227,9 +244,9 @@ describe('goal run arming', () => {
     const order: string[] = []
     const commands = { execute: vi.fn(async (_sessionId: string, line: string) => { order.push('command:' + goalLine(line)); return { kind: 'success' as const } }) }
 
-    // When a card that never touched its own option runs
+    // When a card that opted in runs
     await new HostExecutionRunner(launchGateway(order), commands)
-      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'))
+      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work', goalRun: true }, 1, 'task-a'))
 
     // Then no /goal is dispatched: the global switch alone decides, and off is
     // the default for every deployment that never configured it.
@@ -248,12 +265,15 @@ describe('goal run arming', () => {
     }
 
     // When each of the two-switch combinations runs
-    const both = await arm({ goalEnabled: true })
-    const globalOff = await arm({ goalEnabled: false })
+    const both = await arm({ goalEnabled: true, goalRun: true })
+    const cardDefault = await arm({ goalEnabled: true })
+    const globalOff = await arm({ goalEnabled: false, goalRun: true })
     const taskOff = await arm({ goalEnabled: true, goalRun: false })
 
-    // Then native /goal runs only when BOTH allow it.
+    // Then native /goal runs only when BOTH ask for it: the card-level default
+    // is off, and the global default is off.
     expect(both).toContain('command:do work')
+    expect(cardDefault).toEqual(['create', 'rename', 'prompt'])
     expect(globalOff).toEqual(['create', 'rename', 'prompt'])
     expect(taskOff).toEqual(['create', 'rename', 'prompt'])
   })
@@ -263,9 +283,9 @@ describe('goal run arming', () => {
     const order: string[] = []
     const commands = { execute: vi.fn(async (_sessionId: string, line: string) => { order.push('command:' + goalLine(line)); return { kind: 'success' as const } }) }
 
-    // When the launch runs with its frozen value
+    // When the opted-in launch runs with its frozen value
     await new HostExecutionRunner(launchGateway(order), commands)
-      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work' }, 1, 'task-a'), { goalEnabled: true })
+      .launch(createTask({ title: 'Run me', description: '', prompt: 'do work', goalRun: true }, 1, 'task-a'), { goalEnabled: true })
 
     // Then the frozen decision is what ran: nothing re-reads a live setting, so
     // a later edit can neither disarm this run nor change its contract.

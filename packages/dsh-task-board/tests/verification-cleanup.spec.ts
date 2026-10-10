@@ -134,7 +134,9 @@ function serviceOver(ledger: HostTaskLedger): { service: TaskBoardHostService, p
 
 /** Seed one task with one unsettled execution carrying the given acceptance. */
 function seedRunning(ledger: HostTaskLedger, verification: ExecutionVerification): string {
-  ledger.applyRequest('create-1', { kind: 'create', id: 'task-a', input: { title: 'Ship it', description: '', prompt: 'do work' } })
+  // The card opts into the native goal: the option is off by default and every
+  // case here is about an execution that reached the acceptance layer.
+  ledger.applyRequest('create-1', { kind: 'create', id: 'task-a', input: { title: 'Ship it', description: '', prompt: 'do work', goalRun: true } })
   const execution = ledger.applyRequest('run-1', { kind: 'run', taskId: 'task-a' }).runs![0]!.execution
   ledger.attachSession('task-a', execution.id, 'session-a')
   ledger.setVerification('task-a', execution.id, verification)
@@ -323,7 +325,7 @@ describe('acceptance-detail cleanup: ownership and scope', () => {
     // Given: one task with an earlier FAILED execution and a later running one
     const root = home()
     const ledger = new HostTaskLedger(boardDir(root), () => NOW)
-    ledger.applyRequest('create-1', { kind: 'create', id: 'task-a', input: { title: 'Ship it', description: '', prompt: 'do work' } })
+    ledger.applyRequest('create-1', { kind: 'create', id: 'task-a', input: { title: 'Ship it', description: '', prompt: 'do work', goalRun: true } })
     const failed = ledger.applyRequest('run-1', { kind: 'run', taskId: 'task-a' }).runs![0]!.execution
     ledger.attachSession('task-a', failed.id, 'session-1')
     ledger.setVerification('task-a', failed.id, block([detailedAttempt({ passed: false })]))

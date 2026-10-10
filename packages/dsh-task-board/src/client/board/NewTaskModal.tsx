@@ -57,9 +57,9 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   const [model, setModel] = useState(initialTask?.model ?? parentTask?.model ?? '')
   const inheritedPermission = parentTask === undefined ? undefined : effectiveTaskPermission(parentTask)
   const [reuseSession, setReuseSession] = useState(initialTask?.reuseSession ?? false)
-  // Checked by default: a new task starts its runs with dsh's built-in /goal
-  // unless the user opts out here. A duplicate keeps the original card's choice.
-  const [goalRun, setGoalRun] = useState(initialTask?.goalRun ?? true)
+  // Unchecked by default: a new task runs one plain turn unless the user opts
+  // into dsh's built-in /goal here. A duplicate keeps the original card's choice.
+  const [goalRun, setGoalRun] = useState(initialTask?.goalRun ?? false)
   const [skipVerification, setSkipVerification] = useState(initialTask?.skipVerification ?? false)
   const [scheduleEnabled, setScheduleEnabled] = useState(initialTask?.schedule?.enabled ?? false)
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>(initialTask?.schedule?.mode ?? 'cron')
@@ -86,8 +86,9 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   const [pending, setPending] = useState(false)
   const [options, setOptions] = useState(controller.getSnapshot().executionOptions)
   // Live GLOBAL native-/goal switch. The new-task form never rewrites a stored
-  // preference from it: the checkbox is disabled and explained while the master
-  // switch is off, and the user's own choice is what a later re-enable restores.
+  // preference from it: the checkbox stays operable and is explained while the
+  // master switch is off, and the user's own choice is what a later re-enable
+  // restores.
   const [goalRunEnabled, setGoalRunEnabled] = useState(controller.getSnapshot().host?.goalRunEnabled === true)
   // "Parse pasted text" (issue #1540) exists only when the deployment carries a
   // parse face; the section stays hidden otherwise.
@@ -219,7 +220,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
       permission: permission === '' ? undefined : permission as TaskPermission,
       model: model === '' ? undefined : model,
       ...(reuseSession ? { reuseSession: true } : {}),
-      ...(goalRun ? {} : { goalRun: false }),
+      ...(goalRun ? { goalRun: true } : {}),
       ...(skipVerification ? { skipVerification: true } : {}),
       ...(tagList.length > 0 ? { tags: tagList } : {}),
       schedule: scheduleEnabled
@@ -531,9 +532,9 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
           <input
             type="checkbox"
             checked={goalRun}
-            // Disabled while the global switch is off; the choice kept in state
-            // (and in a duplicate's template) is never rewritten by it.
-            disabled={!goalRunEnabled}
+            // Always operable: the global switch decides whether the choice
+            // takes effect, never whether it may be stated, and the state (and a
+            // duplicate's template) is never rewritten by it.
             onChange={event => { setGoalRun(event.target.checked) }}
           />
           <span>{t('exec.goalRun')}</span>

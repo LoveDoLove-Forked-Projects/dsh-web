@@ -21,6 +21,17 @@ const API = {
   delete: 'api/dsh-skill-explorer/delete',
 } as const
 
+/**
+ * What backs a skill locally (host-classified).
+ *
+ * - `editable`: a filesystem scan resolved the SKILL.md; `path` is writable.
+ * - `provider-file`: a plugin provider reports a real instruction file the
+ *   panel's scan did not resolve. The file exists, but the write routes do not
+ *   trust this path, so the row offers no controls.
+ * - `virtual`: no instruction file exists; "no local file" is accurate.
+ */
+export type SkillFileState = 'editable' | 'provider-file' | 'virtual'
+
 /** One skill entry as served by the host. */
 export interface SkillEntry {
   name: string
@@ -29,6 +40,8 @@ export interface SkillEntry {
   provider?: string
   level: string
   path?: string
+  /** What backs this skill locally (see SkillFileState). */
+  fileState: SkillFileState
   /** True for skills discovered through a symlink entry (deletion not allowed). */
   linked?: boolean
   modelInvocable: boolean

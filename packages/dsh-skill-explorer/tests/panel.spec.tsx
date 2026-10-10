@@ -41,6 +41,7 @@ const payload = (names: string[]): ListPayload => ({
   complete: true,
   groups: [{ key: 'user-dsh', title: 'User skills', hint: '', skills: names.map((name) => ({
     name, description: 'desc', provider: 'filesystem', level: 'user-dsh', path: '/work/' + name + '/SKILL.md',
+    fileState: 'editable',
     modelInvocable: true, userInvocable: true,
   })) }],
 })
@@ -348,6 +349,75 @@ describe('SkillPanel mutation identity', () => {
   })
 })
 
+describe('SkillPanel pathless rows (#1842)', () => {
+  afterEach(() => { document.body.innerHTML = '' })
+
+  /** A payload mixing a plugin-supplied file and a virtual registration. */
+  const pathlessPayload: ListPayload = {
+    cwd: '/work',
+    projectRoots: [],
+    complete: true,
+    groups: [{
+      key: 'bundled', title: 'System bundled', hint: '', skills: [
+        {
+          name: 'provider-skill', description: '插件提供的技能', provider: 'orca', level: 'bundled',
+          fileState: 'provider-file', modelInvocable: true, userInvocable: true,
+        },
+        {
+          name: 'virtual-skill', description: '运行时注册技能', provider: 'runtime', level: 'runtime',
+          fileState: 'virtual', modelInvocable: true, userInvocable: true,
+        },
+      ],
+    }],
+  }
+
+  /** The skill-row article whose name matches. */
+  function row(container: HTMLElement, name: string): HTMLElement {
+    const found = Array.from(container.querySelectorAll('[data-dsh-part="skill-row"]'))
+      .find(r => r.querySelector('span')?.textContent === name)
+    expect(found).toBeInstanceOf(HTMLElement)
+    return found as HTMLElement
+  }
+
+  it('user sees a plugin-supplied file and a virtual skill badged differently', async () => {
+    // Given a panel listing one provider-backed skill and one virtual skill
+    const api = fakeApi([async () => pathlessPayload])
+    const mount_ = mount(api)
+    await flush()
+
+    // When both rows render
+    const providerRow = row(mount_.container, 'provider-skill')
+    const virtualRow = row(mount_.container, 'virtual-skill')
+
+    // Then the provider row states the file is plugin-supplied, and only the
+    // truly fileless row claims there is no local file
+    expect(providerRow.textContent).toContain('由插件提供')
+    expect(providerRow.textContent).not.toContain('无本地文件')
+    expect(virtualRow.textContent).toContain('无本地文件')
+    expect(virtualRow.textContent).not.toContain('由插件提供')
+    mount_.dispose()
+  })
+
+  it('user sees no toggle, edit or delete on either pathless row', async () => {
+    // Given the same two pathless rows
+    const api = fakeApi([async () => pathlessPayload])
+    const mount_ = mount(api)
+    await flush()
+
+    // When the rows render
+    for (const name of ['provider-skill', 'virtual-skill']) {
+      const element = row(mount_.container, name)
+      // Then neither offers a control the write routes would refuse: the
+      // classification is display-only and never grants a writable identity
+      expect(element.querySelector('[role="switch"]')).toBeNull()
+      const labels = Array.from(element.querySelectorAll('button')).map(b => b.textContent?.trim())
+      expect(labels).not.toContain('编辑')
+      expect(labels).not.toContain('删除')
+    }
+    mount_.dispose()
+  })
+})
+
 describe('SkillPanel search filter (#1423)', () => {
   afterEach(() => { document.body.innerHTML = '' })
 
@@ -357,9 +427,9 @@ describe('SkillPanel search filter (#1423)', () => {
     complete: true,
     groups: [{
       key: 'user-dsh', title: 'User skills', hint: '', skills: [
-        { name: 'gamma-skill', description: 'unrelated', provider: 'filesystem', level: 'user-dsh', path: '/work/gamma-skill/SKILL.md', modelInvocable: true, userInvocable: true },
-        { name: 'beta-skill', description: 'alpha related helper', provider: 'filesystem', level: 'user-dsh', path: '/work/beta-skill/SKILL.md', modelInvocable: true, userInvocable: true },
-        { name: 'alpha-skill', description: 'first helper', provider: 'filesystem', level: 'user-dsh', path: '/work/alpha-skill/SKILL.md', modelInvocable: true, userInvocable: true },
+        { name: 'gamma-skill', description: 'unrelated', provider: 'filesystem', level: 'user-dsh', path: '/work/gamma-skill/SKILL.md', fileState: 'editable', modelInvocable: true, userInvocable: true },
+        { name: 'beta-skill', description: 'alpha related helper', provider: 'filesystem', level: 'user-dsh', path: '/work/beta-skill/SKILL.md', fileState: 'editable', modelInvocable: true, userInvocable: true },
+        { name: 'alpha-skill', description: 'first helper', provider: 'filesystem', level: 'user-dsh', path: '/work/alpha-skill/SKILL.md', fileState: 'editable', modelInvocable: true, userInvocable: true },
       ],
     }],
   }

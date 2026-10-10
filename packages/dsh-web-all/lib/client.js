@@ -5168,7 +5168,7 @@ window.__ModuleLoader__.load({
 				model: normalizeTargetId(input.model),
 				reuseSession: input.reuseSession === true ? true : void 0,
 				teamRun: input.teamRun === true ? true : void 0,
-				goalRun: input.goalRun === false ? false : void 0,
+				goalRun: input.goalRun === true ? true : void 0,
 				skipVerification: input.skipVerification === true ? true : void 0,
 				...input.freeze === void 0 ? {} : { freeze: freezeOf(input.freeze, now) },
 				...input.handover === void 0 ? {} : { handover: {
@@ -6269,7 +6269,7 @@ window.__ModuleLoader__.load({
 				if ("permission" in patch && patch.permission !== void 0 && patch.permission !== task.permission || "handover" in patch) next.permissionConfirmedAt = void 0;
 				if ("reuseSession" in patch) next.reuseSession = patch.reuseSession === true ? true : void 0;
 				if ("teamRun" in patch) next.teamRun = patch.teamRun === true ? true : void 0;
-				if ("goalRun" in patch) next.goalRun = patch.goalRun === false ? false : void 0;
+				if ("goalRun" in patch) next.goalRun = patch.goalRun === true ? true : void 0;
 				if ("skipVerification" in patch) next.skipVerification = patch.skipVerification === true ? true : void 0;
 				if (workspaceId !== void 0 || "workspaceId" in patch) next.workspaceId = workspaceId;
 				if (mode !== void 0 || "mode" in patch) next.mode = mode;
@@ -7853,7 +7853,7 @@ window.__ModuleLoader__.load({
 				task.archivedAt = typeof row.archivedAt === "number" && Number.isFinite(row.archivedAt) ? row.archivedAt : void 0;
 				task.permission = isTaskPermission(row.permission) ? row.permission : void 0;
 				task.reuseSession = row.reuseSession === true ? true : void 0;
-				task.goalRun = row.goalRun === false ? false : void 0;
+				task.goalRun = row.goalRun === true ? true : void 0;
 				task.skipVerification = row.skipVerification === true ? true : void 0;
 				task.freeze = normalizeFreeze(row.freeze);
 				task.handover = normalizeHandover(row.handover);
@@ -8196,7 +8196,7 @@ window.__ModuleLoader__.load({
 			"exec.teamRunUnavailable": "当前部署未提供 Agent Teams 服务，无法启用。",
 			"exec.reuseSessionHint": "开启后，本任务的后续执行在上一次会话里继续（该会话空闲且仍存在时），不再每次新建对话；每次复用时都会重新应用上面钉住的权限与模型。",
 			"exec.goalRun": "以 dsh 内置的 /goal 开始执行任务",
-			"exec.goalRunHint": "默认开启：执行时把任务目标作为持久目标交给 dsh 内置的 /goal，会话会自动续跑多轮，直到 agent 标记目标完成；看板在该目标真正结束后才结算本次执行。关闭则只执行一轮普通对话。",
+			"exec.goalRunHint": "默认关闭：勾选后执行时把任务目标作为持久目标交给 dsh 内置的 /goal，会话会自动续跑多轮，直到 agent 标记目标完成；看板在该目标真正结束后才结算本次执行。不勾选则只执行一轮普通对话。",
 			"exec.skipVerification": "跳过本任务的验收",
 			"exec.skipVerificationHint": "默认关闭：勾选后本任务以 goal 形式执行时不再拦截 update_goal 标记完成，也不要求通过验收；执行记录会标注「该卡片跳过验收」。仅对之后新开的执行生效，验收总开关关闭时本项无意义。",
 			"detail.executionSettings": "执行设置",
@@ -8237,8 +8237,8 @@ window.__ModuleLoader__.load({
 			"settings.runBehaviorTitle": "运行行为",
 			"settings.runBehaviorCardHint": "全局原生 /goal 执行开关（总开关，默认关闭）。",
 			"settings.goalRunGlobal": "全局启用 DSH 原生 /goal 执行",
-			"settings.goalRunGlobalHint": "默认关闭。关闭时所有任务都按普通单回合执行，不调用 dsh 内置的 /goal；只有这里开启、且任务级「以 /goal 开始执行」未被关闭时，才执行原生 /goal。开关按执行启动时冻结，只影响之后新开的执行。",
-			"settings.goalRunGlobalDisabledTaskOption": "全局「原生 /goal 执行」总开关已关闭：任务级选项暂不生效，也不会被改写；开启总开关后恢复你原有的任务级偏好。本次执行按普通单回合进行，未执行 goal 验收。",
+			"settings.goalRunGlobalHint": "默认关闭。关闭时所有任务都按普通单回合执行，不调用 dsh 内置的 /goal；只有这里开启、且任务级「以 /goal 开始执行」被勾选时，才执行原生 /goal。任务级勾选始终可操作、也不会被这里的开关改写，总开关只决定它是否生效。开关按执行启动时冻结，只影响之后新开的执行。",
+			"settings.goalRunGlobalDisabledTaskOption": "全局「原生 /goal 执行」总开关已关闭：任务级选项仍可随时勾选或取消，但暂不生效，你保存的偏好也不会被改写；开启总开关后即按该偏好执行。本次执行按普通单回合进行，未执行 goal 验收。",
 			"settings.goalVerificationTitle": "任务验收",
 			"settings.goalVerification": "启用任务验收",
 			"settings.goalVerificationCardHint": "验收开关、裁判模型与判据阈值。",
@@ -8322,7 +8322,7 @@ window.__ModuleLoader__.load({
 			"verify.usageIncomplete": "（至少一次请求的用量未知，以上为下限）",
 			"verify.finalFailure": "判定依据：{reason}",
 			"verify.applicability.disabled": "本次执行启动时验收开关关闭，按原有回合判定结算。",
-			"verify.applicability.goalUnavailable": "本次执行未成为 goal 执行（/goal 被拒绝或不可用），验收未强制执行。",
+			"verify.applicability.goalUnavailable": "本次执行未成为 goal 执行（卡片未勾选「以 /goal 开始执行任务」，或 /goal 被拒绝/不可用），验收未强制执行。",
 			"verify.applicability.skipped": "该任务卡勾选了「跳过验收」，本次执行未经验收判定。",
 			"verify.applicability.teamMember": "团队执行成员：由 Lead 的团队汇总证据统一验收。",
 			"verify.applicability.goalDisabled": "本次执行启动时全局「原生 /goal 执行」总开关关闭，按普通单回合执行：本次未执行 goal 验收，既不算已验收通过，也不因此判失败。",
@@ -8620,7 +8620,7 @@ window.__ModuleLoader__.load({
 			"exec.teamRunUnavailable": "This deployment serves no Agent Teams service, so team runs cannot be enabled.",
 			"exec.reuseSessionHint": "When on, later runs continue in the previous session (when that session is idle and still exists) instead of starting a new conversation each time; the pinned permission and model above are re-applied on every reuse.",
 			"exec.goalRun": "Start the run with dsh's built-in /goal",
-			"exec.goalRunHint": "On by default: the run arms dsh built-in /goal with the task objective, so the session keeps working automatic continuation rounds until the agent marks the goal complete, and the board settles the execution only when that goal really ends. Off: one plain turn.",
+			"exec.goalRunHint": "Off by default: when checked, the run arms dsh built-in /goal with the task objective, so the session keeps working automatic continuation rounds until the agent marks the goal complete, and the board settles the execution only when that goal really ends. Unchecked: one plain turn.",
 			"exec.skipVerification": "Skip acceptance for this task",
 			"exec.skipVerificationHint": "Off by default: when checked, a goal-form run of this task no longer gates update_goal on a passing acceptance, and the execution record is marked as skipped. It applies only to executions started afterwards, and means nothing while the board-wide acceptance switch is off.",
 			"detail.executionSettings": "Execution Settings",
@@ -8661,8 +8661,8 @@ window.__ModuleLoader__.load({
 			"settings.runBehaviorTitle": "Run behavior",
 			"settings.runBehaviorCardHint": "The global native /goal switch (master control, off by default).",
 			"settings.goalRunGlobal": "Global: run tasks with dsh native /goal",
-			"settings.goalRunGlobalHint": "Off by default. While off, every task runs one plain turn and never calls dsh built-in /goal; a run uses native /goal only when this is on AND the task-level option is not turned off (see the task option below). The switch is frozen when an execution starts, so it only affects runs opened afterwards.",
-			"settings.goalRunGlobalDisabledTaskOption": "The global native /goal switch is off: the task-level option has no effect right now and is never rewritten; turning the global switch back on restores your per-task preference. This execution runs one plain turn and performs no goal acceptance.",
+			"settings.goalRunGlobalHint": "Off by default. While off, every task runs one plain turn and never calls dsh built-in /goal; a run uses native /goal only when this is on AND the task-level option is checked (see the task option below). The task-level checkbox always stays operable and this switch never rewrites it: the master switch only decides whether that choice takes effect. The switch is frozen when an execution starts, so it only affects runs opened afterwards.",
+			"settings.goalRunGlobalDisabledTaskOption": "The global native /goal switch is off: the task-level option can still be checked or cleared, but it has no effect right now and the preference you save is never rewritten; turning the global switch back on applies it. This execution runs one plain turn and performs no goal acceptance.",
 			"settings.goalVerificationTitle": "Task acceptance",
 			"settings.goalVerification": "Enable task acceptance",
 			"settings.goalVerificationCardHint": "The switch, the judge model and the criteria threshold.",
@@ -8746,7 +8746,7 @@ window.__ModuleLoader__.load({
 			"verify.usageIncomplete": " (at least one request usage is unknown; these counts are a floor)",
 			"verify.finalFailure": "Verdict basis: {reason}",
 			"verify.applicability.disabled": "Acceptance was off when this execution started; it settles on the historical verdict.",
-			"verify.applicability.goalUnavailable": "This execution never became a goal run (/goal was refused or unavailable), so acceptance was not enforced.",
+			"verify.applicability.goalUnavailable": "This execution never became a goal run (the card did not check Start with /goal, or /goal was refused or unavailable), so acceptance was not enforced.",
 			"verify.applicability.skipped": "This card checked Skip acceptance, so the execution was never judged.",
 			"verify.applicability.teamMember": "Team member: the Lead team-summary evidence is accepted as one execution.",
 			"verify.applicability.goalDisabled": "The global native /goal switch was off when this execution started, so it ran one plain turn: no goal acceptance was performed, which neither counts as a pass nor fails the run.",
@@ -12204,7 +12204,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [model, setModel] = (0, react.useState)(initialTask?.model ?? parentTask?.model ?? "");
 			const inheritedPermission = parentTask === void 0 ? void 0 : effectiveTaskPermission(parentTask);
 			const [reuseSession, setReuseSession] = (0, react.useState)(initialTask?.reuseSession ?? false);
-			const [goalRun, setGoalRun] = (0, react.useState)(initialTask?.goalRun ?? true);
+			const [goalRun, setGoalRun] = (0, react.useState)(initialTask?.goalRun ?? false);
 			const [skipVerification, setSkipVerification] = (0, react.useState)(initialTask?.skipVerification ?? false);
 			const [scheduleEnabled, setScheduleEnabled] = (0, react.useState)(initialTask?.schedule?.enabled ?? false);
 			const [scheduleMode, setScheduleMode] = (0, react.useState)(initialTask?.schedule?.mode ?? "cron");
@@ -12329,7 +12329,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					permission: permission === "" ? void 0 : permission,
 					model: model === "" ? void 0 : model,
 					...reuseSession ? { reuseSession: true } : {},
-					...goalRun ? {} : { goalRun: false },
+					...goalRun ? { goalRun: true } : {},
 					...skipVerification ? { skipVerification: true } : {},
 					...tagList.length > 0 ? { tags: tagList } : {},
 					schedule: scheduleEnabled ? scheduleMode === "once" ? {
@@ -12661,7 +12661,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 									type: "checkbox",
 									checked: goalRun,
-									disabled: !goalRunEnabled,
 									onChange: (event) => {
 										setGoalRun(event.target.checked);
 									}
@@ -13911,8 +13910,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						className: board_module_css_default.scheduleToggle,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 							type: "checkbox",
-							checked: task.goalRun !== false,
-							disabled: pending || !goalRunEnabled,
+							checked: task.goalRun === true,
+							disabled: pending,
 							onChange: (event) => {
 								controller.updateTask(task.id, { goalRun: event.target.checked });
 							}
@@ -48389,8 +48388,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"list.invokableTooltip": "模型可自动调用该技能；手动 /skill 指令不受影响",
 			"list.linked": "软链接",
 			"list.noFile": "无本地文件",
-			"list.noFileTooltip": "该技能由插件在运行时注册或随包提供，没有可编辑的 SKILL.md 文件",
+			"list.noFileTooltip": "该技能由插件在运行时注册或随包提供，没有 SKILL.md 文件",
 			"list.noFileHint": "该技能没有本地 SKILL.md 文件，无法在此启用/禁用、编辑或删除。",
+			"list.providerFile": "由插件提供",
+			"list.providerFileTooltip": "该技能的文件由插件 provider 提供，未落在本面板扫描的技能根目录下",
+			"list.providerFileHint": "该技能由插件提供、确有 SKILL.md 文件，但不在本面板扫描的技能根目录下，因此无法在此启用/禁用、编辑或删除。",
 			"list.mark.model": "模型",
 			"list.mark.user": "用户",
 			"provider.filesystem": "文件系统",
@@ -48463,8 +48465,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"list.invokableTooltip": "The model can invoke this skill automatically; manual /skill commands remain available",
 			"list.linked": "symlinked",
 			"list.noFile": "No local file",
-			"list.noFileTooltip": "This skill is registered at runtime or shipped by a plugin, so it has no editable SKILL.md file",
+			"list.noFileTooltip": "This skill is registered at runtime or shipped by a plugin, so it has no SKILL.md file",
 			"list.noFileHint": "This skill has no local SKILL.md file, so it cannot be enabled/disabled, edited, or deleted here.",
+			"list.providerFile": "Provided by plugin",
+			"list.providerFileTooltip": "This skill has a file supplied by its plugin provider, outside the skill roots this panel scans",
+			"list.providerFileHint": "This skill is supplied by a plugin and does have a SKILL.md file, but it sits outside the skill roots this panel scans, so it cannot be enabled/disabled, edited, or deleted here.",
 			"list.mark.model": "model",
 			"list.mark.user": "user",
 			"provider.filesystem": "Filesystem",
@@ -48969,6 +48974,28 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const key = `provider.${provider}`;
 			return key in zh$3 ? tt(key) : provider;
 		}
+		/**
+		* The local-file badge for a row that the write routes cannot serve.
+		*
+		* A skill with a plugin-supplied file and a skill with no file at all are
+		* different facts (issue #1842): the first is "Provided by plugin", only the
+		* second is "No local file". Both are pathless, so neither offers controls.
+		* @param skill - the row's entry.
+		* @returns the badge copy and its tooltip.
+		*/
+		function localFileBadge(skill) {
+			return skill.fileState === "provider-file" ? {
+				label: tt("list.providerFile"),
+				tooltip: tt("list.providerFileTooltip")
+			} : {
+				label: tt("list.noFile"),
+				tooltip: tt("list.noFileTooltip")
+			};
+		}
+		/** The explanation shown under a row the write routes cannot serve. */
+		function localFileHint(skill) {
+			return skill.fileState === "provider-file" ? tt("list.providerFileHint") : tt("list.noFileHint");
+		}
 		/** Marks shown next to a skill (model/user invocable). */
 		function invokableMarks(skill) {
 			const marks = [];
@@ -49017,6 +49044,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 			};
 			const isIsolated = skill.isActiveWorkspace === false;
+			const fileBadge = skill.path === void 0 ? localFileBadge(skill) : void 0;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
 				className: `${panel_module_css_default.skillRow}${isIsolated ? ` ${panel_module_css_default.skillIsolated}` : ""}`,
 				"data-dsh-part": "skill-row",
@@ -49046,10 +49074,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								className: panel_module_css_default.badge,
 								children: tt("list.linked")
 							}),
-							skill.path === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							fileBadge !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								className: panel_module_css_default.badge,
-								title: tt("list.noFileTooltip"),
-								children: tt("list.noFile")
+								title: fileBadge.tooltip,
+								children: fileBadge.label
 							}),
 							(skill.modelInvocable || skill.userInvocable) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								className: `${panel_module_css_default.badge} ${panel_module_css_default.badgeInvokable}`,
@@ -49107,7 +49135,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					}),
 					skill.path === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: panel_module_css_default.skillWhen,
-						children: tt("list.noFileHint")
+						children: localFileHint(skill)
 					}),
 					error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: panel_module_css_default.banner,
@@ -56408,8 +56436,38 @@ html[data-platform="darwin"] body > :is(
     grid-template-rows: 100%;
     padding-bottom: env(safe-area-inset-bottom);
   }
-  [data-dsh-frame] [data-pane="sidebar"] {
-    position: absolute;
+  /* The drawer contract is not a skin decision, and this rule is the END of
+     that argument, not the start of one. Read this before raising it again.
+
+     The skin-center loader force-scopes every skin selector under
+     html[data-dsh-skin="<id>"] (scopeSelectorText prefixes the scope to every
+     head), so a skin rule written as body [data-pane='sidebar'] { position:
+     relative; } is served as html[data-dsh-skin="..."] body
+     [data-pane='sidebar'] - specificity 0-2-2, above a plain 0-2-0. The pane
+     then falls back into the single mobile grid column and pushes the
+     conversation column out of the viewport (measured at a 700px viewport:
+     conversation y=700, height=0 - no usable session area at all).
+
+     position !important settles that case, but !important does not settle
+     everything: when BOTH sides are important the cascade returns to
+     specificity, and a skin rule like
+     div:has(> [data-slot="sidebar"]) { position: relative !important; }
+     (last-exile, porco-rosso, white-snake) is served as
+     html[data-dsh-skin="..."] body div:has(...) - 0-2-3 - which still wins.
+     The :is(...) below is deliberately redundant as a matcher and exists only
+     to lift this rule to 0-3-0 so the drawer beats that shape too. It is
+     verified against all seven affected skins; do not "simplify" it away.
+
+     BOUNDARY: this is the ceiling. If a future skin outranks 0-3-0 here, the
+     correct fix is to repair THAT SKIN, not to raise this specificity again.
+     Positioning the sidebar pane is not a skin's job: those rules want the
+     pane to be a containing block for their own glass layer, and position is
+     a side effect of that intent, not the intent. A skin that needs a
+     containing block should paint its layer inside the pane's slot child
+     instead. Chasing skins here would turn the mobile contract into an arms
+     race the shell cannot win. */
+  [data-dsh-frame] [data-pane="sidebar"]:is([data-pane="sidebar"]) {
+    position: absolute !important;
     inset-block: 0;
     inset-inline-start: 0;
     z-index: 1100;
