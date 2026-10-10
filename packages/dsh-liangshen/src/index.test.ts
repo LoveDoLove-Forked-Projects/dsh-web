@@ -86,6 +86,32 @@ describe('resolveConfig', () => {
     expect(resolveConfig(Config({}))).toEqual(DEFAULT_CONFIG)
   })
 
+  it('operator gets the guard fine-tuning fields UNSET by default', () => {
+    // Given the shipped schema and the reader, When the operator reads the
+    // effective guard settings, Then the three fine-tuning overrides resolve to
+    // undefined rather than to a factory constant. That is what lets the
+    // guard's effort-adaptive table and the sensitivity preset be the shipped
+    // behavior: a default here would be written into the declared preset's
+    // guard row on every activation and mask both.
+    const values = resolveConfig(Config({}))
+    expect(values.guardStallReasoningChars).toBeUndefined()
+    expect(values.guardGlobalStallCap).toBeUndefined()
+    expect(values.guardEchoFailures).toBeUndefined()
+    // The two fields that are NOT overrides keep their real defaults.
+    expect(values.guardEnabled).toBe(true)
+    expect(values.guardSensitivity).toBe('balanced')
+    expect(DEFAULT_CONFIG.guardStallReasoningChars).toBeUndefined()
+  })
+
+  it('operator who clears a guard field gets undefined, not the previous value', () => {
+    // Given a volatile reference the Host clears, When the operator reads the
+    // effective settings, Then the field reads as unset so the overlay leaves
+    // the guard row's key out and the adaptive table applies again.
+    const cleared = { get: () => undefined }
+    expect(resolveConfig({ guardStallReasoningChars: cleared }).guardStallReasoningChars).toBeUndefined()
+    expect(resolveConfig({ guardStallReasoningChars: undefined }).guardStallReasoningChars).toBeUndefined()
+  })
+
   it('operator sees a committed volatile write through the held reference', () => {
     // Given a volatile field the Host hands over as a stable reference, When
     // the operator commits a write and reads again, Then the read moves with it.
@@ -104,6 +130,7 @@ describe('resolveConfig', () => {
       enabled: false,
       announceToAgent: true,
       presentation: 'ptc',
+      dispatcher: true,
       guardEnabled: false,
       guardSensitivity: 'aggressive',
       guardStallReasoningChars: 12000,
@@ -113,12 +140,41 @@ describe('resolveConfig', () => {
       enabled: false,
       announceToAgent: true,
       presentation: 'ptc',
+      dispatcher: true,
       guardEnabled: false,
       guardSensitivity: 'aggressive',
       guardStallReasoningChars: 12000,
       guardGlobalStallCap: 6,
       guardEchoFailures: 2,
     })
+  })
+
+  it('operator gets the dispatcher switch ON by default, as a volatile field', () => {
+    // Given the shipped schema, When the operator reads the effective settings,
+    // Then the dispatcher block is appended by default: a session that never
+    // touches the switch runs as a dispatcher, and switching it off is what
+    // returns the bare persona. The field is volatile like every other
+    // preset-shaping key, so the Host serves it as this entry's settings form
+    // and commits a write in place instead of remounting the row.
+    expect(DEFAULT_CONFIG.dispatcher).toBe(true)
+    expect(resolveConfig({}).dispatcher).toBe(true)
+    expect(resolveConfig(Config({})).dispatcher).toBe(true)
+    let committed = false
+    expect(resolveConfig({ dispatcher: { get: () => committed } }).dispatcher).toBe(false)
+    committed = true
+    expect(resolveConfig({ dispatcher: { get: () => committed } }).dispatcher).toBe(true)
+  })
+
+  it('operator sees dispatcher and presentation as independent settings', () => {
+    // Given the two orthogonal settings (dispatcher changes the PROMPT, its
+    // appended rule block; presentation changes the WIRE, the tool surface),
+    // When the operator reads every combination, Then each field resolves to
+    // the value it was given with no cross-talk between them.
+    for (const presentation of ['ptc', 'native', 'both'] as const) {
+      for (const dispatcher of [true, false]) {
+        expect(resolveConfig({ presentation, dispatcher })).toMatchObject({ presentation, dispatcher })
+      }
+    }
   })
 })
 

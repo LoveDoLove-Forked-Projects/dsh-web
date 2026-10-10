@@ -77,6 +77,14 @@ describe('readCompositionRows', () => {
     expect(catalog['pagedToolPatterns']).toEqual(['mcp__*'])
   })
 
+  it('operator reads the shipped dispatcher switch ON on the minimal-prompt row', () => {
+    // Given the factory composition, When the operator reads the minimal-prompt
+    // row, Then it declares `dispatcher: true`: the shipped default appends the
+    // dispatcher block, and the key is present so the overlay writes a value
+    // rather than inventing a key the row never carried.
+    expect(configOf(rowOf(rows(), 'minimal-prompt'))['dispatcher']).toBe(true)
+  })
+
   it('operator keeps a literal block scalar verbatim', () => {
     // Given the persona row's `prefix: |-` scalar, When the operator reads it,
     // Then the prose is content and the next composition row ends it.
@@ -235,6 +243,22 @@ describe('applyPresetOverrides', () => {
     expect(applyPresetOverrides(parsed, {})).toEqual(parsed)
   })
 
+  it('operator leaves every guard key out of the row while the settings are unset', () => {
+    // Given the shipped rows and settings whose guard overrides are unset (the
+    // factory state), When the operator applies the overlay, Then the guard row
+    // carries no fine-tuning key at all, so the guard's own effort-adaptive
+    // thresholds and sensitivity preset are what a session actually runs.
+    const applied = applyPresetOverrides(rows(), {
+      presentation: 'both',
+      guardEnabled: true,
+      guardSensitivity: 'balanced',
+      guardStallReasoningChars: undefined,
+      guardGlobalStallCap: undefined,
+      guardEchoFailures: undefined,
+    })
+    expect(configOf(rowOf(applied, 'guard'))).toEqual({ enabled: true, sensitivity: 'balanced' })
+  })
+
   it('operator writes the settings into the rows that carry them', () => {
     // Given committed settings, When the operator applies the overlay, Then
     // the tool-catalog and guard rows carry them and nothing else moves.
@@ -256,6 +280,38 @@ describe('applyPresetOverrides', () => {
     })
     expect(configOf(rowOf(applied, 'tool-catalog'))['descriptionMaxLength']).toBe(200)
     expect(rowOf(applied, 'minimal-prompt')).toEqual(rowOf(rows(), 'minimal-prompt'))
+  })
+
+  it('operator leaves the dispatcher key out of the row while the setting is unset', () => {
+    // Given the shipped rows and no dispatcher choice, When the operator
+    // applies the overlay, Then the minimal-prompt row keeps exactly the keys
+    // the composition declares: the switch is only ever written when a caller
+    // committed a value for it, never invented as a factory default.
+    const applied = applyPresetOverrides(rows(), { presentation: 'both' })
+    expect(rowOf(applied, 'minimal-prompt')).toEqual(rowOf(rows(), 'minimal-prompt'))
+    expect(configOf(rowOf(applied, 'minimal-prompt'))['dispatcher']).toBe(true)
+  })
+
+  it('operator writes the dispatcher switch into the minimal-prompt row', () => {
+    // Given a committed dispatcher choice, When the operator applies the
+    // overlay, Then the minimal-prompt row carries it and the presentation key
+    // in the tool-catalog row is untouched: the two settings are orthogonal,
+    // and the row's other config keys survive.
+    const applied = applyPresetOverrides(rows(), { presentation: 'both', dispatcher: true })
+    const prompt = configOf(rowOf(applied, 'minimal-prompt'))
+    expect(prompt['dispatcher']).toBe(true)
+    expect(prompt['keepPlanPolicy']).toBe(true)
+    expect(prompt['instructionSource']).toBe('host')
+    expect(configOf(rowOf(applied, 'tool-catalog'))['presentation']).toBe('both')
+    expect(rowOf(applied, 'guard')).toEqual(rowOf(rows(), 'guard'))
+  })
+
+  it('operator turns the dispatcher switch back off through the same key', () => {
+    // Given a committed `false` for the dispatcher switch, When the operator
+    // applies the overlay, Then the row carries that value: the key is written
+    // for both directions, so a session can return to the bare persona.
+    const applied = applyPresetOverrides(rows(), { dispatcher: false })
+    expect(configOf(rowOf(applied, 'minimal-prompt'))['dispatcher']).toBe(false)
   })
 
   it('operator is never given a row the composition does not carry', () => {

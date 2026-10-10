@@ -43,6 +43,18 @@
  * (`withheldToolNames`) and is lifted before a new one is applied, so repeated
  * collections do not accumulate filters.
  *
+ * WHICH PRESENTATION PAGES WHAT: the registry restriction is installed for
+ * `ptc` alone, because a collapsed wire is the one presentation where the
+ * scope's registry IS the whole reachable surface. `both` deliberately leaves
+ * the registry unrestricted: its wire carries the full native roster beside
+ * `run_code`, so a paged namespace is off the direct-call surface while the
+ * SDK inside a program still reaches it. That reachability is the native wire's
+ * own — the wire carries every registered tool and nothing removes the paged
+ * ones from the scope's registry — rather than an exemption paging grants, and
+ * it is why the paged-out summary states each presentation's reachability
+ * instead of describing both with one sentence. `native` carries no program at
+ * all, so the wire partition is the whole of paging there.
+ *
  * TIMING: that restriction is installed from OUTSIDE the assembly waterfall.
  * `SystemPrompt.assemble()` collects the tool providers and calls every
  * section's `text(context)` BEFORE it runs the `system-prompt/assemble`
@@ -62,10 +74,12 @@
  * The catalog republishes only when its content changes or the published copy
  * left the visible surface (compaction, resume).
  *
- * RESIDENT BUDGET: `maxResidentTokens` (default 1500) estimates the
- * always-on-wire surface and warns once when it is crossed. The guard is a
- * diagnostic, never a truncation: silently dropping a tool the session needs
- * would trade a measurable context cost for an unmeasurable capability loss.
+ * RESIDENT BUDGET: `maxResidentTokens` estimates the always-on-wire surface
+ * and warns once when it is crossed; the shipped ceiling is the
+ * `DEFAULT_MAX_RESIDENT_TOKENS` constant below, and a deployment may raise or
+ * lower it through the config. The guard is a diagnostic, never a truncation:
+ * silently dropping a tool the session needs would trade a measurable context
+ * cost for an unmeasurable capability loss.
  */
 
 import {
@@ -322,21 +336,29 @@ const PTC_PROGRAM_LINES = [
 /**
  * The short note the catalog carries when `run_code` sits on the wire beside
  * the native roster ('both'): native calls are the primary surface, and the
- * transport covers programmatic batch work. Paged-out namespaces stay reachable
- * through the SDK inside a program even before activation.
+ * transport covers programmatic batch work. The trigger is countable, because a
+ * shape rule alone leaves the boundary to the model's judgement. Paged-out
+ * namespaces stay reachable through the SDK inside a program even before
+ * activation — the native wire carries every registered tool and 'both' leaves
+ * the scope's registry unrestricted, so nothing removed them from the program's
+ * own surface.
  */
 const BOTH_PROGRAM_LINES = [
-  'Prefer calling the tools above directly by name: ordinary single-step work (read, edit, bash, one search) goes through the native call, never through `run_code`. Reserve `run_code` for what a direct call cannot do — an async TypeScript body (`code`, with a short `description`) that reaches tools as `await tools.<name>({ ... })`, overlaps independent read-only calls under `Promise.all`, and catches `ToolCallError` to continue: programmatic batch computation, wide fan-out, or multi-step data shaping. Routing everyday calls through a program adds a wrapping layer with no payoff.',
-  'Paged-out namespaces below stay off the NATIVE wire but stay reachable through the SDK inside a program even before activation; activating one also puts its tools back on the direct surface.',
+  'Prefer calling the tools above directly by name: ordinary single-step work (read, edit, bash, one search) goes through the native call, never through `run_code`. Reserve `run_code` for what a direct call cannot do — an async TypeScript body (`code`, with a short `description`) that reaches tools as `await tools.<name>({ ... })`, overlaps independent read-only calls under `Promise.all`, and catches `ToolCallError` to continue: programmatic batch computation, wide fan-out, or multi-step data shaping.',
+  '',
+  'The trigger is countable: one intent with three or more independent targets, or intermediate results that do not belong in the conversation. Below that, call the tools directly. Every call inside a program must handle its own failure with `try/catch`, so the error chain a program produces is longer than a direct call — wrapping one-step work in a program to save a call pays that cost for nothing.',
+  '',
+  'Paged-out namespaces stay off the NATIVE direct-call surface but stay reachable through the SDK inside a program even before activation — the native wire carries every registered tool and nothing removes the paged ones from the scope registry, so this is the reachability the wire itself carries rather than an exemption paging grants — and activating one also puts its tools back on the direct surface.',
 ]
 
 /**
  * Model-facing catalog text.
  * - Native presentation: the on-wire tool list plus the paged-out namespace summary.
- * - 'both': the on-wire list INCLUDING `run_code`, the namespace summary, and
- *   the short programmatic-escape note.
+ * - 'both': the on-wire list INCLUDING `run_code`, the namespace summary with
+ *   its direct-call-only reachability, and the short programmatic-escape note.
  * - 'ptc' (wire collapsed to `run_code`): the SDK-reachable list plus the full
- *   program contract naming `run_code` the one direct transport.
+ *   program contract naming `run_code` the one direct transport, and a
+ *   namespace summary whose page covers the whole surface.
  */
 export function renderCatalogText(entries, presentation = 'native', inactive = []) {
   // Activated paged families are listed under their namespace heading; every
@@ -364,11 +386,22 @@ export function renderCatalogText(entries, presentation = 'native', inactive = [
   const footer = inactive.length === 0
     ? 'This is the complete current list and replaces any earlier available-tools list in this session.'
     : 'This is the current on-wire list and replaces any earlier available-tools list in this session.'
+  // The paged-out summary states its own reachability per presentation, because
+  // the presentations differ on exactly the fact a reader would otherwise have
+  // to infer from the program contract further down: 'ptc' pages the whole
+  // surface, 'both' pages the direct-call surface only while a program still
+  // reaches what it withholds, and 'native' carries no program at all.
+  const inactiveReachability = presentation === 'ptc'
+    ? 'The page covers the whole surface here, not the wire alone: these namespaces are unreachable from inside a program too until they are activated.'
+    : presentation === 'both'
+      ? 'Only the direct-call surface is paged here: a program still reaches these namespaces before activation, and activating one returns its tools to the direct-call surface as well.'
+      : 'This presentation carries no program transport, so the wire is the only surface these namespaces can be reached through.'
   const inactiveBlock = inactive.length === 0 ? [] : [
     '',
     'These tool namespaces are registered but currently paged out of the wire:',
+    inactiveReachability,
     '<inactive_namespaces>',
-    ...inactive.map(ns => `- \`${ns.namespace}\` (${ns.count} tool${ns.count === 1 ? '' : 's'}${ns.sample === '' ? '' : `, e.g. \`${ns.sample}\``}): ${ns.description} Call \`tool_activate({ namespace: "${ns.namespace}" })\` to load them onto the wire.`),
+    ...inactive.map(ns => `- \`${ns.namespace}\` (${ns.count} tool${ns.count === 1 ? '' : 's'}${ns.sample === '' ? '' : `, e.g. \`${ns.sample}\``}): ${ns.description} Call \`tool_activate({ namespace: "${ns.namespace}" })\` to activate it.`),
     '</inactive_namespaces>',
   ]
   const presentationLines = presentation === 'ptc'

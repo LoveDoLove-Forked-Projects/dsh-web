@@ -14,6 +14,7 @@ import {
   INSTRUCTION_SOURCES,
   isBaselineInstructionPath,
   isMessagePureBaseline,
+  DISPATCHER_RULES_HEADING,
   loadInstructionFiles,
   loadInstructionText,
   name,
@@ -22,6 +23,7 @@ import {
   WORKSPACE_INSTRUCTIONS_SECTION_NAME,
 } from '../presets/liangshen/minimal-prompt.mjs'
 import * as promptModule from '../presets/liangshen/minimal-prompt.mjs'
+import { DISPATCHER_RULES } from '../presets/liangshen/dispatcher-rules.mjs'
 
 type Listener = (first: any, second: any, third: any) => Promise<any>
 
@@ -154,7 +156,10 @@ describe('liangshen-minimal-prompt', () => {
   })
 
   test('narrows the assembled prompt to the persona and the plan policy', async () => {
-    const result = await assemble(register())
+    // Given the dispatcher switch off, When the operator assembles the prompt,
+    // Then only the persona and plan policy survive: this case is about the
+    // narrowing, not about the appended dispatcher block.
+    const result = await assemble(register({ dispatcher: false }))
     expect(result.sections.map((section: any) => section.name)).toEqual(['deployment:persona-prefix', 'plan:policy'])
     expect(result.sections[0].text).toBe(PERSONA.text)
   })
@@ -198,8 +203,10 @@ describe('liangshen-minimal-prompt', () => {
   })
 
   test('appends the session workspace directory to the persona', async () => {
+    // Given the dispatcher switch off, When the operator assembles the prompt,
+    // Then the persona carries the workspace line and nothing else.
     const cwd = project()
-    const result = await assemble(register(), FULL_SECTIONS, undefined, agentAt(cwd))
+    const result = await assemble(register({ dispatcher: false }), FULL_SECTIONS, undefined, agentAt(cwd))
     expect(result.sections[0].text)
       .toBe(`You are a helpful software engineer assistant.\n\nYour working directory is ${cwd}.`)
     // The plan policy is not orientation: it stays verbatim.
@@ -226,9 +233,10 @@ describe('liangshen-minimal-prompt', () => {
   })
 
   test('keeps the bare persona when the session reports no cwd', async () => {
+    // Given the dispatcher switch off, When the session reports no cwd, Then
+    // the bare persona is what remains: no workspace line and no appended block.
     const agent = { session: { header: {} } }
-    const result = await assemble(register(), FULL_SECTIONS, undefined, agent)
-    // No workspace line without a cwd: the bare persona is what remains.
+    const result = await assemble(register({ dispatcher: false }), FULL_SECTIONS, undefined, agent)
     expect(result.sections[0].text).toBe(PERSONA.text)
   })
 
@@ -572,6 +580,163 @@ describe('liangshen-minimal-prompt', () => {
     expect(extractInstructionPaths({})).toEqual([])
   })
 
+  describe('dispatcher rule block', () => {
+    /** The persona section text of one assembly. */
+    function personaText(result: any): string {
+      return result.sections.find((section: any) => section.name === 'deployment:persona-prefix').text
+    }
+
+    test('operator appends nothing at all while the switch is off', async () => {
+      // Given the switch off, When the operator assembles the prompt, Then the
+      // persona is the persona plus its workspace line and no dispatcher prose
+      // reaches the prompt at all.
+      const cwd = project()
+      const agent = agentAt(cwd)
+      const off = await assemble(register({ dispatcher: false }), FULL_SECTIONS, undefined, agent)
+      expect(personaText(off)).toBe(`${PERSONA.text}\n\nYour working directory is ${cwd}.`)
+      expect(off.sections.map((section: any) => section.name))
+        .toEqual(['deployment:persona-prefix', 'plan:policy'])
+      expect(personaText(off)).not.toContain('【角色识别】')
+      expect(personaText(off)).not.toContain('Dispatcher rules')
+      expect(JSON.stringify(off.sections)).not.toContain('反模式')
+    })
+
+    test('operator gets the appended block from a config that never mentions the switch', async () => {
+      // Given a config with no dispatcher key at all, When the operator
+      // assembles the prompt, Then the block is appended anyway: the plugin's
+      // own fallback agrees with the shipped preset row, so an activation that
+      // never states the switch still runs the mode the factory declares.
+      const cwd = project()
+      const absent = await assemble(register(), FULL_SECTIONS, undefined, agentAt(cwd))
+      const on = await assemble(register({ dispatcher: true }), FULL_SECTIONS, undefined, agentAt(cwd))
+      expect(personaText(absent)).toBe(personaText(on))
+      expect(personaText(absent)).toContain('【角色识别】')
+      expect(personaText(absent)).toContain(DISPATCHER_RULES)
+    })
+
+    test('operator gets a rejected non-boolean switch through config validation', () => {
+      // Given a switch that is not a boolean, When the operator registers the
+      // plugin, Then config validation rejects it instead of silently treating
+      // a truthy string as enabled.
+      expect(() => register({ dispatcher: 'yes' })).toThrow(/dispatcher must be a boolean/)
+      expect(() => register({ dispatcher: 1 })).toThrow(/dispatcher must be a boolean/)
+    })
+
+    test('operator sees the rule block appended after the persona discipline, under a separator', async () => {
+      // Given the switch on, When the operator assembles the prompt, Then the
+      // persona and its discipline stay byte-identical and the heading plus the
+      // rule block follow them, with the rest of the prompt untouched.
+      const cwd = project()
+      const result = await assemble(register({ dispatcher: true }), FULL_SECTIONS, undefined, agentAt(cwd))
+      const text = personaText(result)
+      const off = personaText(await assemble(register({ dispatcher: false }), FULL_SECTIONS, undefined, agentAt(cwd)))
+      expect(text.startsWith(off)).toBe(true)
+      expect(text.slice(off.length)).toBe(`${DISPATCHER_RULES_HEADING}${DISPATCHER_RULES}`)
+      // The persona discipline is still ahead of the appended rules.
+      expect(text.indexOf('You are a helpful software engineer assistant.'))
+        .toBeLessThan(text.indexOf('## Dispatcher rules'))
+      // The heading separates the two blocks instead of gluing them together.
+      expect(text).toContain('\n\n---\n\n## Dispatcher rules (a mode-level append)\n')
+      // The switch changes only the persona section: the rest of the prompt is
+      // untouched, and the tool wire is not involved at all.
+      expect(result.sections.map((section: any) => section.name))
+        .toEqual(['deployment:persona-prefix', 'plan:policy'])
+      expect(result.sections.find((section: any) => section.name === 'plan:policy').text).toBe(PLAN.text)
+    })
+
+    test('operator gets the whole rule set: identity, R0 through R8, R-T, and the anti-patterns', async () => {
+      // Given the switch on, When the operator assembles the prompt, Then every
+      // section of the reviewed rule set is present verbatim, the text names no
+      // repository that LiangShen does not own, and it carries no unbound
+      // template variable the harness renderer would refuse.
+      const result = await assemble(register({ dispatcher: true }), FULL_SECTIONS, undefined, agentAt(project()))
+      const text = personaText(result)
+      for (const marker of [
+        '【角色识别】',
+        '【调度者身份】',
+        '## R0 · 复杂度分诊',
+        '## R0.5 · 协作模式侦测',
+        '## R-G · 澄清访谈',
+        '## R1 · 职责边界',
+        '## R2 · 模型路由',
+        '## R3 · 子代理自治',
+        '## R4 · 子代理角色',
+        '## R5 · 派发纪律',
+        '## R-T · teammate 模式',
+        '## R6 · 审查与验收',
+        '## R7 · 文档',
+        '## R8 · 兜底',
+        '## 反模式（出现即为违规）',
+        '12. 给 spawn_teammate 编造 provider/model',
+      ]) {
+        expect(text, marker).toContain(marker)
+      }
+      // The role-recognition paragraph is carried in full, and both role halves
+      // are present: the dispatcher rules identify the executor case too.
+      expect(text).toContain('若你的第一条用户消息是一份任务书（而不是用户本人的直接请求）')
+      expect(text).toContain('R3 仍然有效')
+      // The guards announced by R2 are sub-agent model authorization guards, and
+      // the subscription repository that happens to own one is not named.
+      expect(text).not.toContain('dsh-chatgpt-subscription')
+      expect(text).not.toContain('subagentModelAuthorization')
+      // No unbound template variables ride in with the block: the renderer
+      // interpolates strictly, so a stray placeholder would fail every request.
+      expect(text).not.toMatch(/\{\{/)
+    })
+
+    test('operator sees the appended block rendered by the harness renderer', async () => {
+      // Given the switch on, When the operator renders the assembled sections
+      // through the harness renderer, Then the dispatcher rules and the
+      // workspace line both survive rendering.
+      const cwd = project()
+      const result = await assemble(register({ dispatcher: true }), FULL_SECTIONS, undefined, agentAt(cwd))
+      const rendered = renderPrompt({ sections: result.sections, variables: result.variables })
+      expect(rendered).toContain('【调度者身份】')
+      expect(rendered).toContain('## 反模式（出现即为违规）')
+      expect(rendered).toContain(`Your working directory is ${cwd}.`)
+    })
+
+    test('operator gets the rule block even when the session reports no cwd', async () => {
+      // Given a session that reports no cwd, When the operator assembles the
+      // prompt with the switch on, Then the rules still reach the persona while
+      // no workspace line is invented.
+      const result = await assemble(register({ dispatcher: true }), FULL_SECTIONS, undefined, { session: { header: {} } })
+      const text = personaText(result)
+      expect(text).not.toContain('Your working directory is')
+      expect(text).toBe(`${PERSONA.text}${DISPATCHER_RULES_HEADING}${DISPATCHER_RULES}`)
+    })
+
+    test('operator does not get the block twice when the persona already carries it', async () => {
+      // Given the switch on, When the operator assembles twice over the sections
+      // the first assembly produced, Then the block appears once: the append is
+      // idempotent, as the workspace line is.
+      const cwd = project()
+      const harness = register({ dispatcher: true })
+      const first = await assemble(harness, FULL_SECTIONS, undefined, agentAt(cwd))
+      const second = await assemble(harness, first.sections, undefined, agentAt(cwd))
+      const text = personaText(second)
+      expect(text.split('【调度者身份】')).toHaveLength(2)
+      expect(text).toBe(personaText(first))
+    })
+
+    test('operator keeps the append out of the workspace-instructions section', async () => {
+      // Given the switch on under the system-prompt instruction source, When
+      // the operator assembles the prompt, Then the appended instruction section
+      // still follows the persona and still carries the variable reference, so
+      // the rules live in the persona alone.
+      writeHome('AGENTS.md', 'user-global rule')
+      const cwd = project({ 'AGENTS.md': 'project rule' })
+      const result = await assemble(register({ dispatcher: true, instructionSource: 'system-prompt' }), FULL_SECTIONS, undefined, agentAt(cwd))
+      expect(result.sections.map((section: any) => section.name)).toEqual([
+        'deployment:persona-prefix',
+        'plan:policy',
+        WORKSPACE_INSTRUCTIONS_SECTION_NAME,
+      ])
+      expect(result.variables.workspace_instructions).not.toContain('【角色识别】')
+      expect(result.variables.workspace_instructions).toContain('project rule')
+    })
+  })
+
   describe('PTC prompt sections retention', () => {
     const RUN_CODE_WIRE = [{ name: 'run_code', description: 'Run a program.' }]
 
@@ -656,7 +821,7 @@ describe('liangshen-minimal-prompt', () => {
       // The assembled prompt is a pure function of the session cwd, so the two
       // platforms cannot diverge: nothing in the persona depends on the host.
       const cwd = project()
-      const result = await assemble(register(), FULL_SECTIONS, undefined, agentAt(cwd))
+      const result = await assemble(register({ dispatcher: false }), FULL_SECTIONS, undefined, agentAt(cwd))
       const text = result.sections[0].text
       expect(text).toBe(`You are a helpful software engineer assistant.\n\nYour working directory is ${cwd}.`)
       expect(text).not.toContain('Current platform')

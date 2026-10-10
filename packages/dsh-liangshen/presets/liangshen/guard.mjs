@@ -18,24 +18,32 @@
  *   tool call nor any visible reply text — the #5976 shape. Reading the
  *   reasoning TEXT is unnecessary (and impossible on routes that redact it);
  *   the block's character count is the objective "long thinking" measure.
+ *   On a route that persists signed reasoning blocks with NO text, every
+ *   character count reads zero and the character ladders can never fire, so a
+ *   session in which no reasoning text was ever observed falls back to a
+ *   step-count measure (see DEFAULT_BLIND_STALL_CAP) and says so once.
  * - ECHO: the same tool called with the same arguments failing M times in a
  *   row with no success in between — the closed loop of repeating one broken
  *   call.
  *
- * On either signal the breaker FIRES once per episode:
- *  1. a circuit-breaker user message is injected at the next pre-step (the
- *     one channel guaranteed to reach the model, as durable as the working-
- *     context projection), telling the model the loop was interrupted and to
- *     close out or pick a materially different action;
- *  2. a temporary reasoning-effort step-down rides the `agent/request`
- *     waterfall for the next FEW requests (current level one notch down:
- *     max -> high -> low; anything else is left alone). Lowering the budget
- *     is the community-observed recovery move (r/DeepSeek 1whgo3e) and the
- *     official effort-cost curve puts the sweet spot below max. This is the
- *     ONLY moment this plugin rewrites a request: with no signal it never
- *     touches one, so prefix-cache stability and the user's explicit model-
- *     selector effort stay untouched — the constraint recorded in the Agent
- *     Note that removed the old phase-based switching.
+ * On either signal the breaker FIRES once per episode with a circuit-breaker
+ * user message injected at the next pre-step (the one channel guaranteed to
+ * reach the model, as durable as the working-context projection), telling the
+ * model the loop was interrupted and to close out or pick a materially
+ * different action.
+ *
+ * A STALL additionally arms a temporary reasoning-effort step-down that rides
+ * the `agent/request` waterfall for the next FEW requests: one notch down
+ * `max -> high`, and `high` (like every other level) is left alone. Lowering
+ * the budget is the community-observed recovery move (r/DeepSeek 1whgo3e) and
+ * the official effort-cost curve puts the sweet spot below max — neither piece
+ * of evidence supports going BELOW the 60-80 sweet spot, so the ladder stops
+ * at `high`. ECHO does NOT step down: its cause is a broken call, not an
+ * over-large budget, and lowering the effort would weaken a model that is
+ * already stuck. This is the ONLY moment this plugin rewrites a request: with
+ * no signal it never touches one, so prefix-cache stability and the user's
+ * explicit model-selector effort stay untouched — the constraint recorded in
+ * the Agent Note that removed the old phase-based switching.
  *
  * Recovery: a step with a tool call or a visible reply re-arms the breaker
  * and, once the step-down window has run its requests, the route's own effort
@@ -96,6 +104,14 @@ export const GLOBAL_MIN_REASONING_CHARS = 200
 export const DEFAULT_GLOBAL_STALL_CAP = 4
 
 /**
+ * Consecutive output-free steps that trip STALL on a route that never produced
+ * any reasoning text. Both character ladders read zero there, so the step count
+ * is the only objective measure left; the cap matches the slow-burn ladder's,
+ * which keeps the fallback as conservative as the ladder it stands in for.
+ */
+export const DEFAULT_BLIND_STALL_CAP = 4
+
+/**
  * Sensitivity presets: a whole-scale multiplier over the adaptive thresholds,
  * for operators who know they fear false interruptions more than missed
  * episodes (or the reverse) without hand-tuning four numbers.
@@ -114,8 +130,13 @@ export const DEFAULT_STEP_DOWN_REQUESTS = 3
 /** Steps the breaker stays quiet after firing once (no message spam). */
 export const DEFAULT_REFIRE_COOLDOWN_STEPS = 5
 
-/** The effort ladder a step-down walks along. Anything else is left alone. */
-const EFFORT_LADDER = ['max', 'high', 'low']
+/**
+ * The effort ladder a step-down walks along: one notch down from `max` only.
+ * `high` is where the ladder stops, because the official effort-cost curve
+ * puts the model's sweet spot at 60-80 and nothing supports stepping below it;
+ * every other level (including `high` itself) is left alone.
+ */
+const EFFORT_LADDER = ['max', 'high']
 
 /** Validate a positive-integer config value, or fall back when absent. */
 function integerAtLeast(value, field, minimum, fallback) {
@@ -140,6 +161,15 @@ function reasoningCharsOf(event) {
     if (block?.type === 'reasoning') chars += String(block.text ?? '').length
   }
   return chars
+}
+
+/** Reasoning blocks one assistant/message event carries, text or not. */
+function reasoningBlocksOf(event) {
+  let blocks = 0
+  for (const block of event?.data?.message?.content ?? []) {
+    if (block?.type === 'reasoning') blocks += 1
+  }
+  return blocks
 }
 
 /** Visible reply blocks (non-empty text) one assistant/message event carries. */
@@ -185,14 +215,18 @@ function isErrorResult(event) {
  * - the latest tool call's signature and its consecutive-failure count,
  *   reset by any success or any differently-shaped call.
  *
- * Returns `{ signal: 'stall' | 'echo' | undefined, detail }` for the TAIL of
- * the stream: the breaker only cares whether the session is degenerate NOW.
+ * Returns `{ signal: 'stall' | 'echo' | undefined, detail, blind }` for the TAIL
+ * of the stream: the breaker only cares whether the session is degenerate NOW.
+ * `blind` reports the session-level fact that reasoning blocks were observed
+ * without a single character of reasoning text, so the caller can say once that
+ * this session's stall detection is running on step counts.
  */
 export function foldGuardSignal(events, options) {
   const stallSteps = options?.stallSteps ?? DEFAULT_STALL_STEPS
   const stallChars = options?.stallReasoningChars ?? DEFAULT_STALL_REASONING_CHARS
   const echoFailures = options?.echoFailures ?? DEFAULT_ECHO_FAILURES
   const globalCap = options?.globalStallCap ?? DEFAULT_GLOBAL_STALL_CAP
+  const blindCap = options?.blindStallCap ?? DEFAULT_BLIND_STALL_CAP
 
   // Stall, two independent ladders walked in parallel:
   //  1. PER-STEP: one step whose reasoning alone blows past the character floor
@@ -202,11 +236,25 @@ export function foldGuardSignal(events, options) {
   //     hard global cap so a legitimately long investigation (many small
   //     read-only steps) cannot trip it by accumulation alone: the streak only
   //     counts while the steps are also individually reasoning-heavy.
+  //  3. BLIND (fallback): on a route that persists signed reasoning blocks
+  //     with no text, every character measure reads zero and ladders 1 and 2
+  //     are structurally dead. When the whole stream carried reasoning blocks
+  //     but not one character of reasoning text, the step count is the only
+  //     measure left, so consecutive output-free reasoning-block steps trip
+  //     STALL at the same cap the slow-burn ladder uses.
   let stallStreak = 0
   let globalStreak = 0
+  let blindStreak = 0
+  // Session-level facts the blind fallback keys on: whether ANY reasoning text
+  // was ever observed, and whether any reasoning block was observed at all.
+  // A stream with no reasoning block yet (a fresh session) is NOT blind — the
+  // character ladders have simply not had their chance.
+  let reasoningTextSeen = false
+  let reasoningBlocksSeen = 0
   // pending holds, for the current step, whether we saw reasoning and whether
   // we saw any output (tool call or visible text).
   let pendingReasoning = 0
+  let pendingReasoningBlocks = 0
   let pendingOutput = false
 
   const closeStep = () => {
@@ -224,7 +272,16 @@ export function foldGuardSignal(events, options) {
     } else if (pendingReasoning >= GLOBAL_MIN_REASONING_CHARS) {
       globalStreak = Math.min(globalStreak + 1, globalCap)
     }
+    // Blind ladder: an output-free step that still carried a reasoning block —
+    // the exact shape a redacted route produces. Character count is not part of
+    // the test, because on that route it is always zero.
+    if (pendingOutput) {
+      blindStreak = 0
+    } else if (pendingReasoningBlocks > 0) {
+      blindStreak = Math.min(blindStreak + 1, blindCap)
+    }
     pendingReasoning = 0
+    pendingReasoningBlocks = 0
     pendingOutput = false
   }
 
@@ -241,7 +298,15 @@ export function foldGuardSignal(events, options) {
         break
       case 'assistant/message': {
         const reasoning = reasoningCharsOf(event)
-        if (reasoning > 0) pendingReasoning += reasoning
+        if (reasoning > 0) {
+          pendingReasoning += reasoning
+          reasoningTextSeen = true
+        }
+        const blocks = reasoningBlocksOf(event)
+        if (blocks > 0) {
+          pendingReasoningBlocks += blocks
+          reasoningBlocksSeen += blocks
+        }
         if (visibleRepliesOf(event) > 0) pendingOutput = true
         break
       }
@@ -273,23 +338,35 @@ export function foldGuardSignal(events, options) {
   }
   closeStep()
 
+  // The blind fallback applies only when the session really is on a redacted
+  // route: reasoning blocks were observed, none of them carried any text.
+  const blind = !reasoningTextSeen && reasoningBlocksSeen > 0
+  if (blind && blindStreak >= blindCap) {
+    return {
+      signal: 'stall',
+      detail: `${blindStreak} consecutive output-free reasoning steps (no reasoning text in this session)`,
+      blind,
+    }
+  }
   if (stallStreak >= stallSteps) {
-    return { signal: 'stall', detail: `${stallStreak} consecutive runaway-reasoning steps (${stallChars}+ chars each)` }
+    return { signal: 'stall', detail: `${stallStreak} consecutive runaway-reasoning steps (${stallChars}+ chars each)`, blind }
   }
   if (globalStreak >= globalCap) {
-    return { signal: 'stall', detail: `${globalStreak} consecutive output-free reasoning steps (slow burn)` }
+    return { signal: 'stall', detail: `${globalStreak} consecutive output-free reasoning steps (slow burn)`, blind }
   }
   if (failStreak >= echoFailures) {
-    return { signal: 'echo', detail: `${failStreak} consecutive identical-argument tool failures` }
+    return { signal: 'echo', detail: `${failStreak} consecutive identical-argument tool failures`, blind }
   }
-  return { signal: undefined, detail: '' }
+  return { signal: undefined, detail: '', blind }
 }
 
 /**
  * Resolve the concrete thresholds for one request: the adaptive floor for the
  * current effort, scaled by the sensitivity preset, with any explicit fine-
  * tuning override winning over the table. All inputs are optional; the result
- * is always a complete, valid set.
+ * is always a complete, valid set. Every guard fine-tuning field is absent by
+ * default, which is what lets the effort table and the sensitivity preset be
+ * the shipped behavior rather than dead branches behind a factory value.
  */
 export function resolveThresholds(options) {
   const effort = options?.effort
@@ -305,10 +382,20 @@ export function resolveThresholds(options) {
   const echoFailures = options?.echoFailures !== undefined
     ? options.echoFailures
     : Math.max(2, Math.round(DEFAULT_ECHO_FAILURES * scale))
-  return { stallReasoningChars, globalStallCap, echoFailures }
+  // The blind fallback carries no fine-tuning field of its own: it is a
+  // degraded stand-in for the slow-burn ladder, so it scales with the same
+  // sensitivity preset unless the caller pins the slow-burn cap explicitly.
+  const blindStallCap = options?.blindStallCap !== undefined
+    ? options.blindStallCap
+    : globalStallCap
+  return { stallReasoningChars, globalStallCap, echoFailures, blindStallCap }
 }
 
-/** One notch down the effort ladder, or undefined when the level is unknown. */
+/**
+ * One notch down the effort ladder, or undefined when the level is left alone.
+ * Only `max` moves, and it moves to `high`: the ladder stops at the sweet
+ * spot, so a session the user explicitly put on `high` is never weakened.
+ */
 export function stepDownEffort(effort) {
   const index = EFFORT_LADDER.indexOf(effort)
   if (index < 0 || index === EFFORT_LADDER.length - 1) return undefined
@@ -329,7 +416,7 @@ export function renderGuardMessage(verdict) {
   ].join(' ')
 }
 
-/** Register the signal fold, the pre-step injection, and the effort step-down. */
+/** Register the signal fold, the pre-step injection, and the stall-triggered effort step-down. */
 export function apply(ctx, config) {
   const enabled = config?.enabled !== false
   if (!enabled) return
@@ -349,16 +436,17 @@ export function apply(ctx, config) {
   const stepDownRequests = integerAtLeast(config?.stepDownRequests, 'stepDownRequests', 1, DEFAULT_STEP_DOWN_REQUESTS)
   const refireCooldown = integerAtLeast(config?.refireCooldownSteps, 'refireCooldownSteps', 1, DEFAULT_REFIRE_COOLDOWN_STEPS)
 
-  // Per-agent runtime state: the breaker cooldown / step-down window AND the
-  // current reasoning effort the request waterfall observed. The signal itself
-  // always re-derives from the durable event stream, so a resume never
+  // Per-agent runtime state: the breaker cooldown / step-down window, the
+  // current reasoning effort the request waterfall observed, and whether this
+  // session's degraded stall detection has already been reported. The signal
+  // itself always re-derives from the durable event stream, so a resume never
   // inherits a stale verdict; the effort is a read-only observation, never a
   // rewrite outside a fired episode.
   const stateByAgent = new WeakMap()
   const stateOf = (agent) => {
     let state = stateByAgent.get(agent)
     if (state === undefined) {
-      state = { cooldown: 0, firedVerdict: undefined, stepDownLeft: 0, currentEffort: undefined }
+      state = { cooldown: 0, firedVerdict: undefined, stepDownLeft: 0, currentEffort: undefined, blindWarned: false }
       stateByAgent.set(agent, state)
     }
     return state
@@ -405,10 +493,22 @@ export function apply(ctx, config) {
     })
     const verdict = foldGuardSignal(sessionEvents(agent.session), { stallSteps, ...thresholds })
 
+    // A redacted route makes both character ladders structurally dead; the fold
+    // has fallen back to step counts. Say so once per agent, because a session
+    // whose stall detection is degraded is a fact an operator debugging a
+    // missed episode needs, and the breaker's own fire log never carries it.
+    if (verdict.blind && !state.blindWarned) {
+      state.blindWarned = true
+      try { ctx.logger?.warn?.(`${name}: this session persisted reasoning blocks without any reasoning text, so stall detection is degraded to step counts (${thresholds.blindStallCap} consecutive output-free steps)`) } catch {}
+    }
+
     if (verdict.signal !== undefined && state.cooldown === 0) {
-      // Fire: inject the breaker message and arm the effort step-down.
+      // Fire: inject the breaker message, and arm the effort step-down only for
+      // a STALL. A stall is an over-large reasoning budget, which is what
+      // lowering the effort addresses; an echo is a broken call, where
+      // weakening the model would only make the loop harder to escape.
       state.cooldown = refireCooldown
-      state.stepDownLeft = stepDownRequests
+      if (verdict.signal === 'stall') state.stepDownLeft = stepDownRequests
       state.firedVerdict = verdict
       const message = {
         id: globalThis.crypto.randomUUID(),
@@ -416,7 +516,7 @@ export function apply(ctx, config) {
         content: [{ type: 'text', text: renderGuardMessage(verdict) }],
         source: { kind: name },
       }
-      try { ctx.logger?.warn?.(`${name}: circuit breaker fired (${verdict.detail}) [${thresholds.stallReasoningChars}ch/${thresholds.globalStallCap}steps/${thresholds.echoFailures}fails, ${sensitivity}, effort ${state.currentEffort ?? 'unknown'}]`) } catch {}
+      try { ctx.logger?.warn?.(`${name}: circuit breaker fired (${verdict.detail}) [${thresholds.stallReasoningChars}ch/${thresholds.globalStallCap}steps/${thresholds.echoFailures}fails, ${sensitivity}, effort ${state.currentEffort ?? 'unknown'}, ${verdict.signal === 'stall' ? `step-down ${String(stepDownRequests)} requests` : 'message only'}]`) } catch {}
       return { ...decision, messages: [...decision.messages, message] }
     }
 

@@ -83,11 +83,21 @@
  * PLAN MODE is kept by default. `dsh-plan-mode` enforces its rules through
  * the `plan:policy` prompt section alone. `keepPlanPolicy: false` restores the
  * strict one-line surface.
+ *
+ * DISPATCHER RULES (`dispatcher`, default `true`): the switch appends
+ * `./dispatcher-rules.mjs` to the persona text, after the workspace line, under
+ * a two-line heading that names the block and states that it takes effect
+ * alongside the discipline above it. The persona and its discipline stay
+ * exactly where they are — the block adds complexity triage, delegation
+ * discipline, and verification on top of them. Switched off, the assembly
+ * returns to the bare persona byte for byte: no import side effect, no extra
+ * section, no extra separator.
  */
 
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
+import { DISPATCHER_RULES } from './dispatcher-rules.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'liangshen-minimal-prompt'
@@ -174,6 +184,40 @@ function optionalSource(value, field, fallback) {
     throw new TypeError(`${name}: ${field} must be one of ${JSON.stringify(INSTRUCTION_SOURCES)}`)
   }
   return value
+}
+
+/**
+ * The two-line heading that separates the appended dispatcher block from the
+ * persona discipline. The block is long and starts at its own top-level
+ * headings, so it is announced rather than being read as one more persona
+ * bullet, and the heading states the discipline is still in force.
+ */
+export const DISPATCHER_RULES_HEADING = [
+  '',
+  '',
+  '---',
+  '',
+  '## Dispatcher rules (a mode-level append)',
+  '',
+  'You are this session\'s dispatcher: your deliverable is the plan, the task',
+  'book, the review verdict, and the hand-off — not the code written in your',
+  'place. The working discipline above stays in force; the rules below add',
+  'complexity triage, delegation discipline, and verification on top of it.',
+  '',
+  '---',
+  '',
+].join('\n')
+
+/**
+ * Append the dispatcher block to the persona section text: the persona with
+ * its workspace line, the heading, then the rule block. The block is prefixed
+ * by the "additional material after the stable prompt prefix" clause so
+ * DeepSeek's long-range attention keeps treating the rules as operative, which
+ * is how the reference deployment renders them.
+ */
+export function withDispatcherRules(text) {
+  if (text.includes(DISPATCHER_RULES)) return text
+  return `${text}${DISPATCHER_RULES_HEADING}${DISPATCHER_RULES}`
 }
 
 function optionalByteSize(value, field, fallback) {
@@ -664,27 +708,39 @@ export function dropInstructionMessages(messages, baselineFiles = [], baselineLo
  * to the persona section at assembly time. The literal cwd comes from the
  * session header, so the line stays correct after a workspace switch, and a
  * session without a readable cwd keeps the bare persona rather than failing.
+ *
+ * `dispatcher` appends the dispatcher block to the SAME persona section, after
+ * the workspace line, so the order is fixed: orientation, then the rules. With
+ * the switch off this function is the one it always was — same array identity
+ * when there is nothing to append, byte-identical text when there is.
+ *
+ * Nothing is escaped on the way in: a personality section is prompt text the
+ * assembler emits, not section text the renderer interpolates, so a literal
+ * `{{name}}` inside the appended rules reaches the model as written instead of
+ * throwing on an unknown variable. The append is idempotent, like the workspace
+ * line: a persona that already carries the block is left alone.
  */
 const WORKSPACE_LINE_PREFIX = '\n\nYour working directory is '
 
-/** Append the workspace line to the persona section, once. */
-export function withWorkspaceLine(sections, agent) {
+/** Append the workspace line, and the dispatcher block when the switch is on, to the persona section. */
+export function withWorkspaceLine(sections, agent, dispatcher = false) {
   const cwd = agent?.session?.header?.cwd
-  if (typeof cwd !== 'string' || cwd.length === 0) return sections
-  const line = `${WORKSPACE_LINE_PREFIX}${cwd}.`
+  const line = (typeof cwd === 'string' && cwd.length > 0) ? `${WORKSPACE_LINE_PREFIX}${cwd}.` : ''
+  if (line === '' && !dispatcher) return sections
   const persona = sections.find(section =>
-    PERSONA_SECTION_NAMES.includes(section?.name)
-    && typeof section?.text === 'string'
-    && !section.text.includes(line))
+    PERSONA_SECTION_NAMES.includes(section?.name) && typeof section?.text === 'string')
   if (persona === undefined) return sections
+  const text = line !== '' && !persona.text.includes(line) ? `${persona.text}${line}` : persona.text
+  if (text === persona.text && !dispatcher) return sections
   return sections.map(section => section === persona
-    ? { ...section, text: `${section.text}${line}` }
+    ? { ...section, text: dispatcher ? withDispatcherRules(text) : text }
     : section)
 }
 
 /** Register the section filter, workspace-instruction source, and dynamic discovery hooks. */
 export function apply(ctx, config) {
   const keepPlanPolicy = optionalBoolean(config?.keepPlanPolicy, 'keepPlanPolicy', true)
+  const dispatcher = optionalBoolean(config?.dispatcher, 'dispatcher', true)
   const instructionSource = optionalSource(config?.instructionSource, 'instructionSource', 'host')
   const instructionMaxBytes = optionalByteSize(config?.instructionMaxBytes, 'instructionMaxBytes', DEFAULT_INSTRUCTION_MAX_BYTES)
 
@@ -757,7 +813,7 @@ export function apply(ctx, config) {
         + 'keeping the assembled prompt instead of sending an empty one')
       return assembled
     }
-    const narrowed = withWorkspaceLine(sections, context?.agent)
+    const narrowed = withWorkspaceLine(sections, context?.agent, dispatcher)
     // 'host' and 'hint' append no workspace-instructions section: the harness's
     // own agent-instructions row carries the content (or the hint replaces it).
     if (instructionSource !== 'system-prompt') return { ...assembled, sections: narrowed }
