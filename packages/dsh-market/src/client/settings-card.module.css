@@ -222,7 +222,11 @@
    picker) lands in the same row by using the same classes. */
 .field {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The control track is capped at half the row: an auto track sizes to its
+     widest content, and a three-option segment carrying a long label (a
+     localized "inherit from the deployment") then leaves the text column a few
+     characters wide. Capped, the segment wraps its options instead. */
+  grid-template-columns: minmax(0, 1fr) fit-content(50%);
   grid-template-areas:
     "head control"
     "hint control";
@@ -242,6 +246,7 @@
 .field > :not(.head, .hint, .invalid) {
   grid-area: control;
   justify-self: end;
+  max-width: 100%;
 }
 
 .field + .field {
