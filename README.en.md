@@ -214,7 +214,7 @@ The classic Blue Fantasy theme serves as the built-in default skin: rich indigo 
 ### Get Started in 3 Steps (npm, Recommended)
 
 - **DSH Web CLI (Browser Installation)**:
-  1. Install the bundle: `dsh plugin --profile web add @linxin666/dsh-web-all@latest`
+  1. Approve the three build scripts first (see Install Troubleshooting), then run `dsh plugin --profile web add @linxin666/dsh-web-all@latest`
   2. Restart `dsh web` to display new plugin icons in the sidebar
   3. Navigate to "Settings > Plugin Configuration" to toggle individual features, or select skins from the skin panel
 - **Official Desktop Client (DeepSeek Harness Desktop)**:
@@ -323,7 +323,7 @@ Architecture and mounting details are documented in [docs/plugins.md](docs/plugi
 
 > **Missing Sub-package Errors under Isolated pnpm**: In strict isolated mode, pnpm may hoist only the aggregate package while placing sub-packages in nested directories, causing errors like `Cannot find package '@linxin666/dsh-...'`. Add `nodeLinker: hoisted` (or `public-hoist-pattern: ['@linxin666/*']`) to your profile's `pnpm-workspace.yaml` and reinstall.
 
-> **Blocked Build Scripts (ERR_PNPM_IGNORED_BUILDS)**: If pnpm blocks native build scripts during initial setup, append `cloudflared`, `cpu-features`, and `ssh2` to `allowBuilds` in your profile's `pnpm-workspace.yaml`.
+> **Blocked Build Scripts (ERR_PNPM_IGNORED_BUILDS)**: approve `cloudflared`, `cpu-features`, `ssh2` before the first add: reset the profile (`--from-default-profile web`) or use a fresh one, put them under `allowBuilds` in `<profile>/pnpm-workspace.yaml`, then add. Approving later and re-running exits 0 but adds no `dsh.profile.bundles` row - a silent half-mount re-runs cannot repair. Existing approved profiles upgrade unaffected.
 
 > **pnpm 11 Release Age Restrictions**: For newly published versions, pnpm 11's default security window (`minimumReleaseAge`) may pull older package revisions. Exclude the namespace in `pnpm-workspace.yaml` to ensure timely updates:
 >

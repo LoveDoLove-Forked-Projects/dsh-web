@@ -214,7 +214,7 @@ dsh-web 通过官方 profile 机制挂载到 `dsh web`，零修改侵入官方�
 ### 三步上手（npm 安装，推荐）
 
 - **DSH Web CLI（现有浏览器服务）**：
-  1. 安装聚合包：`dsh plugin --profile web add @linxin666/dsh-web-all@latest`
+  1. 先完成三项构建脚本审批（见“安装排障”），再安装聚合包：`dsh plugin --profile web add @linxin666/dsh-web-all@latest`
   2. 重启 `dsh web` 服务，侧边栏将自动呈现各插件入口
   3. 打开“设置 > 插件配置”按需开关插件，或在皮肤面板选用主题
 - **官方桌面客户端（DeepSeek Harness Desktop）**：
@@ -323,7 +323,7 @@ dsh plugin --profile web add @linxin666/dsh-i18n@latest                         
 
 > **pnpm 严格依赖隔离导致模块找不到**：pnpm 的 isolated 模式默认仅将聚合包放置在顶层，部分子包可能被嵌套收敛，导致 `dsh web` 启动时报错 `Cannot find package '@linxin666/dsh-...'`。若遇到此情况，可在 profile 目录的 `pnpm-workspace.yaml` 中添加配置 `nodeLinker: hoisted`（或 `public-hoist-pattern: ['@linxin666/*']`）后重新安装。
 
-> **构建脚本被拦截 (ERR_PNPM_IGNORED_BUILDS)**：首次安装时若提示第三方包的构建脚本被拦截，可根据终端指引将 `cloudflared`、`cpu-features` 以及 `ssh2` 加入 profile 所在 `pnpm-workspace.yaml` 的 `allowBuilds` 列表中。
+> **构建脚本被拦截 (ERR_PNPM_IGNORED_BUILDS)**：这三项审批必须在首次 add 之前就位。正确顺序是重置 profile（官方 `--from-default-profile web`）或换新 profile，把 `cloudflared`、`cpu-features`、`ssh2` 写进 `<profile>/pnpm-workspace.yaml` 的 `allowBuilds`，再执行 add。装失败后补审批重跑会 exit 0，但 `dsh.profile.bundles` 仍无该行：静默半挂载，重跑修不回来。已带审批的存量 profile 升级不受影响。
 
 > **pnpm 11 发布时间门禁问题**：在包版本发布后的短时间内，pnpm 11 的默认安全策略（`minimumReleaseAge`）可能会尝试回退拉取旧版本。建议在 profile 目录的 `pnpm-workspace.yaml` 中排除相关命名空间以确保获取最新版本：
 >
