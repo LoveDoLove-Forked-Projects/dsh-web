@@ -438,7 +438,7 @@ describe('UsageSectionCard settings writes', () => {
     render(<UsageSectionCard {...cardProps(overview(mixed))} settings={live.form} />)
 
     // When the user switches the display currency to USD and edits the rate
-    fireEvent.change(screen.getByLabelText(/消费显示货币|Spend display currency/), { target: { value: 'USD' } })
+    fireEvent.click(screen.getByRole('button', { name: 'USD' }))
     expect(live.writes).toEqual([['spendCurrency', 'USD']])
     fireEvent.change(screen.getByLabelText(/汇率|Exchange rate/), { target: { value: '7.15' } })
 

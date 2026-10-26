@@ -120,10 +120,11 @@
 .description {
   /* Secondary, not tertiary: skins whose tertiary token is tuned for large
      print leave 12-13px hint text below readable contrast (orca-link #778399
-     on cream measures ~3.4:1). */
+     on cream measures ~3.4:1). The 18px leading matches the reference
+     settings-page description rhythm. */
   color: var(--dsw-alias-label-secondary);
-  font-size: var(--settings-card-description-size);
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .pending {
@@ -275,8 +276,8 @@
 
 .field {
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 0;
+  gap: 4px;
+  padding: 16px 0;
   display: flex;
 }
 
@@ -294,9 +295,9 @@
   min-width: 0;
   color: var(--dsw-alias-label-primary);
   flex: 1;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.5;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
 }
 
 .badges {
@@ -343,6 +344,63 @@
 .reset:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
+}
+
+/* Segmented single-choice controls: a quiet inset track with the selected
+   option raised out of it. The control wraps instead of clipping, so three
+   localized labels stay complete in a narrow card. */
+.segmentGroup {
+  display: inline-flex;
+  align-self: flex-start;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.segment {
+  appearance: none;
+  margin: 0;
+  padding: 5px 13px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.segment:hover:not(:disabled):not(.segmentActive) {
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
+}
+
+.segmentActive {
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 9%, var(--dsw-alias-bg-layer-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-label-primary) 9%, transparent),
+    0 1px 2px rgb(0 0 0 / 10%);
+}
+
+.segment:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.segment:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.segmentActive:disabled {
+  opacity: 0.65;
 }
 
 .input,
@@ -480,14 +538,14 @@
   color: var(--dsw-alias-state-error-primary, #b42318);
   margin: 0;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 18px;
 }
 
 .hint {
   color: var(--dsw-alias-label-secondary);
   margin: 0;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 18px;
 }
 
 /* Immediate boolean toggle: the official switch shape (30x16 track, 12px

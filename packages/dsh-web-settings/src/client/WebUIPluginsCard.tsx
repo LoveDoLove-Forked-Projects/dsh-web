@@ -16,7 +16,7 @@ import css from './web-ui-settings.module.css'
 
 /** Props the settings section binds for the family plugin cards page. */
 export type WebUIPluginsSectionProps =
-  PropsRuntime<'settings.section'>
+  PropsRuntime<'web-ui.extension'>
   & PropsLocale<'web-ui-plugins'>
   & PropsRenderSlots<'web-ui.plugin.item'>
 

@@ -1114,5 +1114,5 @@ export function MarketCard(props: MarketCardProps): ReactNode {
 /** The section wrapper the slot renderer mounts. */
 export type MarketSectionProps = ComponentProps<typeof MarketCard>
 export function MarketSection(props: ComponentProps<typeof MarketCard>): ReactNode {
-  return <MarketCard {...props} />
+  return <div data-dsh-plugin="dsh-web-ui-market" data-dsh-part="panel"><MarketCard {...props} /></div>
 }

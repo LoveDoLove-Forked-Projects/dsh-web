@@ -27,6 +27,7 @@ import { en, zh, type MarketKey } from './locales.ts'
 import { bridgePluginManager } from './plugin-manager-bridge.ts'
 import { bridgeNativePluginFaces } from './native-plugin-faces.ts'
 import { reportDailyHeartbeat } from './telemetry.ts'
+import { installWorkshopSection } from './extension-seat.ts'
 
 export type {
   MarketCardProps,
@@ -48,7 +49,6 @@ export type {
  * own settings form, and the locale namespace this half registers.
  */
 const MARKET_NS = 'dsh-web-ui-market'
-const SECTION_ID = 'dsh-workshop'
 
 /** Profile entry id the family aggregate's generated row carries. */
 const AGGREGATE_ENTRY_ID = 'web-ui-market'
@@ -134,29 +134,14 @@ export function apply(ctx: ClientContext): void {
     : createServedEntryForm<MarketSettings>({ forms: ctx.configForms, entryIds: MARKET_ENTRY_IDS })
   const controller = new MarketCardController(form)
 
-  // The Workshop: one first-level settings section rendering the store
-  // card. Clients install skins / pets / plugins here; management of
-  // installed items lives in their own first-level sections (Skin Center,
-  // Pet) and in the official Plugins settings section (plugin manager).
-  // The section entry owns the controller: unregistering it (fiber
-  // disposal, hot reload) releases the scope subscription through dispose.
-  ctx.slots.inject('settings.section', () => {
-    try {
-      const unregister = ctx.slots.register({
-        name: 'settings.section',
-        id: SECTION_ID,
-        order: 150,
-        label: () => ctx.locale.bind(MARKET_NS)('settings.title'),
-        locale: MARKET_NS,
-        children: { 'dsh-workshop.panel': { kind: 'keyed', scope: 'root' } },
-        inject: () => controller.inject(createExternalLinkOpener(ctx)),
-      }, MarketSection)
-      return () => {
-        unregister()
-        controller.dispose()
-      }
-    } catch {
-      return () => {}
-    }
+  // The controller belongs to apply(), not a seat: migrating between the
+  // integrated TAB and the standalone section must not reset its form.
+  ctx.effect(() => () => { controller.dispose() }, 'dsh-web-ui-market: settings form')
+  const disposeSection = installWorkshopSection(ctx, {
+    label: () => ctx.locale.bind(MARKET_NS)('settings.title'),
+    locale: MARKET_NS,
+    inject: () => controller.inject(createExternalLinkOpener(ctx)),
+    component: MarketSection,
   })
+  ctx.effect(() => disposeSection, 'dsh-web-ui-market: settings seat')
 }

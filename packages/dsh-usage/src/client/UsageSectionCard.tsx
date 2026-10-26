@@ -98,28 +98,28 @@ function isConfigured(provider: ProviderSnapshotView): boolean {
 function TotalsRow(props: { totals: UsageTokenTotals }): ReactNode {
   const { totals } = props
   return (
-    <div className={styles.statRow}>
-      <div className={styles.stat}>
+    <div className={styles.statRow} data-dsh-layout="usage-totals">
+      <div className={styles.stat} data-dsh-stat="total">
         <span className={styles.statValue}>{formatTokens(totals.inputTokens + totals.cacheReadTokens + totals.cacheWriteTokens + totals.outputTokens)}</span>
         <span className={styles.statLabel}>{t('usage.tokens.total')}</span>
       </div>
-      <div className={styles.stat}>
+      <div className={styles.stat} data-dsh-stat="input">
         <span className={styles.statValue}>{formatTokens(totals.inputTokens + totals.cacheReadTokens + totals.cacheWriteTokens)}</span>
         <span className={styles.statLabel}>{t('usage.tokens.input')}</span>
       </div>
-      <div className={styles.stat}>
+      <div className={styles.stat} data-dsh-stat="output">
         <span className={styles.statValue}>{formatTokens(totals.outputTokens)}</span>
         <span className={styles.statLabel}>{t('usage.tokens.output')}</span>
       </div>
-      <div className={styles.stat}>
+      <div className={styles.stat} data-dsh-stat="cache-read">
         <span className={styles.statValue}>{formatTokens(totals.cacheReadTokens)}</span>
         <span className={styles.statLabel}>{t('usage.tokens.cacheRead')}</span>
       </div>
-      <div className={styles.stat}>
+      <div className={styles.stat} data-dsh-stat="cache-write">
         <span className={styles.statValue}>{formatTokens(totals.cacheWriteTokens)}</span>
         <span className={styles.statLabel}>{t('usage.tokens.cacheWrite')}</span>
       </div>
-      <div className={styles.stat}>
+      <div className={styles.stat} data-dsh-stat="calls">
         <span className={styles.statValue}>{formatTokens(totals.calls)}</span>
         <span className={styles.statLabel}>{t('usage.calls', { n: totals.calls })}</span>
       </div>
@@ -350,7 +350,7 @@ export function UsageSectionCard(props: UsageSectionProps): ReactNode {
             ? `${currentProvider.displayName}${current.model !== undefined && current.model !== '' ? ' · ' + current.model : ''}`
             : t('usage.noData')}
         </span>
-        <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span className={styles.headerActions}>
           <span className={styles.muted}>{t('usage.updated', { time: formatTime(snapshot.updatedAt) })}</span>
           <button type="button" className={styles.refreshBtn} onClick={onRefresh} disabled={refreshing}>
             {refreshing ? t('usage.refreshing') : t('usage.refresh')}
@@ -372,6 +372,7 @@ export function UsageSectionCard(props: UsageSectionProps): ReactNode {
 
       {tab === 'usage' && (
         <>
+          <div className={styles.usageSummaryGrid} data-dsh-layout="summary-grid">
           <div className={styles.card} data-dsh-part="today-card">
             <span className={styles.cardTitle}>{isToday ? t('usage.today') : t('usage.day.title', { date: selectedDay ?? '' })}</span>
             <DayPicker
@@ -433,6 +434,7 @@ export function UsageSectionCard(props: UsageSectionProps): ReactNode {
               </span>
             )}
           </div>
+          </div>
 
           <RangeCard range={snapshot.usage.range} providers={snapshot.providers} currentProvider={current.provider} />
 
@@ -492,7 +494,7 @@ function RangeCard(props: { range?: UsageOverviewView['usage']['range']; provide
       <span className={styles.cardTitle}>{t('usage.trend')}</span>
       {range.providers.length === 0 || grandTotal === 0
         ? <span className={styles.muted}>{t('usage.noData')}</span>
-        : <div className={styles.chart} data-dsh-part="usage-chart">
+        : <div className={styles.chart} data-dsh-part="usage-chart" data-dsh-layout="trend-grid">
             {range.providers.map((row) => (
               <ChartProviderRow key={row.provider} row={row} name={nameOf(row.provider)} max={maxProvider} current={currentProvider === row.provider} />
             ))}
@@ -510,7 +512,7 @@ function ChartProviderRow(props: { row: UsageProviderSummary; name: string; max:
   const total = totalOf(row.totals)
   const maxModel = Math.max(1, ...row.models.slice(0, CHART_MODEL_CAP).map((model) => totalOf(model.totals)))
   return (
-    <div className={styles.chartProvider}>
+    <div className={styles.chartProvider} data-dsh-layout="trend-provider">
       <span className={styles.chartHead}>
         <span className={styles.providerName}>
           {name}
@@ -741,17 +743,26 @@ function SettingsRow(props: {
             }}
           />
         </label>
-        <label className={styles.settingItem}>
-          {t('usage.config.spendCurrency')}
-          <select
-            value={value.spendCurrency === 'USD' ? 'USD' : 'CNY'}
-            disabled={disabled}
-            onChange={(event) => { write('spendCurrency', event.target.value === 'USD' ? 'USD' : 'CNY') }}
-          >
-            <option value="CNY">CNY</option>
-            <option value="USD">USD</option>
-          </select>
-        </label>
+        <div className={styles.settingItem}>
+          <span>{t('usage.config.spendCurrency')}</span>
+          <div className={styles.segmentGroup} role="group" aria-label={t('usage.config.spendCurrency')}>
+            {(['CNY', 'USD'] as const).map(currency => {
+              const active = (value.spendCurrency ?? 'CNY') === currency
+              return (
+                <button
+                  key={currency}
+                  type="button"
+                  className={active ? `${styles.segment} ${styles.segmentActive}` : styles.segment}
+                  aria-pressed={active}
+                  disabled={disabled}
+                  onClick={() => { if (!active) write('spendCurrency', currency) }}
+                >
+                  {currency}
+                </button>
+              )
+            })}
+          </div>
+        </div>
         <label className={styles.settingItem}>
           {t('usage.config.cnyPerUsd')}
           <input

@@ -19,7 +19,7 @@ A dedicated token usage and cost monitoring plugin for DeepSeek Harness (DSH) We
 
 ## What it does
 
-The plugin runs a host-side service and a first-level settings section (使用统计, directly below the Workshop entry):
+The plugin runs a host-side service and a Usage page under Settings → Web Extensions (or a standalone first-level 使用统计 section when that parent is absent):
 
 - **Usage tab (用量)**: today's token totals per bucket (input / output / cache read / cache write, disjoint as the provider reports them) with per-provider and per-model breakdown, the last 30 days as a horizontal provider/model bar chart, and the balance of every configured provider (one row per adapter family: a dormant catalog alias shadowed by the family's live route no longer renders its own balance row). A **day picker** switches that card to any retained day that recorded usage (today first, then the other days newest first) and the card then shows that day's own totals, provider rows, and estimated spend; the peak/off-peak line stays on today because it describes the pricing window now. The ledger folds live `session/event` streams (`request/header` route attribution plus `assistant/message` usage) into `$DSH_HOME/dsh-usage/usage-ledger.json` with day-based retention, so past days survive restarts; counting starts when the plugin is first enabled. For the official DeepSeek family the tab also shows the current peak/off-peak pricing period (Beijing weekdays 09:00-12:00 and 14:00-18:00 are peak, billed at double) and today's estimated spend in CNY; that line is toned by the current clock — red while peak, green while off-peak — and always carries the word plus a dot, so colour is never the only signal.
 - **Plans tab (个人套餐)**: coding-plan quota windows for every configured provider that exposes one — used percent and reset time per window (Kimi For Coding 5h/week, GLM Coding Plan 5h/week/month, OpenCode Go rolling/weekly/monthly, MiniMax 5h/week, Codex / ChatGPT subscription 5h/week). Providers without a real plan or subscription (DeepSeek, ZenMux, Moonshot, OpenRouter, SiliconFlow) never appear on this tab; their balance shows on the usage tab instead.
@@ -55,7 +55,7 @@ and insert into `cordis.patch.yml` (or use the bundle patch):
       name: '@linxin666/dsh-usage'
 ```
 
-Restart `dsh web` for the host half; the client half applies on refresh. The section lives in `Settings -> Usage Statistics`.
+Restart `dsh web` for the host half; the client half applies on refresh. A full family install opens `Settings -> Web Extensions -> Usage`; a standalone install keeps `Settings -> Usage Statistics`.
 
 ## Configuration
 

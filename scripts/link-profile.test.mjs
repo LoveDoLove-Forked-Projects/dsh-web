@@ -83,7 +83,7 @@ test('satellite packages: only family-scoped satellites/* with a readable manife
 
 const STORE_LINK = '../../../../node_modules/.pnpm/@linxin666+dsh-client-ui-skin-center@0.4.2_react@18.3.1/node_modules/@linxin666/dsh-client-ui-skin-center'
 
-test('aggregate relink: replaces a pnpm-store symlink when the satellite is built and in range', () => {
+test('aggregate relink: replaces POSIX and Windows pnpm-store symlinks when the satellite is built and in range', () => {
   const root = mkdtempSync(join(tmpdir(), 'link-profile-relink-'))
   try {
     const satellite = join(root, 'satellites', 'dsh-skins')
@@ -91,6 +91,7 @@ test('aggregate relink: replaces a pnpm-store symlink when the satellite is buil
     writeFileSync(join(satellite, 'package.json'), JSON.stringify({ name: '@linxin666/dsh-client-ui-skin-center', version: '0.4.2' }))
     writeFileSync(join(satellite, 'lib', 'index.js'), 'export {}')
     assert.equal(decideAggregateRelink('symlink', STORE_LINK, satellite, '^0.4.2', true), 'replace')
+    assert.equal(decideAggregateRelink('symlink', STORE_LINK.replaceAll('/', '\\'), satellite, '^0.4.2', true), 'replace')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

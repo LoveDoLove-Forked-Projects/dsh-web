@@ -560,6 +560,54 @@ export function SelectField(props: {
   )
 }
 
+/**
+ * A visible segmented group for a small set of mutually exclusive values.
+ * Every option stays on screen, so inherit/on/off and short enum fields take
+ * one click without opening a popup. The selected segment is raised and marked
+ * with `aria-pressed`; the group takes the field label as its accessible name.
+ */
+export function SegmentField(props: {
+  id: string
+  label: string
+  options: ReadonlyArray<SelectOption>
+  value: string
+  disabled: boolean
+  invalid: boolean
+  onEdit: (text: string) => void
+}) {
+  return (
+    <div
+      id={props.id}
+      className={css.segmentGroup}
+      role="group"
+      aria-label={props.label}
+      aria-invalid={props.invalid || undefined}
+    >
+      {props.options.map((option, index) => {
+        const active = option.value === props.value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={active ? `${css.segment} ${css.segmentActive}` : css.segment}
+            aria-pressed={active}
+            disabled={props.disabled}
+            data-segment-index={index}
+            onClick={() => {
+              if (!active) props.onEdit(option.value)
+            }}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** How a small single-choice field presents its options. */
+export type FieldPresentation = 'select' | 'segment'
+
 /** A staged boolean field: 继承 / 开 / 关. */
 export function BooleanField(props: FieldProps & {
   /** Copy for the inherit option. */
@@ -568,11 +616,16 @@ export function BooleanField(props: FieldProps & {
   onLabel: string
   /** Copy for the off option. */
   offLabel: string
+  /** Visible segmented options; defaults to the compact select. */
+  presentation?: FieldPresentation
 }) {
+  const segmented = props.presentation === 'segment'
   return (
     <div className={css.field}>
       <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {segmented
+          ? <span className={css.label}>{props.label}</span>
+          : <label className={css.label} htmlFor={props.id}>{props.label}</label>}
         {props.overridden
           ? (
             <span className={css.badges}>
@@ -589,34 +642,58 @@ export function BooleanField(props: FieldProps & {
           )
           : null}
       </div>
-      <SelectField
-        id={props.id}
-        options={[
-          { value: '', label: props.inheritLabel },
-          { value: 'true', label: props.onLabel },
-          { value: 'false', label: props.offLabel },
-        ]}
-        value={props.text}
-        disabled={props.disabled}
-        invalid={props.invalid}
-        onEdit={props.onEdit}
-      />
+      {segmented
+        ? (
+          <SegmentField
+            id={props.id}
+            label={props.label}
+            options={[
+              { value: '', label: props.inheritLabel },
+              { value: 'true', label: props.onLabel },
+              { value: 'false', label: props.offLabel },
+            ]}
+            value={props.text}
+            disabled={props.disabled}
+            invalid={props.invalid}
+            onEdit={props.onEdit}
+          />
+        )
+        : (
+          <SelectField
+            id={props.id}
+            options={[
+              { value: '', label: props.inheritLabel },
+              { value: 'true', label: props.onLabel },
+              { value: 'false', label: props.offLabel },
+            ]}
+            value={props.text}
+            disabled={props.disabled}
+            invalid={props.invalid}
+            onEdit={props.onEdit}
+          />
+        )}
       <p className={css.hint} title={props.hintTitle}>{props.hint}</p>
     </div>
   )
 }
 
-/** A staged enumerated field rendered as a select. */
+/** A staged enumerated field, selecting or segmenting its small choice set. */
 export function ChoiceField(props: FieldProps & {
   /** Copy for the inherit option (draft text is the empty string). */
   inheritLabel: string
   /** Choices rendered in order; `value` is the draft/stored text. */
   choices: ReadonlyArray<{ value: string; label: string }>
+  /** Visible segmented options; defaults to the compact select. */
+  presentation?: FieldPresentation
 }) {
+  const segmented = props.presentation === 'segment'
+  const options = [{ value: '', label: props.inheritLabel }, ...props.choices]
   return (
     <div className={css.field}>
       <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {segmented
+          ? <span className={css.label}>{props.label}</span>
+          : <label className={css.label} htmlFor={props.id}>{props.label}</label>}
         {props.overridden
           ? (
             <span className={css.badges}>
@@ -633,14 +710,28 @@ export function ChoiceField(props: FieldProps & {
           )
           : null}
       </div>
-      <SelectField
-        id={props.id}
-        options={[{ value: '', label: props.inheritLabel }, ...props.choices]}
-        value={props.text}
-        disabled={props.disabled}
-        invalid={props.invalid}
-        onEdit={props.onEdit}
-      />
+      {segmented
+        ? (
+          <SegmentField
+            id={props.id}
+            label={props.label}
+            options={options}
+            value={props.text}
+            disabled={props.disabled}
+            invalid={props.invalid}
+            onEdit={props.onEdit}
+          />
+        )
+        : (
+          <SelectField
+            id={props.id}
+            options={options}
+            value={props.text}
+            disabled={props.disabled}
+            invalid={props.invalid}
+            onEdit={props.onEdit}
+          />
+        )}
       <p className={props.invalid ? css.invalid : css.hint} title={props.hintTitle}>
         {props.invalid ? props.invalidLabel : props.hint}
       </p>

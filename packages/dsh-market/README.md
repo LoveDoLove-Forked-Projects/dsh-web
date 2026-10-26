@@ -56,11 +56,10 @@ The in-GUI Workshop marketplace card for DeepSeek Harness (DSH) Web GUI and offi
 dsh plugin --profile web add @linxin666/dsh-client-ui-market
 ```
 
-Restart `dsh web`; the Workshop section appears in the settings page and opens this store card
-directly (编辑推荐 / skins / pets / plugins / presets tabs). The Skin Center, the Pet section and the plugin
-manager in the official Plugins section are separate first-level settings entries; the presets tab is
-rendered by `@linxin666/dsh-client-ui-preset-center`, which contributes it into the child slot this
-card declares.
+Restart `dsh web`; Settings → Web Extensions → Workshop opens this store card directly
+(编辑推荐 / skins / pets / plugins / presets tabs). A standalone install keeps its first-level Workshop
+entry. The presets tab is rendered by `@linxin666/dsh-client-ui-preset-center`, which contributes it
+into the child slot this card declares.
 
 ## Config
 

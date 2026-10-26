@@ -7,6 +7,13 @@
 
 export const ru: Record<string, string> = {
   'title': 'Веб-плагины',
+  'extensions.title': 'Веб-расширения',
+  'extensions.navigation': 'Страницы веб-расширений',
+  'extensions.unavailable': 'Эта страница сейчас недоступна.',
+  'extensions.tab.skin-center': 'Оформление',
+  'extensions.tab.pet': 'Питомец',
+  'extensions.tab.dsh-workshop': 'Мастерская',
+  'extensions.tab.dsh-usage': 'Статистика',
   'telemetry.title': 'Анонимная телеметрия установок',
   'telemetry.description': 'Один анонимный сигнал в сутки о том, какие плагины семейства здесь используются',
   'telemetry.meta': 'Если выключить, браузерная часть всех плагинов семейства перестаёт отправлять данные; Мастерская и онлайн-обновления продолжают работать.',
