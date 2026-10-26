@@ -74,16 +74,13 @@ export function apply(ctx: ClientContext): void {
     }
   })
 
-  ctx.slots.inject(WEB_EXTENSIONS_SLOT, () => {
-    try {
-      return ctx.slots.register({
-        name: WEB_EXTENSIONS_SLOT,
-        key: WEB_EXTENSIONS_SECTION_ID,
-        locale: 'web-ui-plugins',
-        children: { 'web-ui.plugin.item': { kind: 'list', scope: 'root' } },
-      }, WebUIPluginsSection)
-    } catch {
-      return () => {}
-    }
-  })
+  ctx.effect(() => extensions.registerPage({
+    key: WEB_EXTENSIONS_SECTION_ID,
+    order: 100,
+    locale: 'web-ui-plugins',
+    label: () => ctx.locale.bind('web-ui-plugins')('title'),
+    inject: () => ({}),
+    component: WebUIPluginsSection,
+    children: { 'web-ui.plugin.item': { kind: 'list', scope: 'root' } },
+  }), 'web-ui-settings: Web Plugins page')
 }

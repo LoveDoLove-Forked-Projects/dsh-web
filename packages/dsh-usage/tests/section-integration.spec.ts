@@ -5,24 +5,43 @@ function makeCtx() {
   let service: object | undefined
   let changed: (() => void) | undefined
   const registered: Array<Record<string, unknown>> = []
+  const push = (options: Record<string, unknown>) => {
+    const entry = { options }
+    registered.push(entry)
+    changed?.()
+    return () => {
+      const index = registered.indexOf(entry)
+      if (index >= 0) registered.splice(index, 1)
+      changed?.()
+    }
+  }
   const ctx = {
     get: (name: string) => name === 'webUiExtensions' ? service : undefined,
     on: (_event: string, listener: () => void) => { changed = listener; return () => { changed = undefined } },
     slots: {
-      register: (options: Record<string, unknown>) => {
-        const entry = { options }
-        registered.push(entry)
-        changed?.()
-        return () => {
-          const index = registered.indexOf(entry)
-          if (index >= 0) registered.splice(index, 1)
-          changed?.()
-        }
-      },
+      register: push,
       entries: (_key: string) => [],
     },
   }
-  return { ctx, registered, setService(value: object | undefined) { service = value; changed?.() } }
+  return {
+    ctx,
+    registered,
+    setService(value: object | undefined) {
+      service = value === undefined
+        ? undefined
+        : {
+          ...value,
+          registerPage: (page: Record<string, unknown>) => push({
+            name: 'web-ui.extension',
+            key: page.key,
+            locale: page.locale,
+            inject: page.inject,
+            children: page.children,
+          }),
+        }
+      changed?.()
+    },
+  }
 }
 
 function exposeNativeStore(ctx: ReturnType<typeof makeCtx>['ctx'], openSection: (id: string) => void): void {

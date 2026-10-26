@@ -15,18 +15,46 @@ function entry(key: string): StoredEntry {
   return { options: { key }, component: () => null } as StoredEntry
 }
 
+const ORDER: Record<string, number> = {
+  'web-ui-plugins': 100,
+  'skin-center': 120,
+  'pet': 130,
+  'dsh-workshop': 150,
+  'dsh-usage': 151,
+}
+const LABEL: Record<string, string> = {
+  'web-ui-plugins': 'Web Plugins',
+  'skin-center': 'Skins',
+  'pet': 'Pet',
+  'dsh-workshop': 'Workshop',
+  'dsh-usage': 'Usage',
+}
+
 function makeExtensions(keys: string[]) {
   let selected = 'web-ui-plugins'
   const listeners = new Set<() => void>()
-  const entries = keys.map(entry)
+  const pages = [...keys]
+    .sort((left, right) => ORDER[left] - ORDER[right])
+    .map(key => ({
+      key,
+      order: ORDER[key],
+      locale: 'test',
+      label: () => LABEL[key],
+      inject: () => ({}),
+      component: () => null,
+    }))
+  const entries = pages.map(page => entry(page.key))
   return {
     sectionId: 'web-ui-plugins' as const,
     label: () => 'Web Extensions',
     open: () => true,
+    registerPage: () => () => {},
     getSnapshot: () => selected,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     subscribeEntries: () => () => {},
     getEntries: () => entries,
+    subscribePages: () => () => {},
+    getPages: () => pages,
     select: (id: string) => { selected = id; for (const listener of listeners) listener() },
   }
 }

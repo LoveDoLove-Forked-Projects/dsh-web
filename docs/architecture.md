@@ -85,12 +85,12 @@ flowchart LR
 
 ## 设置页槽位体系
 
-设置页的家族入口分两级：dsh-web-settings 在一级 `settings.section` 以稳定 id `web-ui-plugins` 注册「Web 扩展」，并声明 keyed/root 子槽 `web-ui.extension`，按固定顺序承载 Web 插件、皮肤、宠物、创意工坊和使用统计五个 TAB。父级发布 `webUiExtensions` 服务；各内容插件在服务存在时注册 keyed 子项，在独立安装、父级缺席时保留各自的一级 `settings.section` 入口，并随 `slots/changed` 在两个席位间迁移。Web 插件 TAB 内的家族卡仍走 `web-ui.plugin.item`，创意工坊的资产面板仍走 `dsh-workshop.panel`（Presets 面板由 dsh-preset-center 注入）；统计速览卡经 `webUiExtensions.open('dsh-usage')` 先选 TAB 再打开父级。host 侧用 `installSettingsSection` 注册命名空间，browser 侧用 `webUiSettings.bind` 读写；官方插件管理页用 `plugins.bundle.config` 槽承载插件自带配置（按 bundle 包名分派，渲染在该 bundle 的页面上），alpha.2 起旧的 `settings.plugin.item` 槽已不存在。
+设置页的家族入口分两级：dsh-web-settings 在一级 `settings.section` 以稳定 id `web-ui-plugins` 注册「Web 扩展」，并声明 keyed/root 子槽 `web-ui.extension`。父级发布 `webUiExtensions` 服务，内容插件通过 `registerPage` 提交 key、顺序、标签与组件，父级按顺序动态生成 TAB、挂载当前页面并持有生命周期；Web 插件、皮肤、宠物、创意工坊和使用统计只是默认注册的五页，不构成固定枚举。独立安装、父级缺席时，共享适配器保留各插件原一级 `settings.section` 入口，并随服务可用性在两个席位间迁移。Web 插件 TAB 内的家族卡仍走 `web-ui.plugin.item`，创意工坊的资产面板仍走 `dsh-workshop.panel`（Presets 面板由 dsh-preset-center 注入）；统计速览卡经 `webUiExtensions.open('dsh-usage')` 先选 TAB 再打开父级。host 侧用 `installSettingsSection` 注册命名空间，browser 侧用 `webUiSettings.bind` 读写；官方插件管理页用 `plugins.bundle.config` 槽承载插件自带配置（按 bundle 包名分派，渲染在该 bundle 的页面上），alpha.2 起旧的 `settings.plugin.item` 槽已不存在。
 
 ```mermaid
 flowchart TB
     S["Web 设置页"] --> G["settings.section：Web 扩展（id web-ui-plugins）"]
-    G -- "web-ui.extension keyed 子槽" --> E["Web 插件 / 皮肤 / 宠物 / 创意工坊 / 使用统计 TAB"]
+    G -- "webUiExtensions.registerPage → web-ui.extension keyed 子槽" --> E["按 order 动态生成的已注册页面 TAB"]
     E -- "web-ui.plugin.item 子槽" --> C["task-board、remote-web-ui、liangshen 等插件卡"]
     E -- "dsh-workshop.panel 子槽" --> F["皮肤、宠物、插件、预设资产面板"]
     F -- "dsh-preset-center 注入" --> F1["Presets 面板"]

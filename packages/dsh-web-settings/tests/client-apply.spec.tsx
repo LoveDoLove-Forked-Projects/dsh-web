@@ -30,6 +30,9 @@ describe('web-ui-settings client registration', () => {
           fn()
           return () => {}
         },
+        spec: () => ({ kind: 'keyed', scope: 'root' }),
+        subscribe: () => () => {},
+        entries: () => [],
         register: (options: Record<string, unknown>) => {
           registered.push(options)
           return () => {}
@@ -39,7 +42,7 @@ describe('web-ui-settings client registration', () => {
 
     apply(fakeCtx as never)
 
-    expect(injected).toEqual(['settings.section', 'web-ui.extension'])
+    expect(injected).toEqual(['settings.section'])
     expect(injected).not.toContain('plugins.bundle.config')
 
     const section = registered.find((entry) => entry.name === 'settings.section')

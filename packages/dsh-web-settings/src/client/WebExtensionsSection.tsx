@@ -5,34 +5,21 @@ import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/d
 import type { WebUiExtensions } from './web-ui-extensions.ts'
 import css from './web-ui-settings.module.css'
 
-export const WEB_EXTENSION_TABS = [
-  'web-ui-plugins',
-  'skin-center',
-  'pet',
-  'dsh-workshop',
-  'dsh-usage',
-] as const
-
-export type WebExtensionTab = typeof WEB_EXTENSION_TABS[number]
-
 export type WebExtensionsSectionProps =
   PropsRuntime<'settings.section'>
   & PropsLocale<'web-ui-plugins'>
   & PropsRenderSlots<'web-ui.extension'>
   & { extensions: WebUiExtensions }
 
-function tabLabelKey(id: WebExtensionTab): 'title' | 'extensions.tab.skin-center' | 'extensions.tab.pet' | 'extensions.tab.dsh-workshop' | 'extensions.tab.dsh-usage' {
-  return id === 'web-ui-plugins' ? 'title' : `extensions.tab.${id}`
-}
-
 /** Render only the selected keyed child; unavailable pages simply have no TAB. */
 export function WebExtensionsSection(props: WebExtensionsSectionProps): ReactNode {
   const { t, close, renderSlot, extensions } = props
   const entries = useSyncExternalStore(extensions.subscribeEntries, extensions.getEntries, extensions.getEntries)
+  const pages = useSyncExternalStore(extensions.subscribePages, extensions.getPages, extensions.getPages)
   const selected = useSyncExternalStore(extensions.subscribe, extensions.getSnapshot, extensions.getSnapshot)
-  const registered = new Set(entries.map(entry => entry.options.key))
-  const tabs = WEB_EXTENSION_TABS.filter(id => registered.has(id))
-  const active = tabs.includes(selected as WebExtensionTab) ? selected as WebExtensionTab : tabs[0]
+  const mounted = new Set(entries.map(entry => entry.options.key))
+  const tabs = pages.filter(page => mounted.has(page.key))
+  const active = tabs.find(page => page.key === selected) ?? tabs[0]
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -43,29 +30,29 @@ export function WebExtensionsSection(props: WebExtensionsSectionProps): ReactNod
     const next = event.key === 'Home' ? 0
       : event.key === 'End' ? buttons.length - 1
         : (current + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length
-    const id = tabs[next]
-    if (id !== undefined) extensions.select(id)
+    const page = tabs[next]
+    if (page !== undefined) extensions.select(page.key)
     buttons[next]?.focus()
   }
 
   return (
     <div className={css.extensions} data-dsh-plugin="web-ui-settings" data-dsh-part="extensions">
       <div className={css.extensionTabs} role="tablist" aria-label={t('extensions.navigation')} aria-orientation="vertical" onKeyDown={onKeyDown} data-dsh-part="tabs">
-        {tabs.map(id => (
+        {tabs.map(page => (
           <button
-            key={id}
+            key={page.key}
             type="button"
             role="tab"
-            id={`web-extension-tab-${id}`}
+            id={`web-extension-tab-${page.key}`}
             aria-controls="web-extension-panel"
-            aria-selected={active === id}
-            tabIndex={active === id ? 0 : -1}
-            className={active === id ? css.extensionTabActive : css.extensionTab}
-            onClick={() => extensions.select(id)}
+            aria-selected={active?.key === page.key}
+            tabIndex={active?.key === page.key ? 0 : -1}
+            className={active?.key === page.key ? css.extensionTabActive : css.extensionTab}
+            onClick={() => extensions.select(page.key)}
             data-dsh-part="tab"
-            data-extension-id={id}
+            data-extension-id={page.key}
           >
-            {t(tabLabelKey(id))}
+            {page.label()}
           </button>
         ))}
       </div>
@@ -73,12 +60,12 @@ export function WebExtensionsSection(props: WebExtensionsSectionProps): ReactNod
         className={css.extensionPanel}
         role="tabpanel"
         id="web-extension-panel"
-        aria-labelledby={active === undefined ? undefined : `web-extension-tab-${active}`}
+        aria-labelledby={active === undefined ? undefined : `web-extension-tab-${active.key}`}
         data-dsh-part="panel"
       >
         {active === undefined
           ? <p className={css.extensionUnavailable}>{t('extensions.unavailable')}</p>
-          : renderSlot('web-ui.extension', { close }, { entryKey: active, fallback: <p className={css.extensionUnavailable}>{t('extensions.unavailable')}</p> })}
+          : renderSlot('web-ui.extension', { close }, { entryKey: active.key, fallback: <p className={css.extensionUnavailable}>{t('extensions.unavailable')}</p> })}
       </div>
     </div>
   )

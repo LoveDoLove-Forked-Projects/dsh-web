@@ -186,11 +186,11 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'dsh-usage: sidebar foot card')
 
-  installUsageSection(ctx, {
+  ctx.effect(() => installUsageSection(ctx, {
     order: SECTION_ORDER,
     label: () => ctx.locale.bind(NS)('usage.title'),
     locale: NS,
     inject: face,
     component: UsageSectionCard,
-  })
+  }), 'dsh-usage: settings page')
 }

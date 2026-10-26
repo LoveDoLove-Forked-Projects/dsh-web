@@ -116,7 +116,25 @@ describe('dsh-web-ui-market client store registration', () => {
     const { fakeCtx, registered } = makeCtx()
     Object.assign(fakeCtx, {
       get: (name: string) => name === 'webUiExtensions'
-        ? { sectionId: 'web-ui-plugins', label: () => 'Web Extensions', open: () => true }
+        ? {
+          sectionId: 'web-ui-plugins',
+          label: () => 'Web Extensions',
+          open: () => true,
+          registerPage: (page: Record<string, unknown>) => {
+            const options = {
+              name: 'web-ui.extension',
+              key: page.key,
+              locale: page.locale,
+              children: page.children,
+              inject: page.inject,
+            }
+            registered.push(options)
+            return () => {
+              const index = registered.indexOf(options)
+              if (index >= 0) registered.splice(index, 1)
+            }
+          },
+        }
         : undefined,
     })
     // When the Workshop applies

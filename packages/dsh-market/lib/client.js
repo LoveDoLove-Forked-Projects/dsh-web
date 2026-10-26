@@ -2865,62 +2865,78 @@ window.__ModuleLoader__.load({
 			} catch {}
 		}
 		//#endregion
-		//#region src/client/extension-seat.ts
-		/** Migrate the Workshop between Web Extensions and its standalone section. */
-		const WORKSHOP_SECTION_ID = "dsh-workshop";
-		const WEB_UI_EXTENSION_SEAT = "web-ui.extension";
-		const LEGACY_SETTINGS_SEAT = "settings.section";
-		function integrated(ctx) {
-			if (typeof ctx.get !== "function") return false;
+		//#region src/client/web-extension-page.ts
+		const SETTINGS_SECTION = "settings.section";
+		const WEB_EXTENSION_SLOT = "web-ui.extension";
+		function serviceOf(ctx) {
+			if (typeof ctx.get !== "function") return void 0;
 			try {
-				return ctx.get("webUiExtensions") !== void 0;
+				const candidate = ctx.get("webUiExtensions");
+				return candidate !== null && typeof candidate === "object" && typeof candidate.sectionId === "string" && typeof candidate.registerPage === "function" ? candidate : void 0;
 			} catch {
-				return false;
+				return;
 			}
 		}
-		/** Keep exactly one registration while the optional parent loads or unloads. */
-		function installWorkshopSection(ctx, registration) {
-			let current;
+		function warn(seat, error) {
+			try {
+				console.warn(`[dsh-web-settings] page "${seat}" could not be mounted`, error);
+			} catch {}
+		}
+		/**
+		* Keep exactly one reachable page contribution while the parent loads or
+		* unloads. The parent service owns integrated mounting; only the fallback uses
+		* this plugin's own slot registry. Slot disposal is synchronous, so the latch
+		* prevents a move from recursively registering a duplicate.
+		*/
+		function installWebExtensionPage(ctx, page) {
 			let dispose;
+			let current;
 			let reconciling = false;
 			let disposed = false;
+			const present = (seat) => {
+				if (typeof ctx.slots.entries !== "function") return current === seat;
+				const slot = seat === "integrated" ? WEB_EXTENSION_SLOT : SETTINGS_SECTION;
+				return ctx.slots.entries(slot).some((entry) => entry.component === page.component && (seat === "integrated" ? entry.options.key : entry.options.id) === page.key);
+			};
+			const registerSeat = (seat) => {
+				if (seat === "integrated") {
+					const service = serviceOf(ctx);
+					if (service === void 0) throw new Error("webUiExtensions service is unavailable");
+					return service.registerPage(page);
+				}
+				return ctx.slots.register({
+					name: SETTINGS_SECTION,
+					id: page.key,
+					order: page.order,
+					label: page.label,
+					locale: page.locale,
+					inject: page.inject,
+					...page.children === void 0 ? {} : { children: page.children }
+				}, page.component);
+			};
 			const reconcile = () => {
 				if (disposed || reconciling) return;
-				const target = integrated(ctx) ? WEB_UI_EXTENSION_SEAT : LEGACY_SETTINGS_SEAT;
-				if (current === target) return;
-				if (typeof ctx.slots.spec === "function" && ctx.slots.spec(target) === void 0) return;
+				const target = serviceOf(ctx) === void 0 ? "legacy" : "integrated";
+				if (current === target && present(target)) return;
+				const slot = target === "integrated" ? WEB_EXTENSION_SLOT : SETTINGS_SECTION;
+				if (typeof ctx.slots.spec === "function" && ctx.slots.spec(slot) === void 0) return;
 				reconciling = true;
-				const previous = dispose;
-				dispose = void 0;
+				const previous = current;
+				const disposePrevious = dispose;
 				current = void 0;
+				dispose = void 0;
+				disposePrevious?.();
 				try {
-					previous?.();
-					dispose = ctx.slots.register(target === "web-ui.extension" ? {
-						name: WEB_UI_EXTENSION_SEAT,
-						key: WORKSHOP_SECTION_ID,
-						locale: registration.locale,
-						children: { "dsh-workshop.panel": {
-							kind: "keyed",
-							scope: "root"
-						} },
-						inject: registration.inject
-					} : {
-						name: LEGACY_SETTINGS_SEAT,
-						id: WORKSHOP_SECTION_ID,
-						order: 150,
-						label: registration.label,
-						locale: registration.locale,
-						children: { "dsh-workshop.panel": {
-							kind: "keyed",
-							scope: "root"
-						} },
-						inject: registration.inject
-					}, registration.component);
+					dispose = registerSeat(target);
 					current = target;
 				} catch (error) {
-					try {
-						console.warn(`[dsh-market] settings registration into "${target}" was refused`, error);
-					} catch {}
+					warn(target, error);
+					if (previous !== void 0 && previous !== target) try {
+						dispose = registerSeat(previous);
+						current = previous;
+					} catch (restoreError) {
+						warn(previous, restoreError);
+					}
 				} finally {
 					reconciling = false;
 				}
@@ -2930,11 +2946,31 @@ window.__ModuleLoader__.load({
 			} catch {}
 			reconcile();
 			return () => {
+				if (disposed) return;
 				disposed = true;
 				dispose?.();
 				dispose = void 0;
 				current = void 0;
 			};
+		}
+		//#endregion
+		//#region src/client/extension-seat.ts
+		/** The Workshop page contribution: Web Extensions parent or standalone section. */
+		const WORKSHOP_SECTION_ID = "dsh-workshop";
+		/** Keep exactly one reachable Workshop page while the parent loads or unloads. */
+		function installWorkshopSection(ctx, registration) {
+			return installWebExtensionPage(ctx, {
+				key: WORKSHOP_SECTION_ID,
+				order: 150,
+				locale: registration.locale,
+				label: registration.label,
+				inject: registration.inject,
+				component: registration.component,
+				children: { "dsh-workshop.panel": {
+					kind: "keyed",
+					scope: "root"
+				} }
+			});
 		}
 		//#endregion
 		//#region src/client/index.ts

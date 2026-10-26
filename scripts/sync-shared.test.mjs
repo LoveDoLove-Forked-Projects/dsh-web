@@ -51,10 +51,12 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // entry-bound form fallback, because it binds no Host settings namespace.
   // dsh-browser-view adds one host copy of loopback.ts: its panel socket and
   // status route drive a real browser, so the route family reuses the shared
-  // fence instead of restating it.
-  assert.equal(entries.length, 119)
+  // fence instead of restating it. The Web Extensions page adapter adds two
+  // client copies (Workshop and Usage); the satellite repositories carry their
+  // own copies because they publish separately.
+  assert.equal(entries.length, 121)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 53)
+  assert.equal(clientTrio.length, 55)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')

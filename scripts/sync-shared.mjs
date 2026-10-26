@@ -62,9 +62,20 @@ const MANIFEST = [
     targets: SETTINGS_CARD_CONSUMERS.map(pkg => `packages/${pkg}/src/client/settings-card.module.css`),
   },
   {
+    // One settings page's seat in either the Web Extensions parent or the
+    // legacy first-level settings navigation. The service owns keyed mounting;
+    // this helper only reconciles the standalone fallback.
+    file: 'web-extension-page.ts',
+    source: 'shared/client/settings/web-extension-page.ts',
+    targets: [
+      'packages/dsh-market/src/client/web-extension-page.ts',
+      'packages/dsh-usage/src/client/web-extension-page.ts',
+    ],
+  },
+  {
     // Family plugin-card seat: one card component, dispatched into whichever
     // plugin-card seat the running host declares (the family group's list seat
-    // or the official keyed one), with the refusal logged instead of swallowed
+    // or the official keyed one), with the refusal logged rather than swallowed
     // (issue #1589).
     file: 'plugin-card-seat.ts',
     source: 'shared/client/settings/plugin-card-seat.ts',
