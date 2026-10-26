@@ -15,7 +15,8 @@ import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { PluginSettingsCard, BooleanField } from './PluginSettingsCard.tsx'
+import { PluginSettingsCard, ToggleSwitch } from './PluginSettingsCard.tsx'
+import { SegmentGroup } from './SegmentGroup.tsx'
 import { CardForm, booleanField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
 import {
   getPluginManagerSnapshot,
@@ -46,6 +47,7 @@ import {
   SUBCATEGORY_LABEL_KEY,
 } from './categories.ts'
 import type { MarketKey } from './locales.ts'
+import cardCss from './settings-card.module.css'
 import css from './market.module.css'
 
 const MARKET_ORIGIN = 'https://dsh-market.com'
@@ -292,12 +294,6 @@ export function MarketCard(props: MarketCardProps): ReactNode {
   const state = props.useMarketCard((snapshot) => snapshot)
   const disabled = !state.writable
   const cardVisible = state.enabled.text !== 'false'
-  const fieldProps = {
-    overriddenLabel: t('settings.overridden'),
-    resetLabel: t('settings.reset'),
-    invalidLabel: t('settings.invalidNumber'),
-    disabled,
-  }
 
   const [tab, setTab] = useState<Tab>('skin')
   const [query, setQuery] = useState('')
@@ -825,6 +821,18 @@ export function MarketCard(props: MarketCardProps): ReactNode {
           {t('settings.descriptionSuffix')}
         </>
       )}
+      titleId="settings-market-title"
+      headerAction={state.exposed
+        ? (
+          <ToggleSwitch
+            labelledBy="settings-market-title"
+            checked={cardVisible}
+            disabled={disabled}
+            onChange={(next) => { props.edit('enabled', String(next)) }}
+          />
+        )
+        : undefined}
+      headerOnly={!cardVisible && !state.failed}
       state={state}
       alwaysOpen
       renderChildrenWhenNotExposed
@@ -832,80 +840,69 @@ export function MarketCard(props: MarketCardProps): ReactNode {
       onSave={props.save}
       onDiscard={props.discard}
     >
-      {state.exposed ? (
-        <BooleanField
-          id="settings-market-enabled"
-          label={t('settings.enable')}
-          hint={t('settings.enableHint')}
-          inheritLabel={t('settings.inherit')}
-          onLabel={t('settings.on')}
-          offLabel={t('settings.off')}
-          {...fieldProps}
-          {...state.enabled}
-          onEdit={(value) => { props.edit('enabled', value) }}
-          onReset={() => { props.resetField('enabled') }}
-        />
-      ) : null}
       {cardVisible ? (
         <div className={css.market}>
-          <div className={css.tabs} role="tablist" aria-label={t('settings.title')}>
+          <SegmentGroup className={css.tabs} role="tablist" aria-label={t('settings.title')}>
             {TAB_ORDER.map((entry) => (
               <button
                 key={entry}
                 type="button"
                 role="tab"
                 aria-selected={tab === entry}
-                className={tab === entry ? css.tab + ' ' + css.tabActive : css.tab}
+                className={`${cardCss.segment} ${css.tab}`}
+                data-active={tab === entry ? '' : undefined}
                 onClick={() => { setTab(entry); setCat('all'); setSubcat('all') }}
               >
                 {t(TAB_LABEL[entry])}
                 <span className={css.tabCount}>{entry === 'picks' ? picks.length : (data?.items[entry] ?? []).length}</span>
               </button>
             ))}
-          </div>
-          {tab === 'skin' ? (
-            <div className={css.bulkRow}>
-              <button
-                type="button"
-                className={installAllArmed ? css.bulkArmed : css.bulkButton}
-                disabled={gateway === null || installing !== null || (installAll !== null && installAll.phase === 'running')}
-                onClick={() => { void onInstallAll() }}
-              >
-                {installAll?.phase === 'checking'
-                  ? t('installAllChecking', {})
-                  : installAll?.phase === 'running'
-                  ? t('installAllRunning', { done: installAll.done, total: installAll.total })
-                  : installAllArmed
-                  ? t('installAllConfirm', { count: missingInstallCount() })
-                  : t('installAll', {})}
-              </button>
-              {installAllArmed ? (
+          </SegmentGroup>
+          <div className={css.toolbar}>
+            {tab === 'preset' || tab === 'picks' ? null : (
+              <input
+                className={css.search}
+                type="search"
+                aria-label={t('search.label')}
+                placeholder={t('search.label')}
+                value={query}
+                onChange={(event) => { setQuery(event.target.value) }}
+              />
+            )}
+            {tab === 'skin' ? (
+              <div className={css.bulkRow}>
                 <button
                   type="button"
-                  className={css.bulkCancel}
-                  onClick={() => { setInstallAllArmed(false) }}
+                  className={installAllArmed ? css.bulkArmed : css.bulkButton}
+                  disabled={gateway === null || installing !== null || (installAll !== null && installAll.phase === 'running')}
+                  onClick={() => { void onInstallAll() }}
                 >
-                  {t('cancel', {})}
+                  {installAll?.phase === 'checking'
+                    ? t('installAllChecking', {})
+                    : installAll?.phase === 'running'
+                    ? t('installAllRunning', { done: installAll.done, total: installAll.total })
+                    : installAllArmed
+                    ? t('installAllConfirm', { count: missingInstallCount() })
+                    : t('installAll', {})}
                 </button>
-              ) : null}
-            </div>
-          ) : null}
+                {installAllArmed ? (
+                  <button
+                    type="button"
+                    className={css.bulkCancel}
+                    onClick={() => { setInstallAllArmed(false) }}
+                  >
+                    {t('cancel', {})}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
           {installAll !== null && installAll.note !== '' ? (
             <p className={installAll.failed > 0 ? css.bulkNoteWarn : css.bulkNote}>
               {installAll.note}
               {installAll.reported > 0 ? ' · ' + t('installAllSummary', { count: installAll.reported }) : ''}
             </p>
           ) : null}
-          {tab === 'preset' || tab === 'picks' ? null : (
-            <input
-              className={css.search}
-              type="search"
-              aria-label={t('search.label')}
-              placeholder={t('search.label')}
-              value={query}
-              onChange={(event) => { setQuery(event.target.value) }}
-            />
-          )}
           {facetKind !== null ? (
             <div className={css.filterRows}>
               <div className={css.filterRow} role="group" aria-label={t('filter.category')}>
