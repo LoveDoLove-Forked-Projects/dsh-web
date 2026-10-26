@@ -628,13 +628,12 @@ describe('MarketCard', () => {
     expect(screen.getByText(/未安装预设中心插件/)).toBeTruthy()
   })
 
-  it('saves the staged enable switch through one form mutation', async () => {
+  it('writes the enable switch through one form mutation the moment it is picked', async () => {
     const scope = new FakeScope({ enabled: true })
     const props = cardProps(scope, { remote: REMOTE, gateway: null, pluginManager: null })
     render(<MarketCard {...props} />)
 
     await act(async () => { props.edit('enabled', 'false') })
-    await act(async () => { props.save() })
 
     expect(scope.mutate).toHaveBeenCalledWith([{ op: 'set', path: ['enabled'], value: false }])
     expect(scope.user).toEqual({ enabled: false })
@@ -651,7 +650,6 @@ describe('MarketCard', () => {
     render(<MarketCard {...props} />)
 
     await act(async () => { props.edit('enabled', 'false') })
-    await act(async () => { props.save() })
 
     await waitFor(() => expect(screen.getByText(/保存失败/)).toBeTruthy())
     expect(scope.mutate).toHaveBeenCalled()
@@ -659,20 +657,19 @@ describe('MarketCard', () => {
     expect(scope.user).toEqual({ enabled: false })
   })
 
-  it('keeps the draft after a refused save so the user can correct it', async () => {
+  it('puts a refused pick back to the stored value and says the write failed', async () => {
     const scope = new FakeScope({ enabled: true })
     scope.accepts = false
     const props = cardProps(scope, { remote: REMOTE, gateway: null, pluginManager: null })
     render(<MarketCard {...props} />)
 
     await act(async () => { props.edit('enabled', 'false') })
-    await act(async () => { props.save() })
 
     await waitFor(() => expect(screen.getByText(/保存失败/)).toBeTruthy())
     expect(scope.user).toEqual({})
-    // The off draft is still on screen and the save is retryable.
-    expect(document.getElementById('settings-market-enabled')?.textContent).toBe('关')
-    expect(screen.getByRole('button', { name: '保存' }).hasAttribute('disabled')).toBe(false)
+    // The switch springs back to the effective value; picking again is the retry.
+    expect(document.querySelector('#settings-market-enabled [aria-pressed="true"]')?.textContent).toBe('开')
+    expect(screen.queryByRole('button', { name: '保存' })).toBeNull()
   })
 
   it('user sees market content without notExposed banner when host namespace is unexposed', async () => {

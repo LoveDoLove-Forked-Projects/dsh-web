@@ -62,6 +62,14 @@ const MANIFEST = [
     targets: SETTINGS_CARD_CONSUMERS.map(pkg => `packages/${pkg}/src/client/settings-card.module.css`),
   },
   {
+    // The segmented control with the sliding highlight: the card fields'
+    // small choices render through it, and so does the Web Extensions TAB
+    // strip in dsh-web-settings.
+    file: 'SegmentGroup.tsx',
+    source: 'shared/client/settings/SegmentGroup.tsx',
+    targets: SETTINGS_CARD_CONSUMERS.map(pkg => `packages/${pkg}/src/client/SegmentGroup.tsx`),
+  },
+  {
     // One settings page's seat in either the Web Extensions parent or the
     // legacy first-level settings navigation. The service owns keyed mounting;
     // this helper only reconciles the standalone fallback.

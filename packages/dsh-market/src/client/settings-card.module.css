@@ -53,8 +53,8 @@
   appearance: none;
   width: 100%;
   /* The suite does not force a global border-box, so width:100% + padding
-     would stretch the row 32px past the card and push the trailing pending
-     badge (last flex item) outside the card border. */
+     would stretch the row 32px past the card and push the trailing chevron
+     (last flex item) outside the card border. */
   box-sizing: border-box;
   font: inherit;
   color: inherit;
@@ -128,18 +128,6 @@
   line-height: 18px;
 }
 
-.pending {
-  white-space: nowrap;
-  background: var(--dsw-alias-bg-module-platform);
-  color: var(--dsw-alias-label-secondary);
-  border-radius: 999px;
-  flex: none;
-  padding: 1px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 17px;
-}
-
 /* Header trailing control (an immediate toggle): a flex item that keeps its
    natural width while the title block takes the remaining space. */
 .headerAction {
@@ -191,7 +179,10 @@
   min-height: 0;
 }
 
+/* The body is the query container its rows answer to: the card's own width,
+   not the viewport's, decides whether a control still fits beside its text. */
 .body {
+  container: settings-card / inline-size;
   border-top: 1px solid var(--dsw-alias-border-l2);
   margin: 0 var(--settings-card-body-inset);
   padding-bottom: 8px;
@@ -211,75 +202,46 @@
   line-height: 1.5;
 }
 
-.footer {
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 0 4px;
-  display: flex;
-}
-
+/* The refused write, under the rows it belongs to; the control itself has
+   already gone back to the stored value. */
 .failed {
-  min-width: 0;
   /* The suite's error alias is state-error-primary; a label-error token does
      not exist, so the var() would resolve to nothing and the message would
      inherit the ink color, losing the failure signal. */
   color: var(--dsw-alias-state-error-primary, #b42318);
-  flex: 1;
-  margin: 0;
+  margin: 8px 0 4px;
   font-size: 12px;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
-.discard,
-.save {
-  appearance: none;
-  font: inherit;
-  cursor: pointer;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 5px 14px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.discard {
-  border-color: var(--dsw-alias-border-l2);
-  color: var(--dsw-alias-label-secondary);
-  background: transparent;
-}
-
-.discard:hover:not(:disabled) {
-  color: var(--dsw-alias-label-primary);
-  border-color: var(--dsw-alias-label-dimmed);
-}
-
-.save {
-  background: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-bg-layer-3);
-}
-
-.discard:disabled,
-.save:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.discard:focus-visible,
-.save:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: 1px;
-}
-
+/* One settings row: the label and its hint on the left, the control on the
+   right across both lines, 16px above and below, a hairline between two rows.
+   The markup keeps label, control, hint in reading order and the grid places
+   the control, so a field built outside this file (a plugin's own preset
+   picker) lands in the same row by using the same classes. */
 .field {
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head control"
+    "hint control";
+  align-items: center;
+  gap: 4px 24px;
   padding: 16px 0;
-  display: flex;
+}
+
+.field > .head {
+  grid-area: head;
+}
+
+.field > :is(.hint, .invalid) {
+  grid-area: hint;
+}
+
+.field > :not(.head, .hint, .invalid) {
+  grid-area: control;
+  justify-self: end;
 }
 
 .field + .field {
@@ -347,47 +309,82 @@
   outline-offset: 2px;
 }
 
-/* Segmented single-choice controls: a quiet inset track with the selected
-   option raised out of it. The control wraps instead of clipping, so three
-   localized labels stay complete in a narrow card. */
+/* Segmented controls (SegmentGroup.tsx): a 2px-inset track with no border, and
+   one raised box that marks the pressed option. The track wraps instead of
+   clipping, so localized labels stay complete in a narrow card. */
 .segmentGroup {
+  position: relative;
   display: inline-flex;
-  align-self: flex-start;
   flex-wrap: wrap;
+  align-items: center;
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 9px;
-  background: var(--dsw-alias-bg-layer-2);
+  border-radius: 7px;
+  background: var(--dsw-specific-selector, color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent));
 }
 
 .segment {
   appearance: none;
   margin: 0;
-  padding: 5px 13px;
+  padding: 3px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 18px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.segment:hover:not(:disabled):not(.segmentActive) {
+.segment:hover:not(:disabled):not([data-active]) {
   color: var(--dsw-alias-label-primary);
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
 }
 
-.segmentActive {
+/* The raised box marking the pressed option: the highlight once the group has
+   measured it, the option's own background for the frame before. Dark lifts
+   by white alpha: a layer fill there resolves to the track's own grey. */
+.segmentGroup:not([data-pill]) > .segment[data-active],
+.segmentGroup[data-pill]::before {
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-3));
+  box-shadow: 0 1px 2px rgb(20 20 19 / 8%);
+}
+
+:global(body[data-ds-dark-theme]) .segmentGroup:not([data-pill]) > .segment[data-active],
+:global(body[data-ds-dark-theme]) .segmentGroup[data-pill]::before {
+  background: rgb(255 255 255 / 14%);
+  box-shadow: none;
+}
+
+.segment[data-active] {
   color: var(--dsw-alias-label-primary);
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 9%, var(--dsw-alias-bg-layer-2));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-label-primary) 9%, transparent),
-    0 1px 2px rgb(0 0 0 / 10%);
+}
+
+/* The sliding highlight: one box at the pressed option's measured place that
+   glides to the next one. The glide keeps playing under reduced motion: a
+   quarter-second move of one small box is how the control reads. */
+.segmentGroup[data-pill]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--segment-pill-w, 0px);
+  height: var(--segment-pill-h, 0px);
+  border-radius: 7px;
+  transform: translate(var(--segment-pill-x, 0px), var(--segment-pill-y, 0px));
+  pointer-events: none;
+  transition: transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 240ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* The options paint above the highlight, the group's first painted box. */
+.segmentGroup > * {
+  position: relative;
+  z-index: 1;
 }
 
 .segment:focus-visible {
@@ -396,12 +393,12 @@
 }
 
 .segment:disabled {
-  color: var(--dsw-alias-label-tertiary);
-  cursor: default;
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
-.segmentActive:disabled {
-  opacity: 0.65;
+.segmentGroup[data-pill]:has(> .segment:disabled)::before {
+  opacity: 0.45;
 }
 
 .input,
@@ -445,6 +442,38 @@
   outline: 2px solid var(--dsw-alias-state-error-primary, #b42318);
   outline-offset: 1px;
   border-color: var(--dsw-alias-state-error-primary, #b42318);
+}
+
+/* Beside its text a field keeps a width that reads a value at a glance and
+   leaves the hint its room; text fields and pickers share it, so a column of
+   rows lines their left edges up. */
+.field > :is(.input, .inputInvalid, .select, .selectWrap) {
+  box-sizing: border-box;
+  width: 220px;
+}
+
+/* A narrow card hands the control the line under the text, where it starts at
+   the row's left edge, rather than crushing the hint into a few characters a
+   line; a text field or a picker then takes the row's whole width. This block
+   follows the widths above so it outranks them. */
+@container settings-card (max-width: 440px) {
+  .field {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "hint"
+      "control";
+    row-gap: 8px;
+  }
+
+  .field > :not(.head, .hint, .invalid) {
+    justify-self: start;
+  }
+
+  .field > :is(.input, .inputInvalid, .select, .selectWrap) {
+    justify-self: stretch;
+    width: auto;
+  }
 }
 
 .selectWrap {
@@ -532,7 +561,7 @@
 .selectOptionSelected {
   color: var(--dsw-alias-brand-primary);
   font-weight: 500;
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 10%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);
 }
 
 .invalid {
@@ -549,10 +578,10 @@
   line-height: 18px;
 }
 
-/* Immediate boolean toggle: the official switch shape (30x16 track, 12px
-   thumb). The on state fills with the primary-action pair rather than a fixed
-   state color, so it stays legible in every theme; disabled dims through
-   opacity instead of a second palette. */
+/* Immediate boolean toggle: a 36x20 capsule with a 16px thumb. The on state
+   fills with the primary-action pair rather than a fixed state color, so it
+   stays legible in every theme; disabled dims through opacity instead of a
+   second palette. */
 .toggle {
   appearance: none;
   display: inline-flex;
@@ -569,24 +598,28 @@
 .toggleTrack {
   position: relative;
   flex: none;
-  width: 30px;
-  height: 16px;
+  width: 36px;
+  height: 20px;
   border-radius: 999px;
   /* Off must still read as a rail: border-l2 is an alpha hairline color and
      leaves the track nearly invisible on a card surface. */
   background: var(--dsw-alias-label-dimmed);
-  transition: background 0.18s ease;
+  transition: background-color 0.18s ease;
 }
 
 .toggleThumb {
+  --toggle-travel: 16px;
+  --toggle-overshoot: 1px;
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--dsw-alias-bg-layer-3);
-  transition: left 0.18s ease;
+  box-shadow: 0 1px 2px rgb(20 20 19 / 18%);
+  translate: 0 0;
+  transition: translate 0.18s ease;
 }
 
 .toggle[aria-checked='true'] .toggleTrack {
@@ -594,8 +627,32 @@
 }
 
 .toggle[aria-checked='true'] .toggleThumb {
-  left: 16px;
+  translate: var(--toggle-travel) 0;
   background: var(--dsw-alias-label-primary-foreground, var(--dsw-alias-bg-layer-3));
+}
+
+/* Pressed, the thumb travels across with a double bounce — past its end, back,
+   settled — while the track's colour changes on its own clock. Only a switch
+   the reader has pressed is armed (data-moved): a thumb drawn by a page
+   opening stands where it is. */
+.toggle[data-moved][aria-checked='true'] .toggleThumb {
+  animation: toggle-on 0.35s cubic-bezier(0.34, 1.45, 0.64, 1) both;
+}
+
+.toggle[data-moved][aria-checked='false'] .toggleThumb {
+  animation: toggle-off 0.35s cubic-bezier(0.34, 1.45, 0.64, 1) both;
+}
+
+@keyframes toggle-on {
+  0% { translate: 0 0; }
+  55% { translate: calc(var(--toggle-travel) + var(--toggle-overshoot)) 0; }
+  80%, 100% { translate: var(--toggle-travel) 0; }
+}
+
+@keyframes toggle-off {
+  0% { translate: var(--toggle-travel) 0; }
+  55% { translate: calc(0px - var(--toggle-overshoot)) 0; }
+  80%, 100% { translate: 0 0; }
 }
 
 .toggle:focus-visible {
@@ -605,7 +662,7 @@
 
 .toggle:disabled {
   opacity: 0.45;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -614,14 +671,16 @@
   .mark,
   .chevron,
   .chevronOpen,
-  .discard,
-  .save,
   .selectChevron,
   .selectChevronOpen,
   .selectPopup,
   .toggleTrack,
   .toggleThumb {
     transition: none;
+  }
+
+  .toggle[data-moved] .toggleThumb {
+    animation: none;
   }
 
   /* Reduced motion drops the height travel but keeps the fade, so a closing

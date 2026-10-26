@@ -63,38 +63,26 @@ function renderCard(state: LiangShenSettingsCardState) {
 }
 
 /**
- * Open one choice field's popup and read the option labels it renders.
+ * The option buttons one segmented field shows.
  *
- * The shared card renders a custom trigger plus a listbox under the default
- * appearance (a native `<select>` only appears when an appearance skin is
- * active), so every choice field is driven by clicking, not by `change`.
+ * Boolean fields and choice fields of at most four options render every option
+ * as a visible segment, so a field is driven by pressing its option.
  */
-function openChoices(id: string): HTMLElement[] {
-  const trigger = document.getElementById(id)
-  expect(trigger, id).not.toBeNull()
-  fireEvent.click(trigger!)
-  const listbox = document.querySelector('[role="listbox"]')
-  expect(listbox).not.toBeNull()
-  return Array.from(listbox!.querySelectorAll('[role="option"]')) as HTMLElement[]
+function segmentOptions(id: string): HTMLButtonElement[] {
+  const group = document.getElementById(id)
+  if (group === null) throw new Error(`field ${id} is not rendered`)
+  return Array.from(group.querySelectorAll('button'))
 }
 
 /**
- * Open one boolean field's popup and return the option carrying a label.
- *
- * The shared card renders a custom trigger plus a listbox under the default
- * appearance, so a boolean field is driven by clicking rather than by
- * `change`. A field that is not rendered, opens nothing, or offers no such
- * option throws instead of asserting on a nullable lookup.
+ * The option of one segmented field that carries a label. A field that is not
+ * rendered or offers no such option throws instead of asserting on a nullable
+ * lookup.
  */
-function optionFor(id: string, label: string): HTMLElement {
-  const trigger = document.getElementById(id)
-  if (trigger === null) throw new Error(`field ${id} is not rendered`)
-  fireEvent.click(trigger)
-  const listbox = document.querySelector('[role="listbox"]')
-  if (listbox === null) throw new Error(`field ${id} opened no listbox`)
-  const option = Array.from(listbox.querySelectorAll('[role="option"]')).find(node => node.textContent === label)
+function optionFor(id: string, label: string): HTMLButtonElement {
+  const option = segmentOptions(id).find(node => node.textContent === label)
   if (option === undefined) throw new Error(`field ${id} offers no ${label} option`)
-  return option as HTMLElement
+  return option
 }
 
 describe('LiangShenSettingsCard', () => {
@@ -142,7 +130,7 @@ describe('LiangShenSettingsCard', () => {
 
   it('offers the presentation choices with the inherit option leading', () => {
     renderCard(baseState())
-    const presentation = openChoices('settings-liangshen-presentation')
+    const presentation = segmentOptions('settings-liangshen-presentation')
     expect(presentation.map(option => option.textContent)).toEqual([
       'settings.inherit',
       'presentation.ptc',
@@ -152,21 +140,19 @@ describe('LiangShenSettingsCard', () => {
 
   it('stages the presentation a choice selects', () => {
     const { edit } = renderCard(baseState())
-    const presentation = openChoices('settings-liangshen-presentation')
-    fireEvent.click(presentation[2]!)   // presentation.native
+    fireEvent.click(optionFor('settings-liangshen-presentation', 'presentation.native'))
     expect(edit).toHaveBeenCalledWith('presentation', 'native')
   })
 
   it('disables every control when the document is not writable', () => {
     renderCard(baseState({ writable: false }))
-    const trigger = document.getElementById('settings-liangshen-presentation') as HTMLButtonElement
-    expect(trigger.disabled).toBe(true)
+    expect(segmentOptions('settings-liangshen-presentation').every(option => option.disabled)).toBe(true)
   })
 
   it('renders fields gracefully when the Host does not expose the namespace', () => {
     renderCard(baseState({ exposed: false }))
     expect(screen.queryByText('settings.notExposed')).toBeNull()
-    expect(document.getElementById('settings-liangshen-presentation')?.tagName).toBe('BUTTON')
+    expect(segmentOptions('settings-liangshen-presentation')).toHaveLength(3)
   })
 
   it('binds the scope into a controller whose face carries the snapshot and actions', () => {
@@ -216,8 +202,8 @@ describe('LiangShenSettingsCard', () => {
     render(<LiangShenSettingsCard {...props} />)
     fireEvent.click(screen.getByRole('button', { expanded: false }))
     // Then the reset control in that one field's header writes the clear.
-    const head = document.querySelector('label[for="settings-liangshen-dispatcher"]')!.closest('div')!
-    fireEvent.click(Array.from(head.querySelectorAll('button')).find((button) => button.textContent === 'settings.reset')!)
+    const field = document.getElementById('settings-liangshen-dispatcher')!.parentElement!
+    fireEvent.click(Array.from(field.querySelectorAll('button')).find((button) => button.textContent === 'settings.reset')!)
     expect(resetField).toHaveBeenCalledWith('dispatcher')
   })
 

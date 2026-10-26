@@ -149,6 +149,7 @@ export function LiangShenSettingsCard(props: LiangShenSettingsCardProps) {
         label={t('settings.presentation')}
         hint={t('settings.presentationHint')}
         choices={PRESENTATION_CHOICES.map(choice => ({ value: choice, label: t(`presentation.${choice}`) }))}
+        presentation="segment"
         {...fieldProps}
         {...state.presentation}
         onEdit={(text) => { props.edit('presentation', text) }}

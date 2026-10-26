@@ -178,9 +178,8 @@ describe('task-board settings: the forwarded-proxy trust switch', () => {
     // choice and carrying one visible line on when turning it on is justified,
     // while the full warning stays on its hover title
     const control = container.querySelector('#settings-task-board-trust-forwarded-proxy')
-    expect(control?.textContent).toBe(zh['settings.inherit'])
-    const label = container.querySelector<HTMLLabelElement>('label[for="settings-task-board-trust-forwarded-proxy"]')
-    expect(label?.textContent).toBe(zh['settings.trustForwardedProxy'])
+    expect(control?.querySelector('[aria-pressed="true"]')?.textContent).toBe(zh['settings.inherit'])
+    expect(control?.getAttribute('aria-label')).toBe(zh['settings.trustForwardedProxy'])
     expect(container.textContent).toContain(zh['settings.trustForwardedProxyHintBrief'])
     expect([...container.querySelectorAll('p[title]')].map(node => node.getAttribute('title')))
       .toContain(zh['settings.trustForwardedProxyHint'])
@@ -196,7 +195,7 @@ describe('task-board settings: the forwarded-proxy trust switch', () => {
     act(() => { header(container, zh['settings.enabled']).click() })
 
     // Then the control shows the stored value instead of the inherit choice
-    expect(container.querySelector('#settings-task-board-trust-forwarded-proxy')?.textContent).toBe(zh['settings.on'])
+    expect(container.querySelector('#settings-task-board-trust-forwarded-proxy [aria-pressed="true"]')?.textContent).toBe(zh['settings.on'])
   })
 
   it('operator turning the switch on sees it committed into the volatile field alone', async () => {

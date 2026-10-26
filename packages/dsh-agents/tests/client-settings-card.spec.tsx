@@ -89,24 +89,21 @@ function onFace(node: { x: number; y: number; r: number }, point: [number, numbe
   return Math.hypot(point[0] - node.x, point[1] - node.y) <= node.r + 0.5
 }
 
-/** Open one field's popup and return the option elements it renders. */
-function openOptions(id: string): HTMLElement[] {
-  const trigger = document.getElementById(id)
-  if (trigger === null) throw new Error('field ' + id + ' is not rendered')
-  click(trigger)
-  const listbox = document.querySelector('[role="listbox"]')
-  if (listbox === null) throw new Error('field ' + id + ' opened no listbox')
-  return Array.from(listbox.querySelectorAll('[role="option"]')) as HTMLElement[]
+/** The option buttons one segmented field shows. */
+function segmentOptions(id: string): HTMLButtonElement[] {
+  const group = document.getElementById(id)
+  if (group === null) throw new Error('field ' + id + ' is not rendered')
+  return Array.from(group.querySelectorAll('button'))
 }
 
-/** The labels of one field's popup, as the operator reads them. */
+/** The labels of one field's options, as the operator reads them. */
 function optionLabels(id: string): Array<string | null> {
-  return openOptions(id).map(node => node.textContent)
+  return segmentOptions(id).map(node => node.textContent)
 }
 
-/** Open one boolean field's popup and click the option carrying a label. */
+/** Press the option of one boolean field that carries a label. */
 function pickOption(id: string, label: string): void {
-  const option = openOptions(id).find(node => node.textContent === label)
+  const option = segmentOptions(id).find(node => node.textContent === label)
   if (option === undefined) throw new Error('field ' + id + ' offers no ' + label + ' option')
   click(option)
 }
@@ -158,8 +155,8 @@ async function settle(): Promise<void> {
 
 describe('AgentsSettingsCard', () => {
   it('operator sees the announcement switch and what the master switch governs', () => {
-    // Given the card rendered with a fixed snapshot, When the operator opens the
-    // switch's popup, Then it offers exactly the inheritable boolean choices, the
+    // Given the card rendered with a fixed snapshot, When the operator reads the
+    // switch's options, Then it offers exactly the inheritable boolean choices, the
     // master switch on the profile row stays out of the form, and that switch is
     // explained as read-only copy.
     const { view } = renderCard(baseState())
@@ -227,8 +224,8 @@ it('operator sees the card lead with the squad mark beside the family cards', ()
     // Given a user layer that already stores the switch, When the operator resets
     // that field, Then the card stages a clear so saving drops the key.
     const { resetField } = renderCard(baseState({ announceToAgent: { text: 'true', overridden: true, invalid: false } }))
-    const head = document.querySelector('label[for="' + ANNOUNCE_FIELD_ID + '"]')!.closest('div')!
-    const reset = Array.from(head.querySelectorAll('button')).find(button => button.textContent === 'settings.reset')
+    const field = document.getElementById(ANNOUNCE_FIELD_ID)!.parentElement!
+    const reset = Array.from(field.querySelectorAll('button')).find(button => button.textContent === 'settings.reset')
     if (reset === undefined) throw new Error('no reset control in the announcement field')
     click(reset)
     expect(resetField).toHaveBeenCalledWith('announceToAgent')
@@ -258,8 +255,7 @@ it('operator sees the card lead with the squad mark beside the family cards', ()
     // Given a deployment that serves settings read-only, When the card renders
     // the switch, Then the control is disabled instead of accepting a draft.
     renderCard(baseState({ writable: false }))
-    const trigger = document.getElementById(ANNOUNCE_FIELD_ID) as HTMLButtonElement
-    expect(trigger.disabled).toBe(true)
+    expect(segmentOptions(ANNOUNCE_FIELD_ID).map(option => option.disabled)).toEqual([true, true, true])
   })
 
   it('operator still gets the switch when the Host does not expose the namespace', () => {
@@ -269,7 +265,7 @@ it('operator sees the card lead with the squad mark beside the family cards', ()
     const { view } = renderCard(baseState({ exposed: false }))
     expect(document.querySelector('[role="status"]'), 'not-exposed banner').toBeNull()
     expect(view.container.textContent).not.toContain('settings.notExposed')
-    expect(document.getElementById(ANNOUNCE_FIELD_ID)?.tagName).toBe('BUTTON')
+    expect(optionLabels(ANNOUNCE_FIELD_ID)).toEqual(['settings.inherit', 'settings.on', 'settings.off'])
   })
 
   it('operator sees the card release its form subscription when it unloads', () => {

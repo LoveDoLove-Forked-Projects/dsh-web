@@ -351,6 +351,6 @@ describe('GitHub UI integration', () => {
 
     // Then the switches it configures are editable and show the draft they hold
     expect(header?.getAttribute('aria-expanded')).toBe('true')
-    expect(container.querySelector('#settings-task-board-github-enabled')?.textContent).toBe(zh['settings.inherit'])
+    expect(container.querySelector('#settings-task-board-github-enabled [aria-pressed="true"]')?.textContent).toBe(zh['settings.inherit'])
   })
 })

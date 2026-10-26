@@ -89,7 +89,7 @@ describe('task-board settings card disclosure', () => {
     // Then the global switch is there with its default (off) and its one-line
     // hint, whose full explanation stays on that paragraph's hover title, and
     // the sibling topics are untouched
-    expect(container.querySelector('#settings-task-board-goal-run')?.textContent).toBe(zh['settings.off'])
+    expect(container.querySelector('#settings-task-board-goal-run [aria-pressed="true"]')?.textContent).toBe(zh['settings.off'])
     expect(container.textContent).toContain(zh['settings.goalRunGlobalHintBrief'])
     expect(titles(container)).toContain(zh['settings.goalRunGlobalHint'])
     expect(header(container, zh['settings.enabled']).getAttribute('aria-expanded')).toBe('false')
@@ -107,9 +107,9 @@ describe('task-board settings card disclosure', () => {
     // Then its own controls are editable and show the stored board values, the
     // runtime-behavior fields sit with them, and the sibling topics stayed closed
     expect(header(container, zh['settings.enabled']).getAttribute('aria-expanded')).toBe('true')
-    expect(container.querySelector('#settings-task-board-enabled')?.textContent).toBe(zh['settings.on'])
-    expect(container.querySelector('#settings-task-board-announce')?.textContent).toBe(zh['settings.inherit'])
-    expect(container.querySelector('#settings-task-board-prevent-idle-sleep')?.textContent).toBe(zh['settings.inherit'])
+    expect(container.querySelector('#settings-task-board-enabled [aria-pressed="true"]')?.textContent).toBe(zh['settings.on'])
+    expect(container.querySelector('#settings-task-board-announce [aria-pressed="true"]')?.textContent).toBe(zh['settings.inherit'])
+    expect(container.querySelector('#settings-task-board-prevent-idle-sleep [aria-pressed="true"]')?.textContent).toBe(zh['settings.inherit'])
     expect(container.querySelector('#settings-task-board-subtask-depth')?.textContent).toBe(zh['settings.inherit'])
     expect(container.querySelector('#settings-task-board-goal-verification')).toBeNull()
     expect(header(container, zh['settings.goalVerificationTitle']).getAttribute('aria-expanded')).toBe('false')
@@ -150,7 +150,7 @@ describe('task-board settings card disclosure', () => {
 
     // Then the acceptance switch, the judge model and the resolved preview are
     // there with the stored values, and the board topic is untouched
-    expect(container.querySelector('#settings-task-board-goal-verification')?.textContent).toBe(zh['settings.on'])
+    expect(container.querySelector('#settings-task-board-goal-verification [aria-pressed="true"]')?.textContent).toBe(zh['settings.on'])
     expect(container.querySelector('#settings-task-board-goal-verification-model')?.textContent).toBe(zh['settings.inherit'])
     expect(container.querySelector('#settings-task-board-goal-verification-effort')?.textContent).toBe(zh['settings.inherit'])
     expect(container.textContent).toContain(zh['settings.goalVerificationResolved'])

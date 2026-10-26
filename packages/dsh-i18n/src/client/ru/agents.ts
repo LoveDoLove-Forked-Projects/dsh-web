@@ -150,9 +150,5 @@ export const ru: Record<string, string> = {
   'settings.readOnly': 'В этом развёртывании настройки доступны только для чтения.',
   'settings.expand': 'Показать настройки',
   'settings.collapse': 'Скрыть настройки',
-  'settings.save': 'Сохранить',
-  'settings.saving': 'Сохранение…',
-  'settings.discard': 'Отменить',
-  'settings.unsaved': 'Не сохранено',
   'settings.saveFailed': 'Развёртывание не приняло эти значения; они оставлены для исправления.',
 }
