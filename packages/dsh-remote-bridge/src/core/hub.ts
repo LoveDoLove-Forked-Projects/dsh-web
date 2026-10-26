@@ -23,6 +23,14 @@
  * because a blocking ask carries no call id and the phone still needs a handle
  * to answer with; and the claim outlives the last paired device by a grace
  * window, because a phone whose app the system suspended has refused nothing.
+ *
+ * A presented page (`ui.present`, protocol §35) is the second claim that takes a
+ * grace window, and it takes the same one: the tool call it blocks is the agent's
+ * own wait, the card is the only place its answer can come from, and a phone that
+ * was suspended has refused nothing either. It differs in one direction only —
+ * there is no "next answerer" to hand a card back to, so a window that runs out
+ * ends the tool call as a refusal (§35.5: the host side reads it as a timeout)
+ * rather than starting another answerer.
  * @module dsh-remote-bridge/core/hub
  */
 
@@ -30,10 +38,12 @@ import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import type { PendingPromptView } from './approvals.ts'
 import type { BridgeConnectionOptions, BridgeTransport, ConnectionAuth } from './connection.ts'
 import { BridgeConnection } from './connection.ts'
-import { CAP_APPROVALS, CAP_QUESTIONS, TOPIC_APPROVAL_REQUEST, TOPIC_QUESTION_REQUEST } from './protocol.ts'
+import { CAP_APPROVALS, CAP_QUESTIONS, CAP_UI, TOPIC_APPROVAL_REQUEST, TOPIC_QUESTION_REQUEST, TOPIC_UI_REQUEST } from './protocol.ts'
 import { questionPayload } from './questions.ts'
 import type { ClaimedQuestion, QuestionAnswer, UserQuestionRequestLike } from './questions.ts'
 import { isDeadPushToken, type PushDeliveryReport } from './push.ts'
+import { uiPayload } from './ui.ts'
+import type { JsonValue, UiCardView, UiPresentOutcome, UiRefusalReason } from './ui.ts'
 
 /**
  * The fields of an approval question this bridge reads. Structural on purpose:
@@ -88,6 +98,10 @@ function approvalPayload(prompt: PendingPromptView): ApprovalRequestPayload {
  */
 export const QUESTION_CLAIM_GRACE_MS = 60_000
 
+// 同一个窗口也覆盖 §35 的整页卡：卡片同样只在「最后一次配对设备离开」时启动，只在
+// 确有卡片被持有时启动，桥卸载时立即释放。窗口长度不新造旋钮——手机回来答题的时间
+// 预算对提问与对卡片是同一件事，两处各写一个六万毫秒的常量只会让它们漂开。
+
 /**
  * How long a user question is held for a phone this bridge reached by
  * notification only, in milliseconds (§32.2).
@@ -128,6 +142,20 @@ export interface BridgeHubOptions extends BridgeConnectionOptions {
   readonly offlineClaimTtlMs?: number
 }
 
+/**
+ * What one `ui.present` call ended as, with the count of connections that took
+ * the first frame.
+ *
+ * The count is here rather than in the card registry because it is a fact about
+ * delivery: the registry owns the claim, the hub owns the fan-out, and a client
+ * count read back out of the claim would be a second answer to the same question.
+ * It rides the tool result so the desktop can say how many screens the page
+ * reached (§35.10).
+ */
+export type UiPresentReply =
+  | { readonly ok: true; readonly delivered: number; readonly type: string; readonly payload?: JsonValue }
+  | { readonly ok: false; readonly delivered: number; readonly reason: UiRefusalReason }
+
 /** The bridge's live connections plus the answerer it composes onto the approval chain. */
 export class BridgeHub {
   readonly #options: BridgeHubOptions
@@ -148,6 +176,11 @@ export class BridgeHub {
    * withdraws when a hello makes that permanent.
    */
   readonly #offlineClaims = new Map<string, NodeJS.Timeout>()
+  /**
+   * 整页卡（§35）的那一个释放窗口。卡表是全局的，所以一个定时器覆盖每一张卡，
+   * 同一时刻只可能有一个；它与 {@link #questionReleaseTimer} 各管各的通道。
+   */
+  #uiReleaseTimer: NodeJS.Timeout | undefined
 
   constructor(options: BridgeHubOptions) {
     this.#options = options
@@ -176,6 +209,7 @@ export class BridgeHub {
         onDeclare: (fresh) => {
           this.replayQuestions(fresh)
           this.replayApprovals(fresh)
+          this.replayUi(fresh)
           this.#reviewOfflineClaims()
         },
       },
@@ -208,6 +242,9 @@ export class BridgeHub {
     // the host's chain decides and the question's own deadline still holds — but
     // only once the window in which the phone can come back for it has run out.
     if (this.#options.questions.size > 0) this.#armQuestionRelease()
+    // 一张已经被手机看到的整页卡拿同一个窗口（§35.5），理由与提问逐字相同：那条
+    // 工具调用唯一的答案通道就是这张卡，手机在系统挂起它的时候什么都没拒绝。
+    if (this.#options.ui.size > 0) this.#armUiRelease()
   }
 
   /**
@@ -266,6 +303,29 @@ export class BridgeHub {
     if (!connection.paired || !connection.declares(CAP_APPROVALS)) return
     for (const prompt of this.#options.approvals.openPrompts()) {
       connection.emit(TOPIC_APPROVAL_REQUEST, approvalPayload(prompt))
+    }
+  }
+
+  /**
+   * Hand one freshly declared connection the cards this bridge still holds (§35.5).
+   *
+   * Without this, a presentation raised while the phone was reconnecting stays on
+   * the host with no page anywhere on the phone: the first `ui.request` was
+   * addressed to the clients that had already announced the channel. The replay
+   * emits a frame and nothing else — it claims no card and moves no deadline, so
+   * re-handing a page never lengthens how long the agent waits for it.
+   *
+   * A phone that can take a card is on the wire, so the window that held those
+   * cards for nobody is over: it is cancelled here rather than at attach, because
+   * only a connection that DECLARED the channel can actually receive one (§11.5's
+   * own judgement, which §35.5 reuses).
+   * @param connection - the connection that just declared its capabilities.
+   */
+  replayUi(connection: BridgeConnection): void {
+    if (!connection.paired || !connection.declares(CAP_UI)) return
+    this.#cancelUiRelease()
+    for (const held of this.#options.ui.listed()) {
+      connection.emit(TOPIC_UI_REQUEST, held.payload)
     }
   }
 
@@ -411,6 +471,55 @@ export class BridgeHub {
     return await claim.answer
   }
 
+  /**
+   * Present one page to the clients that declared `ui.v1` and wait for the user's
+   * first action (§35).
+   *
+   * The body of the `ui.present` tool call. Claimed only while a paired
+   * connection that declared the channel is on the wire: with none, a page would
+   * reach nobody, so the call answers `unavailable` at once instead of holding the
+   * agent on a wait no screen can end (§35.6 — the same judgement as §11.3's claim
+   * exclusivity). A frame no connection took is not held either, for the same
+   * reason.
+   *
+   * The card is announced `open` here and announced `settled` from the claim's own
+   * notice, so both frames come out of one payload builder and the page a phone was
+   * originally handed cannot drift from the one it reads back out of `ui.list`.
+   * @param card - the page, under the host's own `ToolCallId`.
+   * @param signal - the tool call's cancellation lifetime.
+   * @returns the user's action, or the refusal that ended the wait.
+   */
+  async present(card: UiCardView, signal?: AbortSignal): Promise<UiPresentReply> {
+    if (signal?.aborted === true) return { ok: false, delivered: 0, reason: 'cancelled' }
+    if (!this.#uiReachable()) return { ok: false, delivered: 0, reason: 'unavailable' }
+    const claim = this.#options.ui.open({
+      ...card,
+      ...(signal === undefined ? {} : { signal }),
+      onSettled: (settled): void => {
+        // The one notice every ending path uses: the client's card is over, whichever
+        // side ended it — the user answering, the grace window, a cancelled turn.
+        this.broadcastTo(CAP_UI, TOPIC_UI_REQUEST, uiPayload('settled', settled))
+      },
+    })
+    if (claim === undefined) return { ok: false, delivered: 0, reason: 'unavailable' }
+    const delivered = this.broadcastTo(CAP_UI, TOPIC_UI_REQUEST, uiPayload('open', claim))
+    // A page nobody took is not kept: the agent must not wait for a card that no
+    // screen is holding, and the claim is withdrawn rather than left open.
+    if (delivered === 0) {
+      this.#options.ui.withdraw([card.callId], 'unavailable')
+      return { ok: false, delivered: 0, reason: 'unavailable' }
+    }
+    const outcome: UiPresentOutcome = await claim.outcome
+    return outcome.ok
+      ? {
+          ok: true,
+          delivered,
+          type: outcome.type,
+          ...(outcome.payload === undefined ? {} : { payload: outcome.payload }),
+        }
+      : { ok: false, delivered, reason: outcome.reason }
+  }
+
   /** Close every connection and withdraw every question. Idempotent. */
   dispose(): void {
     // Unloading is not a phone going away: nothing can come back for these
@@ -419,12 +528,17 @@ export class BridgeHub {
     // chain at most once.
     this.#releaseOfflineClaims('the bridge unloaded')
     this.#cancelQuestionRelease()
+    // 卸载不是「手机离开了」：这些卡再也等不到动作，所以窗口立刻作废，释放就在
+    // 这里发生（§35.5「桥卸载立即释放」），不留定时器。
+    this.#cancelUiRelease()
     for (const connection of [...this.#connections]) {
       this.#connections.delete(connection)
       connection.dispose()
     }
     this.#options.approvals.abandonAll()
     this.#options.questions.withdrawAll()
+    const cards = this.#options.ui.withdrawAll()
+    if (cards > 0) this.#options.log(`${cards} presented page(s) released: the bridge unloaded`)
   }
 
   /**
@@ -626,5 +740,46 @@ export class BridgeHub {
   #releaseQuestions(): void {
     const released = this.#options.questions.withdrawAll()
     if (released > 0) this.#options.log(`${released} user question(s) released: no paired device is connected`)
+  }
+
+  /**
+   * @returns whether a reachable right now connection can be shown a page (§35.6).
+   *
+   * The one predicate `ui.present` reads before it claims anything, and the reason
+   * a call with nobody on the wire answers `unavailable` without holding the agent:
+   * announcing a capability is the whole of what makes a client able to receive one.
+   */
+  #uiReachable(): boolean {
+    for (const connection of this.#connections) {
+      if (connection.paired && connection.declares(CAP_UI)) return true
+    }
+    return false
+  }
+
+  /**
+   * Arm the one release of the presented pages no paired device can answer.
+   *
+   * The same shape as {@link #armQuestionRelease} and the same window: a second
+   * departure while a window is already running must not extend it, so an armed
+   * timer is left alone. Its expiry ends those tool calls as a refusal, which is
+   * what §35.5 calls the host side reading the release as a timeout.
+   */
+  #armUiRelease(): void {
+    if (this.#uiReleaseTimer !== undefined) return
+    const timer = setTimeout(() => {
+      this.#uiReleaseTimer = undefined
+      const released = this.#options.ui.withdrawAll()
+      if (released > 0) this.#options.log(`${released} presented page(s) released: the grace window ended`)
+    }, QUESTION_CLAIM_GRACE_MS)
+    // A held page must never keep the host process alive.
+    timer.unref?.()
+    this.#uiReleaseTimer = timer
+  }
+
+  /** Drop the pending card window, if there is one. The cards it would release stay held. */
+  #cancelUiRelease(): void {
+    if (this.#uiReleaseTimer === undefined) return
+    clearTimeout(this.#uiReleaseTimer)
+    this.#uiReleaseTimer = undefined
   }
 }

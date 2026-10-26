@@ -17,6 +17,7 @@ import { BridgeHub } from '../../src/core/hub.ts'
 import { createOwnerPeer } from '../../src/core/owner-peer.ts'
 import { PairingService } from '../../src/core/pairing.ts'
 import { QuestionClaims } from '../../src/core/questions.ts'
+import { UiCards } from '../../src/core/ui.ts'
 import { SessionMeta, type SessionMetaFaces } from '../../src/core/session-meta.ts'
 import { SessionPermissions } from '../../src/core/session-permissions.ts'
 import type { LiveActivityNotifier } from '../../src/core/liveactivity.ts'
@@ -255,6 +256,8 @@ export interface ConnectionHarness {
   readonly approvals: ApprovalRegistry
   readonly ownerPeer: GatewayPeer
   readonly questions: QuestionClaims
+  /** 整页卡（§35）的卡表，套件用它断言「仍持有」与「已结算」。 */
+  readonly ui: UiCards
   readonly extensions: RemoteBridgeRegistry
   readonly logs: string[]
 }
@@ -279,6 +282,8 @@ export interface HarnessOptions {
   readonly heartbeatMs?: number
   /** Id source for the call ids the question channel mints; the default is random. */
   readonly questionIds?: (byteLength: number) => string
+  /** 整页卡的卡表；默认每个 harness 自己一份，套件可换一份来驱动「已被别处结算」的路径。 */
+  readonly ui?: UiCards
   /** The extension seam's method registry, when the suite inspects it. */
   readonly extensions?: RemoteBridgeRegistry
   /** Clock the question deadline bookkeeping reads; the default is the wall clock. */
@@ -347,6 +352,18 @@ export function usageOf(options: HarnessOptions, log: (message: string) => void,
   return options.usage ?? new UsageService({ faces, now: () => Date.now(), log })
 }
 
+/**
+ * 一个 harness 挂的那份整页卡卡表（§35）。
+ *
+ * 缺省时每个 harness 自己一份新的：一条动作只属于发起它的那个工具调用，套件之间
+ * 不共享卡表，所以「仍持有」这种断言读到的永远是本次构造的事实。
+ * @param options - 套件选项。
+ * @returns 卡表。
+ */
+export function uiOf(options: HarnessOptions): UiCards {
+  return options.ui ?? new UiCards()
+}
+
 /** The job roster one harness mounts, over the registry the caller supplied (or none). */
 function jobsOf(options: HarnessOptions, log: (message: string) => void): JobRoster {
   const registry = options.jobs
@@ -381,6 +398,7 @@ export function makeConnection(options: HarnessOptions = {}): ConnectionHarness 
     roster,
     approvals,
     questions,
+    ui: uiOf(options),
     sessionMeta: metaOf(options, message => { logs.push(message) }),
     permissions: options.permissions ?? new SessionPermissions(() => ({}), message => { logs.push(message) }),
     jobs: jobsOf(options, message => { logs.push(message) }),
@@ -398,7 +416,7 @@ export function makeConnection(options: HarnessOptions = {}): ConnectionHarness 
   }
   const auth: ConnectionAuth | undefined = options.paired === true ? { deviceId: 'dev_harness' } : undefined
   const connection = new BridgeConnection(settings, transport, auth)
-  return { connection, transport, gateway, pairing, roster, approvals, ownerPeer, questions, extensions, logs }
+  return { connection, transport, gateway, pairing, roster, approvals, ownerPeer, questions, ui: settings.ui, extensions, logs }
 }
 
 /** One request frame, serialized the way a client sends it. */
@@ -446,6 +464,7 @@ export interface HubHarness {
   readonly approvals: ApprovalRegistry
   readonly ownerPeer: GatewayPeer
   readonly questions: QuestionClaims
+  readonly ui: UiCards
   readonly extensions: RemoteBridgeRegistry
   readonly logs: string[]
 }
@@ -465,6 +484,7 @@ export interface BareHubHarness {
   readonly approvals: ApprovalRegistry
   readonly ownerPeer: GatewayPeer
   readonly questions: QuestionClaims
+  readonly ui: UiCards
   readonly extensions: RemoteBridgeRegistry
   readonly logs: string[]
 }
@@ -483,6 +503,7 @@ export function makeBareHub(options: HarnessOptions = {}): BareHubHarness {
     ...(options.questionNow === undefined ? {} : { now: options.questionNow }),
   })
   const extensions = options.extensions ?? new RemoteBridgeRegistry()
+  const ui = uiOf(options)
   const hub = new BridgeHub({
     extensions,
     gateway,
@@ -490,6 +511,7 @@ export function makeBareHub(options: HarnessOptions = {}): BareHubHarness {
     roster: options.roster ?? new DeviceRoster({ file: options.rosterFile ?? '/tmp/dsh-remote-bridge-test/not-loaded.json' }),
     approvals,
     questions,
+    ui,
     sessionMeta: metaOf(options, message => { logs.push(message) }),
     permissions: options.permissions ?? new SessionPermissions(() => ({}), message => { logs.push(message) }),
     jobs: jobsOf(options, message => { logs.push(message) }),
@@ -505,7 +527,7 @@ export function makeBareHub(options: HarnessOptions = {}): BareHubHarness {
     clientTimeZone: () => undefined,
     log: (message: string) => { logs.push(message) },
   })
-  return { hub, gateway, approvals, ownerPeer, questions, extensions, logs }
+  return { hub, gateway, approvals, ownerPeer, questions, ui, extensions, logs }
 }
 
 /** One response frame's `ok`, `r` and `e`, exactly as the client reads them. */

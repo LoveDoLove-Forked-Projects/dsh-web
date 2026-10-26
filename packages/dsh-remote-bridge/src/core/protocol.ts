@@ -44,12 +44,17 @@ export const METHOD_PUSH_REGISTER = 'push.register'
 export const METHOD_USAGE_SESSION = 'usage.session'
 export const METHOD_USAGE_BALANCE = 'usage.balance'
 export const METHOD_USAGE_STATS = 'usage.stats'
+// 协议 §35 追加的两个方法：一条卡上的动作回来，以及一张全局卡表的对账读。
+export const METHOD_UI_EVENT = 'ui.event'
+export const METHOD_UI_LIST = 'ui.list'
 
 /** Server-pushed topics of protocol v1. */
 export const TOPIC_SESSION_DELTA = 'session.delta'
 export const TOPIC_APPROVAL_REQUEST = 'approval.request'
 export const TOPIC_QUESTION_REQUEST = 'question.request'
 export const TOPIC_JOBS_CHANGED = 'jobs.changed'
+// §35.2 追加的主题：一块整页自包含文档，以及它自己的结算通知。
+export const TOPIC_UI_REQUEST = 'ui.request'
 
 /**
  * Capability a client declares in `hello`'s `cap` array to ask for a trimmed
@@ -248,6 +253,32 @@ export const CAP_USAGE = 'usage.v1'
  * 它看到的能力表里多一项、别的什么都没有变。
  */
 export const CAP_USAGE_STATS = 'usage.stats.v1'
+
+/**
+ * 客户端在 `hello` 的 `cap` 数组里宣告它要渲染整页卡并回答它（协议 §35）。
+ *
+ * 宣告它是 `ui.request` 与 `ui.event` 进入这个客户端协议的唯一前提：不宣告的
+ * 客户端——包括这个通道出现之前写下的每一个客户端——收不到任何一帧整页卡，它的
+ * `ui.event` 回 `unknown-method`，其余逐字节不变。它是**公告不是协商**（§13.1、
+ * §24.1 同一判据）：宿主公告同名项、客户端声明，双向缺一即当作这个能力不存在，
+ * 且不得把「宿主没这个能力」渲染成「这张卡不存在」或任何错误态。
+ *
+ * 宿主半区只有真实现了 `ui.present` 这一半的桥才把自己列进
+ * {@link SERVED_CAPABILITIES}，所以一个客户端读到这个名字，就能断定 `ui.request`
+ * 会出现、`ui.event` 会被接受。
+ */
+export const CAP_UI = 'ui.v1'
+
+/**
+ * 客户端在 `hello` 的 `cap` 数组里宣告它要按 §24.3 的四条件对账自己手上的整页卡
+ * （协议 §35.4）。
+ *
+ * 与 {@link CAP_QUESTION_LIST} 同一形状：`ui.list` 本身是只读的、对每条配对连接
+ * 都开放，这个名字买到的是「这条连接会不会被答」之外的另一种确定性——一条老桥
+ * 回 `unknown-method`，于是没有这个名字的客户端就保留它原有的退休规则（卡片只在
+ * `ui.request` 说 `settled` 时结束），而不是按一次它信不过的应答清卡。
+ */
+export const CAP_UI_LIST = 'ui.list.v1'
 
 /**
  * Capability a client declares in `hello`'s `cap` array to be answered with
@@ -450,6 +481,8 @@ export const KNOWN_METHODS: ReadonlySet<string> = new Set([
   METHOD_USAGE_SESSION,
   METHOD_USAGE_BALANCE,
   METHOD_USAGE_STATS,
+  METHOD_UI_EVENT,
+  METHOD_UI_LIST,
 ])
 
 /** Refusal codes the bridge itself raises (DSH failures cross as their own code). */
@@ -482,6 +515,23 @@ export const CODE_QUESTION_UNKNOWN = 'question-unknown'
  * not a complete one — it is a bridge that cannot answer this question today.
  */
 export const CODE_QUESTION_LIST_UNAVAILABLE = 'question-list-unavailable'
+/**
+ * 本桥不认领这个 `callId`：它从没呈现过这张卡，或者这张卡已被别处结算（宽限窗口
+ * 到期、回合被取消、桥卸载）。客户端码表保持开放：除本码之外的未知码不得被读成
+ * 「卡已消失」（§11.3 同一句）。
+ */
+export const CODE_UI_UNKNOWN = 'ui-unknown'
+/**
+ * 这张卡已经被用户自己的第一条动作结算过（§35.3）。它与 {@link CODE_UI_UNKNOWN}
+ * 是两个答案：重复的一次点击是「已经做完了」，不是「这张卡不存在」。
+ */
+export const CODE_UI_SETTLED = 'ui-settled'
+/**
+ * 本桥读不出自己持有的卡，所以它说不了哪些还活着。答案故意不是一张空表：客户端
+ * 只会按 COMPLETE 的列表退休卡片，一次失败的读不是一张完整的空表，而是这台桥今天
+ * 答不了这一问（与 {@link CODE_QUESTION_LIST_UNAVAILABLE} 同一句）。
+ */
+export const CODE_UI_LIST_UNAVAILABLE = 'ui-list-unavailable'
 /**
  * The named session is a delegated child whose durable parent is not a session
  * this connection may read. The bridge follows an addressable child and refuses
@@ -529,6 +579,13 @@ export const PROTO = 1
 /**
  * Minor version this package speaks.
  *
+ * 21 当可交互回复（协议 §35）落地：新增 {@link CAP_UI} 与 {@link CAP_UI_LIST}
+ * 两个能力名、{@link TOPIC_UI_REQUEST} 一个主题、{@link METHOD_UI_EVENT} 与
+ * {@link METHOD_UI_LIST} 两个方法，宿主半区还多一个模型工具 `ui.present`。客户端
+ * 因此从线路上读到两项新能力名、一种新主题与两种新应答体，所以 minor 抬一格；
+ * `proto` 仍为 1，没有任何既有帧、既有方法或既有键改形状。工具结果是**新增**的：
+ * 老会话、老 prompt、老回合都不受影响，工具名进入宿主工具表之后只有新回合才可能
+ * 被调用。
  * 20 when the usage stats channel shipped: behind {@link CAP_USAGE_STATS} a
  * client may call {@link METHOD_USAGE_STATS} and read the host's own usage
  * ledger — today, this month and one row per local day — and behind the same
@@ -633,7 +690,7 @@ export const PROTO = 1
  * declares the capability that plugin requires. No addition changed the major
  * version, a frozen field, or an existing method or topic name.
  */
-export const MINOR = 20
+export const MINOR = 21
 
 /**
  * The capabilities this bridge itself serves, and the opening half of what
@@ -677,6 +734,8 @@ export const SERVED_CAPABILITIES: readonly string[] = [
   CAP_PUSH,
   CAP_USAGE,
   CAP_USAGE_STATS,
+  CAP_UI,
+  CAP_UI_LIST,
 ]
 /** `server` field of the hello response. */
 export const SERVER_ID = 'dsh-remote-bridge'

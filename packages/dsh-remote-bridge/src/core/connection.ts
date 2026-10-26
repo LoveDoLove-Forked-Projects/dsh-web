@@ -31,6 +31,8 @@ import type { PushNotifier } from './push.ts'
 import { pushEventOfTurnEnd } from './push.ts'
 import type { ListedQuestion, QuestionAnswerItem, QuestionClaims, QuestionListPayload } from './questions.ts'
 import type { TurnEndQuietGate } from './turn-end-quiet.ts'
+import { uiEventFits, uiEventOf } from './ui.ts'
+import type { ListedCard, UiCards, UiListPayload } from './ui.ts'
 import {
   CAP_AGENTS,
   CAP_COMMANDS,
@@ -48,6 +50,8 @@ import {
   CAP_SESSION_SNAPSHOT_TRIM,
   CAP_SQUADS,
   CAP_SUBAGENT_THREAD,
+  CAP_UI,
+  CAP_UI_LIST,
   CAP_USAGE,
   CAP_USAGE_STATS,
   CAP_WORKSPACE,
@@ -64,6 +68,7 @@ import {
   CODE_SNAPSHOT_UNAVAILABLE,
   CODE_SQUADS_UNAVAILABLE,
   CODE_TOKEN_INVALID,
+  CODE_UI_LIST_UNAVAILABLE,
   CODE_UNKNOWN_METHOD,
   CODE_UNKNOWN_SESSION,
   CODE_UNPAIRED,
@@ -97,6 +102,8 @@ import {
   METHOD_SESSION_SNAPSHOT,
   METHOD_SESSION_TITLES,
   METHOD_SESSION_UNARCHIVE,
+  METHOD_UI_EVENT,
+  METHOD_UI_LIST,
   METHOD_SESSION_UNPIN,
   METHOD_SQUADS_LIST,
   METHOD_SQUADS_RUNS,
@@ -183,6 +190,11 @@ export interface BridgeConnectionOptions {
   readonly approvals: ApprovalRegistry
   /** Pending user questions: the claims this bridge holds and the answer path back to the host. */
   readonly questions: QuestionClaims
+  /**
+   * 整页卡（§35）：`ui.present` 持有的每一张卡，`ui.event` 结算它们，`ui.list`
+   * 把它们念回去。与提问表平级、各自认领各自结算——两条通道互不改形状（§35.8）。
+   */
+  readonly ui: UiCards
   /** The host's background jobs: the read-only projection and the scopes this connection watches. */
   readonly jobs: JobRoster
   /** Process-local session metadata: live titles and the host's archive set. */
@@ -927,6 +939,16 @@ export class BridgeConnection {
     if (frame.m === METHOD_USAGE_STATS && !this.declares(CAP_USAGE_STATS)) {
       return refusal(CODE_UNKNOWN_METHOD, `unknown method ${frame.m}`)
     }
+    // 整页卡是 §35 的一条通道、一个能力：不宣告 `ui.v1` 的客户端看到的仍是它从前
+    // 看到的 `unknown-method`，本桥也不会替它把一条动作交给某个工具调用。
+    if (frame.m === METHOD_UI_EVENT && !this.declares(CAP_UI)) {
+      return refusal(CODE_UNKNOWN_METHOD, `unknown method ${frame.m}`)
+    }
+    // 对账读是它自己的能力，与 §24 同一判据：不宣告 `ui.list.v1` 的客户端读不到卡表，
+    // 本桥也不会替它翻一遍认领表。
+    if (frame.m === METHOD_UI_LIST && !this.declares(CAP_UI_LIST)) {
+      return refusal(CODE_UNKNOWN_METHOD, `unknown method ${frame.m}`)
+    }
     // Unconditional: a loopback Host buys nothing here. Without a device token
     // only the handshake and the two pairing steps run.
     if (!this.paired && !UNPAIRED_METHODS.has(frame.m)) return refusal(CODE_UNPAIRED, 'this connection is not paired')
@@ -954,6 +976,8 @@ export class BridgeConnection {
       case METHOD_APPROVAL_RESOLVE: return this.#approvalResolve(frame.p)
       case METHOD_QUESTION_ANSWER: return await this.#questionAnswer(frame.p)
       case METHOD_QUESTION_LIST: return this.#questionList(frame.p)
+      case METHOD_UI_EVENT: return this.#uiEvent(frame.p)
+      case METHOD_UI_LIST: return this.#uiList(frame.p)
       case METHOD_PUSH_REGISTER: return await this.#pushRegister(frame.p)
       case METHOD_USAGE_SESSION: return await this.#usageSession(frame.p)
       case METHOD_USAGE_BALANCE: return await this.#usageBalance(frame.p)
@@ -2135,6 +2159,61 @@ export class BridgeConnection {
       return refusal(CODE_QUESTION_LIST_UNAVAILABLE, 'this bridge could not read the questions it is holding')
     }
     const answer: QuestionListPayload = { questions, complete: true }
+    return { ok: true, r: answer }
+  }
+
+  /**
+   * Answer one `ui.event`: the first action a user took inside a presented page
+   * (§35.3).
+   *
+   * The event is carried and never interpreted — `type` is the presenter's own
+   * closed set, so this bridge does not validate its value, refuse an unknown one
+   * or rewrite it. A card this bridge never claimed, or one that was settled
+   * elsewhere, is refused `ui-unknown`; a card whose own first event already
+   * settled it is refused `ui-settled`, because a repeated tap and a nonexistent
+   * card are two different answers. The payload is measured here rather than on the
+   * client: a refusal on that side would leave the agent waiting for a card that
+   * will never settle (§35.2's rule, one channel over).
+   * @param payload - `{sessionId, callId, event:{type, payload?}}`.
+   */
+  #uiEvent(payload: Readonly<Record<string, unknown>>): DispatchOutcome {
+    const sessionId = stringArg(payload, 'sessionId')
+    const callId = stringArg(payload, 'callId')
+    const event = uiEventOf(payload.event)
+    if (sessionId === undefined || callId === undefined || event === undefined) {
+      return refusal(CODE_INVALID_ARGS, 'ui.event requires sessionId, callId and event of {type, payload?}')
+    }
+    if (!uiEventFits(event)) return refusal(CODE_INVALID_ARGS, 'ui.event payload is over the 8 KiB cap')
+    const reply = this.#options.ui.settle(sessionId, callId, event)
+    return reply.ok ? { ok: true, r: { ok: true } } : refusal(reply.code, reply.msg)
+  }
+
+  /**
+   * Answer one `ui.list`: the cards this bridge is still holding (§35.4).
+   *
+   * A pure read — it claims nothing, moves no deadline, triggers no settlement and
+   * writes no host state — because its whole purpose is to let a client that was
+   * disconnected reconcile the cards it already holds. `settled` never appears in
+   * it: the list's definition is "still held", and a settled card is a notice the
+   * host already sent, not a row.
+   *
+   * Only a COMPLETE list may retire a card on the client, so a registry this bridge
+   * cannot read answers `ui-list-unavailable` rather than an empty list: an
+   * unreadable set is not an empty one.
+   * @param payload - must be the empty object: the held set is global, not scoped.
+   */
+  #uiList(payload: Readonly<Record<string, unknown>>): DispatchOutcome {
+    if (Object.keys(payload).length > 0) {
+      return refusal(CODE_INVALID_ARGS, 'ui.list takes no arguments')
+    }
+    let cards: readonly ListedCard[]
+    try {
+      cards = this.#options.ui.listed()
+    } catch (error) {
+      this.#options.log(`ui.list could not read the held cards: ${failureText(error)}`)
+      return refusal(CODE_UI_LIST_UNAVAILABLE, 'this bridge could not read the cards it is holding')
+    }
+    const answer: UiListPayload = { cards, complete: true }
     return { ok: true, r: answer }
   }
 

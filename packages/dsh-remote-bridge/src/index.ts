@@ -13,6 +13,12 @@
  * - `approval/request` is claimed in-process while a paired device is connected,
  *   and delegated (`next()`) in every other case, which the Host normalizes to
  *   the fail-closed `'unavailable'`.
+ * - `ui.present` is this bridge's own model tool (protocol §35): one whole
+ *   self-contained page is announced as `ui.request` to the paired clients that
+ *   declared `ui.v1`, and the user's first action inside it comes back as that
+ *   tool call's result. `ui.event` settles it, `ui.list` reads the cards still
+ *   held. No paired client that declared the channel means the call answers
+ *   `unavailable` at once instead of holding the agent.
  * - `user-questions/request` is claimed the same way and published as
  *   `question.request` to the devices that declared `questions.v1`; their
  *   `question.answer` settles the host's own ask while it is open, or reaches a
@@ -37,6 +43,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { ApprovalRegistry } from './core/approvals.ts'
 import type { ConnectionAuth } from './core/connection.ts'
@@ -49,6 +56,7 @@ import { PairingService } from './core/pairing.ts'
 import { LiveActivityNotifier } from './core/liveactivity.ts'
 import { PushNotifier } from './core/push.ts'
 import { QuestionClaims } from './core/questions.ts'
+import { UiCards } from './core/ui.ts'
 import { WS_PATH } from './core/protocol.ts'
 import { SessionMeta, type SessionStoreFace, type SessionTitleFace, type WorkspacesFace } from './core/session-meta.ts'
 import { sessionQuietProbe, TURN_END_QUIET_MAX_MS, TurnEndQuietGate } from './core/turn-end-quiet.ts'
@@ -63,14 +71,21 @@ import { StandingWatchers } from './host/watchers.ts'
 import { LoopbackSquads } from './host/squads.ts'
 import { mountOnce } from './mount-once.ts'
 import { makePairTokenRoute } from './host/routes.ts'
+import { createUiPresentTool } from './host/ui-tools.ts'
 import { hostWebOrigin, LoopbackUsage } from './host/usage-stats.ts'
 import { isWebSocketUpgrade, presentedTokenOf, readSecWebSocketKey, refuseUpgrade, serveUpgrade } from './host/websocket.ts'
 
 /** Loader row identity of this plugin. */
 export const name = 'remote-bridge'
 
-/** The Host services this plugin cannot run without. */
-export const inject = ['typertGateway', 'webServer']
+/**
+ * The Host services this plugin cannot run without.
+ *
+ * `tools` is what protocol §35 added: this bridge contributes one model tool of
+ * its own (`ui.present`), so a host that composes no tool registry is a host where
+ * the card channel has no caller — the row simply does not mount here.
+ */
+export const inject = ['typertGateway', 'webServer', 'tools']
 
 /** Where the paired-device roster lives inside the DSH home. */
 export const ROSTER_PATH = 'remote-bridge/devices.json'
@@ -354,6 +369,9 @@ function applyImpl(ctx: Context): void {
   // it is gated by the bridge's own pairing check (see core/owner-peer.ts).
   const ownerPeer = createOwnerPeer(ctx)
   const questions = new QuestionClaims({ gateway: ctx.typertGateway, peer: ownerPeer, log })
+  // 整页卡（§35）：一张宿主级的卡表，所有连接共享——一条动作只属于发起它的那个
+  // 工具调用，与它从哪台设备回来无关。
+  const ui = new UiCards()
   // One roster per mount, shared by every connection: a background job is a fact
   // about the host, not about the device that asked about it.
   const jobs = new JobRoster({ faces: () => jobFaces(ctx), log })
@@ -475,6 +493,7 @@ function applyImpl(ctx: Context): void {
     roster,
     approvals,
     questions,
+    ui,
     jobs,
     sessionMeta,
     usage,
@@ -521,6 +540,18 @@ function applyImpl(ctx: Context): void {
       jobs.dispose()
     }
   }, 'remote-bridge: protocol v1 routes')
+
+  // §35 的模型工具：`ui.present` 把 agent 写的整页交给已配对的客户端，并在用户
+  // 动作时把结构化事件作为它自己的返回值交回。注册在 `ctx.effect` 里、返回
+  // disposer，所以插件卸载时工具名随行消失，宿主工具表不会留下一根指向空实现的
+  // 指针；`execute` 把 `exec.signal` 一路传到认领表，回合被取消时那张卡立刻结算。
+  ctx.effect(() => {
+    const disposeTool = ctx.tools.register(createUiPresentTool({
+      present: async (card, signal) => await hub.present(card, signal),
+    }))
+    log('model tool ui.present registered')
+    return () => { disposeTool() }
+  }, 'remote-bridge: ui.present tool')
 
   // 会话事件是 `usage.session` 唯一的来源：桥不读会话日志、也不回填历史，所以
   // 这个监听器挂上之前广播的事件不会有读数，宿主没广播过的窗口也不会被编出来。
