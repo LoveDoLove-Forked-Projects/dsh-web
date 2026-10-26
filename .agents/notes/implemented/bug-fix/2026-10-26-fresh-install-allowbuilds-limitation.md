@@ -10,40 +10,46 @@ A clean profile cannot mount this family on the first attempt, and the failure i
 
 The mount is skipped because the official CLI reconciles a profile only after an install that exited 0 (`dsh-plugin-manager`, `lib/types/operations.js:499`). Exit 1 therefore leaves a half-written profile: the dependency is recorded, the bundle row is absent, `dsh --dump-config` shows no bundle for it, and repeating the same command reproduces the same failure rather than healing it.
 
+Approving the scripts after such a failure does not repair it, and the way it fails is the dangerous part: the reconcile pass walks only the dependencies the run itself added, so `if (beforeDeps.has(name)) continue` in the same `lib/types/operations.js` (around line 106) skips every name the profile manifest already carried when that run began, and the failed attempt has already written the aggregate there. An install that exits 0 after the approvals are patched in therefore writes no bundle row either, and the profile stays installed and unmounted behind a green exit code.
+
 The official CLI prompts for the `allowBuilds` remedy only when a git-source plugin fails, so a registry package gets no prompt and no hint. This repository's own `allowBuilds` (`pnpm-workspace.yaml:13`, five entries all `true`) governs the development workspace and never reaches a user's profile.
 
 The trap is older than the version that now documents it, and that is recorded rather than asserted: [the 0.4.7 upgrade matrix](../../../../docs/archive/2026-10-17-v0.4.7-upgrade-matrix.md) files the identical first-attempt failure at line 15 as `pre-existing, not a 0.4.7 regression` and carries the same `ERR_PNPM_IGNORED_BUILDS` line at line 110, and 0.4.9 reproduces it unchanged.
 
 ## Decision
 
-0.4.10 records the limitation and ships no installer change. [The release notes](../../../../docs/release-notes/v0.4.10.md) carry one known-limitation bullet in each view, stating the trigger, the observed state, the ways out and the fact that this version did not introduce the trap.
+0.4.10 records the limitation and ships no installer change. [The release notes](../../../../docs/release-notes/v0.4.10.md) carry one known-limitation bullet in each view, stating the trigger, the observed state, the order that actually recovers it (reset or replace the profile, approve the three builds, then add for the first time) and the fact that this version did not introduce the trap.
 
 This note owns the limitation; the release notes summarize it. Neither candidate fix below is in 0.4.10, and the defect is unfixed: the limitation is documented, not closed.
 
 No source file, test, workspace file or manifest changes. The repository cannot repair this from inside: the refusal comes from pnpm's build-script approval model, and the reconcile point that leaves the row absent belongs to the official CLI.
 
-The blast radius is the first install only. A pristine profile is affected. An existing profile updating from 0.4.9 to 0.4.10 is not, because 0.4.10 adds no runtime dependency over 0.4.9 and a repeat install over an unchanged dependency set exits 0; re-running the full upgrade against the published registry versions is a post-release check and is not claimed here as tested.
+The blast radius is the first install only. A pristine profile is affected. An existing profile that already carries the build-script approvals is not: such a 0.4.9 profile upgrading to the registry version 0.4.10 exits 0, asks for no new approval, keeps its `dsh.profile.bundles` row unchanged and unduplicated, leaves `--dump-config` byte-identical and repeats idempotently, so the gate is decided by the approval state rather than by whether the dependency set is new. An older profile with no `allowBuilds` record at all, upgrading to 0.4.10 under pnpm 11.9.0, is unverified, and this note claims nothing about it.
 
 ## Evidence
 
 - Command and result: `dsh plugin --profile <name> add` of `@linxin666/dsh-web-all@<version>` on a clean profile, pnpm 11.9.0, official CLI 0.2.1-rc.3, exit 1 with `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: cloudflared@0.7.3, cpu-features@0.0.10, ssh2@1.17.0`.
 - Reconcile site: `dsh-plugin-manager` `lib/types/operations.js:499` runs the profile reconcile only for an install that exited 0, which is why exit 1 leaves the dependency recorded and the `dsh.profile.bundles` row missing.
+- Reconcile scope after the failed attempt: `if (beforeDeps.has(name)) continue` in `lib/types/operations.js` (around line 106) leaves the pass walking only the dependencies that run added, and the failed attempt already recorded the aggregate, so an install that exits 0 after the approvals are patched in writes no bundle row; measured as exit 0 with `dsh.profile.bundles` and `--dump-config` unchanged.
 - Observed state after the failure: `--dump-config` lists no bundle for the family package, and the install command repeats the same exit 1 for the same inputs.
+- The gate reads the approval state, not the dependency set: with the approvals unsatisfied, an install whose dependency set is unchanged still exits 1 with the same three names, so an unchanged dependency set is not by itself what lets a repeat install succeed.
 - Workspace scope: `pnpm-workspace.yaml:13` opens the `allowBuilds` block that governs the development workspace; a user profile has its own `pnpm-workspace.yaml` and is not covered by it.
-- Ways out, with what each rests on: writing the three names into `<profile>/pnpm-workspace.yaml` under `allowBuilds`, and resetting the profile with the official `--from-default-profile web` before adding again, both mount the bundle and were measured on this machine; passing `--config.strictDepBuilds=false` for the install is the third route the documentation offers.
+- Ways out, with what each rests on: reset the profile with the official `--from-default-profile web` and write the three names into `<profile>/pnpm-workspace.yaml` under `allowBuilds` before the first add, or do the same on a new profile this failure never touched, then add: the order measured on this machine to mount the bundle. Patching the approvals after an exit 1 is not a way out, for the reconcile reason recorded above.
+- Upgrade with the approvals in place: a 0.4.9 profile that already carries the build-script approvals upgrades to the registry version 0.4.10 with exit 0, demands no new approval, keeps the `dsh.profile.bundles` row unchanged and unduplicated, leaves `--dump-config` byte-identical and repeats idempotently.
+- Unverified: what an older profile with no `allowBuilds` record at all does when it upgrades to 0.4.10 under pnpm 11.9.0.
 - Prior record: [the 0.4.7 upgrade matrix](../../../../docs/archive/2026-10-17-v0.4.7-upgrade-matrix.md) line 15 and line 110, plus the same failure reproduced against the published 0.4.9.
 
 ## Impact
 
 - A pristine first install is affected: the family is installed and not mounted, and nothing in the CLI output names the missing bundle row.
-- An existing profile updating 0.4.9 to 0.4.10 is not affected, because the dependency set is unchanged and a repeat install over it exits 0.
+- An existing profile that already carries the approvals sees no change of behavior from 0.4.9 to 0.4.10, while a profile whose approval state was never recorded is unverified.
 - A user who recovers by hand must edit the profile's own `pnpm-workspace.yaml`; the development workspace's approval list does not travel with the package.
 - The state is not self-healing on retry, so a user who stops at exit 1 keeps a profile that resolves the package and loads nothing from it.
 
 ## Candidate fixes
 
-- Write `allowBuilds` from this repository's install entry. It removes the trap for anyone who reaches the profile through our own flow, and it is the only candidate that leaves a first install working unattended. It changes install behavior, writes to a user-owned file, and needs its own verification against both a clean profile and an existing one, so it does not belong in a documentation change.
-- Guide the user in the documentation. It costs no behavior change and is what 0.4.10 does, but it only helps a reader who looks after the fact: the CLI exits 1 before any of our documentation is in front of them.
+- Write `allowBuilds` from this repository's install entry. It removes the trap for anyone who reaches the profile through our own flow, and it is the only candidate that leaves a first install working unattended. It has to land before the first add rather than after a failure, because the reconcile pass skips dependencies the run did not add, so a retro-patch cannot mount what an exit-1 attempt already recorded. It changes install behavior, writes to a user-owned file, and needs its own verification against both a clean profile and an existing one, so it does not belong in a documentation change.
+- Guide the user in the documentation. It costs no behavior change and is what 0.4.10 does, but it only helps a reader who looks after the fact: the CLI exits 1 before any of our documentation is in front of them. The guidance has to carry the order as well as the names, because approvals patched in after the failure leave the same silent half-mount this note records.
 
 ## Alternatives considered
 
@@ -56,4 +62,5 @@ The blast radius is the first install only. A pristine profile is affected. An e
 - The limitation is visible where a user meets it, in both views of the 0.4.10 release notes, and its reasoning lives here.
 - The failure stays reproducible in 0.4.10 for a pristine profile until one of the two candidate fixes ships.
 - A later fix has to move the decision rather than edit it: the shipped state changes, so the note either gains the fix as a superseding record or is superseded by one that carries the verification.
+- Installer work that follows has to write the approvals ahead of the first add rather than after a failure, because the reconcile pass ignores the dependencies a run did not add.
 - The dependency set, the protocol, and every mount path keep their current behavior, because nothing outside documentation changed here.
