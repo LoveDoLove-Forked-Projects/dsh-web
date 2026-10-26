@@ -28,7 +28,7 @@
 .search:focus { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(272px, 100%), 1fr));
   gap: 10px;
   list-style: none;
   margin: 4px 0 0;
