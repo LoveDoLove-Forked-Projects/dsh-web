@@ -13,7 +13,7 @@
  * - `approval/request` is claimed in-process while a paired device is connected,
  *   and delegated (`next()`) in every other case, which the Host normalizes to
  *   the fail-closed `'unavailable'`.
- * - `ui.present` is this bridge's own model tool (protocol §35): one whole
+ * - `ui_present` is this bridge's own model tool (protocol §35): one whole
  *   self-contained page is announced as `ui.request` to the paired clients that
  *   declared `ui.v1`, and the user's first action inside it comes back as that
  *   tool call's result. `ui.event` settles it, `ui.list` reads the cards still
@@ -82,7 +82,7 @@ export const name = 'remote-bridge'
  * The Host services this plugin cannot run without.
  *
  * `tools` is what protocol §35 added: this bridge contributes one model tool of
- * its own (`ui.present`), so a host that composes no tool registry is a host where
+ * its own (`ui_present`), so a host that composes no tool registry is a host where
  * the card channel has no caller — the row simply does not mount here.
  */
 export const inject = ['typertGateway', 'webServer', 'tools']
@@ -541,7 +541,7 @@ function applyImpl(ctx: Context): void {
     }
   }, 'remote-bridge: protocol v1 routes')
 
-  // §35 的模型工具：`ui.present` 把 agent 写的整页交给已配对的客户端，并在用户
+  // §35 的模型工具：`ui_present` 把 agent 写的整页交给已配对的客户端，并在用户
   // 动作时把结构化事件作为它自己的返回值交回。注册在 `ctx.effect` 里、返回
   // disposer，所以插件卸载时工具名随行消失，宿主工具表不会留下一根指向空实现的
   // 指针；`execute` 把 `exec.signal` 一路传到认领表，回合被取消时那张卡立刻结算。
@@ -549,9 +549,9 @@ function applyImpl(ctx: Context): void {
     const disposeTool = ctx.tools.register(createUiPresentTool({
       present: async (card, signal) => await hub.present(card, signal),
     }))
-    log('model tool ui.present registered')
+    log('model tool ui_present registered')
     return () => { disposeTool() }
-  }, 'remote-bridge: ui.present tool')
+  }, 'remote-bridge: ui_present tool')
 
   // 会话事件是 `usage.session` 唯一的来源：桥不读会话日志、也不回填历史，所以
   // 这个监听器挂上之前广播的事件不会有读数，宿主没广播过的窗口也不会被编出来。

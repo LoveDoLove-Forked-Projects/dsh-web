@@ -63,7 +63,7 @@ function mountPlugin(): FakeHost {
         }
       },
     },
-    // The third injected service (protocol §35): this row registers the ui.present
+    // The third injected service (protocol §35): this row registers the ui_present
     // tool when it mounts, so the fake only has to make that registration possible.
     tools: { register: () => () => undefined },
     effect: (callback: () => () => void) => { disposers.push(callback()); return () => undefined },

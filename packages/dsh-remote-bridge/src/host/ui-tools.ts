@@ -1,5 +1,5 @@
 /**
- * The `ui.present` model tool: the agent hands one self-contained page to the
+ * The `ui_present` model tool: the agent hands one self-contained page to the
  * clients paired with this host, and the user's first action comes back as that
  * same tool call's result (protocol §35).
  *
@@ -88,7 +88,7 @@ export type UiPresentValue =
 
 /** The canonical result body: one sentence, never the page itself. */
 function describe(value: unknown): string {
-  if (typeof value !== 'object' || value === null) return 'ui.present finished'
+  if (typeof value !== 'object' || value === null) return 'ui_present finished'
   const record = value as { ok?: unknown; reason?: unknown; type?: unknown; delivered?: unknown }
   if (record.ok === true) {
     const delivered = typeof record.delivered === 'number' ? record.delivered : 0
@@ -100,7 +100,7 @@ function describe(value: unknown): string {
     const delivered = typeof record.delivered === 'number' ? record.delivered : 0
     return `presented to ${delivered} paired client(s); the card was released without an action (${reason})`
   }
-  return `ui.present was refused: ${reason}`
+  return `ui_present was refused: ${reason}`
 }
 
 /**
@@ -137,7 +137,7 @@ function presentationOf(args: { html: string; title?: string; height?: number },
  */
 export function createUiPresentTool(host: UiToolHost): ToolDefinition {
   return defineTool({
-    name: 'ui.present',
+    name: 'ui_present',
     description: UI_PRESENT_DESCRIPTION,
     parameters: {
       html: {

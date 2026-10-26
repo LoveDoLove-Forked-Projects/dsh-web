@@ -11,7 +11,7 @@
  * shape locally:
  *
  * - the slot is keyed and session-scoped, and its key is the wire Tool name
- *   (`ui.present`), which is what makes one registration draw the card's body
+ *   (`ui_present`), which is what makes one registration draw the card's body
  *   without shadowing the official `tool-call` renderer;
  * - the owner publishes the call identity plus a stage union, mirrored here from
  *   the upstream `ToolCallPhaseProps`: `preparing`, `start` and `result`. The
@@ -35,7 +35,7 @@ import { UiPresentRow, type UiPresentRowProps } from './UiPresentRow.tsx'
 export const TOOLVIEW_SLOT = 'tool.call.toolview'
 
 /** The wire Tool name this package renders: the keyed cell it claims. */
-export const PRESENT_TOOL = 'ui.present'
+export const PRESENT_TOOL = 'ui_present'
 
 /** The registration options this seam needs. */
 export interface ToolviewRegistration {
@@ -61,7 +61,7 @@ export interface ToolviewSlotHost {
 }
 
 /**
- * Contribute the `ui.present` card into the Tool row.
+ * Contribute the `ui_present` card into the Tool row.
  *
  * The contribution is declaration-aware: `inject` waits for the official slot
  * declaration, so a GUI composed without a Tool layer has no keyed cell and thus

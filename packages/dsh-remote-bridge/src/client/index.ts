@@ -12,7 +12,7 @@
  * service, its roster, or its browser cookie path.
  *
  * The half also draws the transcript side of §35.11: one keyed `tool.call.toolview`
- * entry renders a `ui.present` call's whole page in a controlled frame, while the
+ * entry renders a `ui_present` call's whole page in a controlled frame, while the
  * phone stays the only place an action can be answered.
  *
  * Export discipline (packages/AGENTS.md): the /client surface carries only what
@@ -80,7 +80,7 @@ export function apply(ctx: ClientContext): void {
   })
 
   // The transcript card of an interactive presentation (§35.11): one keyed
-  // registration under the wire Tool name draws the body of a `ui.present` call,
+  // registration under the wire Tool name draws the body of a `ui_present` call,
   // so the official Tool row keeps everything else — identity, timing and the
   // dispatch tree — and no Chat Node renderer is shadowed.
   registerPresentToolview(ctx, NS)

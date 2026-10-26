@@ -24,7 +24,7 @@
  * to answer with; and the claim outlives the last paired device by a grace
  * window, because a phone whose app the system suspended has refused nothing.
  *
- * A presented page (`ui.present`, protocol §35) is the second claim that takes a
+ * A presented page (`ui_present`, protocol §35) is the second claim that takes a
  * grace window, and it takes the same one: the tool call it blocks is the agent's
  * own wait, the card is the only place its answer can come from, and a phone that
  * was suspended has refused nothing either. It differs in one direction only —
@@ -143,7 +143,7 @@ export interface BridgeHubOptions extends BridgeConnectionOptions {
 }
 
 /**
- * What one `ui.present` call ended as, with the count of connections that took
+ * What one `ui_present` call ended as, with the count of connections that took
  * the first frame.
  *
  * The count is here rather than in the card registry because it is a fact about
@@ -475,7 +475,7 @@ export class BridgeHub {
    * Present one page to the clients that declared `ui.v1` and wait for the user's
    * first action (§35).
    *
-   * The body of the `ui.present` tool call. Claimed only while a paired
+   * The body of the `ui_present` tool call. Claimed only while a paired
    * connection that declared the channel is on the wire: with none, a page would
    * reach nobody, so the call answers `unavailable` at once instead of holding the
    * agent on a wait no screen can end (§35.6 — the same judgement as §11.3's claim
@@ -745,7 +745,7 @@ export class BridgeHub {
   /**
    * @returns whether a reachable right now connection can be shown a page (§35.6).
    *
-   * The one predicate `ui.present` reads before it claims anything, and the reason
+   * The one predicate `ui_present` reads before it claims anything, and the reason
    * a call with nobody on the wire answers `unavailable` without holding the agent:
    * announcing a capability is the whole of what makes a client able to receive one.
    */

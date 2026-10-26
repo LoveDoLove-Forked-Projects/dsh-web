@@ -1,5 +1,5 @@
 /**
- * The transcript reading of one `ui.present` call (protocol §35.10, §35.11):
+ * The transcript reading of one `ui_present` call (protocol §35.10, §35.11):
  * what the desktop row draws, decided without touching the DOM.
  *
  * A card has two sources and neither may be dropped. While the call is still

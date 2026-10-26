@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The `ui.present` transcript card (protocol §35.11): the one keyed registration
+ * The `ui_present` transcript card (protocol §35.11): the one keyed registration
  * it contributes, the exact frame it renders at each stage, the two sources it
  * reads, and the promise that this desktop renders without answering.
  *
@@ -99,8 +99,8 @@ describe('the registration', () => {
 
     // Then the one cell it claims is the wire tool name, under this package's dictionary
     expect(registered).toHaveLength(1)
-    expect(registered[0]?.options).toEqual({ name: 'tool.call.toolview', key: 'ui.present', locale: 'remote-bridge' })
-    expect(PRESENT_TOOL).toBe('ui.present')
+    expect(registered[0]?.options).toEqual({ name: 'tool.call.toolview', key: 'ui_present', locale: 'remote-bridge' })
+    expect(PRESENT_TOOL).toBe('ui_present')
     expect(registered[0]?.view).toBe(UiPresentRow)
   })
 

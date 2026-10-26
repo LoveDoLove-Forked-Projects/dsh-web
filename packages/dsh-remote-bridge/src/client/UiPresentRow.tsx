@@ -1,5 +1,5 @@
 /**
- * The transcript row of one `ui.present` call: the whole page an agent handed
+ * The transcript row of one `ui_present` call: the whole page an agent handed
  * into the session, drawn in a controlled frame (protocol §35.11).
  *
  * The row renders and does not answer. The frame carries `srcdoc` and the one
