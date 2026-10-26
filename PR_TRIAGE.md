@@ -34,7 +34,7 @@
 
 未命中任何分类的 PR 由 `defaultRoute` 兜底，交给 zhu1090093659。
 
-皮肤 / 皮肤中心、社区插件索引与预设三类没有路由：这三类内容贡献已迁至独立仓，按这三类提交到本仓的 PR 由 `.github/workflows/reject-non-content-pr.yml` 关闭并重定向到 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) / [dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins) / [dsh-presets](https://github.com/zhu1090093659/dsh-presets)；勾「新宠物收录」类型的 PR 同样重定向到 [dsh-pet](https://github.com/zhu1090093659/dsh-pet)。该工作流按模板标签前缀识别勾选项，模板可以在标签后追加说明文字。本仓库不再接受任何外部内容贡献，外部 PR 一律由该工作流关闭并指向对应独立仓或 Issue。
+皮肤 / 皮肤中心、社区插件索引与预设三类没有路由：这三类内容贡献已迁至独立仓，按这三类提交到本仓的 PR 由 `.github/workflows/reject-non-content-pr.yml` 关闭并重定向到 [dsh-skins](https://github.com/zhu1090093659/dsh-skins) / [dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins) / [dsh-presets](https://github.com/zhu1090093659/dsh-presets)；勾「新宠物收录」类型的 PR 同样重定向到 [dsh-pet](https://github.com/zhu1090093659/dsh-pet)。该工作流按模板标签前缀识别勾选项，模板可以在标签后追加说明文字。本仓库不再接受任何外部内容贡献，外部 PR 一律由该工作流关闭并指向对应独立仓或 Issue。当前处于临时开放期：除上述四类重定向外，外部 PR 不关闭；恢复方式见 [CONTRIBUTING.md](CONTRIBUTING.md) 的「临时开放期」小节。
 
 新增分类：在 `routes` 追加条目并同步本表格；纯按标题路由可只写 `title`，
 例如 `{"name": "community", "title": "^社区", "reviewers": ["zhu1090093659"]}`；

@@ -1,8 +1,9 @@
 > 提 PR 前请阅读 [CONTRIBUTING.md](../CONTRIBUTING.md) 与 [AGENTS.md](../AGENTS.md)；
 > 提交信息用 Conventional Commits（`type(scope): subject`），禁止 emoji。
 > 本仓库不再接受外部内容贡献：皮肤增加、宠物增加、社区插件索引登记与 agent 预设收录已全部迁至各自的独立仓（[dsh-skins](https://github.com/zhu1090093659/dsh-skins) / [dsh-pet](https://github.com/zhu1090093659/dsh-pet) / [dsh-community-plugins](https://github.com/zhu1090093659/dsh-community-plugins) / [dsh-presets](https://github.com/zhu1090093659/dsh-presets)）；在本仓按这些类别提交的 PR 会被自动关闭并重定向到对应仓库。
-> 其余改动（修复 / 增强 / 全新功能 / 文档 / 测试 / 维护）不接受直接 PR，请先提 Issue 讨论；仓库所有者、机器人与拥有写权限的协作者（维护者）不受此限制，可直接提交任意改动。
-> 仅文档类 PR（标题以 `docs:` 开头或勾选「仅文档」）不接受，会被自动关闭；文档改动请先提 Issue 讨论（仓库所有者、机器人与拥有写权限的协作者不受此限制）。
+> 标准政策：其余改动（修复 / 增强 / 全新功能 / 文档 / 测试 / 维护）不接受直接 PR，请先提 Issue 讨论；仓库所有者、机器人与拥有写权限的协作者（维护者）不受此限制，可直接提交任意改动。
+> 标准政策：仅文档类 PR（标题以 `docs:` 开头或勾选「仅文档」）不接受，会被自动关闭；文档改动请先提 Issue 讨论（仓库所有者、机器人与拥有写权限的协作者不受此限制）。
+> **临时开放期（2026-10-27 起）：上述标准政策暂停执行——除四类内容贡献外，外部 PR 不再被自动关闭，可直接提交；纯文档 PR 同样接收。恢复方式见 CONTRIBUTING.md 的「临时开放期」小节。**
 ## 摘要（Summary）
 
 <!-- 用一两句话说明改了什么、为什么改。 -->

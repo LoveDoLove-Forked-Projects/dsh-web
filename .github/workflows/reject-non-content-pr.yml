@@ -9,6 +9,10 @@ permissions:
   issues: write
   pull-requests: write
 
+# 临时开放期开关（2026-10-27 起）：'true' 暂停关闭外部 PR；改回 'false' 即恢复原门禁。
+env:
+  ACCEPT_EXTERNAL_PRS: 'true'
+
 jobs:
   reject:
     name: Close PRs outside the accepted content scope
@@ -127,6 +131,13 @@ jobs:
               return;
             }
             
+            // 临时开放期：'true' 时保持外部 PR 打开，不发评论、不关闭；恢复原门禁把
+            // ACCEPT_EXTERNAL_PRS 改回 'false' 即可，下方兜底关闭逻辑保持原样。
+            if ((process.env.ACCEPT_EXTERNAL_PRS || '').toLowerCase() === 'true') {
+              console.log('PR #' + pr.number + ': temporary open window, keeping external PR open.');
+              return;
+            }
+
             const comment = [
               '本仓库不接受外部直接提交的 PR，本 PR 已被自动关闭。',
               '',
