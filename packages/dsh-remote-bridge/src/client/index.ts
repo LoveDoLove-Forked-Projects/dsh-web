@@ -11,6 +11,10 @@
  * the events are untouched — and it does not touch `dsh-remote-web-ui`'s pairing
  * service, its roster, or its browser cookie path.
  *
+ * The half also draws the transcript side of §35.11: one keyed `tool.call.toolview`
+ * entry renders a `ui.present` call's whole page in a controlled frame, while the
+ * phone stays the only place an action can be answered.
+ *
  * Export discipline (packages/AGENTS.md): the /client surface carries only what
  * cordis loading needs plus types.
  */
@@ -25,6 +29,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PairEntry } from './PairEntry.tsx'
 import { readPairToken } from './pair-token.ts'
+import { registerPresentToolview } from './toolview-slot.ts'
 import { en, zh, type RemoteBridgeKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -73,6 +78,12 @@ export function apply(ctx: ClientContext): void {
       return () => {}
     }
   })
+
+  // The transcript card of an interactive presentation (§35.11): one keyed
+  // registration under the wire Tool name draws the body of a `ui.present` call,
+  // so the official Tool row keeps everything else — identity, timing and the
+  // dispatch tree — and no Chat Node renderer is shadowed.
+  registerPresentToolview(ctx, NS)
 }
 
 export type { PairEntryProps } from './PairEntry.tsx'

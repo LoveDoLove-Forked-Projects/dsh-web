@@ -28,4 +28,11 @@ export const ru: Record<string, string> = {
   'action.copied': 'Скопировано',
   'action.copyFailed': 'Не удалось скопировать',
   'action.retry': 'Повторить',
+  'card.waiting': 'Ждёт вашего действия',
+  'card.settled': 'Завершено',
+  'card.answerOnPhone': 'Ответ на телефоне',
+  'card.interacted': 'Страница отправила действие, но настольный клиент не отвечает: ответ на телефоне',
+  'card.frameLabel': 'Карточка страницы',
+  'card.empty': 'В этом вызове нет страницы для показа',
+  'card.oversize': 'Страница превышает размерный лимит и не показана',
 }

@@ -1,11 +1,17 @@
 /**
- * `remote-bridge` namespace dictionaries: the protocol v1 pairing panel copy.
+ * `remote-bridge` namespace dictionaries: the protocol v1 pairing panel copy and
+ * the header of an interactive card (§35.11).
  *
  * The panel has one job — put the live one-shot code in front of the operator as
- * a QR symbol — so the copy carries exactly four things: what to do with the
+ * a QR symbol — so its copy carries exactly four things: what to do with the
  * symbol, how long it lives, which address the phone will actually dial, and why
  * the code is single-use. No key states how the host finds its public address:
  * that is an implementation fact the reader cannot act on.
+ *
+ * The card's keys say only what the transcript row can act on: whether the page
+ * is still waiting for the operator, that it is over, that this desktop renders
+ * without answering, and that a page carrying nothing or too much draws a
+ * sentence instead of a frame.
  */
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
@@ -32,6 +38,13 @@ export const zh = {
   'action.copied': '已复制',
   'action.copyFailed': '复制失败',
   'action.retry': '重试',
+  'card.waiting': '等你操作',
+  'card.settled': '已结算',
+  'card.answerOnPhone': '在手机上作答',
+  'card.interacted': '已收到页面上的操作，但桌面端不作答：在手机上作答',
+  'card.frameLabel': '整页卡片',
+  'card.empty': '这次调用没有可渲染的页面',
+  'card.oversize': '页面超出大小上限，未渲染',
 } as const
 
 /** English dictionary, key-for-key with the zh source. */
@@ -58,6 +71,13 @@ export const en: Record<RemoteBridgeKey, string> = {
   'action.copied': 'Copied',
   'action.copyFailed': 'Copy failed',
   'action.retry': 'Retry',
+  'card.waiting': 'Waiting for you',
+  'card.settled': 'Settled',
+  'card.answerOnPhone': 'Answer on the phone',
+  'card.interacted': 'The page sent an action, but this desktop does not answer: answer on the phone',
+  'card.frameLabel': 'Page card',
+  'card.empty': 'This call carried no page to render',
+  'card.oversize': 'The page is over the size limit and was not rendered',
 }
 
 /** Every key the `remote-bridge` namespace carries. */

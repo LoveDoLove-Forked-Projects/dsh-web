@@ -252,6 +252,20 @@ Opening and closing are one motion in both directions: the card stays mounted an
 
 The panel is display-only for the native path. It never spends the token (`pair.begin` stays the phone's call), it never touches the roster, and it adds no wire surface — the envelope, the method names, the topic names and the events are unchanged. `dsh-remote-web-ui`'s pairing service, roster and browser credential are not involved either, so the two remote surfaces keep their own access controls.
 
+## Interactive cards in the transcript
+
+`ui.present` hands one whole self-contained page into the session, and the browser half draws it inside the official tool row: the presentation is one keyed `tool.call.toolview` registration under the wire tool name `ui.present`, so the row keeps the call identity, the timing and the dispatch tree the shell already renders, and no Chat Node renderer is shadowed. This is the desktop landing point of the interactive reply extension; a client that composes no Tool layer has no keyed cell, and the card does not appear there.
+
+The row reads its card from two sources and keeps both:
+
+- **While the call runs** the arguments are the only material on the wire, so the page comes out of the call's own `html` argument and the header marks the card as waiting for the operator.
+- **Once the result lands** the presentation payload `meta.ui` is the card's own record — its `key`, `title`, `html`, `height` and `state` — and the header marks it settled. A result that carries no payload falls back to the argument page and still reads as settled, because the stage, not the absent field, decides that.
+- **The frame is `srcdoc` under the one sandbox value the extension allows.** It is `allow-scripts` and never `allow-same-origin`, so the page has an opaque origin and cannot reach the GUI's storage, cookies or DOM; top-level navigation, popups and forms are not granted, and camera, microphone, location and clipboard reads are denied by an explicit permissions policy.
+- **The desktop renders and does not answer.** An action the page posts arrives as one visible sentence telling the operator to answer on the phone; nothing is forwarded, stored or requested, so this half adds no wire surface at all.
+- **Height and theme come from the outside in.** The presenter's `height` covers the first paint, an injected reporter posts the document's own content height and the measurement replaces it; the theme's semantic tokens are read off the GUI root and handed to the page, so a card follows the running light or dark scheme, and a theme that cannot be read costs the variables rather than the card.
+- **A refusal is visible.** A page over 256 KiB is never handed to a frame and states that it was not rendered, and a call that carries no page keeps a neutral line instead of an empty row.
+
+
 ## Client script
 
 `scripts/client.mjs` is a dependency-free protocol v1 client — Node 22 globals only, no package dependency — used to check a live bridge and to pair a test machine that has no Secure Enclave. It runs the fixed sequence once, prints every frame with its direction and numbers the events in arrival order, so a transcript can be pasted into a report; it never calls a model itself.
@@ -317,3 +331,5 @@ The bridge is mounted like any other host plugin row. It carries no user-facing 
 - **The panel shows one code and nothing else.** It cannot list, name or revoke paired devices, and it never spends a code — pairing happens on the phone, and revocation stays a roster edit plus a host restart.
 - **The panel is only as fresh as its last read.** It reads a code when it opens and on every **New code** press; a code that expires while the panel stays open flips to the expiry state instead of silently renewing itself.
 - **`scripts/client.mjs` is a check harness, not a client SDK.** It runs the fixed sequence once, keeps no state and has no reconnect logic.
+- **A card's own subframes are not blocked on the desktop.** The phone refuses a nested `<iframe>` inside a card as a cross-document jump; a sandboxed frame here has no equivalent interception point, so a page's own subframe renders while every frame keeps its opaque origin.
+- **The keyed registration reaches its slot through a local seam.** The SDK package that declares `tool.call.toolview` is not a dependency of this package, so the slot is reached through a narrowed `ctx.slots` port that mirrors the owner's stage union; taking that package as a devDependency replaces the seam with the SDK's own types.

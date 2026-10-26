@@ -167,7 +167,7 @@ describe('interactive reply bridge', () => {
     expect(harness.ui.size).toBe(0)
   })
 
-  it('agent presents with nobody on the wire and the call answers unavailable at once', async () => {
+  it('operator calls ui.present with nobody on the wire and the tool answers unavailable at once', async () => {
     // Given a bridge with no connection at all
     const bare = makeBareHub()
     const tool = createUiPresentTool({ present: async (card, signal) => await bare.hub.present(card, signal) })
@@ -178,7 +178,7 @@ describe('interactive reply bridge', () => {
     expect(bare.ui.size).toBe(0)
   })
 
-  it('agent presents to a paired client that never declared the channel and the call answers unavailable', async () => {
+  it('operator calls ui.present for a paired client that never declared the channel and the tool answers unavailable', async () => {
     // Given a paired phone that declared an unrelated channel only
     const harness = makeHub()
     await harness.connection.handleText(requestFrame(1, 'hello', { proto: 1, cap: ['questions.v1'] }))
@@ -190,7 +190,7 @@ describe('interactive reply bridge', () => {
     expect(harness.ui.size).toBe(0)
   })
 
-  it('agent presents a page over the cap and the call is refused invalid-args without a frame', async () => {
+  it('operator calls ui.present with a page over the cap and the tool refuses invalid-args without a frame', async () => {
     // Given a page one byte past the 256 KiB cap
     const harness = makeHub()
     await declareUi(harness.connection)
@@ -245,7 +245,7 @@ describe('interactive reply bridge', () => {
     expect(answerOf(harness, 4).r).toEqual({ cards: [], complete: true })
   })
 
-  it('desktop reads the settled card from meta.ui, keyed by the host tool call id', async () => {
+  it('operator reads the settled card from meta.ui, keyed by the host tool call id', async () => {
     // Given a card that settled through the user's action
     const harness = makeHub()
     await declareUi(harness.connection)
@@ -254,6 +254,7 @@ describe('interactive reply bridge', () => {
     const pending = tool.execute(args, execOf())
     await settle()
     const opened = uiRequestPayloads(harness.transport)[0]
+    // When the phone settles the card with its first event
     await act(harness.connection, 2, { type: 'choose', payload: { deck: 'alpha' } })
     const value = await pending
     // Then the frame names the host's own ToolCallId, never an id this bridge minted
@@ -312,7 +313,7 @@ describe('interactive reply bridge', () => {
     expect(await pending).toEqual({ ok: true, key: KEY, delivered: 1, type: 'submit' })
   })
 
-  it('phone comes back inside the grace window and the release it was held for is cancelled', async () => {
+  it('operator brings the phone back inside the grace window and the release it was held for is cancelled', async () => {
     // Given a card presented to the only phone on the wire
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const harness = makeHub()
