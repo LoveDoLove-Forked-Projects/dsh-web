@@ -560,6 +560,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
             hint={t('settings.sessionPollSecondsHintBrief')}
             hintTitle={t('settings.sessionPollSecondsHint')}
             numeric
+            range={{ min: SESSION_POLL_MIN_SECONDS, max: SESSION_POLL_MAX_SECONDS, step: 1 }}
             {...fieldProps}
             {...state.sessionPollSeconds}
             onEdit={(text) => { props.edit('sessionPollSeconds', text) }}
@@ -586,6 +587,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
             hint={t('settings.runLaunchWidthHintBrief')}
             hintTitle={t('settings.runLaunchWidthHint')}
             numeric
+            range={{ min: RUN_LAUNCH_WIDTH_MIN, max: RUN_LAUNCH_WIDTH_MAX, step: 1 }}
             {...fieldProps}
             {...state.runLaunchWidth}
             onEdit={(text) => { props.edit('runLaunchWidth', text) }}

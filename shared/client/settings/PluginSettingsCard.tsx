@@ -15,6 +15,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { CardShell } from './settings-form.ts'
+import { RangeBubble } from './RangeBubble.tsx'
 import { SegmentGroup } from './SegmentGroup.tsx'
 import css from './settings-card.module.css'
 
@@ -301,12 +302,16 @@ export interface FieldProps {
  * A typed value field. Its draft is written after a pause in typing, at once on
  * Enter or when focus leaves, and Escape puts the stored value back. `numeric`
  * only hints the keypad: which drafts a field accepts is decided by its spec.
+ * A field given a `range` also offers the coarse slider bubble: dragging fills
+ * the draft live and releasing writes it.
  */
 export function ValueField(props: FieldProps & {
   /** Hints a numeric keypad without narrowing what the control accepts. */
   numeric?: boolean
   /** Placeholder shown while the draft is empty. */
   placeholder?: string
+  /** Bounds of a numeric field, for the coarse slider; the spec still judges every draft. */
+  range?: { min: number, max: number, step: number }
 }) {
   const apply = useContext(CardApply)
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -316,6 +321,23 @@ export function ValueField(props: FieldProps & {
     else apply.revert()
     event.currentTarget.blur()
   }
+  const input = (
+    <input
+      id={props.id}
+      className={props.invalid ? css.inputInvalid : css.input}
+      type="text"
+      {...props.numeric === true ? { inputMode: 'numeric' as const } : {}}
+      {...props.invalid ? { 'aria-invalid': true } : {}}
+      value={props.text}
+      placeholder={props.placeholder ?? ''}
+      disabled={props.disabled}
+      onChange={(event) => { props.onEdit(event.target.value) }}
+      onKeyDown={onKeyDown}
+      onBlur={() => { apply?.commit() }}
+    />
+  )
+  const { range } = props
+  const typed = Number(props.text)
   return (
     <div className={css.field}>
       <div className={css.head}>
@@ -336,19 +358,25 @@ export function ValueField(props: FieldProps & {
           )
           : null}
       </div>
-      <input
-        id={props.id}
-        className={props.invalid ? css.inputInvalid : css.input}
-        type="text"
-        {...props.numeric === true ? { inputMode: 'numeric' as const } : {}}
-        {...props.invalid ? { 'aria-invalid': true } : {}}
-        value={props.text}
-        placeholder={props.placeholder ?? ''}
-        disabled={props.disabled}
-        onChange={(event) => { props.onEdit(event.target.value) }}
-        onKeyDown={onKeyDown}
-        onBlur={() => { apply?.commit() }}
-      />
+      {range === undefined
+        ? input
+        : (
+          <RangeBubble
+            min={range.min}
+            max={range.max}
+            step={range.step}
+            value={props.text.trim() === '' || Number.isNaN(typed) ? range.min : typed}
+            label={`${props.label} ${range.min}–${range.max}`}
+            disabled={props.disabled}
+            onInput={(value) => { props.onEdit(String(value)) }}
+            onCommit={(value) => {
+              props.onEdit(String(value))
+              apply?.commit()
+            }}
+          >
+            {input}
+          </RangeBubble>
+        )}
       <p className={props.invalid ? css.invalid : css.hint} title={props.hintTitle}>
         {props.invalid ? props.invalidLabel : props.hint}
       </p>

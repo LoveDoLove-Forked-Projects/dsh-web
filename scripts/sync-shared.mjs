@@ -70,6 +70,12 @@ const MANIFEST = [
     targets: SETTINGS_CARD_CONSUMERS.map(pkg => `packages/${pkg}/src/client/SegmentGroup.tsx`),
   },
   {
+    // The coarse slider bubble a bounded numeric field offers on hover.
+    file: 'RangeBubble.tsx',
+    source: 'shared/client/settings/RangeBubble.tsx',
+    targets: SETTINGS_CARD_CONSUMERS.map(pkg => `packages/${pkg}/src/client/RangeBubble.tsx`),
+  },
+  {
     // One settings page's seat in either the Web Extensions parent or the
     // legacy first-level settings navigation. The service owns keyed mounting;
     // this helper only reconciles the standalone fallback.

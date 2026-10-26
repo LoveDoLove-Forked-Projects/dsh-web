@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import { REPO_ROOT, applySync, checkSync, copyEntries, headerFor, renderCopy, stripHeader } from './sync-shared.mjs'
 
 test('header/strip round-trips every file kind', () => {
-  for (const file of ['settings-form.ts', 'PluginSettingsCard.tsx', 'settings-card.module.css', 'SegmentGroup.tsx']) {
+  for (const file of ['settings-form.ts', 'PluginSettingsCard.tsx', 'settings-card.module.css', 'SegmentGroup.tsx', 'RangeBubble.tsx']) {
     const source = 'export const x = 1' + String.fromCharCode(10)
     const sourceRel = 'shared/client/settings/' + file
     const rendered = renderCopy(source, file, sourceRel)
@@ -54,10 +54,11 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // fence instead of restating it. The Web Extensions page adapter adds two
   // client copies (Workshop and Usage); the satellite repositories carry their
   // own copies because they publish separately. The segmented control with
-  // the sliding highlight adds one client copy per card consumer (seven).
-  assert.equal(entries.length, 128)
+  // the sliding highlight and the coarse slider bubble each add one client
+  // copy per card consumer (seven apiece).
+  assert.equal(entries.length, 135)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 62)
+  assert.equal(clientTrio.length, 69)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')

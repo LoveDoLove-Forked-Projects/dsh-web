@@ -89,3 +89,48 @@ describe('settings card typed field', () => {
     expect(calls).toEqual(['commit'])
   })
 })
+
+describe('settings card bounded number field', () => {
+  it('operator dragging the coarse slider fills the field live and writes it on release', () => {
+    // Given an open card holding a number field over 1..300
+    const calls: string[] = []
+    const container = mount(
+      <PluginSettingsCard
+        {...shellProps({ defaultOpen: true })}
+        onSave={() => { calls.push('commit') }}
+        onDiscard={() => { calls.push('revert') }}
+      >
+        <ValueField
+          id="settings-bounded"
+          label="label"
+          hint="hint"
+          text="5"
+          numeric
+          range={{ min: 1, max: 300, step: 1 }}
+          overridden={false}
+          invalid={false}
+          overriddenLabel="overridden"
+          resetLabel="reset"
+          invalidLabel="invalid"
+          disabled={false}
+          onEdit={(text) => { calls.push('edit ' + text) }}
+          onReset={() => {}}
+        />
+      </PluginSettingsCard>,
+    )
+    const slider = container.querySelector('input[type="range"]')
+    if (!(slider instanceof HTMLInputElement)) throw new Error('the coarse slider did not render')
+
+    // When the operator drags the thumb to 120 and lets go (this jsdom has no
+    // PointerEvent; React dispatches on the event name alone)
+    act(() => { slider.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })) })
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(slider, '120')
+      slider.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => { slider.dispatchEvent(new MouseEvent('pointerup', { bubbles: true })) })
+
+    // Then the field took the dragged value as its draft, and the release wrote it
+    expect(calls).toEqual(['edit 120', 'edit 120', 'commit'])
+  })
+})
