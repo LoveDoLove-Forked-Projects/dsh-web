@@ -24,7 +24,7 @@ Status: implemented
 
 源码、测试、工作区文件与各份 manifest 一律不动。本仓在内部修不了它：拒绝来自 pnpm 的构建脚本批准模型，而留下缺失 bundle 行的回写时机属于官方 CLI。
 
-影响面只在首次安装。干净 profile 受影响。已经带着构建脚本审批的存量 profile 不受影响：这样的 0.4.9 profile 升级到 registry 上的 0.4.10 以 exit 0 结束，不要求新审批，`dsh.profile.bundles` 那一行不变也不重复，`--dump-config` 逐字节相同，重复执行仍然幂等，也就是这道门由审批状态决定，而不是由依赖集合是否变化决定。一个完全没有 `allowBuilds` 记录的旧 profile 在 pnpm 11.9.0 下升级到 0.4.10 属于未验证，本篇不对它作任何断言。
+影响面只在首次安装。干净 profile 受影响。已经带着构建脚本审批的存量 profile 不受影响：这样的 0.4.9 profile 升级到 registry 上的 0.4.10 以 exit 0 结束，不要求新审批，`dsh.profile.bundles` 那一行不变也不重复，`--dump-config` 逐字节相同，重复执行仍然幂等，也就是这道门由审批状态决定，而不是由依赖集合是否变化决定。一个完全没有 `allowBuilds` 记录的旧 profile 在 pnpm 11.9.0 下升级到 0.4.10，是本篇实测过的那一档：命令以 exit 1 停在 `[ERR_PNPM_IGNORED_BUILDS]` 上，而升级已经落地且保持挂载，所以这样的用户手里是一个失败的退出码加一个已经生效的升级；补救是在 profile 自己的 `pnpm-workspace.yaml` 里补上这三项审批再跑同一条命令，以 exit 0 结束并让三项构建真正执行，不重装、不重置 profile。这个失败与上面那个一样仍未修复：本篇记录的是用户的自救路径，不是安装器改动。
 
 ## Evidence
 
@@ -36,13 +36,16 @@ Status: implemented
 - 工作区归属：`pnpm-workspace.yaml:13` 开头的 `allowBuilds` 块归开发工作区，用户 profile 有自己的 `pnpm-workspace.yaml`，不在它的覆盖范围内。
 - 出路与各自的依据：先用官方 `--from-default-profile web` 重置 profile，在首次 add 之前把这三个名字写进 `<profile>/pnpm-workspace.yaml` 的 `allowBuilds`，然后再 add；或者在一个没被这次失败污染过的新 profile 上照同样顺序做——这就是本机实测能挂载 bundle 的顺序。exit 1 之后再补审批不算出路，理由就是上面记下的回写范围。
 - 带着审批升级的实测：一个已有构建脚本审批的 0.4.9 profile 升级到 registry 上的 0.4.10，exit 0、不要求新审批、`dsh.profile.bundles` 那一行不变也不重复、`--dump-config` 逐字节相同、重复执行幂等。
-- 未验证：一个完全没有 `allowBuilds` 记录的旧 profile 在 pnpm 11.9.0 下升级到 0.4.10 会怎样。
+- 无审批记录的存量升级：一个 `pnpm-workspace.yaml` 里完全没有 `allowBuilds` 审批记录的 0.4.9 profile，在 pnpm 11.9.0 加官方 CLI 0.2.1-rc.3 下升到 registry 上的 0.4.10，以 exit 1 结束并报 `[ERR_PNPM_IGNORED_BUILDS]`（cloudflared@0.7.3、cpu-features@0.0.10、ssh2@1.17.0），而升级本身已经落地且保持挂载：profile manifest 记的是 0.4.10，`node_modules` 里 25 个家族包全是 0.4.10，`dsh.profile.bundles` 里聚合包仍恰好一行，`dsh --profile <name> --dump-config` 以 exit 0 结束并列出该 bundle，25 个家族包声明的 60 个依赖 0 个不可解析；失败的是退出码与后续操作的干净度，不是升级结果或挂载状态，重跑同一条命令仍是 exit 1、不自愈。
+- 这一情形的补救：在 `<profile>/pnpm-workspace.yaml` 里把 cloudflared、cpu-features、ssh2 写成 `true`（或走交互式 `pnpm approve-builds`），同一条升级命令以 exit 0 结束，三项原生/二进制构建真正执行（cloudflared 的 postinstall 生成 `bin/cloudflared`，cpu-features 经 node-gyp 生成 `build/Release/cpufeatures.node`，ssh2 生成 `sshcrypto.node`），版本与挂载状态不变，`--dump-config` 逐字节相同，不重装、不删 profile。
+- 门读的是审批记录而不是构建产物：构建产物已经存在但审批记录缺席的变体同样以 exit 1 结束，状态同样已是 0.4.10 且已挂载。
+- `--config.strictDepBuilds=false` 只买到挂载：干净首次 add 上以 exit 0 结束并写入 bundle 行，却在 profile 里留下占位条目（形如 `cloudflared: set this to true or false`），三项原生/二进制构建并不真正执行，没有 `bin/cloudflared`，也没有 `build/Release/cpufeatures.node`。
 - 既有记录：[0.4.7 升级矩阵](../../../../docs/archive/2026-10-17-v0.4.7-upgrade-matrix.md) 第 15 行与第 110 行，以及对已发布的 0.4.9 复现出的同一失败。
 
 ## Impact
 
 - 干净的首次安装受影响：家族装上了却没挂载，而 CLI 输出里没有任何一处点出缺失的 bundle 行。
-- 已经带着审批的存量 profile 从 0.4.9 到 0.4.10 行为没有任何变化，而审批状态从未记录过的 profile 属于未验证。
+- 已经带着审批的存量 profile 从 0.4.9 到 0.4.10 行为没有任何变化，而审批状态从未记录过的 profile 会照常升级、照常挂载，然后以 exit 1 结束，用户读到的失败发生在活已经干完之后。
 - 手工自救的用户必须改 profile 自己的 `pnpm-workspace.yaml`；开发工作区的批准清单不会随包一起走。
 - 这个状态在重试时不自愈，所以停在 exit 1 的用户手里留着一个能解析这个包、却什么都不加载的 profile。
 
@@ -63,4 +66,5 @@ Status: implemented
 - 在两个候选修法之一发布之前，干净 profile 在 0.4.10 上仍可复现该失败。
 - 以后真要修，得移动这个决策而不是编辑它：已发布状态变了，本篇要么把修复记成一条取代记录，要么被一条带着验证的新记录取代。
 - 后续的安装器改动必须把审批写在首次 add 之前而不是失败之后，因为回写会忽略本次运行没有新加的依赖。
+- 两种失败形态必须分开读：干净首发失败后补审批再重跑，是 exit 0 却没有 bundle 行的静默半挂载；存量 profile 无审批升级，是 bundle 行本来就在、版本已升、命令却以 exit 1 结束。把首发那套描述套到升级上，或者反过来，都会让人在「要不要重装」上得出错误结论。
 - 依赖集合、协议以及所有挂载路径的行为都不变，因为这里除文档之外没有改动任何东西。
