@@ -15,12 +15,12 @@ English | [中文](README.zh.md)
   <em>Unified Settings Section · Native ConfigForm Bridge · Legacy Settings Migration · UI Appearance & Preferences</em>
 </p>
 
-A settings enhancement plugin for DeepSeek Harness (DSH) Web GUI and official desktop client: registers a first-level section in Settings alongside general preferences, modes, and agent presets to group enable toggles and configuration forms across the plugin family.
+A settings enhancement plugin for DeepSeek Harness (DSH) Web GUI and official desktop client: registers the Web Extensions section in Settings to group extension management pages, enable toggles and configuration forms across the plugin family.
 
 ## What it is
 
-- **One section for the family**: on the DSH settings page it registers a first-level section with a static heading and cards for the remaining dsh web UI family plugins (task-board, remote-web-ui, pet). Each plugin card is collapsed by default and expands independently to show its enable switch and configuration form.
-- **First-level sections**: the Skin Center, the Desktop Pet and the Workshop (store card) each register as their own first-level settings section that opens directly expanded; the official Plugins section ships the official installer beside the plugin-manager tab provided by `dsh-plugin-manager`.
+- **One Web Extensions section**: the stable first-level `web-ui-plugins` entry hosts Web Plugins, Skins, Pet, Workshop and Usage as secondary TABs. The Web Plugins TAB holds the remaining dsh web UI family cards (task-board, remote-web-ui and others); each card expands independently to show its enable switch and configuration form.
+- **Standalone fallback**: Skin Center, Desktop Pet, Workshop and Usage keep their original first-level settings entries when this parent package is absent. The official Plugins section ships the official installer beside the plugin-manager tab provided by `dsh-plugin-manager`.
 - **The group is optional for the family plugins**: this package declares the `web-ui.plugin.item` list seat the family cards register into. A family plugin registers into that seat while this package is loaded, and into the official keyed `plugins.bundle.config` seat of the plugin manager page when it is not (keyed by the bundle's package name), so a profile that installs a family plugin without this group still reaches every card.
 - **Native settings transport**: the 0.1.7 settings surface addresses every configuration form by profile entry id. The host bridge resolves the entry id that owns each family namespace from the profile roster and reports it on its describe response, so the browser half binds the native shared form (`ctx.configForms`); the loopback HTTP pair stays the fallback for a page where no entry id resolves.
 
@@ -98,4 +98,4 @@ See [issue #513](https://github.com/zhu1090093659/dsh-web/issues/513).
 
 The browser half sends one anonymous install heartbeat per UTC day to dsh-market.com: a random localStorage id plus this package's name, nothing else. The server stores only a salted hash of that id, never IP addresses, and exposes aggregate counts only.
 
-The telemetry card at the top of this section turns the family-wide heartbeat off for every wired plugin at once. Reporting is on by default, so the card's switch shows on until it is turned off; it stores the preference in localStorage under `dsh-web-ui-telemetry-opt-out`, and a browser that sends Do Not Track stops reporting on its own while the switch keeps showing the stored preference and the card says so. The Workshop, plugin installation and online updates keep working either way. See [docs/telemetry.md](../../docs/telemetry.md) for the full contract.
+The telemetry switch in the General group at the top of the Web Plugins page turns the family-wide heartbeat off for every wired plugin at once. Reporting is on by default, so the switch shows on until it is turned off; it stores the preference in localStorage under `dsh-web-ui-telemetry-opt-out`, and a browser that sends Do Not Track stops reporting on its own while the switch keeps showing the stored preference and the row says so. The Workshop, plugin installation and online updates keep working either way. See [docs/telemetry.md](../../docs/telemetry.md) for the full contract.

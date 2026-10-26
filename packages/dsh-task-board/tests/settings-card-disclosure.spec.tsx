@@ -44,7 +44,7 @@ describe('task-board settings card disclosure', () => {
 
     // When the operator scans the disclosure headers
     const board = header(container, zh['settings.title'])
-    const topic = header(container, zh['settings.enabled'])
+    const topic = header(container, zh['settings.enabledTopic'])
 
     // Then the plugin card leads with a decorative glyph before its title,
     // while a nested topic keeps the plain header shape without one
@@ -68,7 +68,7 @@ describe('task-board settings card disclosure', () => {
     // acceptance, new-card defaults, provider card, and nothing is expanded yet
     const topics = headers(container)
     expect(topics).toHaveLength(6)
-    expect(topics[1]?.textContent).toContain(zh['settings.enabled'])
+    expect(topics[1]?.textContent).toContain(zh['settings.enabledTopic'])
     expect(topics[2]?.textContent).toContain(zh['settings.runBehaviorTitle'])
     expect(topics[3]?.textContent).toContain(zh['settings.goalVerificationTitle'])
     expect(topics[4]?.textContent).toContain(zh['settings.cardDefaultsTitle'])
@@ -89,10 +89,10 @@ describe('task-board settings card disclosure', () => {
     // Then the global switch is there with its default (off) and its one-line
     // hint, whose full explanation stays on that paragraph's hover title, and
     // the sibling topics are untouched
-    expect(container.querySelector('#settings-task-board-goal-run')?.textContent).toBe(zh['settings.off'])
+    expect(container.querySelector('#settings-task-board-goal-run [aria-pressed="true"]')?.textContent).toBe(zh['settings.off'])
     expect(container.textContent).toContain(zh['settings.goalRunGlobalHintBrief'])
     expect(titles(container)).toContain(zh['settings.goalRunGlobalHint'])
-    expect(header(container, zh['settings.enabled']).getAttribute('aria-expanded')).toBe('false')
+    expect(header(container, zh['settings.enabledTopic']).getAttribute('aria-expanded')).toBe('false')
     expect(header(container, zh['settings.goalVerificationTitle']).getAttribute('aria-expanded')).toBe('false')
   })
 
@@ -102,14 +102,14 @@ describe('task-board settings card disclosure', () => {
     act(() => { header(container, zh['settings.title']).click() })
 
     // When the operator opens the board topic
-    act(() => { header(container, zh['settings.enabled']).click() })
+    act(() => { header(container, zh['settings.enabledTopic']).click() })
 
     // Then its own controls are editable and show the stored board values, the
     // runtime-behavior fields sit with them, and the sibling topics stayed closed
-    expect(header(container, zh['settings.enabled']).getAttribute('aria-expanded')).toBe('true')
-    expect(container.querySelector('#settings-task-board-enabled')?.textContent).toBe(zh['settings.on'])
-    expect(container.querySelector('#settings-task-board-announce')?.textContent).toBe(zh['settings.inherit'])
-    expect(container.querySelector('#settings-task-board-prevent-idle-sleep')?.textContent).toBe(zh['settings.inherit'])
+    expect(header(container, zh['settings.enabledTopic']).getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('#settings-task-board-enabled [aria-pressed="true"]')?.textContent).toBe(zh['settings.on'])
+    expect(container.querySelector('#settings-task-board-announce [aria-pressed="true"]')?.textContent).toBe(zh['settings.inherit'])
+    expect(container.querySelector('#settings-task-board-prevent-idle-sleep [aria-pressed="true"]')?.textContent).toBe(zh['settings.inherit'])
     expect(container.querySelector('#settings-task-board-subtask-depth')?.textContent).toBe(zh['settings.inherit'])
     expect(container.querySelector('#settings-task-board-goal-verification')).toBeNull()
     expect(header(container, zh['settings.goalVerificationTitle']).getAttribute('aria-expanded')).toBe('false')
@@ -122,7 +122,7 @@ describe('task-board settings card disclosure', () => {
     expect(container.querySelector('#settings-task-board-run-launch-width')).toBeNull()
 
     // When the operator opens the board topic
-    act(() => { header(container, zh['settings.enabled']).click() })
+    act(() => { header(container, zh['settings.enabledTopic']).click() })
 
     // Then the width is editable beside the depth limit, shows the stored value,
     // and explains in one line that waiting members still start (they only
@@ -150,11 +150,11 @@ describe('task-board settings card disclosure', () => {
 
     // Then the acceptance switch, the judge model and the resolved preview are
     // there with the stored values, and the board topic is untouched
-    expect(container.querySelector('#settings-task-board-goal-verification')?.textContent).toBe(zh['settings.on'])
+    expect(container.querySelector('#settings-task-board-goal-verification [aria-pressed="true"]')?.textContent).toBe(zh['settings.on'])
     expect(container.querySelector('#settings-task-board-goal-verification-model')?.textContent).toBe(zh['settings.inherit'])
     expect(container.querySelector('#settings-task-board-goal-verification-effort')?.textContent).toBe(zh['settings.inherit'])
     expect(container.textContent).toContain(zh['settings.goalVerificationResolved'])
-    expect(header(container, zh['settings.enabled']).getAttribute('aria-expanded')).toBe('false')
+    expect(header(container, zh['settings.enabledTopic']).getAttribute('aria-expanded')).toBe('false')
   })
 
   it('operator expanding the new-card-defaults topic reaches the four prefill fields', () => {

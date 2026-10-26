@@ -206,7 +206,7 @@ export interface OpenCardInput {
   readonly onSettled?: (card: UiCardView) => void
 }
 
-/** The presentation one `ui.present` call is waiting on, as the hub publishes it. */
+/** The presentation one `ui_present` call is waiting on, as the hub publishes it. */
 export interface ClaimedCard extends UiCardView {
   /** The user's action, or the refusal that ended the card. Never rejects. */
   readonly outcome: Promise<UiPresentOutcome>

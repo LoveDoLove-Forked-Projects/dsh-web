@@ -618,7 +618,7 @@ describe('MarketCard', () => {
   it('renders the editor-picks empty state when the manifest is missing or unresolved', () => {
     render(<MarketCard {...cardProps(new FakeScope({}), { remote: REMOTE, gateway: null, pluginManager: null })} />)
     fireEvent.click(screen.getByRole('tab', { name: /编辑推荐/ }))
-    expect(screen.getByText('暂无编辑推荐条目。')).toBeTruthy()
+    expect(screen.getByText('还没有编辑推荐。')).toBeTruthy()
   })
 
   it('renders the preset tab fallback when no panel plugin is installed', () => {
@@ -628,17 +628,23 @@ describe('MarketCard', () => {
     expect(screen.getByText(/未安装预设中心插件/)).toBeTruthy()
   })
 
-  it('saves the staged enable switch through one form mutation', async () => {
+  it('user flips the header switch and the Workshop is turned off in one write', async () => {
+    // Given a Workshop card that is on
     const scope = new FakeScope({ enabled: true })
     const props = cardProps(scope, { remote: REMOTE, gateway: null, pluginManager: null })
     render(<MarketCard {...props} />)
+    const toggle = screen.getByRole('switch', { name: '创意工坊' })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
 
-    await act(async () => { props.edit('enabled', 'false') })
-    await act(async () => { props.save() })
+    // When the user flips the switch in the card header
+    await act(async () => { fireEvent.click(toggle) })
 
+    // Then one form mutation writes it off and the catalog leaves the card
     expect(scope.mutate).toHaveBeenCalledWith([{ op: 'set', path: ['enabled'], value: false }])
     expect(scope.user).toEqual({ enabled: false })
-    expect(screen.queryByText(/保存失败/)).toBeNull()
+    expect(screen.getByRole('switch', { name: '创意工坊' }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByText(/没有保存成功/)).toBeNull()
   })
 
   it('reports a refused settings write as a failed save, not a success', async () => {
@@ -651,28 +657,26 @@ describe('MarketCard', () => {
     render(<MarketCard {...props} />)
 
     await act(async () => { props.edit('enabled', 'false') })
-    await act(async () => { props.save() })
 
-    await waitFor(() => expect(screen.getByText(/保存失败/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/没有保存成功/)).toBeTruthy())
     expect(scope.mutate).toHaveBeenCalled()
     // The write is visible read-back-wise, so the failure can only come from the refusal.
     expect(scope.user).toEqual({ enabled: false })
   })
 
-  it('keeps the draft after a refused save so the user can correct it', async () => {
+  it('puts a refused pick back to the stored value and says the write failed', async () => {
     const scope = new FakeScope({ enabled: true })
     scope.accepts = false
     const props = cardProps(scope, { remote: REMOTE, gateway: null, pluginManager: null })
     render(<MarketCard {...props} />)
 
     await act(async () => { props.edit('enabled', 'false') })
-    await act(async () => { props.save() })
 
-    await waitFor(() => expect(screen.getByText(/保存失败/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/没有保存成功/)).toBeTruthy())
     expect(scope.user).toEqual({})
-    // The off draft is still on screen and the save is retryable.
-    expect(document.getElementById('settings-market-enabled')?.textContent).toBe('关')
-    expect(screen.getByRole('button', { name: '保存' }).hasAttribute('disabled')).toBe(false)
+    // The switch springs back to the effective value; flipping again is the retry.
+    expect(screen.getByRole('switch', { name: '创意工坊' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.queryByRole('button', { name: '保存' })).toBeNull()
   })
 
   it('user sees market content without notExposed banner when host namespace is unexposed', async () => {
@@ -684,7 +688,7 @@ describe('MarketCard', () => {
     render(<MarketCard {...props} />)
 
     // Then it renders the market catalog without displaying the notExposed banner
-    expect(screen.queryByText('该设置段未暴露（宿主命名空间缺失）')).toBeNull()
+    expect(screen.queryByText('这个版本的 DSH 没有开放创意工坊的设置。')).toBeNull()
     expect(screen.getByRole('tab', { name: /皮肤/ }).textContent).toContain('皮肤')
     expect(screen.getByText('鲸吟').textContent).toBe('鲸吟')
   })

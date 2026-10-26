@@ -13,6 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { ComponentProps } from 'react'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { UsageSectionCard, type UsageSettings } from '../src/client/UsageSectionCard.tsx'
+import { UsageSettingsCardController, type UsageSettingsCardFace } from '../src/client/usage-settings-card.ts'
 import { type UsageStoreInstance, type UsageUiState } from '../src/client/usage-store.ts'
 import { emptyTotals, type ProviderSnapshotView, type UsageDayView, type UsageOverviewView } from '../src/core/types.ts'
 
@@ -44,11 +45,17 @@ function fakeStore(state: UsageUiState): UsageStoreInstance {
 
 const settings = fakeForm().form
 
+/** The settings card the section reads, over one form; the plugin body builds the same. */
+function cardOf(form: ConfigForm<UsageSettings>): UsageSettingsCardFace {
+  return new UsageSettingsCardController(form).inject()
+}
+
 /**
- * Form fake over one effective section: writes are recorded and answered by
- * the caller's policy, so a test drives the section's controls exactly the way
- * the shared form contract answers them (`true` accepted, `false` refused).
- * `publish` stands in for a Host answer that replaces the effective section.
+ * Form fake over one effective section: each written field is recorded and the
+ * mutation is answered by the caller's policy, so a test drives the section's
+ * controls exactly the way the shared form contract answers them (`true`
+ * accepted and folded into the section, `false` refused). `publish` stands in
+ * for a Host answer that replaces the effective section.
  */
 function fakeForm(policy: {
   value?: UsageSettings
@@ -57,11 +64,11 @@ function fakeForm(policy: {
 } = {}): { form: ConfigForm<UsageSettings>; writes: Array<[string, unknown]>; publish: (patch: UsageSettings) => void } {
   const writes: Array<[string, unknown]> = []
   let listeners: Array<() => void> = []
-  const snapshot = (current: UsageSettings): ConfigFormSnapshot<UsageSettings> => ({
+  const snapshot = (current: UsageSettings, user?: UsageSettings): ConfigFormSnapshot<UsageSettings> => ({
     status: 'ready',
     value: current,
     base: undefined,
-    user: undefined,
+    user,
     revision: 1,
     writable: policy.writable ?? true,
   })
@@ -72,18 +79,26 @@ function fakeForm(policy: {
       listeners.push(listener)
       return () => { listeners = listeners.filter((candidate) => candidate !== listener) }
     },
-    set: (field: string, next: unknown) => {
-      writes.push([field, next])
-      return Promise.resolve(policy.answer?.(field, next) ?? true)
-    },
+    set: () => Promise.resolve(false),
     unset: () => Promise.resolve(false),
-    mutate: () => Promise.resolve(false),
+    mutate: async (ops: ReadonlyArray<{ op: 'set' | 'unset'; path: readonly string[]; value?: unknown }>) => {
+      for (const op of ops) writes.push([op.path[0] ?? '', op.value])
+      const answers = await Promise.all(ops.map((op) => policy.answer?.(op.path[0] ?? '', op.value) ?? true))
+      if (!answers.every(Boolean)) return false
+      fold(Object.fromEntries(ops.map((op) => [op.path[0] ?? '', op.value])))
+      return true
+    },
+  }
+  // An accepted write lands in the user layer, which is where the card reads it back.
+  const fold = (patch: UsageSettings): void => {
+    held = snapshot({ ...held.value, ...patch }, { ...(held.user as UsageSettings | undefined), ...patch })
+    for (const listener of [...listeners]) listener()
   }
   return {
     form: form as unknown as ConfigForm<UsageSettings>,
     writes,
     publish: (patch) => {
-      held = snapshot({ ...held.value, ...patch })
+      held = snapshot({ ...held.value, ...patch }, held.user as UsageSettings | undefined)
       for (const listener of [...listeners]) listener()
     },
   }
@@ -100,7 +115,7 @@ function cardProps(snapshot: UsageOverviewView, loadDay: (date: string) => Promi
     poll: () => {},
     refresh: () => {},
     loadDay,
-    settings,
+    settingsCard: cardOf(settings),
     close: () => {},
   } as unknown as ComponentProps<typeof UsageSectionCard>
 }
@@ -149,10 +164,10 @@ describe('UsageSectionCard configured-provider filter', () => {
     render(<UsageSectionCard {...cardProps(overview(unconfigured))} />)
     // When the balance card renders
     // Then the balance card reports nothing configured rather than an empty table
-    expect(screen.getAllByText('没有已配置的提供方')).toHaveLength(1)
+    expect(screen.getAllByText('还没有配置提供方')).toHaveLength(1)
     // And the plans tab reports the same for plan providers
     fireEvent.click(screen.getByRole('tab', { name: '个人套餐' }))
-    expect(screen.getAllByText('没有已配置的套餐类 provider（如 Kimi、GLM、OpenCode Go、MiniMax、Codex 订阅）')).toHaveLength(1)
+    expect(screen.getAllByText('没有配置套餐类提供方，例如 Kimi、GLM、OpenCode Go、MiniMax、Codex 订阅。')).toHaveLength(1)
   })
 })
 
@@ -359,35 +374,37 @@ describe('day pickers', () => {
 })
 
 /**
- * #1500: disabling the plugin deregisters the host routes, so the panel must
- * stop polling, say why, and keep the enable checkbox reachable — the earlier
+ * #1500: disabling the plugin deregisters the host routes, so the page must
+ * stop polling, say why, and keep the switch reachable — the earlier
  * panel-wide error return left no way back from the UI.
  */
 describe('UsageSectionCard disabled and failed states', () => {
-  it('stops polling and keeps the enable checkbox while the plugin is disabled', () => {
+  it('stops polling and keeps the header switch while the plugin is disabled', () => {
     const poll = vi.fn()
     const live = fakeForm({ value: { enabled: false } })
-    render(<UsageSectionCard {...cardProps(overview(mixed))} poll={poll} settings={live.form} />)
+    render(<UsageSectionCard {...cardProps(overview(mixed))} poll={poll} settingsCard={cardOf(live.form)} />)
     expect(poll).not.toHaveBeenCalled()
-    expect(screen.getByText(/插件已停用/)).toBeTruthy()
-    expect(screen.getByRole('checkbox')).toBeTruthy()
+    expect(screen.getByText(/已停用/)).toBeTruthy()
+    expect(screen.getByRole('switch', { name: '使用统计' }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.queryByRole('tablist')).toBeNull()
   })
 
   it('resumes polling once the Host reports the plugin enabled again', () => {
     const poll = vi.fn()
     const live = fakeForm({ value: { enabled: false } })
-    render(<UsageSectionCard {...cardProps(overview(mixed))} poll={poll} settings={live.form} />)
+    render(<UsageSectionCard {...cardProps(overview(mixed))} poll={poll} settingsCard={cardOf(live.form)} />)
     expect(poll).not.toHaveBeenCalled()
     act(() => { live.publish({ enabled: true }) })
     expect(poll).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText(/插件已停用/)).toBeNull()
+    expect(screen.queryByText(/已停用/)).toBeNull()
   })
 
   it('keeps the settings controls mounted when the overview transport fails', () => {
     const failing = fakeStore({ snapshot: null, status: 'error', error: 'usage /api/dsh-usage/overview failed: 500' })
     render(<UsageSectionCard {...cardProps(overview(mixed))} store={failing} />)
     expect(screen.getByText(/failed: 500/)).toBeTruthy()
-    expect(screen.getByRole('checkbox')).toBeTruthy()
+    expect(screen.getByRole('switch', { name: '使用统计' })).toBeTruthy()
+    expect(screen.getByLabelText('轮询间隔（秒）')).toBeTruthy()
   })
 })
 
@@ -399,52 +416,61 @@ describe('UsageSectionCard disabled and failed states', () => {
 describe('UsageSectionCard settings writes', () => {
   it('surfaces a Host-refused write as a failed save', async () => {
     const live = fakeForm({ value: { enabled: true }, answer: () => false })
-    render(<UsageSectionCard {...cardProps(overview(mixed))} settings={live.form} />)
-    // The checkbox starts from the form's effective value and writes the toggle.
-    fireEvent.click(screen.getByRole('checkbox'))
+    render(<UsageSectionCard {...cardProps(overview(mixed))} settingsCard={cardOf(live.form)} />)
+    // The switch starts from the form's effective value and writes the flip.
+    fireEvent.click(screen.getByRole('switch', { name: '使用统计' }))
+    await waitFor(() => { expect(screen.getByText(/没有保存成功/)).toBeTruthy() })
     expect(live.writes).toEqual([['enabled', false]])
-    await waitFor(() => { expect(screen.getByText(/保存失败/)).toBeTruthy() })
+    // The refused flip springs back, so the switch still reads on
+    expect(screen.getByRole('switch', { name: '使用统计' }).getAttribute('aria-checked')).toBe('true')
   })
 
   it('surfaces a rejecting transport with its own message', async () => {
     const live = fakeForm({ value: { enabled: true }, answer: () => Promise.reject(new Error('settings bridge unreachable')) })
-    render(<UsageSectionCard {...cardProps(overview(mixed))} settings={live.form} />)
-    fireEvent.click(screen.getByRole('checkbox'))
-    await waitFor(() => { expect(screen.getByText(/保存失败.*settings bridge unreachable/)).toBeTruthy() })
+    render(<UsageSectionCard {...cardProps(overview(mixed))} settingsCard={cardOf(live.form)} />)
+    fireEvent.click(screen.getByRole('switch', { name: '使用统计' }))
+    await waitFor(() => { expect(screen.getByText(/没有保存成功.*settings bridge unreachable/)).toBeTruthy() })
   })
 
   it('reports no failure for an accepted write', async () => {
     const live = fakeForm({ value: { enabled: true } })
-    render(<UsageSectionCard {...cardProps(overview(mixed))} settings={live.form} />)
-    fireEvent.click(screen.getByRole('checkbox'))
-    await act(async () => { await Promise.resolve() })
-    expect(live.writes).toEqual([['enabled', false]])
-    expect(screen.queryByText(/保存失败/)).toBeNull()
+    render(<UsageSectionCard {...cardProps(overview(mixed))} settingsCard={cardOf(live.form)} />)
+    fireEvent.click(screen.getByRole('switch', { name: '使用统计' }))
+    await waitFor(() => { expect(live.writes).toEqual([['enabled', false]]) })
+    expect(screen.queryByText(/没有保存成功/)).toBeNull()
   })
 
-  it('writes the rounded poll interval and keeps out-of-range drafts off the wire', () => {
+  it('writes the typed poll interval on Enter and keeps out-of-range drafts off the wire', async () => {
     const live = fakeForm()
-    render(<UsageSectionCard {...cardProps(overview(mixed))} settings={live.form} />)
-    const interval = screen.getByLabelText(/轮询间隔|Poll interval/)
+    render(<UsageSectionCard {...cardProps(overview(mixed))} settingsCard={cardOf(live.form)} />)
+    const interval = screen.getByLabelText('轮询间隔（秒）')
     fireEvent.change(interval, { target: { value: '120' } })
-    expect(live.writes).toEqual([['pollIntervalSec', 120]])
+    fireEvent.keyDown(interval, { key: 'Enter' })
+    await waitFor(() => { expect(live.writes).toEqual([['pollIntervalSec', 120]]) })
     fireEvent.change(interval, { target: { value: '10' } })
+    fireEvent.keyDown(interval, { key: 'Enter' })
+    await act(async () => { await Promise.resolve() })
     expect(live.writes).toEqual([['pollIntervalSec', 120]])
   })
 
-  it('user switching the display currency gets the chosen currency and rate written', () => {
-    // Given the settings row with the display controls
+  it('user switching the display currency gets the chosen currency and rate written', async () => {
+    // Given the settings rows, which offer no rate while spend shows in yuan
     const live = fakeForm()
-    render(<UsageSectionCard {...cardProps(overview(mixed))} settings={live.form} />)
+    render(<UsageSectionCard {...cardProps(overview(mixed))} settingsCard={cardOf(live.form)} />)
+    expect(screen.queryByLabelText('汇率')).toBeNull()
 
-    // When the user switches the display currency to USD and edits the rate
-    fireEvent.change(screen.getByLabelText(/消费显示货币|Spend display currency/), { target: { value: 'USD' } })
-    expect(live.writes).toEqual([['spendCurrency', 'USD']])
-    fireEvent.change(screen.getByLabelText(/汇率|Exchange rate/), { target: { value: '7.15' } })
+    // When the user switches the display currency to USD and enters a rate
+    fireEvent.click(screen.getByRole('button', { name: 'USD' }))
+    await waitFor(() => { expect(live.writes).toEqual([['spendCurrency', 'USD']]) })
+    const rate = screen.getByLabelText('汇率')
+    fireEvent.change(rate, { target: { value: '7.15' } })
+    fireEvent.keyDown(rate, { key: 'Enter' })
 
     // Then both go on the wire, and an unusable rate draft stays off it
-    expect(live.writes).toEqual([['spendCurrency', 'USD'], ['cnyPerUsd', 7.15]])
-    fireEvent.change(screen.getByLabelText(/汇率|Exchange rate/), { target: { value: '0' } })
+    await waitFor(() => { expect(live.writes).toEqual([['spendCurrency', 'USD'], ['cnyPerUsd', 7.15]]) })
+    fireEvent.change(screen.getByLabelText('汇率'), { target: { value: '0' } })
+    fireEvent.keyDown(screen.getByLabelText('汇率'), { key: 'Enter' })
+    await act(async () => { await Promise.resolve() })
     expect(live.writes).toEqual([['spendCurrency', 'USD'], ['cnyPerUsd', 7.15]])
   })
 })

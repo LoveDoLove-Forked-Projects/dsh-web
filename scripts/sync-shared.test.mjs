@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import { REPO_ROOT, applySync, checkSync, copyEntries, headerFor, renderCopy, stripHeader } from './sync-shared.mjs'
 
 test('header/strip round-trips every file kind', () => {
-  for (const file of ['settings-form.ts', 'PluginSettingsCard.tsx', 'settings-card.module.css']) {
+  for (const file of ['settings-form.ts', 'PluginSettingsCard.tsx', 'settings-card.module.css', 'SegmentGroup.tsx', 'RangeBubble.tsx']) {
     const source = 'export const x = 1' + String.fromCharCode(10)
     const sourceRel = 'shared/client/settings/' + file
     const rendered = renderCopy(source, file, sourceRel)
@@ -51,10 +51,17 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // entry-bound form fallback, because it binds no Host settings namespace.
   // dsh-browser-view adds one host copy of loopback.ts: its panel socket and
   // status route drive a real browser, so the route family reuses the shared
-  // fence instead of restating it.
-  assert.equal(entries.length, 119)
+  // fence instead of restating it. The Web Extensions page adapter adds two
+  // client copies (Workshop and Usage); the satellite repositories carry their
+  // own copies because they publish separately. The segmented control with
+  // the sliding highlight and the coarse slider bubble each add one client
+  // copy per card consumer. dsh-usage joined the card consumers (its page
+  // renders through the same chrome and rows), which adds five client copies:
+  // the chrome, its form primitives, the stylesheet, the segmented control and
+  // the slider bubble; it already carried the entry-bound form fallback.
+  assert.equal(entries.length, 140)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 53)
+  assert.equal(clientTrio.length, 74)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')

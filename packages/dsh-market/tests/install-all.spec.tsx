@@ -113,7 +113,7 @@ describe('Workshop card: install all missing', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '全部安装' })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: '全部安装' }))
     // Then the button offers the exact count instead of downloading anything
-    await waitFor(() => expect(screen.getByRole('button', { name: /将补装 1 款/ })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: /确认补装 1 款/ })).toBeTruthy())
     expect(run.installedIds).toEqual([])
   })
 
@@ -123,8 +123,8 @@ describe('Workshop card: install all missing', () => {
     // When the operator arms and then confirms the bulk install
     await waitFor(() => expect(screen.getByRole('button', { name: '全部安装' })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: '全部安装' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /将补装 2 款/ })).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /将补装 2 款/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /确认补装 2 款/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /确认补装 2 款/ }))
     // Then both skins are on disk and the market saw a single aggregated event
     await waitFor(() => expect(screen.getByText(/已安装 2 款皮肤/)).toBeTruthy())
     expect(run.installedIds).toEqual(['miku', 'whale-song'])
@@ -140,8 +140,8 @@ describe('Workshop card: install all missing', () => {
     // When the operator runs the bulk install
     await waitFor(() => expect(screen.getByRole('button', { name: '全部安装' })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: '全部安装' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /将补装 2 款/ })).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /将补装 2 款/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /确认补装 2 款/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /确认补装 2 款/ }))
     // Then the failure is on screen and only the landed asset is reported
     await waitFor(() => expect(screen.getByText(/1 款皮肤安装失败/)).toBeTruthy())
     expect(run.reportedIds).toEqual(['whale-song'])

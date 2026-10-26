@@ -104,7 +104,7 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board
 
 ## Configuration
 
-This plugin's settings card groups its options into collapsible sections — the board and its runtime behavior, task acceptance, new-card defaults, and the section a provider extension contributes (the GitHub Issues integration). Every section starts collapsed, and one save writes them all.
+This plugin's settings card groups its options into collapsible sections — the board and its runtime behavior, task acceptance, new-card defaults, and the section a provider extension contributes (the GitHub Issues integration). Every section starts collapsed. A change takes effect as it is made: a pick is written at once, and a typed value once typing pauses, on Enter, or when the field is left; Escape puts the stored value back.
 
 | Key | Default | Behavior |
 | --- | --- | --- |

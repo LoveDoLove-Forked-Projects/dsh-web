@@ -1,14 +1,22 @@
 /**
  * Family-shared chrome for plugin settings cards: a disclosure header naming
- * the plugin and what its settings govern, the controls inside, and the save
- * that writes them. Renders nothing while the namespace is unavailable — a
+ * the plugin and what its settings govern, the controls inside, and the line
+ * that reports a refused write. A pick is written the moment it is made and a
+ * typed value after a pause, so the card has no save button and nothing waits
+ * on the reader. Renders nothing while the namespace is unavailable — a
  * deployment that does not compose the owning plugin should show no trace of
  * it. Inlined into each consumer's client bundle; mirrors the official
  * ui-plugin-config PluginCard in a self-contained slice.
+ *
+ * Every field inside the body is one settings row: the label and its hint on
+ * the left, the control on the right, a hairline between two rows; a narrow
+ * card stacks the control under the text (settings-card.module.css).
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { CardShell } from './settings-form.ts'
+import { RangeBubble } from './RangeBubble.tsx'
+import { SegmentGroup } from './SegmentGroup.tsx'
 import css from './settings-card.module.css'
 
 /** Copy keys the card chrome itself reads; every consumer locale carries this shared vocabulary. */
@@ -16,13 +24,16 @@ export const CARD_COPY_KEYS = [
   'settings.collapse',
   'settings.expand',
   'settings.notExposed',
-  'settings.unsaved',
   'settings.readOnly',
   'settings.saveFailed',
-  'settings.discard',
-  'settings.save',
-  'settings.saving',
 ] as const
+
+/**
+ * What a text field inside a card reaches without its plugin wiring it: write
+ * the pending draft now (Enter, leaving the field) or put it back (Escape).
+ * Picks need neither; they are written the moment they are made.
+ */
+const CardApply = createContext<{ commit(): void, revert(): void } | null>(null)
 
 /** Copy key the card chrome itself reads. */
 export type CardCopyKey = (typeof CARD_COPY_KEYS)[number]
@@ -55,11 +66,11 @@ export interface PluginSettingsCardProps<TKey extends string = string> {
    * seat.
    */
   icon?: ReactNode
-  /** The card's form state: availability, writability, and what a save would do. */
+  /** The card's form state: availability, writability, and how the last write went. */
   state: CardShell
-  /** Write every staged edit. */
+  /** Write every pending draft now: a text field's Enter or blur. */
   onSave: () => void
-  /** Drop every staged edit. */
+  /** Drop every pending draft: a text field's Escape. */
   onDiscard: () => void
   /**
    * Id applied to the card's title element, so a header control (an immediate
@@ -86,15 +97,15 @@ export interface PluginSettingsCardProps<TKey extends string = string> {
    */
   alwaysOpen?: boolean
   /**
-   * Hide the save/discard footer: cards whose body applies its own changes
-   * immediately (an embedded external settings section) have no staged
-   * edits, so the footer would sit there permanently disabled.
+   * Hide the line under the body that reports a refused write: a card whose
+   * body applies its own changes (an embedded external settings section)
+   * reports its own failures.
    */
   hideFooter?: boolean
   /**
-   * Optional control rendered at the header's trailing edge, before the pending
-   * badge and the chevron. A card whose setting is one immediate flip (it
-   * applies outside the staged form) puts its ToggleSwitch here, so the control
+   * Optional control rendered at the header's trailing edge, before the
+   * chevron. A card whose setting is one immediate flip (it
+   * applies outside the card's form) puts its ToggleSwitch here, so the control
    * is reachable without opening the card and matches a plugin card's shape.
    */
   headerAction?: ReactNode
@@ -161,7 +172,6 @@ export function PluginSettingsCard<TKey extends string = string>(props: PluginSe
   const title = props.t(props.titleKey)
   const description = props.t(props.descriptionKey)
   const descriptionTitle = props.descriptionTitleKey === undefined ? description : props.t(props.descriptionTitleKey)
-  const blocked = !state.dirty || state.invalid || state.saving
   const baseClass = expanded ? `${css.cardOpen} ${css.card}` : css.card
   const cardClass = props.density === 'nested' ? `${baseClass} ${css.cardNested}` : baseClass
   /** The body region both legs share; a hidden phase renders nothing at all. */
@@ -183,7 +193,6 @@ export function PluginSettingsCard<TKey extends string = string>(props: PluginSe
           <span className={css.description} title={descriptionTitle}>{props.descriptionNode ?? description}</span>
         </span>
         {props.headerAction !== undefined ? <span className={css.headerAction}>{props.headerAction}</span> : null}
-        {state.dirty ? <span className={css.pending} title={props.t('settings.unsaved')}>{props.t('settings.unsaved')}</span> : null}
       </div>
     )
     : (
@@ -200,7 +209,6 @@ export function PluginSettingsCard<TKey extends string = string>(props: PluginSe
           <span className={css.description} title={descriptionTitle}>{props.descriptionNode ?? description}</span>
         </span>
         {props.headerAction !== undefined ? <span className={css.headerAction}>{props.headerAction}</span> : null}
-        {state.dirty ? <span className={css.pending} title={props.t('settings.unsaved')}>{props.t('settings.unsaved')}</span> : null}
         <svg
           width="14"
           height="14"
@@ -239,36 +247,16 @@ export function PluginSettingsCard<TKey extends string = string>(props: PluginSe
         ? bodyRegion(
           <>
             {!state.writable ? <p className={css.readOnly} role="status">{props.t('settings.readOnly')}</p> : null}
-            {props.children}
-            {props.hideFooter === true
-              ? null
-              : (
-            <div className={css.footer}>
-              {state.failed
-                ? (
-                  <p className={css.failed} role="status">
-                    {props.t('settings.saveFailed')}{state.failedReason ? ' - ' + state.failedReason : ''}
-                  </p>
-                )
-                : null}
-              <button
-                type="button"
-                className={css.discard}
-                disabled={!state.dirty || state.saving}
-                onClick={props.onDiscard}
-              >
-                {props.t('settings.discard')}
-              </button>
-              <button
-                type="button"
-                className={css.save}
-                disabled={blocked}
-                onClick={props.onSave}
-              >
-                {props.t(!state.saving ? 'settings.save' : 'settings.saving')}
-              </button>
-            </div>
-              )}
+            <CardApply.Provider value={{ commit: props.onSave, revert: props.onDiscard }}>
+              {props.children}
+            </CardApply.Provider>
+            {props.hideFooter !== true && state.failed
+              ? (
+                <p className={css.failed} role="status">
+                  {props.t('settings.saveFailed')}{state.failedReason ? ' - ' + state.failedReason : ''}
+                </p>
+              )
+              : null}
           </>,
         )
         : null}
@@ -292,7 +280,7 @@ export interface FieldProps {
   hintTitle?: string
   /** Draft text this control renders. */
   text: string
-  /** True when saving would leave a user-layer entry for this field. */
+  /** True when the field holds a user-layer entry over the inherited value. */
   overridden: boolean
   /** True when the draft is not a value this field accepts. */
   invalid: boolean
@@ -304,19 +292,52 @@ export interface FieldProps {
   invalidLabel: string
   /** Disables every control (read-only document, or an unavailable namespace). */
   disabled: boolean
-  /** Stage draft text. */
+  /** Take new draft text; the card writes it as the field's entry rule says. */
   onEdit: (text: string) => void
-  /** Stage a clear so the field re-inherits the composition layer. */
+  /** Clear the field at once so it re-inherits the composition layer. */
   onReset: () => void
 }
 
-/** A staged value field. `numeric` only hints the keypad: which drafts a field accepts is decided by its spec. */
+/**
+ * A typed value field. Its draft is written after a pause in typing, at once on
+ * Enter or when focus leaves, and Escape puts the stored value back. `numeric`
+ * only hints the keypad: which drafts a field accepts is decided by its spec.
+ * A field given a `range` also offers the coarse slider bubble: dragging fills
+ * the draft live and releasing writes it.
+ */
 export function ValueField(props: FieldProps & {
   /** Hints a numeric keypad without narrowing what the control accepts. */
   numeric?: boolean
   /** Placeholder shown while the draft is empty. */
   placeholder?: string
+  /** Bounds of a numeric field, for the coarse slider; the spec still judges every draft. */
+  range?: { min: number, max: number, step: number }
 }) {
+  const apply = useContext(CardApply)
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (apply === null || (event.key !== 'Enter' && event.key !== 'Escape')) return
+    event.preventDefault()
+    if (event.key === 'Enter') apply.commit()
+    else apply.revert()
+    event.currentTarget.blur()
+  }
+  const input = (
+    <input
+      id={props.id}
+      className={props.invalid ? css.inputInvalid : css.input}
+      type="text"
+      {...props.numeric === true ? { inputMode: 'numeric' as const } : {}}
+      {...props.invalid ? { 'aria-invalid': true } : {}}
+      value={props.text}
+      placeholder={props.placeholder ?? ''}
+      disabled={props.disabled}
+      onChange={(event) => { props.onEdit(event.target.value) }}
+      onKeyDown={onKeyDown}
+      onBlur={() => { apply?.commit() }}
+    />
+  )
+  const { range } = props
+  const typed = Number(props.text)
   return (
     <div className={css.field}>
       <div className={css.head}>
@@ -337,17 +358,25 @@ export function ValueField(props: FieldProps & {
           )
           : null}
       </div>
-      <input
-        id={props.id}
-        className={props.invalid ? css.inputInvalid : css.input}
-        type="text"
-        {...props.numeric === true ? { inputMode: 'numeric' as const } : {}}
-        {...props.invalid ? { 'aria-invalid': true } : {}}
-        value={props.text}
-        placeholder={props.placeholder ?? ''}
-        disabled={props.disabled}
-        onChange={(event) => { props.onEdit(event.target.value) }}
-      />
+      {range === undefined
+        ? input
+        : (
+          <RangeBubble
+            min={range.min}
+            max={range.max}
+            step={range.step}
+            value={props.text.trim() === '' || Number.isNaN(typed) ? range.min : typed}
+            label={`${props.label} ${range.min}–${range.max}`}
+            disabled={props.disabled}
+            onInput={(value) => { props.onEdit(String(value)) }}
+            onCommit={(value) => {
+              props.onEdit(String(value))
+              apply?.commit()
+            }}
+          >
+            {input}
+          </RangeBubble>
+        )}
       <p className={props.invalid ? css.invalid : css.hint} title={props.hintTitle}>
         {props.invalid ? props.invalidLabel : props.hint}
       </p>
@@ -375,8 +404,8 @@ const SELECT_CLOSE_MS = 100
  * renders the legacy native `<select>` untouched, so element-level skin
  * selectors keep working; under the default appearance it renders a
  * self-drawn `role="listbox"` popup whose open/close is transition-animated.
- * Staged cards reach it through BooleanField/ChoiceField; immediate-apply
- * editors (the side-card prefs) bind it directly through onEdit.
+ * Cards reach it through BooleanField/ChoiceField; editors outside a card
+ * (the side-card prefs) bind it directly through onEdit.
  * 双模式下拉框：皮肤激活时用原生 select，默认外观用自绘动画弹层。
  */
 export function SelectField(props: {
@@ -559,7 +588,56 @@ export function SelectField(props: {
   )
 }
 
-/** A staged boolean field: 继承 / 开 / 关. */
+/**
+ * A visible segmented group for a small set of mutually exclusive values.
+ * Every option stays on screen, so inherit/on/off and short enum fields take
+ * one click without opening a popup. The pressed option carries the group's
+ * sliding highlight and `aria-pressed`; the group takes the field label as its
+ * accessible name.
+ */
+export function SegmentField(props: {
+  id: string
+  label: string
+  options: ReadonlyArray<SelectOption>
+  value: string
+  disabled: boolean
+  invalid: boolean
+  onEdit: (text: string) => void
+}) {
+  return (
+    <SegmentGroup
+      id={props.id}
+      role="group"
+      aria-label={props.label}
+      aria-invalid={props.invalid || undefined}
+    >
+      {props.options.map((option, index) => {
+        const active = option.value === props.value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={css.segment}
+            aria-pressed={active}
+            disabled={props.disabled}
+            data-active={active ? '' : undefined}
+            data-segment-index={index}
+            onClick={() => {
+              if (!active) props.onEdit(option.value)
+            }}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </SegmentGroup>
+  )
+}
+
+/** How a small single-choice field presents its options. */
+export type FieldPresentation = 'select' | 'segment'
+
+/** A boolean field: 继承 / 开 / 关. */
 export function BooleanField(props: FieldProps & {
   /** Copy for the inherit option. */
   inheritLabel: string
@@ -567,11 +645,16 @@ export function BooleanField(props: FieldProps & {
   onLabel: string
   /** Copy for the off option. */
   offLabel: string
+  /** Defaults to the visible segments: the three answers always fit on one row. */
+  presentation?: FieldPresentation
 }) {
+  const segmented = props.presentation !== 'select'
   return (
     <div className={css.field}>
       <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {segmented
+          ? <span className={css.label}>{props.label}</span>
+          : <label className={css.label} htmlFor={props.id}>{props.label}</label>}
         {props.overridden
           ? (
             <span className={css.badges}>
@@ -588,34 +671,61 @@ export function BooleanField(props: FieldProps & {
           )
           : null}
       </div>
-      <SelectField
-        id={props.id}
-        options={[
-          { value: '', label: props.inheritLabel },
-          { value: 'true', label: props.onLabel },
-          { value: 'false', label: props.offLabel },
-        ]}
-        value={props.text}
-        disabled={props.disabled}
-        invalid={props.invalid}
-        onEdit={props.onEdit}
-      />
+      {segmented
+        ? (
+          <SegmentField
+            id={props.id}
+            label={props.label}
+            options={[
+              { value: '', label: props.inheritLabel },
+              { value: 'true', label: props.onLabel },
+              { value: 'false', label: props.offLabel },
+            ]}
+            value={props.text}
+            disabled={props.disabled}
+            invalid={props.invalid}
+            onEdit={props.onEdit}
+          />
+        )
+        : (
+          <SelectField
+            id={props.id}
+            options={[
+              { value: '', label: props.inheritLabel },
+              { value: 'true', label: props.onLabel },
+              { value: 'false', label: props.offLabel },
+            ]}
+            value={props.text}
+            disabled={props.disabled}
+            invalid={props.invalid}
+            onEdit={props.onEdit}
+          />
+        )}
       <p className={css.hint} title={props.hintTitle}>{props.hint}</p>
     </div>
   )
 }
 
-/** A staged enumerated field rendered as a select. */
+/** An enumerated field, selecting or segmenting its small choice set. */
 export function ChoiceField(props: FieldProps & {
   /** Copy for the inherit option (draft text is the empty string). */
   inheritLabel: string
   /** Choices rendered in order; `value` is the draft/stored text. */
   choices: ReadonlyArray<{ value: string; label: string }>
+  /**
+   * Visible segmented options for a short fixed set; defaults to the compact
+   * select, which also suits a list whose length follows the deployment.
+   */
+  presentation?: FieldPresentation
 }) {
+  const segmented = props.presentation === 'segment'
+  const options = [{ value: '', label: props.inheritLabel }, ...props.choices]
   return (
     <div className={css.field}>
       <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {segmented
+          ? <span className={css.label}>{props.label}</span>
+          : <label className={css.label} htmlFor={props.id}>{props.label}</label>}
         {props.overridden
           ? (
             <span className={css.badges}>
@@ -632,14 +742,28 @@ export function ChoiceField(props: FieldProps & {
           )
           : null}
       </div>
-      <SelectField
-        id={props.id}
-        options={[{ value: '', label: props.inheritLabel }, ...props.choices]}
-        value={props.text}
-        disabled={props.disabled}
-        invalid={props.invalid}
-        onEdit={props.onEdit}
-      />
+      {segmented
+        ? (
+          <SegmentField
+            id={props.id}
+            label={props.label}
+            options={options}
+            value={props.text}
+            disabled={props.disabled}
+            invalid={props.invalid}
+            onEdit={props.onEdit}
+          />
+        )
+        : (
+          <SelectField
+            id={props.id}
+            options={options}
+            value={props.text}
+            disabled={props.disabled}
+            invalid={props.invalid}
+            onEdit={props.onEdit}
+          />
+        )}
       <p className={props.invalid ? css.invalid : css.hint} title={props.hintTitle}>
         {props.invalid ? props.invalidLabel : props.hint}
       </p>
@@ -648,11 +772,15 @@ export function ChoiceField(props: FieldProps & {
 }
 
 /**
- * An immediate boolean toggle drawn as a switch track, for a setting that
- * applies on flip rather than through a staged save. It is a real button with
+ * A boolean toggle drawn as a switch track, for a setting that is only on or
+ * off and applies on flip. It is a real button with
  * `role="switch"` and `aria-checked`, so keyboard and assistive activation
  * arrive as a click and the state is announced instead of inferred from a
  * checkbox tick.
+ *
+ * The thumb bounces across only once the reader has pressed this switch: the
+ * press writes the mark that arms the bounce, so a page opening, a TAB
+ * switching back or a value arriving from elsewhere draws every thumb at rest.
  */
 export function ToggleSwitch(props: {
   /** Id of the element naming the switch (the card's title). */
@@ -666,6 +794,7 @@ export function ToggleSwitch(props: {
   /** Called with the requested next state. */
   onChange: (next: boolean) => void
 }) {
+  const [moved, setMoved] = useState(false)
   return (
     <button
       type="button"
@@ -675,7 +804,11 @@ export function ToggleSwitch(props: {
       aria-labelledby={props.labelledBy}
       aria-label={props.labelledBy === undefined ? props.ariaLabel : undefined}
       disabled={props.disabled}
-      onClick={() => { props.onChange(!props.checked) }}
+      data-moved={moved ? '' : undefined}
+      onClick={() => {
+        setMoved(true)
+        props.onChange(!props.checked)
+      }}
     >
       <span className={css.toggleTrack}><span className={css.toggleThumb} /></span>
     </button>

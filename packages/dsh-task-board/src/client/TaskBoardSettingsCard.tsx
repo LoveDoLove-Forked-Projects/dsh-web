@@ -55,6 +55,7 @@ const SUBTASK_DEPTH_CHOICES: readonly string[] = Array.from(
 function sessionPollField(): FieldSpec {
   return {
     field: 'sessionPollSeconds',
+    entry: 'type',
     format: value => typeof value === 'number' && Number.isInteger(value) ? String(value) : '',
     parse: (text) => {
       const trimmed = text.trim()
@@ -77,6 +78,7 @@ function sessionPollField(): FieldSpec {
 function subtaskDepthField(): FieldSpec {
   return {
     field: 'maxSubtaskDepth',
+    entry: 'pick',
     format: value => typeof value === 'number' && Number.isInteger(value) ? String(value) : '',
     parse: (text) => {
       const trimmed = text.trim()
@@ -95,6 +97,7 @@ function subtaskDepthField(): FieldSpec {
 function runLaunchWidthField(): FieldSpec {
   return {
     field: 'runLaunchWidth',
+    entry: 'type',
     format: value => typeof value === 'number' && Number.isInteger(value) ? String(value) : '',
     parse: (text) => {
       const trimmed = text.trim()
@@ -116,6 +119,7 @@ function runLaunchWidthField(): FieldSpec {
 function spendBudgetField(): FieldSpec {
   return {
     field: 'spendBudgetTokens',
+    entry: 'type',
     format: value => typeof value === 'number' && Number.isInteger(value) ? String(value) : '',
     parse: (text) => {
       const trimmed = text.trim()
@@ -136,6 +140,7 @@ function spendBudgetField(): FieldSpec {
 function modelRouteField(field: string): FieldSpec {
   return {
     field,
+    entry: 'pick',
     format: value => typeof value === 'string' ? value : '',
     parse: (text) => {
       const trimmed = text.trim()
@@ -274,14 +279,14 @@ export class TaskBoardSettingsCardController {
       booleanField('goalRunEnabled'),
       booleanField('goalVerification'),
       modelRouteField('goalVerificationModel'),
-      textField('goalVerificationReasoningEffort'),
+      textField('goalVerificationReasoningEffort', 'pick'),
       // The new-card defaults: blank is a real value every one of them keeps
-      // ("apply no default"), which is why they are staged like any other field
+      // ("apply no default"), which is why they are applied like any other field
       // and only their parse rules differ.
-      textField('cardDefaultMode'),
+      textField('cardDefaultMode', 'pick'),
       choiceField('cardDefaultPermission', TASK_PERMISSIONS),
       modelRouteField('cardDefaultModel'),
-      textField('cardDefaultReasoningEffort'),
+      textField('cardDefaultReasoningEffort', 'pick'),
     ])
     this.store = this.form.bind(() => this.projection())
   }
@@ -489,7 +494,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
         <PluginSettingsCard
           t={t}
           density="nested"
-          titleKey="settings.enabled"
+          titleKey="settings.enabledTopic"
           descriptionKey="settings.enabledCardHint"
           defaultOpen={false}
           hideFooter
@@ -555,6 +560,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
             hint={t('settings.sessionPollSecondsHintBrief')}
             hintTitle={t('settings.sessionPollSecondsHint')}
             numeric
+            range={{ min: SESSION_POLL_MIN_SECONDS, max: SESSION_POLL_MAX_SECONDS, step: 1 }}
             {...fieldProps}
             {...state.sessionPollSeconds}
             onEdit={(text) => { props.edit('sessionPollSeconds', text) }}
@@ -581,6 +587,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
             hint={t('settings.runLaunchWidthHintBrief')}
             hintTitle={t('settings.runLaunchWidthHint')}
             numeric
+            range={{ min: RUN_LAUNCH_WIDTH_MIN, max: RUN_LAUNCH_WIDTH_MAX, step: 1 }}
             {...fieldProps}
             {...state.runLaunchWidth}
             onEdit={(text) => { props.edit('runLaunchWidth', text) }}

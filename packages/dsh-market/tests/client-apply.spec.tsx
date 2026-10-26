@@ -98,8 +98,8 @@ describe('dsh-web-ui-market client store registration', () => {
     const { fakeCtx, injected, registered } = makeCtx()
     // When apply() runs
     apply(fakeCtx as never)
-    // Then the settings.section slot is injected once and exactly one store-card section is registered
-    expect(injected).toEqual(['settings.section'])
+    // Then a standalone install keeps exactly one first-level store-card section
+    expect(injected).toEqual([])
     expect(registered.filter((entry) => entry.name === 'settings.section')).toHaveLength(1)
 
     const section = registered.find((entry) => entry.name === 'settings.section' && entry.id === 'dsh-workshop') as RegisteredEntry | undefined
@@ -109,6 +109,48 @@ describe('dsh-web-ui-market client store registration', () => {
     expect(section?.order).toBe(150)
     expect(section?.locale).toBe('dsh-web-ui-market')
     expect(labelOf(section)).toBe('settings.title')
+  })
+
+  it('user gets a keyed Web Extensions child when the parent service exists', () => {
+    // Given a running Web Extensions parent service
+    const { fakeCtx, registered } = makeCtx()
+    Object.assign(fakeCtx, {
+      get: (name: string) => name === 'webUiExtensions'
+        ? {
+          sectionId: 'web-ui-plugins',
+          label: () => 'Web Extensions',
+          open: () => true,
+          registerPage: (page: Record<string, unknown>) => {
+            const options = {
+              name: 'web-ui.extension',
+              key: page.key,
+              locale: page.locale,
+              children: page.children,
+              inject: page.inject,
+            }
+            registered.push(options)
+            return () => {
+              const index = registered.indexOf(options)
+              if (index >= 0) registered.splice(index, 1)
+            }
+          },
+        }
+        : undefined,
+    })
+    // When the Workshop applies
+    apply(fakeCtx as never)
+
+    // Then it contributes only the keyed child with its existing asset-panel seat
+    const child = registered.find(entry => entry.name === 'web-ui.extension')
+    expect(child).toMatchObject({
+      key: 'dsh-workshop',
+      locale: 'dsh-web-ui-market',
+      children: { 'dsh-workshop.panel': { kind: 'keyed', scope: 'root' } },
+    })
+    expect(child).not.toHaveProperty('id')
+    expect(child).not.toHaveProperty('order')
+    expect(child).not.toHaveProperty('label')
+    expect(registered.some(entry => entry.name === 'settings.section')).toBe(false)
   })
 
   it('user finds no tab slot entry registered after the hub removal', () => {

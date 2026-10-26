@@ -191,7 +191,7 @@ export interface BridgeConnectionOptions {
   /** Pending user questions: the claims this bridge holds and the answer path back to the host. */
   readonly questions: QuestionClaims
   /**
-   * 整页卡（§35）：`ui.present` 持有的每一张卡，`ui.event` 结算它们，`ui.list`
+   * 整页卡（§35）：`ui_present` 持有的每一张卡，`ui.event` 结算它们，`ui.list`
    * 把它们念回去。与提问表平级、各自认领各自结算——两条通道互不改形状（§35.8）。
    */
   readonly ui: UiCards

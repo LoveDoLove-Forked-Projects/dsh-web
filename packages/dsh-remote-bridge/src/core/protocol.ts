@@ -263,7 +263,7 @@ export const CAP_USAGE_STATS = 'usage.stats.v1'
  * §24.1 同一判据）：宿主公告同名项、客户端声明，双向缺一即当作这个能力不存在，
  * 且不得把「宿主没这个能力」渲染成「这张卡不存在」或任何错误态。
  *
- * 宿主半区只有真实现了 `ui.present` 这一半的桥才把自己列进
+ * 宿主半区只有真实现了 `ui_present` 这一半的桥才把自己列进
  * {@link SERVED_CAPABILITIES}，所以一个客户端读到这个名字，就能断定 `ui.request`
  * 会出现、`ui.event` 会被接受。
  */
@@ -581,7 +581,7 @@ export const PROTO = 1
  *
  * 21 当可交互回复（协议 §35）落地：新增 {@link CAP_UI} 与 {@link CAP_UI_LIST}
  * 两个能力名、{@link TOPIC_UI_REQUEST} 一个主题、{@link METHOD_UI_EVENT} 与
- * {@link METHOD_UI_LIST} 两个方法，宿主半区还多一个模型工具 `ui.present`。客户端
+ * {@link METHOD_UI_LIST} 两个方法，宿主半区还多一个模型工具 `ui_present`。客户端
  * 因此从线路上读到两项新能力名、一种新主题与两种新应答体，所以 minor 抬一格；
  * `proto` 仍为 1，没有任何既有帧、既有方法或既有键改形状。工具结果是**新增**的：
  * 老会话、老 prompt、老回合都不受影响，工具名进入宿主工具表之后只有新回合才可能

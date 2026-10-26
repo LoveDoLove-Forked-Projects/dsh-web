@@ -37,7 +37,7 @@ function execOf(signal?: AbortSignal): never {
   } as never
 }
 
-/** The `ui.present` definition over one hub, exactly as the plugin mounts it. */
+/** The `ui_present` definition over one hub, exactly as the plugin mounts it. */
 function toolOf(harness: { hub: BridgeHub }): ToolDefinition {
   return createUiPresentTool({ present: async (card, signal) => await harness.hub.present(card, signal) })
 }
@@ -84,6 +84,15 @@ async function listCards(connection: { handleText(text: string): Promise<void> }
 
 describe('interactive reply bridge', () => {
   afterEach(() => { vi.useRealTimers() })
+
+  it('operator gets a tool whose name the model API accepts, so one bad name cannot fail every turn', () => {
+    // Given the definition this plugin registers
+    const tool = toolOf(makeHub())
+    // When the name is checked against the pattern the request schema declares
+    const accepted = /^[a-zA-Z0-9_-]+$/.test(tool.name)
+    // Then it passes, so the whole tool list is not rejected
+    expect(accepted).toBe(true)
+  })
 
   it('user greets the bridge and reads the two card capabilities at the end of the served list', async () => {
     // Given a paired phone that declares the card channel and the reconciliation read
@@ -167,7 +176,7 @@ describe('interactive reply bridge', () => {
     expect(harness.ui.size).toBe(0)
   })
 
-  it('operator calls ui.present with nobody on the wire and the tool answers unavailable at once', async () => {
+  it('operator calls ui_present with nobody on the wire and the tool answers unavailable at once', async () => {
     // Given a bridge with no connection at all
     const bare = makeBareHub()
     const tool = createUiPresentTool({ present: async (card, signal) => await bare.hub.present(card, signal) })
@@ -178,7 +187,7 @@ describe('interactive reply bridge', () => {
     expect(bare.ui.size).toBe(0)
   })
 
-  it('operator calls ui.present for a paired client that never declared the channel and the tool answers unavailable', async () => {
+  it('operator calls ui_present for a paired client that never declared the channel and the tool answers unavailable', async () => {
     // Given a paired phone that declared an unrelated channel only
     const harness = makeHub()
     await harness.connection.handleText(requestFrame(1, 'hello', { proto: 1, cap: ['questions.v1'] }))
@@ -190,7 +199,7 @@ describe('interactive reply bridge', () => {
     expect(harness.ui.size).toBe(0)
   })
 
-  it('operator calls ui.present with a page over the cap and the tool refuses invalid-args without a frame', async () => {
+  it('operator calls ui_present with a page over the cap and the tool refuses invalid-args without a frame', async () => {
     // Given a page one byte past the 256 KiB cap
     const harness = makeHub()
     await declareUi(harness.connection)

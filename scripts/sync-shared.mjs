@@ -30,18 +30,17 @@ export const REPO_ROOT = resolve(SCRIPT_DIR, '..')
 // dsh-web-settings consumes the trio too: the family-wide telemetry switch is a
 // page-level setting, so it renders through the same card chrome (a static
 // header plus a trailing switch) instead of a section of its own.
-const SETTINGS_CONSUMERS = ['dsh-web-settings', 'dsh-task-board', 'dsh-task-board-github', 'dsh-remote-web-ui', 'dsh-market', 'dsh-liangshen', 'dsh-agents']
+const SETTINGS_CONSUMERS = ['dsh-web-settings', 'dsh-task-board', 'dsh-task-board-github', 'dsh-remote-web-ui', 'dsh-market', 'dsh-liangshen', 'dsh-agents', 'dsh-usage']
 const SETTINGS_CARD_CONSUMERS = [...SETTINGS_CONSUMERS]
 // Consumers of the entry-bound form fallback: every package whose card binds a
 // family settings namespace through the shared forms service. It is a superset
-// of the card trio — dsh-usage and dsh-session-archive carry their own cards but
-// bind the same way.
+// of the card trio — dsh-session-archive carries its own card but binds the
+// same way.
 // dsh-web-settings is deliberately absent: it renders the card chrome around a
 // local browser preference and binds no Host namespace, so it needs no entry-
 // bound form transport.
 const SETTINGS_ENTRY_FORM_CONSUMERS = [
   ...SETTINGS_CONSUMERS.filter(pkg => pkg !== 'dsh-web-settings'),
-  'dsh-usage',
   'dsh-session-archive',
 ]
 
@@ -62,9 +61,34 @@ const MANIFEST = [
     targets: SETTINGS_CARD_CONSUMERS.map(pkg => `packages/${pkg}/src/client/settings-card.module.css`),
   },
   {
+    // The segmented control with the sliding highlight: the card fields'
+    // small choices render through it, and so does the Web Extensions TAB
+    // strip in dsh-web-settings.
+    file: 'SegmentGroup.tsx',
+    source: 'shared/client/settings/SegmentGroup.tsx',
+    targets: SETTINGS_CARD_CONSUMERS.map(pkg => `packages/${pkg}/src/client/SegmentGroup.tsx`),
+  },
+  {
+    // The coarse slider bubble a bounded numeric field offers on hover.
+    file: 'RangeBubble.tsx',
+    source: 'shared/client/settings/RangeBubble.tsx',
+    targets: SETTINGS_CARD_CONSUMERS.map(pkg => `packages/${pkg}/src/client/RangeBubble.tsx`),
+  },
+  {
+    // One settings page's seat in either the Web Extensions parent or the
+    // legacy first-level settings navigation. The service owns keyed mounting;
+    // this helper only reconciles the standalone fallback.
+    file: 'web-extension-page.ts',
+    source: 'shared/client/settings/web-extension-page.ts',
+    targets: [
+      'packages/dsh-market/src/client/web-extension-page.ts',
+      'packages/dsh-usage/src/client/web-extension-page.ts',
+    ],
+  },
+  {
     // Family plugin-card seat: one card component, dispatched into whichever
     // plugin-card seat the running host declares (the family group's list seat
-    // or the official keyed one), with the refusal logged instead of swallowed
+    // or the official keyed one), with the refusal logged rather than swallowed
     // (issue #1589).
     file: 'plugin-card-seat.ts',
     source: 'shared/client/settings/plugin-card-seat.ts',

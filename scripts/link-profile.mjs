@@ -129,7 +129,7 @@ export function satellitePackages(root = REPO_ROOT) {
  */
 export function decideAggregateRelink(existing, currentTarget, satelliteDir, declaredRange, localLoadable) {
   if (existing !== 'symlink') return 'skip-report'
-  if (!/node_modules\/\.pnpm\//.test(currentTarget ?? '')) return 'keep'
+  if (!/node_modules[\\/]\.pnpm[\\/]/.test(currentTarget ?? '')) return 'keep'
   if (localLoadable !== true) return 'skip-report'
   const pkgPath = join(satelliteDir, 'package.json')
   if (!existsSync(pkgPath) || !existsSync(join(satelliteDir, 'lib', 'index.js'))) return 'skip-report'

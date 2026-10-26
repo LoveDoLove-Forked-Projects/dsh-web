@@ -1,5 +1,5 @@
 /**
- * The transcript reading of one `ui.present` call (§35.10, §35.11), driven as
+ * The transcript reading of one `ui_present` call (§35.10, §35.11), driven as
  * pure functions: which source a stage reads, what a card refuses, and the exact
  * document handed to the frame.
  *

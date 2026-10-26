@@ -1,19 +1,15 @@
 /**
- * The family-wide anonymous install telemetry switch, rendered inside the Web
- * Plugins settings section above the plugin cards.
+ * The family-wide anonymous install telemetry switch: the General group's row
+ * on the Web Plugins page, above the plugin cards.
  *
  * The control is a settings-section fragment, not a plugin root, so it carries
- * no data-dsh-plugin attribute. It renders through the family card chrome so it
- * reads as a sibling of the plugin cards below rather than a box of its own:
- * the same mark tile, title and description rhythm, with the switch taking the
- * place a disclosure chevron has on a plugin card.
+ * no data-dsh-plugin attribute. It is one settings row: the setting's name and
+ * what it sends on the left, the switch on the right, which the title names.
  *
- * The card's title is the setting name and the switch is its positive value,
- * checked meaning the heartbeat runs, which is the default. The stored
- * preference is the opt-out, so the switch and the stored value are inverses.
- * The explanation is the card's description line; the browser's Do Not Track
- * signal suppresses the heartbeat independently, so a note under that line
- * (inside the card) reports that state.
+ * The switch is the positive value, checked meaning the heartbeat runs, which
+ * is the default. The stored preference is the opt-out, so the switch and the
+ * stored value are inverses. The browser's Do Not Track signal suppresses the
+ * heartbeat independently; a note under the description says so while it does.
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
@@ -23,7 +19,7 @@ import {
   isTelemetrySuppressed,
   setTelemetryOptedOut,
 } from './telemetry.ts'
-import { PluginSettingsCard, ToggleSwitch } from './PluginSettingsCard.tsx'
+import { ToggleSwitch } from './PluginSettingsCard.tsx'
 import css from './web-ui-settings.module.css'
 
 /** Props the settings section binds for the telemetry switch. */
@@ -32,33 +28,7 @@ export type TelemetryToggleProps = {
   t: (key: WebUIPluginsKey) => string
 }
 
-/**
- * Card state for a setting that applies on flip: always available (a local
- * browser preference, not a Host namespace), always writable, and never dirty,
- * because nothing is staged.
- */
-const IMMEDIATE_CARD_STATE = {
-  available: true,
-  exposed: true,
-  writable: true,
-  dirty: false,
-  invalid: false,
-  saving: false,
-  failed: false,
-} as const
-
-/** Heartbeat mark for the card header: a signal pulsing out of one point. */
-function TelemetryMark(): ReactNode {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="9" cy="9" r="2.1" fill="currentColor" />
-      <path d="M5.4 5.4a5.1 5.1 0 0 0 0 7.2M12.6 5.4a5.1 5.1 0 0 1 0 7.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M2.9 2.9a8.6 8.6 0 0 0 0 12.2M15.1 2.9a8.6 8.6 0 0 1 0 12.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.55" />
-    </svg>
-  )
-}
-
-/** Render the telemetry card: its mark, title, switch, and the Do Not Track note. */
+/** Render the telemetry row: its title, what it sends, the switch, and the Do Not Track note. */
 export function TelemetryToggle(props: TelemetryToggleProps): ReactNode {
   const { t } = props
   const titleId = useId()
@@ -78,38 +48,19 @@ export function TelemetryToggle(props: TelemetryToggleProps): ReactNode {
   }
 
   return (
-    <div className={css.telemetry} data-dsh-part="telemetry">
-      <ul className={css.subcards}>
-        <PluginSettingsCard
-          t={t}
-          titleKey="telemetry.title"
-          descriptionKey="telemetry.description"
-          titleId={titleId}
-          icon={<TelemetryMark />}
-          descriptionNode={(
-            <>
-              <span className={css.telemetrySummary}>{t('telemetry.description')}</span>
-              <span className={css.telemetryMeta}>{t('telemetry.meta')}</span>
-              {doNotTrack ? <span className={css.telemetryNote} role="status">{t('telemetry.dnt')}</span> : null}
-            </>
-          )}
-          alwaysOpen
-          headerOnly
-          hideFooter
-          state={IMMEDIATE_CARD_STATE}
-          headerAction={(
-            <ToggleSwitch
-              labelledBy={titleId}
-              checked={!optedOut}
-              onChange={(next) => { store(!next) }}
-            />
-          )}
-          onSave={() => {}}
-          onDiscard={() => {}}
-        >
-          {null}
-        </PluginSettingsCard>
-      </ul>
+    <div className={css.row} data-dsh-part="telemetry">
+      <div className={css.rowText}>
+        <div className={css.rowTitle} id={titleId}>{t('telemetry.title')}</div>
+        <div className={css.rowDesc}>
+          {t('telemetry.description')}
+          {doNotTrack ? <span className={css.rowNote} role="status">{t('telemetry.dnt')}</span> : null}
+        </div>
+      </div>
+      <ToggleSwitch
+        labelledBy={titleId}
+        checked={!optedOut}
+        onChange={(next) => { store(!next) }}
+      />
     </div>
   )
 }
