@@ -172,7 +172,7 @@ describe('task-board settings: the forwarded-proxy trust switch', () => {
     act(() => { header(container, zh['settings.title']).click() })
 
     // When the operator opens the board topic
-    act(() => { header(container, zh['settings.enabled']).click() })
+    act(() => { header(container, zh['settings.enabledTopic']).click() })
 
     // Then the switch is a real control on that topic, resting on the inherit
     // choice and carrying one visible line on when turning it on is justified,
@@ -192,7 +192,7 @@ describe('task-board settings: the forwarded-proxy trust switch', () => {
     act(() => { header(container, zh['settings.title']).click() })
 
     // When the operator opens the board topic
-    act(() => { header(container, zh['settings.enabled']).click() })
+    act(() => { header(container, zh['settings.enabledTopic']).click() })
 
     // Then the control shows the stored value instead of the inherit choice
     expect(container.querySelector('#settings-task-board-trust-forwarded-proxy [aria-pressed="true"]')?.textContent).toBe(zh['settings.on'])

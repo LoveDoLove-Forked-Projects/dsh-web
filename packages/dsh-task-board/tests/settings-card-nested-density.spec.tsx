@@ -33,7 +33,7 @@ function cardRoot(container: HTMLElement, label: string): HTMLLIElement {
 /** The four topics the card nests, in their documented order. */
 function topicLabels(): string[] {
   return [
-    zh['settings.enabled'],
+    zh['settings.enabledTopic'],
     zh['settings.runBehaviorTitle'],
     zh['settings.goalVerificationTitle'],
     zh['settings.cardDefaultsTitle'],

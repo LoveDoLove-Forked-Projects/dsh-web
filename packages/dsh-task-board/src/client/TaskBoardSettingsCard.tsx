@@ -494,7 +494,7 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
         <PluginSettingsCard
           t={t}
           density="nested"
-          titleKey="settings.enabled"
+          titleKey="settings.enabledTopic"
           descriptionKey="settings.enabledCardHint"
           defaultOpen={false}
           hideFooter
