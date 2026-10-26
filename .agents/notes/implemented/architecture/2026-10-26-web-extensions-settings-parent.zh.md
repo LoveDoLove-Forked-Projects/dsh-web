@@ -12,7 +12,9 @@ Status: implemented
 
 父级发布带 `sectionId`、`label()`、`open(id)` 和 `registerPage(page)` 的 `webUiExtensions` 服务。一次页面注册提供 key、顺序、locale、标签、注入面、组件和可选子槽；服务注册对应 keyed 条目、记录释放函数、维护排序后的 TAB 快照，并在条目意外消失时重新挂载。整合路径下子插件不自行注册 `web-ui.extension`。共享回退适配器让同一页面要么交给服务，要么注册为原一级 `settings.section`；它等待目标槽声明并跟随父子生命周期迁移，避免服务发布与声明之间的间隙或声明坍缩造成拒绝注册的重试循环。表单控制器归插件 apply 生命周期而非席位，因此迁移不会重置草稿或订阅。`open(id)` 先选中目标 TAB，再用稳定父级 id 调用原生设置 store；原生导航不可用时，使用统计速览卡保留携带父级 id 与标签的 DOM 重放兜底。
 
-统计页采用摘要与趋势网格，皮肤页是一条平铺长列——设置分组与皮肤库以细线分隔而非卡片——宠物页把可视化宠物选择与分组字段并排；窄容器都降为单列。这些页面上的小型 N 选 1 使用带 `aria-pressed` 的可见分段组；共享设置字段以显式选项提供该呈现，其他插件卡片仍保留紧凑下拉。皮肤页用一块在选项之间滑动的选中背景标记当前项，而不是让每个选项各自换底色。语义插件根标识当前页面供皮肤补丁使用。一级 `nth-child` 选择器不是受支持的锚点，因为无关插件也会增删导航行。
+统计页采用摘要与趋势网格，皮肤页是一条平铺长列——设置分组与皮肤库以细线分隔而非卡片——宠物页把可视化宠物选择与分组字段并排；窄容器都降为单列。这些页面上的小型 N 选 1 使用带 `aria-pressed` 的可见分段组；共享设置字段以显式选项提供该呈现，其他插件卡片仍保留紧凑下拉。所有分段组（包括父级的 TAB 条）都用一块在选项之间滑动的选中背景标记当前项，而不是让每个选项各自换底色；切换 TAB 时旧页面滑出、新页面滑入。父级页面顶部是「Web 扩展」标题与仓库链接。「Web 插件」页分为两个带标题的分组：「通用」（遥测开关是一行普通设置）与「插件」（家族卡片）。家族卡片里每个字段是一行设置：左侧是名称与说明，右侧是控件，卡片变窄时上下堆叠；布尔字段默认使用分段组。
+
+家族卡片没有保存按钮。点选（分段、下拉、恢复默认）立刻写入；输入的文字在停止输入、按 Enter 或离开输入框时写入，按 Escape 恢复已保存的值。写入被拒绝时，点选回到已保存的值，输入的文字保留以便修改，卡片在设置行下方用一行文字说明失败。语义插件根标识当前页面供皮肤补丁使用。一级 `nth-child` 选择器不是受支持的锚点，因为无关插件也会增删导航行。
 
 ## 备选方案
 
@@ -20,6 +22,7 @@ Status: implemented
 - 不设服务门禁与回退，让所有功能永久注册到新父级。否决：父级包缺席时，独立安装的皮肤、宠物、创意工坊和统计会失去设置入口。
 - 把既有家族插件卡或工坊资产面板也迁入新的 keyed 槽。否决：这些席位有各自的属主与声明生命周期；保持原位可避免迁移无关贡献者。
 - 让每个子插件直接注册 `web-ui.extension`，同时在父级保留固定 TAB 表。否决：子插件必须了解父级的私有挂载细节，页面元数据会分散在两个注册表中，新增页面还要改动父级硬编码列表。
+- 保留卡片底部的「保存 / 放弃」按钮。否决：控件已经变了却还没生效，生效与否取决于长卡片末尾的一个按钮，读者会误以为已经应用；即时生效沿用本布局所参照的 Claude Style 设置。
 - 保留按位置绘制导航图标和插画。否决：真实设置导航还包含第三方分区，位置不能标识功能。父级使用原生后备图标，页面皮肤装饰改由语义面板根驱动。
 
 ## 后果
@@ -27,5 +30,5 @@ Status: implemented
 - 完整家族安装只暴露一个「Web 扩展」一级入口和五个二级 TAB；父级缺席时，各内容包保留原一级入口和 id。
 - 既有 `web-ui-plugins` 深链保持有效。使用统计导航还会先选中自己的 TAB 再打开该分区，包括 DOM 兜底前保留的待选状态。
 - 只有当前 keyed 页面轮询或渲染详细内容。席位切换先释放旧注册再创建替代注册，并用重入门闩吸收同步槽位事件。
-- `packages/dsh-web-settings/tests/web-extensions-section.spec.tsx`、`web-ui-extensions.spec.ts`、`packages/dsh-market/tests/extension-seat.spec.ts`、`packages/dsh-usage/tests/section-integration.spec.ts` 与两个卫星仓席位测试固定 TAB 行为、深链顺序和独立/整合迁移。
+- `packages/dsh-web-settings/tests/web-extensions-section.spec.tsx`、`web-ui-extensions.spec.ts`、`packages/dsh-market/tests/extension-seat.spec.ts`、`packages/dsh-usage/tests/section-integration.spec.ts` 与两个卫星仓席位测试固定 TAB 行为、深链顺序和独立/整合迁移；`packages/dsh-remote-web-ui/tests/immediate-apply.spec.ts` 与 `packages/dsh-task-board/tests/settings-card-text-commit.spec.tsx` 固定卡片何时写入。
 - 真实 GUI 的桌面与窄视口证据归本改动的交付报告。

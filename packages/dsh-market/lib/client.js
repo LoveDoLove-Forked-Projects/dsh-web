@@ -83,7 +83,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-market/src/client/settings-card.module.css.mjs
-		const css$1 = ".RcIGlq_card{--settings-card-radius:12px;--settings-card-header-pad:16px;--settings-card-header-gap:13px;--settings-card-title-size:15px;--settings-card-description-size:13px;--settings-card-body-inset:16px;--settings-card-motion:.18s;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:var(--settings-card-radius);list-style:none;transition:border-color .16s,background .16s}.RcIGlq_card:hover{border-color:var(--dsw-alias-label-dimmed)}.RcIGlq_cardOpen{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}.RcIGlq_cardNested{--settings-card-radius:10px;--settings-card-header-pad:10px 12px;--settings-card-header-gap:10px;--settings-card-title-size:13px;--settings-card-description-size:12px;--settings-card-body-inset:12px}.RcIGlq_cardNested .RcIGlq_description{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.RcIGlq_header{appearance:none;box-sizing:border-box;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:var(--settings-card-radius);align-items:center;gap:var(--settings-card-header-gap);padding:var(--settings-card-header-pad);background:0 0;border:0;display:flex}.RcIGlq_header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.RcIGlq_headerStatic{box-sizing:border-box;border-radius:var(--settings-card-radius);align-items:center;gap:var(--settings-card-header-gap);width:100%;padding:var(--settings-card-header-pad);display:flex}.RcIGlq_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.RcIGlq_mark{background:var(--dsw-alias-bg-module-platform);width:34px;height:34px;color:var(--dsw-alias-label-secondary);border-radius:10px;flex:none;place-items:center;transition:color .16s;display:grid}.RcIGlq_header:hover .RcIGlq_mark,.RcIGlq_cardOpen .RcIGlq_mark{color:var(--dsw-alias-label-primary)}.RcIGlq_name{color:var(--dsw-alias-label-primary);font-size:var(--settings-card-title-size);font-weight:600;line-height:1.4}.RcIGlq_description{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.RcIGlq_pending{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.RcIGlq_headerAction{flex:none;align-items:center;display:inline-flex}.RcIGlq_chevron{color:var(--dsw-alias-label-tertiary);flex:none;width:16px;height:16px;transition:transform .16s,color .16s}.RcIGlq_header:hover .RcIGlq_chevron{color:var(--dsw-alias-label-secondary)}.RcIGlq_chevronOpen{transform:rotate(180deg)}.RcIGlq_disclosure{opacity:0;transition:grid-template-rows var(--settings-card-motion) ease, opacity var(--settings-card-motion) ease;grid-template-rows:0fr;display:grid}.RcIGlq_disclosure[data-state=collapsed],.RcIGlq_disclosure[data-state=entering],.RcIGlq_disclosure[data-state=closing]{overflow:hidden}.RcIGlq_disclosure[data-state=entering],.RcIGlq_disclosure[data-state=shown]{opacity:1;grid-template-rows:1fr}.RcIGlq_disclosure>.RcIGlq_body{min-height:0}.RcIGlq_body{border-top:1px solid var(--dsw-alias-border-l2);margin:0 var(--settings-card-body-inset);padding-bottom:8px}.RcIGlq_readOnly{color:var(--dsw-alias-label-secondary);margin:12px 0 0;font-size:12px;line-height:1.5}.RcIGlq_notExposed{color:var(--dsw-alias-state-warn-primary);margin:12px 0 0;font-size:12px;line-height:1.5}.RcIGlq_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}.RcIGlq_failed{min-width:0;color:var(--dsw-alias-state-error-primary,#b42318);text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0;font-size:12px;line-height:1.5;overflow:hidden}.RcIGlq_discard,.RcIGlq_save{appearance:none;font:inherit;cursor:pointer;border:1px solid #0000;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.RcIGlq_discard{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}.RcIGlq_discard:hover:not(:disabled){color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}.RcIGlq_save{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.RcIGlq_discard:disabled,.RcIGlq_save:disabled{opacity:.4;cursor:default}.RcIGlq_discard:focus-visible,.RcIGlq_save:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.RcIGlq_field{flex-direction:column;gap:4px;padding:16px 0;display:flex}.RcIGlq_field+.RcIGlq_field{border-top:1px solid var(--dsw-alias-border-l2)}.RcIGlq_head{align-items:center;gap:8px;display:flex}.RcIGlq_label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:14px;font-weight:400;line-height:22px}.RcIGlq_badges{align-items:center;gap:8px;display:inline-flex}.RcIGlq_badge{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.RcIGlq_reset{font:inherit;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;padding:0;font-size:12px;line-height:1.5}.RcIGlq_reset:hover:not(:disabled){color:var(--dsw-alias-label-primary)}.RcIGlq_reset:disabled{cursor:default}.RcIGlq_reset:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px;outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.RcIGlq_segmentGroup{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);border-radius:9px;flex-wrap:wrap;align-self:flex-start;gap:2px;padding:2px;display:inline-flex}.RcIGlq_segment{appearance:none;color:var(--dsw-alias-label-secondary);font:inherit;white-space:nowrap;cursor:pointer;background:0 0;border:0;border-radius:6px;margin:0;padding:5px 13px;font-size:12px;font-weight:500;line-height:18px;transition:background-color .12s,color .12s,box-shadow .12s}.RcIGlq_segment:hover:not(:disabled):not(.RcIGlq_segmentActive){color:var(--dsw-alias-label-primary);background:color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent)}.RcIGlq_segmentActive{color:var(--dsw-alias-label-primary);background:color-mix(in srgb, var(--dsw-alias-label-primary) 9%, var(--dsw-alias-bg-layer-2));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-label-primary) 9%, transparent), 0 1px 2px #0000001a}.RcIGlq_segment:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.RcIGlq_segment:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}.RcIGlq_segmentActive:disabled{opacity:.65}.RcIGlq_input,.RcIGlq_select{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}.RcIGlq_input:focus-visible,.RcIGlq_select:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none}.RcIGlq_input:disabled,.RcIGlq_select:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}.RcIGlq_inputInvalid{border:1px solid var(--dsw-alias-state-error-primary,#b42318);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}.RcIGlq_inputInvalid:focus-visible{outline:2px solid var(--dsw-alias-state-error-primary,#b42318);outline-offset:1px;border-color:var(--dsw-alias-state-error-primary,#b42318)}.RcIGlq_selectWrap{position:relative}.RcIGlq_selectButton{appearance:none;text-align:left;cursor:pointer;justify-content:space-between;align-items:center;gap:8px;width:100%;display:flex}.RcIGlq_selectLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.RcIGlq_selectChevron{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}.RcIGlq_selectChevronOpen{transform:rotate(180deg)}.RcIGlq_selectPopup{z-index:40;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);max-height:240px;box-shadow:0 8px 24px var(--dsw-alias-bg-mask-2);opacity:0;border-radius:8px;flex-direction:column;padding:4px;transition:opacity .1s,transform .1s;display:flex;position:absolute;top:calc(100% + 4px);left:0;right:0;overflow-y:auto;transform:translateY(-4px)}.RcIGlq_selectPopupOpen{opacity:1;transform:none}.RcIGlq_selectPopupClose{opacity:0;pointer-events:none;transform:translateY(-4px)}.RcIGlq_selectOption{color:var(--dsw-alias-label-primary);cursor:pointer;white-space:nowrap;text-overflow:ellipsis;border-radius:6px;flex-shrink:0;padding:6px 10px;font-size:13px;line-height:1.5;overflow:hidden}.RcIGlq_selectOption:hover,.RcIGlq_selectOptionActive{background:var(--dsw-alias-interactive-bg-hover)}.RcIGlq_selectOptionSelected{color:var(--dsw-alias-brand-primary);background:color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 10%, transparent);font-weight:500}.RcIGlq_invalid{color:var(--dsw-alias-state-error-primary,#b42318);margin:0;font-size:12px;line-height:18px}.RcIGlq_hint{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:18px}.RcIGlq_toggle{appearance:none;cursor:pointer;font:inherit;background:0 0;border:0;border-radius:999px;align-items:center;margin:0;padding:0;display:inline-flex}.RcIGlq_toggleTrack{background:var(--dsw-alias-label-dimmed);border-radius:999px;flex:none;width:30px;height:16px;transition:background .18s;position:relative}.RcIGlq_toggleThumb{background:var(--dsw-alias-bg-layer-3);border-radius:50%;width:12px;height:12px;transition:left .18s;position:absolute;top:2px;left:2px}.RcIGlq_toggle[aria-checked=true] .RcIGlq_toggleTrack{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-label-primary))}.RcIGlq_toggle[aria-checked=true] .RcIGlq_toggleThumb{background:var(--dsw-alias-label-primary-foreground,var(--dsw-alias-bg-layer-3));left:16px}.RcIGlq_toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.RcIGlq_toggle:disabled{opacity:.45;cursor:default}@media (prefers-reduced-motion:reduce){.RcIGlq_card,.RcIGlq_header,.RcIGlq_mark,.RcIGlq_chevron,.RcIGlq_chevronOpen,.RcIGlq_discard,.RcIGlq_save,.RcIGlq_selectChevron,.RcIGlq_selectChevronOpen,.RcIGlq_selectPopup,.RcIGlq_toggleTrack,.RcIGlq_toggleThumb{transition:none}.RcIGlq_disclosure{transition-property:opacity}}";
+		const css$1 = ".RcIGlq_card{--settings-card-radius:12px;--settings-card-header-pad:16px;--settings-card-header-gap:13px;--settings-card-title-size:15px;--settings-card-description-size:13px;--settings-card-body-inset:16px;--settings-card-motion:.18s;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:var(--settings-card-radius);list-style:none;transition:border-color .16s,background .16s}.RcIGlq_card:hover{border-color:var(--dsw-alias-label-dimmed)}.RcIGlq_cardOpen{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}.RcIGlq_cardNested{--settings-card-radius:10px;--settings-card-header-pad:10px 12px;--settings-card-header-gap:10px;--settings-card-title-size:13px;--settings-card-description-size:12px;--settings-card-body-inset:12px}.RcIGlq_cardNested .RcIGlq_description{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.RcIGlq_header{appearance:none;box-sizing:border-box;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:var(--settings-card-radius);align-items:center;gap:var(--settings-card-header-gap);padding:var(--settings-card-header-pad);background:0 0;border:0;display:flex}.RcIGlq_header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.RcIGlq_headerStatic{box-sizing:border-box;border-radius:var(--settings-card-radius);align-items:center;gap:var(--settings-card-header-gap);width:100%;padding:var(--settings-card-header-pad);display:flex}.RcIGlq_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.RcIGlq_mark{background:var(--dsw-alias-bg-module-platform);width:34px;height:34px;color:var(--dsw-alias-label-secondary);border-radius:10px;flex:none;place-items:center;transition:color .16s;display:grid}.RcIGlq_header:hover .RcIGlq_mark,.RcIGlq_cardOpen .RcIGlq_mark{color:var(--dsw-alias-label-primary)}.RcIGlq_name{color:var(--dsw-alias-label-primary);font-size:var(--settings-card-title-size);font-weight:600;line-height:1.4}.RcIGlq_description{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.RcIGlq_headerAction{flex:none;align-items:center;display:inline-flex}.RcIGlq_chevron{color:var(--dsw-alias-label-tertiary);flex:none;width:16px;height:16px;transition:transform .16s,color .16s}.RcIGlq_header:hover .RcIGlq_chevron{color:var(--dsw-alias-label-secondary)}.RcIGlq_chevronOpen{transform:rotate(180deg)}.RcIGlq_disclosure{opacity:0;transition:grid-template-rows var(--settings-card-motion) ease, opacity var(--settings-card-motion) ease;grid-template-rows:0fr;display:grid}.RcIGlq_disclosure[data-state=collapsed],.RcIGlq_disclosure[data-state=entering],.RcIGlq_disclosure[data-state=closing]{overflow:hidden}.RcIGlq_disclosure[data-state=entering],.RcIGlq_disclosure[data-state=shown]{opacity:1;grid-template-rows:1fr}.RcIGlq_disclosure>.RcIGlq_body{min-height:0}.RcIGlq_body{border-top:1px solid var(--dsw-alias-border-l2);margin:0 var(--settings-card-body-inset);padding-bottom:8px;container:RcIGlq_settings-card/inline-size}.RcIGlq_readOnly{color:var(--dsw-alias-label-secondary);margin:12px 0 0;font-size:12px;line-height:1.5}.RcIGlq_notExposed{color:var(--dsw-alias-state-warn-primary);margin:12px 0 0;font-size:12px;line-height:1.5}.RcIGlq_failed{color:var(--dsw-alias-state-error-primary,#b42318);overflow-wrap:anywhere;margin:8px 0 4px;font-size:12px;line-height:18px}.RcIGlq_field{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:\"RcIGlq_head RcIGlq_control\"\"RcIGlq_hint RcIGlq_control\";align-items:center;gap:4px 24px;padding:16px 0;display:grid}.RcIGlq_field>.RcIGlq_head{grid-area:RcIGlq_head}.RcIGlq_field>:is(.RcIGlq_hint,.RcIGlq_invalid){grid-area:RcIGlq_hint}.RcIGlq_field>:not(.RcIGlq_head,.RcIGlq_hint,.RcIGlq_invalid){grid-area:RcIGlq_control;justify-self:end}.RcIGlq_field+.RcIGlq_field{border-top:1px solid var(--dsw-alias-border-l2)}.RcIGlq_head{align-items:center;gap:8px;display:flex}.RcIGlq_label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:14px;font-weight:400;line-height:22px}.RcIGlq_badges{align-items:center;gap:8px;display:inline-flex}.RcIGlq_badge{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.RcIGlq_reset{font:inherit;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;padding:0;font-size:12px;line-height:1.5}.RcIGlq_reset:hover:not(:disabled){color:var(--dsw-alias-label-primary)}.RcIGlq_reset:disabled{cursor:default}.RcIGlq_reset:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px;outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.RcIGlq_segmentGroup{background:var(--dsw-specific-selector,color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent));border-radius:7px;flex-wrap:wrap;align-items:center;gap:2px;padding:2px;display:inline-flex;position:relative}.RcIGlq_segment{appearance:none;color:var(--dsw-alias-label-secondary);font:inherit;white-space:nowrap;cursor:pointer;background:0 0;border:0;border-radius:7px;margin:0;padding:3px 12px;font-size:13px;font-weight:500;line-height:18px;transition:background-color .12s,color .12s}.RcIGlq_segment:hover:not(:disabled):not([data-active]){color:var(--dsw-alias-label-primary)}.RcIGlq_segmentGroup:not([data-pill])>.RcIGlq_segment[data-active],.RcIGlq_segmentGroup[data-pill]:before{background:var(--dsw-alias-bg-overlay,var(--dsw-alias-bg-layer-3));box-shadow:0 1px 2px #14141314}body[data-ds-dark-theme] .RcIGlq_segmentGroup:not([data-pill])>.RcIGlq_segment[data-active],body[data-ds-dark-theme] .RcIGlq_segmentGroup[data-pill]:before{box-shadow:none;background:#ffffff24}.RcIGlq_segment[data-active]{color:var(--dsw-alias-label-primary)}.RcIGlq_segmentGroup[data-pill]:before{content:\"\";width:var(--segment-pill-w,0px);height:var(--segment-pill-h,0px);transform:translate(var(--segment-pill-x,0px), var(--segment-pill-y,0px));pointer-events:none;border-radius:7px;transition:transform .24s cubic-bezier(.22,.61,.36,1),width .24s cubic-bezier(.22,.61,.36,1),height .24s cubic-bezier(.22,.61,.36,1);position:absolute;top:0;left:0}.RcIGlq_segmentGroup>*{z-index:1;position:relative}.RcIGlq_segment:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.RcIGlq_segment:disabled{cursor:not-allowed;opacity:.45}.RcIGlq_segmentGroup[data-pill]:has(>.RcIGlq_segment:disabled):before{opacity:.45}.RcIGlq_input,.RcIGlq_select{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}.RcIGlq_input:focus-visible,.RcIGlq_select:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none}.RcIGlq_input:disabled,.RcIGlq_select:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}.RcIGlq_inputInvalid{border:1px solid var(--dsw-alias-state-error-primary,#b42318);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}.RcIGlq_inputInvalid:focus-visible{outline:2px solid var(--dsw-alias-state-error-primary,#b42318);outline-offset:1px;border-color:var(--dsw-alias-state-error-primary,#b42318)}.RcIGlq_field>:is(.RcIGlq_input,.RcIGlq_inputInvalid,.RcIGlq_select,.RcIGlq_selectWrap){box-sizing:border-box;width:220px}@container RcIGlq_settings-card (width<=440px){.RcIGlq_field{grid-template-columns:minmax(0,1fr);grid-template-areas:\"RcIGlq_head\"\"RcIGlq_hint\"\"RcIGlq_control\";row-gap:8px}.RcIGlq_field>:not(.RcIGlq_head,.RcIGlq_hint,.RcIGlq_invalid){justify-self:start}.RcIGlq_field>:is(.RcIGlq_input,.RcIGlq_inputInvalid,.RcIGlq_select,.RcIGlq_selectWrap){justify-self:stretch;width:auto}}.RcIGlq_selectWrap{position:relative}.RcIGlq_selectButton{appearance:none;text-align:left;cursor:pointer;justify-content:space-between;align-items:center;gap:8px;width:100%;display:flex}.RcIGlq_selectLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.RcIGlq_selectChevron{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}.RcIGlq_selectChevronOpen{transform:rotate(180deg)}.RcIGlq_selectPopup{z-index:40;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);max-height:240px;box-shadow:0 8px 24px var(--dsw-alias-bg-mask-2);opacity:0;border-radius:8px;flex-direction:column;padding:4px;transition:opacity .1s,transform .1s;display:flex;position:absolute;top:calc(100% + 4px);left:0;right:0;overflow-y:auto;transform:translateY(-4px)}.RcIGlq_selectPopupOpen{opacity:1;transform:none}.RcIGlq_selectPopupClose{opacity:0;pointer-events:none;transform:translateY(-4px)}.RcIGlq_selectOption{color:var(--dsw-alias-label-primary);cursor:pointer;white-space:nowrap;text-overflow:ellipsis;border-radius:6px;flex-shrink:0;padding:6px 10px;font-size:13px;line-height:1.5;overflow:hidden}.RcIGlq_selectOption:hover,.RcIGlq_selectOptionActive{background:var(--dsw-alias-interactive-bg-hover)}.RcIGlq_selectOptionSelected{color:var(--dsw-alias-brand-primary);background:color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);font-weight:500}.RcIGlq_invalid{color:var(--dsw-alias-state-error-primary,#b42318);margin:0;font-size:12px;line-height:18px}.RcIGlq_hint{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:18px}.RcIGlq_toggle{appearance:none;cursor:pointer;font:inherit;background:0 0;border:0;border-radius:999px;align-items:center;margin:0;padding:0;display:inline-flex}.RcIGlq_toggleTrack{background:var(--dsw-alias-label-dimmed);border-radius:999px;flex:none;width:36px;height:20px;transition:background-color .18s;position:relative}.RcIGlq_toggleThumb{--toggle-travel:16px;--toggle-overshoot:1px;background:var(--dsw-alias-bg-layer-3);border-radius:50%;width:16px;height:16px;transition:translate .18s;position:absolute;top:2px;left:2px;translate:0;box-shadow:0 1px 2px #1414132e}.RcIGlq_toggle[aria-checked=true] .RcIGlq_toggleTrack{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-label-primary))}.RcIGlq_toggle[aria-checked=true] .RcIGlq_toggleThumb{translate:var(--toggle-travel) 0;background:var(--dsw-alias-label-primary-foreground,var(--dsw-alias-bg-layer-3))}.RcIGlq_toggle[data-moved][aria-checked=true] .RcIGlq_toggleThumb{animation:.35s cubic-bezier(.34,1.45,.64,1) both RcIGlq_toggle-on}.RcIGlq_toggle[data-moved][aria-checked=false] .RcIGlq_toggleThumb{animation:.35s cubic-bezier(.34,1.45,.64,1) both RcIGlq_toggle-off}@keyframes RcIGlq_toggle-on{0%{translate:0}55%{translate:calc(var(--toggle-travel) + var(--toggle-overshoot)) 0}80%,to{translate:var(--toggle-travel) 0}}@keyframes RcIGlq_toggle-off{0%{translate:var(--toggle-travel) 0}55%{translate:calc(0px - var(--toggle-overshoot)) 0}80%,to{translate:0}}.RcIGlq_toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.RcIGlq_toggle:disabled{opacity:.45;cursor:not-allowed}@media (prefers-reduced-motion:reduce){.RcIGlq_card,.RcIGlq_header,.RcIGlq_mark,.RcIGlq_chevron,.RcIGlq_chevronOpen,.RcIGlq_selectChevron,.RcIGlq_selectChevronOpen,.RcIGlq_selectPopup,.RcIGlq_toggleTrack,.RcIGlq_toggleThumb{transition:none}.RcIGlq_toggle[data-moved] .RcIGlq_toggleThumb{animation:none}.RcIGlq_disclosure{transition-property:opacity}}";
 		const tagId$1 = "@linxin666/dsh-client-ui-market/packages/dsh-market/src/client/settings-card.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
 			const tag = document.createElement("style");
@@ -101,12 +101,11 @@ window.__ModuleLoader__.load({
 			"cardOpen": "RcIGlq_cardOpen",
 			"chevron": "RcIGlq_chevron",
 			"chevronOpen": "RcIGlq_chevronOpen",
+			"control": "RcIGlq_control",
 			"description": "RcIGlq_description",
-			"discard": "RcIGlq_discard",
 			"disclosure": "RcIGlq_disclosure",
 			"failed": "RcIGlq_failed",
 			"field": "RcIGlq_field",
-			"footer": "RcIGlq_footer",
 			"head": "RcIGlq_head",
 			"headText": "RcIGlq_headText",
 			"header": "RcIGlq_header",
@@ -120,12 +119,9 @@ window.__ModuleLoader__.load({
 			"mark": "RcIGlq_mark",
 			"name": "RcIGlq_name",
 			"notExposed": "RcIGlq_notExposed",
-			"pending": "RcIGlq_pending",
 			"readOnly": "RcIGlq_readOnly",
 			"reset": "RcIGlq_reset",
-			"save": "RcIGlq_save",
 			"segment": "RcIGlq_segment",
-			"segmentActive": "RcIGlq_segmentActive",
 			"segmentGroup": "RcIGlq_segmentGroup",
 			"select": "RcIGlq_select",
 			"selectButton": "RcIGlq_selectButton",
@@ -139,20 +135,121 @@ window.__ModuleLoader__.load({
 			"selectPopupClose": "RcIGlq_selectPopupClose",
 			"selectPopupOpen": "RcIGlq_selectPopupOpen",
 			"selectWrap": "RcIGlq_selectWrap",
+			"settings-card": "RcIGlq_settings-card",
 			"toggle": "RcIGlq_toggle",
+			"toggle-off": "RcIGlq_toggle-off",
+			"toggle-on": "RcIGlq_toggle-on",
 			"toggleThumb": "RcIGlq_toggleThumb",
 			"toggleTrack": "RcIGlq_toggleTrack"
 		};
 		//#endregion
+		//#region src/client/SegmentGroup.tsx
+		/**
+		* The family's segmented control: a quiet track whose options share one
+		* highlight that slides to the pressed option, instead of each option fading
+		* its own background out and the next one in. The settings fields' small
+		* choices and the Web Extensions TAB strip both render through it, so the two
+		* read as one control.
+		*
+		* The caller builds the option buttons and marks the pressed one with
+		* `data-active`; the group measures that button after every render and writes
+		* its box as four custom properties, and the stylesheet draws the highlight
+		* there (`.segmentGroup[data-pill]::before`). Attribute and first placement
+		* land in the same task, so the highlight appears in place and only later
+		* changes slide. A ResizeObserver re-measures when the group or an option
+		* changes size: a longer locale, a font arriving, a container growing, a
+		* strip wrapping onto a second line.
+		*/
+		/** The attribute marking a group whose highlight has been placed. */
+		const PILL_ATTR = "data-pill";
+		/** The pressed option, relative to the group. */
+		const ACTIVE_SELECTOR = ":scope > [data-active]";
+		const PILL_PROPERTIES = [
+			"--segment-pill-x",
+			"--segment-pill-y",
+			"--segment-pill-w",
+			"--segment-pill-h"
+		];
+		/**
+		* Write the highlight's box from the pressed option's box, or take the
+		* highlight off when nothing is pressed or the group has no layout yet.
+		* The two boxes are read in viewport pixels and turned back into the group's
+		* own CSS pixels, so a dialog that opens through a scale transform still
+		* lands the highlight on its option.
+		*/
+		function placePill(group) {
+			const item = group.querySelector(ACTIVE_SELECTOR);
+			const box = group.getBoundingClientRect();
+			if (item === null || group.offsetWidth === 0 || box.width === 0) {
+				group.removeAttribute(PILL_ATTR);
+				for (const property of PILL_PROPERTIES) group.style.removeProperty(property);
+				return;
+			}
+			const scale = box.width / group.offsetWidth;
+			const itemBox = item.getBoundingClientRect();
+			[
+				(itemBox.left - box.left) / scale - group.clientLeft,
+				(itemBox.top - box.top) / scale - group.clientTop,
+				itemBox.width / scale,
+				itemBox.height / scale
+			].forEach((value, index) => {
+				group.style.setProperty(PILL_PROPERTIES[index], `${Math.round(value * 100) / 100}px`);
+			});
+			if (!group.hasAttribute(PILL_ATTR)) group.setAttribute(PILL_ATTR, "");
+		}
+		/**
+		* Render a segmented track around the caller's option buttons.
+		* @param props - the track's attributes (role, accessible name, key handler) and its options.
+		* @returns the track.
+		*/
+		function SegmentGroup(props) {
+			const { children, className, ...rest } = props;
+			const group = (0, react.useRef)(null);
+			const count = react.Children.count(children);
+			(0, react.useLayoutEffect)(() => {
+				if (group.current !== null) placePill(group.current);
+			});
+			(0, react.useLayoutEffect)(() => {
+				const element = group.current;
+				if (element === null || typeof ResizeObserver === "undefined") return void 0;
+				const observer = new ResizeObserver(() => {
+					placePill(element);
+				});
+				observer.observe(element);
+				for (const item of Array.from(element.children)) observer.observe(item);
+				return () => {
+					observer.disconnect();
+				};
+			}, [count]);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				...rest,
+				ref: group,
+				className: className === void 0 ? settings_card_module_css_default.segmentGroup : `${settings_card_module_css_default.segmentGroup} ${className}`,
+				children
+			});
+		}
+		//#endregion
 		//#region src/client/PluginSettingsCard.tsx
 		/**
 		* Family-shared chrome for plugin settings cards: a disclosure header naming
-		* the plugin and what its settings govern, the controls inside, and the save
-		* that writes them. Renders nothing while the namespace is unavailable — a
+		* the plugin and what its settings govern, the controls inside, and the line
+		* that reports a refused write. A pick is written the moment it is made and a
+		* typed value after a pause, so the card has no save button and nothing waits
+		* on the reader. Renders nothing while the namespace is unavailable — a
 		* deployment that does not compose the owning plugin should show no trace of
 		* it. Inlined into each consumer's client bundle; mirrors the official
 		* ui-plugin-config PluginCard in a self-contained slice.
+		*
+		* Every field inside the body is one settings row: the label and its hint on
+		* the left, the control on the right, a hairline between two rows; a narrow
+		* card stacks the control under the text (settings-card.module.css).
 		*/
+		/**
+		* What a text field inside a card reaches without its plugin wiring it: write
+		* the pending draft now (Enter, leaving the field) or put it back (Escape).
+		* Picks need neither; they are written the moment they are made.
+		*/
+		const CardApply = (0, react.createContext)(null);
 		/** Length of the body's disclosure motion; it matches `--settings-card-motion` on the card root. */
 		const BODY_MOTION_MS = 180;
 		/**
@@ -192,7 +289,6 @@ window.__ModuleLoader__.load({
 			const title = props.t(props.titleKey);
 			const description = props.t(props.descriptionKey);
 			const descriptionTitle = props.descriptionTitleKey === void 0 ? description : props.t(props.descriptionTitleKey);
-			const blocked = !state.dirty || state.invalid || state.saving;
 			const baseClass = expanded ? `${settings_card_module_css_default.cardOpen} ${settings_card_module_css_default.card}` : settings_card_module_css_default.card;
 			const cardClass = props.density === "nested" ? `${baseClass} ${settings_card_module_css_default.cardNested}` : baseClass;
 			/** The body region both legs share; a hidden phase renders nothing at all. */
@@ -229,11 +325,6 @@ window.__ModuleLoader__.load({
 					props.headerAction !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: settings_card_module_css_default.headerAction,
 						children: props.headerAction
-					}) : null,
-					state.dirty ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: settings_card_module_css_default.pending,
-						title: props.t("settings.unsaved"),
-						children: props.t("settings.unsaved")
 					}) : null
 				]
 			}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -267,11 +358,6 @@ window.__ModuleLoader__.load({
 						className: settings_card_module_css_default.headerAction,
 						children: props.headerAction
 					}) : null,
-					state.dirty ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: settings_card_module_css_default.pending,
-						title: props.t("settings.unsaved"),
-						children: props.t("settings.unsaved")
-					}) : null,
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
 						width: "14",
 						height: "14",
@@ -302,31 +388,18 @@ window.__ModuleLoader__.load({
 						role: "status",
 						children: props.t("settings.readOnly")
 					}) : null,
-					props.children,
-					props.hideFooter === true ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: settings_card_module_css_default.footer,
-						children: [
-							state.failed ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-								className: settings_card_module_css_default.failed,
-								role: "status",
-								children: [props.t("settings.saveFailed"), state.failedReason ? " - " + state.failedReason : ""]
-							}) : null,
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: settings_card_module_css_default.discard,
-								disabled: !state.dirty || state.saving,
-								onClick: props.onDiscard,
-								children: props.t("settings.discard")
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: settings_card_module_css_default.save,
-								disabled: blocked,
-								onClick: props.onSave,
-								children: props.t(!state.saving ? "settings.save" : "settings.saving")
-							})
-						]
-					})
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CardApply.Provider, {
+						value: {
+							commit: props.onSave,
+							revert: props.onDiscard
+						},
+						children: props.children
+					}),
+					props.hideFooter !== true && state.failed ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: settings_card_module_css_default.failed,
+						role: "status",
+						children: [props.t("settings.saveFailed"), state.failedReason ? " - " + state.failedReason : ""]
+					}) : null
 				] })) : null]
 			});
 		}
@@ -340,8 +413,8 @@ window.__ModuleLoader__.load({
 		* renders the legacy native `<select>` untouched, so element-level skin
 		* selectors keep working; under the default appearance it renders a
 		* self-drawn `role="listbox"` popup whose open/close is transition-animated.
-		* Staged cards reach it through BooleanField/ChoiceField; immediate-apply
-		* editors (the side-card prefs) bind it directly through onEdit.
+		* Cards reach it through BooleanField/ChoiceField; editors outside a card
+		* (the side-card prefs) bind it directly through onEdit.
 		* 双模式下拉框：皮肤激活时用原生 select，默认外观用自绘动画弹层。
 		*/
 		function SelectField(props) {
@@ -502,13 +575,13 @@ window.__ModuleLoader__.load({
 		/**
 		* A visible segmented group for a small set of mutually exclusive values.
 		* Every option stays on screen, so inherit/on/off and short enum fields take
-		* one click without opening a popup. The selected segment is raised and marked
-		* with `aria-pressed`; the group takes the field label as its accessible name.
+		* one click without opening a popup. The pressed option carries the group's
+		* sliding highlight and `aria-pressed`; the group takes the field label as its
+		* accessible name.
 		*/
 		function SegmentField(props) {
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SegmentGroup, {
 				id: props.id,
-				className: settings_card_module_css_default.segmentGroup,
 				role: "group",
 				"aria-label": props.label,
 				"aria-invalid": props.invalid || void 0,
@@ -516,9 +589,10 @@ window.__ModuleLoader__.load({
 					const active = option.value === props.value;
 					return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 						type: "button",
-						className: active ? `${settings_card_module_css_default.segment} ${settings_card_module_css_default.segmentActive}` : settings_card_module_css_default.segment,
+						className: settings_card_module_css_default.segment,
 						"aria-pressed": active,
 						disabled: props.disabled,
+						"data-active": active ? "" : void 0,
 						"data-segment-index": index,
 						onClick: () => {
 							if (!active) props.onEdit(option.value);
@@ -528,9 +602,9 @@ window.__ModuleLoader__.load({
 				})
 			});
 		}
-		/** A staged boolean field: 继承 / 开 / 关. */
+		/** A boolean field: 继承 / 开 / 关. */
 		function BooleanField(props) {
-			const segmented = props.presentation === "segment";
+			const segmented = props.presentation !== "select";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: settings_card_module_css_default.field,
 				children: [
@@ -607,12 +681,11 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
-		//#endregion
-		//#region src/client/settings-form.ts
 		/** A boolean field, edited through true/false draft text. */
 		function booleanField(field) {
 			return {
 				field,
+				entry: "pick",
 				format: (value) => typeof value === "boolean" ? String(value) : "",
 				parse: (text) => {
 					const trimmed = text.trim();
@@ -629,12 +702,14 @@ window.__ModuleLoader__.load({
 			};
 		}
 		/**
-		* Stages one card's edits over one settings namespace and writes them on save.
+		* Applies one card's edits to one settings namespace as the reader makes them.
 		*
 		* The Host is the only authority on whether a value was accepted — its
 		* validators own the constraints no schema can express — so the outcome is
-		* read back from the section rather than predicted here. A save that did not
-		* land keeps its drafts, so the user can correct them instead of retyping.
+		* read back from the section rather than predicted here. A write that did not
+		* land puts each pick back to the stored value, the way a switch that could not
+		* flip springs back, and keeps typed text so the reader can correct it instead
+		* of retyping.
 		*/
 		var CardForm = class {
 			scope;
@@ -644,6 +719,8 @@ window.__ModuleLoader__.load({
 			/** The form subscription installed in the constructor; released by dispose(). */
 			disposeForm;
 			disposed = false;
+			/** The pending write of typed text, waiting for typing to pause. */
+			typePause;
 			saving = false;
 			/** A save asked for while one was in flight; it runs once the first settles (#1754). */
 			saveQueued = false;
@@ -664,6 +741,7 @@ window.__ModuleLoader__.load({
 			dispose() {
 				if (this.disposed) return;
 				this.disposed = true;
+				clearTimeout(this.typePause);
 				this.disposeForm();
 				this.listeners.clear();
 			}
@@ -675,7 +753,7 @@ window.__ModuleLoader__.load({
 				});
 				return store;
 			}
-			/** Read the card-level state: what the Host serves, and what a save would do. */
+			/** Read the card-level state: what the Host serves, and what is still waiting to be written. */
 			shell() {
 				const snapshot = this.scope.getSnapshot();
 				const plan = this.plan();
@@ -722,9 +800,10 @@ window.__ModuleLoader__.load({
 						});
 					},
 					save: () => {
-						this.requestSave();
+						this.applyNow();
 					},
 					discard: () => {
+						clearTimeout(this.typePause);
 						if (this.staged.size === 0 && !this.failed) return;
 						this.staged.clear();
 						this.failed = false;
@@ -734,32 +813,14 @@ window.__ModuleLoader__.load({
 				};
 			}
 			/**
-			* Write every staged edit in one atomic form mutation, then re-seed from
-			* what the Host accepted.
-			*
-			* The whole batch rides one mutate, so cross-field validate hooks
-			* (baseURL+model) judge it as a unit: the Host either applies every write
-			* or refuses the batch. The form contract answers a refusal or a skipped
-			* write with `false` (it recovers with a fresh Host view instead of
-			* throwing), so the outcome is judged twice: the answer itself, and then the
-			* settled snapshot read back one planned write at a time. One missed write
-			* fails the whole save. A transport that rejects instead (the dsh-web bridge
-			* controller on a dead connection) reports through the same failure path
-			* with its rejection message. A save that did not land keeps its drafts, so
-			* the user can correct them instead of retyping.
-			* @returns settlement after the mutation and the read-back.
-			*/
-			/**
-			* Run one save, and re-run it once if another was asked for while this one
+			* Run one write, and re-run it once if another was asked for while this one
 			* was still in flight.
 			*
-			* A save is a Host round trip that also drives the profile reconcile, and
-			* the Host runs that write inside one exclusive transaction. Answering a
-			* press that arrives mid-flight by returning immediately dropped the edit
-			* with no explanation, which is the "the save button stops working after a
-			* few rounds" report (#1754). Serializing instead means a save pressed while
-			* another is still settling runs against the settled state - which is what
-			* the operator meant by pressing it again.
+			* A write is a Host round trip that also drives the profile reconcile, and
+			* the Host runs it inside one exclusive transaction. Answering an edit that
+			* arrives mid-flight by returning immediately dropped it with no explanation
+			* (#1754). Serializing instead means an edit made while another write is
+			* still settling is written against the settled state.
 			* @returns settlement after the mutation and the read-back.
 			*/
 			async requestSave() {
@@ -772,12 +833,28 @@ window.__ModuleLoader__.load({
 				this.saveQueued = false;
 				await this.requestSave();
 			}
+			/**
+			* Write every valid draft in one atomic form mutation, then re-seed from
+			* what the Host accepted. A draft the field does not accept stays on screen,
+			* unwritten, without holding the others back.
+			*
+			* The batch rides one mutate, so cross-field validate hooks (baseURL+model)
+			* judge it as a unit: the Host either applies every write or refuses the
+			* batch. The form contract answers a refusal or a skipped write with `false`
+			* (it recovers with a fresh Host view instead of throwing), so the outcome is
+			* judged twice: the answer itself, and then the settled snapshot read back
+			* one planned write at a time. One missed write fails the whole batch. A
+			* transport that rejects instead (the dsh-web bridge controller on a dead
+			* connection) reports through the same failure path with its rejection
+			* message. A batch that did not land puts its picks and clears back to the
+			* stored value and keeps its typed text, so the reader can correct it.
+			* @returns settlement after the mutation and the read-back.
+			*/
 			async save() {
-				const plan = this.plan();
-				const valid = plan.filter((item) => item.judge !== void 0);
-				if (plan.length === 0 || this.saving || valid.length !== plan.length) return;
+				const valid = this.plan().filter((item) => item.judge !== void 0);
+				if (valid.length === 0 || this.saving) return;
 				const pending = /* @__PURE__ */ new Map();
-				for (const item of plan) pending.set(item.field, this.staged.get(item.field));
+				for (const item of valid) pending.set(item.field, this.staged.get(item.field));
 				this.saving = true;
 				this.failed = false;
 				this.failedReason = void 0;
@@ -798,16 +875,19 @@ window.__ModuleLoader__.load({
 					failedReason = error instanceof Error ? error.message : String(error);
 				}
 				const landed = accepted && failedReason === void 0 && valid.every((item) => item.judge());
-				for (const [field, before] of pending) if (landed && this.staged.get(field) === before) this.staged.delete(field);
+				for (const [field, before] of pending) {
+					if (this.staged.get(field) !== before) continue;
+					if (landed || before === void 0 || before.clear || this.specOf(field).entry === "pick") this.staged.delete(field);
+				}
 				this.saving = false;
 				this.failed = !landed;
 				this.failedReason = failedReason;
 				this.publish();
 			}
 			/**
-			* Every staged edit a save would write. An entry whose draft is not a value
-			* its field accepts carries no write: the form is still dirty, and the save
-			* refuses rather than dropping the edit. A staged edit that matches the
+			* Every staged edit a write would carry. An entry whose draft is not a value
+			* its field accepts carries no write: the form is still dirty, and the draft
+			* stays on screen rather than being dropped. A staged edit that matches the
 			* effective section is not a write at all.
 			* @returns the planned writes, in the order the fields were staged.
 			*/
@@ -871,11 +951,30 @@ window.__ModuleLoader__.load({
 			landedUnset(field) {
 				return !this.stored(field);
 			}
+			/**
+			* Take one edit and schedule its write: a pick or a clear is written now,
+			* typed text once typing has rested for TYPE_PAUSE_MS.
+			*/
 			stage(field, edit) {
 				this.staged.set(field, edit);
 				this.failed = false;
 				this.failedReason = void 0;
 				this.publish();
+				if (edit.clear || this.specOf(field).entry === "pick") {
+					this.applyNow();
+					return;
+				}
+				clearTimeout(this.typePause);
+				this.typePause = setTimeout(() => {
+					this.applyNow();
+				}, 600);
+			}
+			/** Write every pending draft now, taking the place of a waiting pause. */
+			applyNow() {
+				clearTimeout(this.typePause);
+				this.typePause = void 0;
+				if (this.disposed) return;
+				this.requestSave();
 			}
 			specOf(field) {
 				const spec = this.specs.get(field);
@@ -2557,12 +2656,8 @@ window.__ModuleLoader__.load({
 			"settings.collapse": "收起",
 			"settings.expand": "展开",
 			"settings.notExposed": "该设置段未暴露（宿主命名空间缺失）",
-			"settings.unsaved": "有未保存的更改",
 			"settings.readOnly": "只读",
 			"settings.saveFailed": "保存失败",
-			"settings.discard": "放弃更改",
-			"settings.save": "保存",
-			"settings.saving": "保存中…",
 			"settings.overridden": "已覆盖默认值",
 			"settings.reset": "恢复默认",
 			"settings.invalidNumber": "无效值",
@@ -2666,12 +2761,8 @@ window.__ModuleLoader__.load({
 			"settings.collapse": "Collapse",
 			"settings.expand": "Expand",
 			"settings.notExposed": "Section not exposed (host namespace missing)",
-			"settings.unsaved": "Unsaved changes",
 			"settings.readOnly": "Read only",
 			"settings.saveFailed": "Save failed",
-			"settings.discard": "Discard changes",
-			"settings.save": "Save",
-			"settings.saving": "Saving…",
 			"settings.overridden": "Overrides default",
 			"settings.reset": "Reset",
 			"settings.invalidNumber": "Invalid value",

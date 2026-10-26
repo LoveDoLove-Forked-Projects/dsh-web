@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 /**
- * The Web UI section contract: it renders a static heading and immediately
- * renders every family plugin card through the child slot (no disclosure fold:
- * the nav entry already selects the section).
+ * The Web Plugins TAB contract: the strip above already names the page, so it
+ * opens on two labelled groups — General with the telemetry row, Plugins with
+ * every family plugin card rendered through the child slot (no disclosure fold).
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -21,27 +21,22 @@ afterEach(cleanup)
 const t = (key: string): string => (en as Record<string, string>)[key] ?? key
 
 describe('WebUIPluginsSection', () => {
-  it('renders the heading alone and the family plugin cards immediately', () => {
+  it('user sees the General and Plugins groups with the telemetry row and the family cards', () => {
+    // Given the Web Plugins TAB with a slot that renders the family cards
     const renderSlot = vi.fn(() => null)
     const props = { t, renderSlot } as ComponentProps<typeof WebUIPluginsSection>
+    // When the page renders
     const { container } = render(<WebUIPluginsSection {...props} />)
 
-    const heading = screen.getByRole('heading', { level: 2 })
-    expect(heading.textContent).toBe('Web Plugins')
-    // The nav cell already names the section, so the lede that restated it is
-    // gone: the section's own children hold the heading, the telemetry card and
-    // the card list, and no paragraph of section-level copy. Card copy lives
-    // inside the cards, which is why this counts direct children only.
-    const section = container.firstElementChild as HTMLElement
-    expect(Array.from(section.children).filter(child => child.tagName === 'P')).toHaveLength(0)
-    // The page-level telemetry setting renders through the same card chrome as
-    // the plugin cards below it: a list-item card whose header control is a
-    // switch named by that card's own title, not by a copy of the label text.
+    // Then the TAB's name is not printed again: the page opens on its group labels
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+    expect(screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent)).toEqual([en['group.general'], en['group.plugins']])
+    // And the telemetry row's switch is named by the row's own title
     const switchEl = screen.getByRole('switch')
     const titleId = switchEl.getAttribute('aria-labelledby') ?? ''
     const namedBy = Array.from(container.querySelectorAll('[id]')).find(node => node.id === titleId)
     expect(namedBy?.textContent).toBe(en['telemetry.title'])
-
+    // And the family cards are dispatched once into the Plugins group's list
     expect(renderSlot).toHaveBeenCalledTimes(1)
     expect(renderSlot).toHaveBeenCalledWith('web-ui.plugin.item', {})
   })

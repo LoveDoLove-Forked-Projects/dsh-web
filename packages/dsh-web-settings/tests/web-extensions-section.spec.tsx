@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import type { StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
-import { WebExtensionsSection } from '../src/client/WebExtensionsSection.tsx'
+import { REPOSITORY_URL, WebExtensionsSection } from '../src/client/WebExtensionsSection.tsx'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -101,6 +101,43 @@ describe('WebExtensionsSection', () => {
     expect(screen.getByRole('tab', { name: 'Usage' }).getAttribute('aria-selected')).toBe('true')
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Usage' }), { key: 'Home' })
     expect(first.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('user sees the section heading with the repository link at its right end', () => {
+    // Given the parent with its default pages
+    renderSection()
+    // When it renders
+    // Then the heading names the section and the link opens the repository in a new tab
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(en['extensions.title'])
+    const link = screen.getByRole('link', { name: en['extensions.repository'] })
+    expect(link.getAttribute('href')).toBe(REPOSITORY_URL)
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+  })
+
+  it('user switching TABs sees the new page arrive from its side while a still copy leaves', () => {
+    // Given the Web Plugins TAB is open
+    const { container } = renderSection()
+    expect(screen.getByRole('tabpanel').hasAttribute('data-enter')).toBe(false)
+    // When the user presses the TAB to its right
+    fireEvent.click(screen.getByRole('tab', { name: 'Usage' }))
+    // Then the pressed TAB carries the strip's highlight mark
+    expect(screen.getByRole('tab', { name: 'Usage' }).hasAttribute('data-active')).toBe(true)
+    expect(screen.getByRole('tab', { name: 'Web Plugins' }).hasAttribute('data-active')).toBe(false)
+    // And the open page arrives forward while the replaced page's copy leaves forward
+    expect(screen.getByRole('tabpanel').getAttribute('data-enter')).toBe('forward')
+    const still = container.querySelector('[data-leave]')
+    expect(still?.getAttribute('data-leave')).toBe('forward')
+    // And the copy stays out of the accessibility tree, the tab order and the id space
+    expect(still?.getAttribute('aria-hidden')).toBe('true')
+    expect(still?.hasAttribute('inert')).toBe(true)
+    expect(still?.querySelector('[id]')).toBeNull()
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1)
+
+    // When the user goes back to the first TAB
+    fireEvent.click(screen.getByRole('tab', { name: 'Web Plugins' }))
+    // Then the page arrives from the other side
+    expect(screen.getByRole('tabpanel').getAttribute('data-enter')).toBe('back')
   })
 
   it('user sees an accessible empty state when no keyed page is installed', () => {
