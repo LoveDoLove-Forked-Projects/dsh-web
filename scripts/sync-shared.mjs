@@ -30,18 +30,17 @@ export const REPO_ROOT = resolve(SCRIPT_DIR, '..')
 // dsh-web-settings consumes the trio too: the family-wide telemetry switch is a
 // page-level setting, so it renders through the same card chrome (a static
 // header plus a trailing switch) instead of a section of its own.
-const SETTINGS_CONSUMERS = ['dsh-web-settings', 'dsh-task-board', 'dsh-task-board-github', 'dsh-remote-web-ui', 'dsh-market', 'dsh-liangshen', 'dsh-agents']
+const SETTINGS_CONSUMERS = ['dsh-web-settings', 'dsh-task-board', 'dsh-task-board-github', 'dsh-remote-web-ui', 'dsh-market', 'dsh-liangshen', 'dsh-agents', 'dsh-usage']
 const SETTINGS_CARD_CONSUMERS = [...SETTINGS_CONSUMERS]
 // Consumers of the entry-bound form fallback: every package whose card binds a
 // family settings namespace through the shared forms service. It is a superset
-// of the card trio — dsh-usage and dsh-session-archive carry their own cards but
-// bind the same way.
+// of the card trio — dsh-session-archive carries its own card but binds the
+// same way.
 // dsh-web-settings is deliberately absent: it renders the card chrome around a
 // local browser preference and binds no Host namespace, so it needs no entry-
 // bound form transport.
 const SETTINGS_ENTRY_FORM_CONSUMERS = [
   ...SETTINGS_CONSUMERS.filter(pkg => pkg !== 'dsh-web-settings'),
-  'dsh-usage',
   'dsh-session-archive',
 ]
 

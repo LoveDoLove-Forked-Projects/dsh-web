@@ -23,6 +23,7 @@ import { mountUsageFootCard } from './foot-card-mount.tsx'
 import { NS, en, zh } from './locales.ts'
 import { installUsageSection, openIntegratedUsageSettings } from './section-integration.ts'
 import { createServedEntryForm } from './settings-entry-form.ts'
+import { UsageSettingsCardController } from './usage-settings-card.ts'
 import type { UsageDayResponse, UsageDayView, UsageOverviewView } from '../core/types.ts'
 
 /** The host usage API as the browser sees it (same-origin JSON endpoints). */
@@ -165,7 +166,13 @@ export function apply(ctx: ClientContext): void {
   // small local request the 10 s poll has no reason to repeat.
   const loadDay = (date: string): Promise<UsageDayView> => usageApi.day(date)
 
-  const face = (): UsageSectionFace => ({ store, poll, refresh, loadDay, settings: settingsForm })
+  // The card form lives as long as the plugin, like the store: the page reads
+  // its last state on reopen, and a write in flight settles after the page closes.
+  const settingsCard = new UsageSettingsCardController(settingsForm)
+  ctx.effect(() => () => { settingsCard.dispose() }, 'dsh-usage: settings card')
+  const settingsCardFace = settingsCard.inject()
+
+  const face = (): UsageSectionFace => ({ store, poll, refresh, loadDay, settingsCard: settingsCardFace })
 
   // Sidebar foot card: the compact usage glance seated below the shell's
   // Settings row. It shares the section's store and poll path (the sequence

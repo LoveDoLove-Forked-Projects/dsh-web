@@ -55,10 +55,13 @@ test('copies cover the settings trio for all consumers plus host and http helper
   // client copies (Workshop and Usage); the satellite repositories carry their
   // own copies because they publish separately. The segmented control with
   // the sliding highlight and the coarse slider bubble each add one client
-  // copy per card consumer (seven apiece).
-  assert.equal(entries.length, 135)
+  // copy per card consumer. dsh-usage joined the card consumers (its page
+  // renders through the same chrome and rows), which adds five client copies:
+  // the chrome, its form primitives, the stylesheet, the segmented control and
+  // the slider bubble; it already carried the entry-bound form fallback.
+  assert.equal(entries.length, 140)
   const clientTrio = entries.filter(entry => entry.target.includes('/src/client/'))
-  assert.equal(clientTrio.length, 69)
+  assert.equal(clientTrio.length, 74)
   const hostCopies = entries.filter(entry => entry.target.includes('/src/host/')
     || entry.target.includes('/src/dsh-home.ts')
     || entry.target.includes('/src/mount-once.ts')
