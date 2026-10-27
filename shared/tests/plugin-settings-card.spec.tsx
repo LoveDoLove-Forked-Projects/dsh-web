@@ -85,6 +85,8 @@ interface CardSetup {
   defaultOpen?: boolean
   /** Render the fields even when the namespace is not exposed. */
   renderChildrenWhenNotExposed?: boolean
+  /** Hide the not-exposed notice while the fields render anyway. */
+  hideNotExposedNotice?: boolean
   /** The plugin's own controls. */
   children?: ReactNode
 }
@@ -103,6 +105,7 @@ function renderCard(setup: CardSetup = {}) {
       onDiscard={() => { discards.push('discard') }}
       defaultOpen={setup.defaultOpen}
       renderChildrenWhenNotExposed={setup.renderChildrenWhenNotExposed}
+      hideNotExposedNotice={setup.hideNotExposedNotice}
     >
       {setup.children ?? null}
     </PluginSettingsCard>,
@@ -263,7 +266,7 @@ describe('plugin settings card chrome', () => {
     expect(container.querySelector('input')).toBeNull()
   })
 
-  it('user on a deployment that does not serve the namespace still gets the rows its card renders', () => {
+  it('user on a deployment that does not serve the namespace gets the rows and the explanation together', () => {
     // Given a card asked to render its fields without a served namespace
     renderCard({
       state: { exposed: false },
@@ -272,10 +275,26 @@ describe('plugin settings card chrome', () => {
     })
 
     // When the user reads the card
-    // Then the rows keep their label, hint and control, and no notice stands in
-    // front of them
+    // Then the rows keep their label, hint and control, and the card still says
+    // why those rows are not being saved by this deployment
     expect((screen.getByLabelText('Size') as HTMLInputElement).value).toBe('8')
     expect(screen.getByText('Cells across').tagName).toBe('P')
+    expect(screen.getByRole('status').textContent).toBe(copy['settings.notExposed'])
+  })
+
+  it('user whose card renders the rows anyway sees the notice hidden when the card hides it', () => {
+    // Given a card that renders its fields without a served namespace and
+    // hides the notice, the shape a family card uses when its rows stand alone
+    renderCard({
+      state: { exposed: false },
+      renderChildrenWhenNotExposed: true,
+      hideNotExposedNotice: true,
+      children: <ValueField {...row({ text: '8' })} />,
+    })
+
+    // When the user reads the card
+    // Then the rows are there and nothing explains a gap the card chose to absorb
+    expect((screen.getByLabelText('Size') as HTMLInputElement).value).toBe('8')
     expect(screen.queryByRole('status')).toBeNull()
   })
 
@@ -329,6 +348,38 @@ describe('plugin settings card chrome', () => {
 
     // Then the card writes the staged draft, once
     expect(saves).toEqual(['save'])
+  })
+
+  it('user pressing Escape in a typed field discards once and writes nothing', () => {
+    // Given a focused typed field in a card whose actions are recorded
+    const { saves, discards } = renderCard({ children: <ValueField {...row()} /> })
+    const size = screen.getByLabelText('Size') as HTMLInputElement
+    act(() => { size.focus() })
+
+    // When the user presses Escape
+    fireEvent.keyDown(size, { key: 'Escape' })
+
+    // Then the card drops the draft once and writes nothing: leaving the field
+    // on that key is the same discard arriving at the field's edge, not a save
+    expect(discards).toEqual(['discard'])
+    expect(saves).toEqual([])
+    expect(document.activeElement).not.toBe(size)
+  })
+
+  it('user pressing Enter in a typed field writes once and leaves the field', () => {
+    // Given a focused typed field in a card whose actions are recorded
+    const { saves, discards } = renderCard({ children: <ValueField {...row({ text: '8' })} /> })
+    const size = screen.getByLabelText('Size') as HTMLInputElement
+    act(() => { size.focus() })
+
+    // When the user presses Enter
+    fireEvent.keyDown(size, { key: 'Enter' })
+
+    // Then the card writes the draft once and writes no second time as focus
+    // leaves, so one key press is one write
+    expect(saves).toEqual(['save'])
+    expect(discards).toEqual([])
+    expect(document.activeElement).not.toBe(size)
   })
 
   it('user whose write the Host refused sees the failure line with the Host reason', () => {

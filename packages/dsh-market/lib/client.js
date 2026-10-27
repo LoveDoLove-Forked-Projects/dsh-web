@@ -396,17 +396,19 @@ window.__ModuleLoader__.load({
 					})
 				]
 			});
+			const notExposedNotice = state.exposed || props.hideNotExposedNotice === true ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+				className: settings_card_module_css_default.notExposed,
+				role: "status",
+				children: props.t("settings.notExposed")
+			});
 			if (!state.exposed && props.renderChildrenWhenNotExposed !== true) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
 				className: cardClass,
-				children: [header, bodyRegion(props.hideNotExposedNotice !== true ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-					className: settings_card_module_css_default.notExposed,
-					role: "status",
-					children: props.t("settings.notExposed")
-				}) : null)]
+				children: [header, bodyRegion(notExposedNotice)]
 			});
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
 				className: cardClass,
 				children: [header, props.headerOnly !== true ? bodyRegion(/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+					notExposedNotice,
 					!state.writable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: settings_card_module_css_default.readOnly,
 						role: "status",

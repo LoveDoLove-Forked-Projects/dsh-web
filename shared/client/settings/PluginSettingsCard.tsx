@@ -109,9 +109,13 @@ export interface PluginSettingsCardProps<TKey extends string = string> {
    * is reachable without opening the card and matches a plugin card's shape.
    */
   headerAction?: ReactNode
-  /** Render children even when the settings namespace is not exposed by the host. */
+  /**
+   * Render children even when the settings namespace is not exposed by the
+   * host. The 'not exposed' notice still explains the card above them; a card
+   * that wants the rows alone hides it through `hideNotExposedNotice`.
+   */
   renderChildrenWhenNotExposed?: boolean
-  /** Hide the 'not exposed' warning banner when the settings namespace is not exposed. */
+  /** Hide the 'not exposed' notice, whichever branch renders the card body. */
   hideNotExposedNotice?: boolean
   /**
    * Compact chrome for a topic card rendered inside another card's body: a
@@ -227,13 +231,16 @@ export function PluginSettingsCard<TKey extends string = string>(props: PluginSe
   // The namespace exists but the Host does not serve it to this client (the
   // official settings allowlist omits third-party namespaces): show a card
   // that explains the gap instead of vanishing, so a missing card never
-  // reads as a missing plugin.
+  // reads as a missing plugin. A card that keeps its rows anyway keeps the
+  // same explanation above them, unless it hides the notice outright.
+  const notExposedNotice = state.exposed || props.hideNotExposedNotice === true
+    ? null
+    : <p className={css.notExposed} role="status">{props.t('settings.notExposed')}</p>
   if (!state.exposed && props.renderChildrenWhenNotExposed !== true) {
-    const showNotice = props.hideNotExposedNotice !== true
     return (
       <li className={cardClass}>
         {header}
-        {bodyRegion(showNotice ? <p className={css.notExposed} role="status">{props.t('settings.notExposed')}</p> : null)}
+        {bodyRegion(notExposedNotice)}
       </li>
     )
   }
@@ -246,6 +253,7 @@ export function PluginSettingsCard<TKey extends string = string>(props: PluginSe
       {bodyVisible
         ? bodyRegion(
           <>
+            {notExposedNotice}
             {!state.writable ? <p className={css.readOnly} role="status">{props.t('settings.readOnly')}</p> : null}
             <CardApply.Provider value={{ commit: props.onSave, revert: props.onDiscard }}>
               {props.children}
@@ -314,9 +322,15 @@ export function ValueField(props: FieldProps & {
   range?: { min: number, max: number, step: number }
 }) {
   const apply = useContext(CardApply)
+  // Enter and Escape settle the draft themselves and then leave the field, so
+  // the blur they cause is that same settlement reaching the field's edge, not
+  // a second write. Without this an Escape reported a discard and then a save,
+  // which reads to a consumer as a write still waiting to happen.
+  const settledByKey = useRef(false)
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (apply === null || (event.key !== 'Enter' && event.key !== 'Escape')) return
     event.preventDefault()
+    settledByKey.current = true
     if (event.key === 'Enter') apply.commit()
     else apply.revert()
     event.currentTarget.blur()
@@ -333,7 +347,14 @@ export function ValueField(props: FieldProps & {
       disabled={props.disabled}
       onChange={(event) => { props.onEdit(event.target.value) }}
       onKeyDown={onKeyDown}
-      onBlur={() => { apply?.commit() }}
+      onFocus={() => { settledByKey.current = false }}
+      onBlur={() => {
+        if (settledByKey.current) {
+          settledByKey.current = false
+          return
+        }
+        apply?.commit()
+      }}
     />
   )
   const { range } = props
