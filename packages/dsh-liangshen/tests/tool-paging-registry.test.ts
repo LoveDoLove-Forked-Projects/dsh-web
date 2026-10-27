@@ -418,6 +418,22 @@ describe('gentle paging under the collapsed ptc wire', () => {
  * reading `tools.schemas(agent)` back would find an empty page and refuse a
  * namespace the same request's catalog names.
  */
+/** One activation as the ptc runtime records it: a dispatch, not a tool call. */
+function ptcDispatch(namespace: string, subCallId: string) {
+  return {
+    type: 'tool/ptc-dispatch',
+    data: {
+      rootCallId: 'call_root',
+      parentCallId: 'call_root',
+      subCallId,
+      name: 'tool_activate',
+      arguments: { namespace },
+      isError: false,
+      content: [{ type: 'text', text: 'Activated' }],
+    },
+  }
+}
+
 describe('tool_activate against the restricted ptc surface', () => {
   /** Mount the sibling row against the harness registry and return its tool. */
   function activateTool(): any {
@@ -436,6 +452,17 @@ describe('tool_activate against the restricted ptc surface', () => {
 
     const result = await activateTool().execute({ namespace: 'github' }, { callId: 'call-1', agent })
     expect(result.text).toContain('Activated namespace "github" (2 tools): mcp__github__create_issue, mcp__github__list_prs')
+  })
+
+  it('lifts the page for a namespace activated from inside a program', async () => {
+    // The end of the loop the paged wire depends on: the activation is recorded
+    // as a dispatch, the catalog replays it, and the scope stops withholding it.
+    const h = harness()
+    const agent = await agentOf(h, [ptcDispatch('github', 'call_root:ptc:1')])
+
+    const names = h.tools.schemas(agent).map((tool: any) => tool.name)
+    expect(names).toContain('mcp__github__create_issue')
+    expect(names).not.toContain('mcp__codegraph__explore')
   })
 
   it('still names a namespace whose tools are all already active', async () => {

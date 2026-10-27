@@ -37,6 +37,22 @@ function erroredActivation(namespace: string, callId: string) {
   ]
 }
 
+/** One activation dispatched from inside a program, the way ptc records it. */
+function dispatch(namespace: string, subCallId: string, isError = false) {
+  return [{
+    type: 'tool/ptc-dispatch',
+    data: {
+      rootCallId: 'call_root',
+      parentCallId: 'call_root',
+      subCallId,
+      name: 'tool_activate',
+      arguments: { namespace },
+      isError,
+      content: [{ type: 'text', text: isError ? 'unknown paged namespace' : 'Activated' }],
+    },
+  }]
+}
+
 describe('paging helpers', () => {
   it('derives namespaces from prefix patterns', () => {
     expect(patternNamespace('mcp__codegraph__codegraph_explore', 'mcp__*')).toBe('codegraph')
@@ -105,6 +121,26 @@ describe('paging helpers', () => {
     const events = [
       ...erroredActivation('github', 'c1'),
       ...activation('ssh', 'c2'),
+    ]
+    const { active } = replayActivations(events, 3, ['mcp__*'])
+    expect(active).toEqual(['ssh'])
+  })
+
+  it('reads an activation dispatched from inside a program, which is the only shape ptc records', () => {
+    // Under the collapsed wire the model reaches tool_activate from inside
+    // run_code, so the session carries tool/ptc-dispatch and no tool/call.
+    const events = [
+      ...dispatch('github', 'call_root:ptc:1'),
+      ...dispatch('codegraph', 'call_root:ptc:2'),
+    ]
+    const { active } = replayActivations(events, 3, ['mcp__*'])
+    expect(active).toEqual(['github', 'codegraph'])
+  })
+
+  it('ignores a dispatched activation that reported an error', () => {
+    const events = [
+      ...dispatch('github', 'call_root:ptc:1', true),
+      ...dispatch('ssh', 'call_root:ptc:2'),
     ]
     const { active } = replayActivations(events, 3, ['mcp__*'])
     expect(active).toEqual(['ssh'])

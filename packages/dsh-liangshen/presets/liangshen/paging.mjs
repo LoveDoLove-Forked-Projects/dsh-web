@@ -197,6 +197,20 @@ export function replayActivations(events, capacity = DEFAULT_MAX_ACTIVE_NAMESPAC
     while (active.length > capacity) evicted.push(active.shift())
   }
   for (const event of list) {
+    // Under the `ptc` presentation the wire carries `run_code` alone, so the model
+    // reaches `tool_activate` from inside a program and the harness records that as
+    // a `tool/ptc-dispatch` event — never as a top-level `tool/call`. Reading only
+    // `tool/call` therefore found no activation at all: every activation reported
+    // success, the page never lifted, and the same namespace could be activated
+    // again for ever. Both event shapes feed the same recency list, in the order
+    // the session recorded them.
+    if (event?.type === 'tool/ptc-dispatch') {
+      const dispatch = event.data
+      if (dispatch?.name !== TOOL_ACTIVATE_NAME || dispatch?.isError === true) continue
+      const namespace = callArguments(dispatch)?.namespace
+      if (typeof namespace === 'string' && namespace !== '') touch(namespace)
+      continue
+    }
     if (event?.type !== 'tool/call') continue
     const data = event.data
     if (data?.callId !== undefined && errored.has(String(data.callId))) continue
