@@ -33,6 +33,32 @@ function beforeEach0(): void {
   now = 1_000_000
 }
 
+describe('PairingService ingress status', () => {
+  it('operator carries the Cloudflare ingress-sync state in the snapshot, without repeated emits', () => {
+    // Given a service that has never run the ingress sync
+    const service = makeService()
+    expect(service.snapshot().ingress).toBeUndefined()
+    const seen: number[] = []
+    service.onState(() => { seen.push(seen.length) })
+    // When the sync reports an applied frame
+    const frame = {
+      state: 'applied' as const,
+      hostname: 'dsh.example.com',
+      port: 3080,
+      service: 'http://127.0.0.1:3080',
+      changed: false,
+      at: now,
+    }
+    service.setIngressStatus(frame)
+    // Then the snapshot carries it and one snapshot was emitted
+    expect(service.snapshot().ingress).toEqual(frame)
+    expect(seen).toHaveLength(1)
+    // And the same audit state with a newer timestamp is not a second event
+    service.setIngressStatus({ ...frame, at: now + 1 })
+    expect(seen).toHaveLength(1)
+  })
+})
+
 describe('PairingService', () => {
   it('issues one active token and replaces it on refresh (old link dies)', () => {
     const service = makeService()

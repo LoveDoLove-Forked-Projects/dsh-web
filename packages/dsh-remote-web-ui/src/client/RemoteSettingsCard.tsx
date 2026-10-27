@@ -11,7 +11,7 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { PluginSettingsCard, ValueField, BooleanField } from './PluginSettingsCard.tsx'
 import { PhoneIcon } from './PhoneIcon.tsx'
 import { CardForm, booleanField, numberField, secretField, textField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
-import { isLanHost, LanBindStatusError, readLanBindStatus, shouldStopLanBindPoll, type LanBindFrame } from './pair-api.ts'
+import { isLanHost, LanBindStatusError, readIngressStatus, readLanBindStatus, shouldStopLanBindPoll, type IngressStatusFrame, type LanBindFrame } from './pair-api.ts'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 /** The remote-control fields this card edits (the namespace's full schema). */
@@ -40,6 +40,17 @@ export interface RemoteSettings {
    * paired once keeps its session across restarts.
    */
   tunnelToken?: string
+  /**
+   * Update-only ingress sync: keeps the named tunnel's existing rule for this
+   * public hostname pointing at the port the host actually bound.
+   */
+  ingressSync?: boolean
+  /** Account-level Cloudflare API token (stored redacted by the Host). */
+  cfApiToken?: string
+  /** Cloudflare account id the named tunnel belongs to. */
+  cfAccountId?: string
+  /** The named tunnel id (not its run token). */
+  cfTunnelId?: string
   /**
    * Stable-origin relay: when on (default), the quick tunnel is fronted by a
    * fixed `<id>.dsh-market.com` subdomain so the phone's bookmark and
@@ -76,6 +87,14 @@ export interface RemoteSettingsCardState extends CardShell {
   autoTunnel: CardFieldState
   /** Named-tunnel token (stored redacted by the Host). */
   tunnelToken: CardFieldState
+  /** Update-only Cloudflare ingress sync switch. */
+  ingressSync: CardFieldState
+  /** Cloudflare API token (stored redacted by the Host). */
+  cfApiToken: CardFieldState
+  /** Cloudflare account id. */
+  cfAccountId: CardFieldState
+  /** Cloudflare tunnel id. */
+  cfTunnelId: CardFieldState
   /** Stable-origin relay switch. */
   relay: CardFieldState
   /** LAN bind toggle. */
@@ -108,6 +127,10 @@ export class RemoteSettingsCardController {
       textField('publicBaseUrl'),
       booleanField('autoTunnel'),
       secretField('tunnelToken'),
+      booleanField('ingressSync'),
+      secretField('cfApiToken'),
+      textField('cfAccountId'),
+      textField('cfTunnelId'),
       booleanField('relay'),
       booleanField('lanBind'),
     ])
@@ -127,6 +150,10 @@ export class RemoteSettingsCardController {
       publicBaseUrl: this.form.field('publicBaseUrl'),
       autoTunnel: this.form.field('autoTunnel'),
       tunnelToken: this.form.field('tunnelToken'),
+      ingressSync: this.form.field('ingressSync'),
+      cfApiToken: this.form.field('cfApiToken'),
+      cfAccountId: this.form.field('cfAccountId'),
+      cfTunnelId: this.form.field('cfTunnelId'),
       relay: this.form.field('relay'),
       lanBind: this.form.field('lanBind'),
     }
@@ -287,6 +314,49 @@ export function RemoteSettingsCard(props: RemoteSettingsCardProps) {
         onReset={() => { props.resetField('tunnelToken') }}
       />
       <BooleanField
+        id="settings-remote-ingress-sync"
+        label={t('settings.ingressSync')}
+        hint={t('settings.ingressSyncHint')}
+        inheritLabel={t('settings.inherit')}
+        onLabel={t('settings.on')}
+        offLabel={t('settings.off')}
+        {...fieldProps}
+        {...state.ingressSync}
+        onEdit={(text) => { props.edit('ingressSync', text) }}
+        onReset={() => { props.resetField('ingressSync') }}
+      />
+      <ValueField
+        id="settings-remote-cf-token"
+        label={t('settings.cfApiToken')}
+        hint={t('settings.cfApiTokenHint')}
+        placeholder="Bearer token"
+        {...fieldProps}
+        {...state.cfApiToken}
+        onEdit={(text) => { props.edit('cfApiToken', text) }}
+        onReset={() => { props.resetField('cfApiToken') }}
+      />
+      <ValueField
+        id="settings-remote-cf-account"
+        label={t('settings.cfAccountId')}
+        hint={t('settings.cfAccountIdHint')}
+        placeholder="0123456789abcdef0123456789abcdef"
+        {...fieldProps}
+        {...state.cfAccountId}
+        onEdit={(text) => { props.edit('cfAccountId', text) }}
+        onReset={() => { props.resetField('cfAccountId') }}
+      />
+      <ValueField
+        id="settings-remote-cf-tunnel"
+        label={t('settings.cfTunnelId')}
+        hint={t('settings.cfTunnelIdHint')}
+        placeholder="00000000-0000-0000-0000-000000000000"
+        {...fieldProps}
+        {...state.cfTunnelId}
+        onEdit={(text) => { props.edit('cfTunnelId', text) }}
+        onReset={() => { props.resetField('cfTunnelId') }}
+      />
+      <IngressStatus t={t} />
+      <BooleanField
         id="settings-remote-relay"
         label={t('settings.relay')}
         hint={t('settings.relayHint')}
@@ -401,6 +471,63 @@ export function LanBindStatus({ t }: { t: TranslateNS<'remote'> }) {
   }
   if (frame.legacyBlockRemoved === true) {
     lines.push(t('lan.legacyRemoved'))
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12, lineHeight: '18px', opacity: 0.85 }}>
+      {lines.map((line, index) => (
+        <div key={index} style={{ wordBreak: 'break-all' }}>{line}</div>
+      ))}
+    </div>
+  )
+}
+
+/** The one-word state label of an ingress frame (a literal key per state). */
+function ingressStateLabel(t: TranslateNS<'remote'>, state: IngressStatusFrame['state']): string {
+  switch (state) {
+    case 'off': return t('ingress.state.off')
+    case 'waiting': return t('ingress.state.waiting')
+    case 'applied': return t('ingress.state.applied')
+    case 'failed': return t('ingress.state.failed')
+    case 'conflict': return t('ingress.state.conflict')
+  }
+}
+
+/**
+ * The live Cloudflare ingress-sync state beside its switch (issue #1948): the
+ * public hostname being tracked, the service an apply wrote (or already found),
+ * and the reason a failing or conflicting run stopped writing. Reads the
+ * pairing status view, which only carries this block to a loopback caller or a
+ * live paired device — a card opened anywhere else renders nothing. One read on
+ * open, then every 10 s while the card stays expanded.
+ */
+export function IngressStatus({ t }: { t: TranslateNS<'remote'> }) {
+  const [frame, setFrame] = useState<IngressStatusFrame | undefined>(undefined)
+  useEffect(() => {
+    let alive = true
+    const read = (): void => {
+      void readIngressStatus().then((value) => {
+        if (alive) setFrame(value)
+      }).catch(() => undefined)
+    }
+    const timer = window.setInterval(read, 10_000)
+    read()
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [])
+  if (frame === undefined) return null
+  const lines: string[] = [t('ingress.status', { state: ingressStateLabel(t, frame.state) })]
+  if (frame.hostname !== undefined) lines.push(t('ingress.target', { hostname: frame.hostname }))
+  if (frame.state === 'applied') {
+    if (frame.changed === true && frame.previousService !== undefined && frame.service !== undefined) {
+      lines.push(t('ingress.applied', { from: frame.previousService, to: frame.service }))
+    } else if (frame.service !== undefined) {
+      lines.push(t('ingress.matches', { service: frame.service }))
+    }
+  }
+  if ((frame.state === 'failed' || frame.state === 'conflict') && frame.detail !== undefined) {
+    lines.push(t('ingress.detail', { detail: frame.detail }))
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12, lineHeight: '18px', opacity: 0.85 }}>

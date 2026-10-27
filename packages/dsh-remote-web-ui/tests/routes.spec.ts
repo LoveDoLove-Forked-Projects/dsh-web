@@ -739,6 +739,18 @@ describe('/api/pair routes', () => {
     const service = makeService()
     service.setPublicBaseUrl('https://phone.example.com')
     service.setTunnelStatus({ state: 'running', url: 'https://xyz.trycloudflare.com' })
+    // The ingress-sync audit frame names the public hostname and the loopback
+    // service, so it is one more oracle an unpaired caller must not read.
+    service.setIngressStatus({
+      state: 'applied',
+      hostname: 'phone.example.com',
+      port: 3080,
+      service: 'http://127.0.0.1:3080',
+      changed: false,
+      ruleCount: 3,
+      ruleIndex: 1,
+      at: 1_000,
+    })
     service.issue('ws-7', undefined)
     const { port, close } = await serve(makeRoutes({ service }))
     try {
@@ -752,6 +764,9 @@ describe('/api/pair routes', () => {
       expect(unpaired.body).not.toHaveProperty('onlineCount')
       expect(unpaired.body).not.toHaveProperty('publicUrl')
       expect(unpaired.body).not.toHaveProperty('tunnel')
+      expect(unpaired.body).not.toHaveProperty('ingress')
+      expect(unpaired.body).not.toHaveProperty('service')
+      expect(unpaired.body).not.toHaveProperty('hostname')
       // A live device cookie sees the full snapshot.
       await call(port, 'POST', '/api/pair/accept', { host: '192.168.1.5:3080', body: { token: 'tok-1' } })
       const paired = await call(port, 'GET', '/api/pair/status', { host: '192.168.1.5:3080', cookie: 'dsh_pair=tok-1' })
@@ -759,6 +774,13 @@ describe('/api/pair routes', () => {
       expect(paired.body).toHaveProperty('deviceCount')
       expect(paired.body).toHaveProperty('onlineCount')
       expect(paired.body).toHaveProperty('tokenExpiresAt')
+      // The paired caller reads the ingress frame, and its audit fields only.
+      expect(paired.body).toHaveProperty('ingress')
+      expect((paired.body as { ingress?: unknown }).ingress).toMatchObject({
+        state: 'applied',
+        hostname: 'phone.example.com',
+        service: 'http://127.0.0.1:3080',
+      })
     } finally {
       await close()
     }

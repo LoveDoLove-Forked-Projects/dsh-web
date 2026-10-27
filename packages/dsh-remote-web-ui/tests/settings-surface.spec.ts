@@ -25,6 +25,10 @@ const CARD_FIELDS = [
   'publicBaseUrl',
   'autoTunnel',
   'tunnelToken',
+  'ingressSync',
+  'cfApiToken',
+  'cfAccountId',
+  'cfTunnelId',
   'relay',
   'lanBind',
 ] as const
@@ -38,8 +42,8 @@ const DEPLOYMENT_FIELDS = ['trustedHosts', 'devicesFile', 'profile'] as const
  * @param field - field name inside the Config object schema.
  * @returns the field's schema node, or undefined when the schema has no such field.
  */
-function configField(field: string): { meta?: { volatile?: boolean } } | undefined {
-  const dict: Record<string, { meta?: { volatile?: boolean } }> = (Config as unknown as { dict?: Record<string, { meta?: { volatile?: boolean } }> }).dict ?? {}
+function configField(field: string): { meta?: { volatile?: boolean; role?: string } } | undefined {
+  const dict: Record<string, { meta?: { volatile?: boolean; role?: string } }> = (Config as unknown as { dict?: Record<string, { meta?: { volatile?: boolean; role?: string } }> }).dict ?? {}
   return dict[field]
 }
 
@@ -52,6 +56,14 @@ describe('remote-web-ui settings surface (issue #1717)', () => {
     for (const field of CARD_FIELDS) {
       expect(configField(field)?.meta?.volatile, field).toBe(true)
     }
+  })
+
+  it('operator gets the Cloudflare API token stored as a secret', () => {
+    // Given the schema the Host serves as this entry's settings page
+    // When the ingress-sync credential is inspected
+    // Then it carries the secret role, which is what redacts it from every
+    // read-back and keeps it out of the browser-visible form state
+    expect(configField('cfApiToken')?.meta?.role).toBe('secret')
   })
 
   it('operator gets the deployment-level fields left to the profile patch', () => {

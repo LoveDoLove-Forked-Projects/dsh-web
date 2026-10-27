@@ -75,6 +75,75 @@ export interface RelayStatusFrame {
   error?: string
 }
 
+/**
+ * One update-only Cloudflare ingress-sync frame (issue #1948; absent until the
+ * feature ran in this host process). Every field is an audit fact about the
+ * public hostname and the local port — never the account token.
+ */
+export interface IngressStatusFrame {
+  state: 'off' | 'waiting' | 'applied' | 'failed' | 'conflict'
+  /** The public hostname the sync tracks (from publicBaseUrl). */
+  hostname?: string
+  /** The local web server port the service follows. */
+  port?: number
+  /** The ingress service string after the last run. */
+  service?: string
+  /** The ingress service an apply moved away from. */
+  previousService?: string
+  /** How many ingress rules the read document carried. */
+  ruleCount?: number
+  /** Index of the rule the sync owns. */
+  ruleIndex?: number
+  /** Whether the last run actually wrote the remote document. */
+  changed?: boolean
+  /** Machine-readable reason of a failed or conflict state. */
+  code?: string
+  /** Human-readable detail (hostname, port, status, API message). */
+  detail?: string
+  /** When the state was reached (ms epoch). */
+  at?: number
+}
+
+/** A non-empty wire string, or undefined. */
+function wireString(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+/** A finite wire number, or undefined. */
+function wireNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/**
+ * Read the ingress-sync frame off the pairing status view. The status route
+ * carries this block only to a desktop (loopback) caller or a live paired
+ * device, so another origin reads nothing here and the card renders no line.
+ * @returns the frame, or undefined when the view carries none (or is unreadable).
+ */
+export async function readIngressStatus(): Promise<IngressStatusFrame | undefined> {
+  const response = await fetch('api/pair/status')
+  if (!response.ok) return undefined
+  const value = await response.json() as { ingress?: unknown }
+  const raw = value.ingress
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const frame = raw as Record<string, unknown>
+  const state = frame.state
+  if (state !== 'off' && state !== 'waiting' && state !== 'applied' && state !== 'failed' && state !== 'conflict') return undefined
+  return {
+    state,
+    hostname: wireString(frame.hostname),
+    port: wireNumber(frame.port),
+    service: wireString(frame.service),
+    previousService: wireString(frame.previousService),
+    ruleCount: wireNumber(frame.ruleCount),
+    ruleIndex: wireNumber(frame.ruleIndex),
+    changed: typeof frame.changed === 'boolean' ? frame.changed : undefined,
+    code: wireString(frame.code),
+    detail: wireString(frame.detail),
+    at: wireNumber(frame.at),
+  }
+}
+
 /** One /api posture frame (host half probe; see src/posture.ts). */
 export interface PostureFrame {
   checkedAt: number

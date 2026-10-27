@@ -33,6 +33,7 @@ import { ensureFirewallRule, firewallSummary, removeFirewallRule, type FirewallS
 import { lanBindState, removeManagedBlock } from './lan-bind.ts'
 import { FORWARD_UPSTREAM_HOST, LanForwarder, type LanForwardState } from './lan-forward.ts'
 import { isHttpUrl, tunnelPlanOf } from './tunnel-plan.ts'
+import { ingressInputOf, IngressSync, livePortOf, type IngressSyncFrame } from './ingress-sync.ts'
 import { loadRelayIdentity, RelayRegistrar, type RelayState } from './relay-registry.ts'
 import { RelayConnectorPair, createNamedRelayConnector, readPluginVersion, relayClaimKeyOf, type RelayPairState } from './relay-connector.ts'
 import { createRelayBridgeRunner } from './relay-bridge-connector.ts'
@@ -176,6 +177,33 @@ export interface Config {
    */
   tunnelToken?: string
   /**
+   * Update-only Cloudflare ingress sync (issue #1948). When on (and the quick
+   * tunnel is off), the plugin keeps the named tunnel's existing ingress rule
+   * for this deployment's fixed public hostname pointing at the port `dsh web`
+   * actually bound: one read on start, and one full-document write only when
+   * that single service string drifted. Nothing else in the document is ever
+   * changed — no rule added or removed, no catch-all invented, no wildcard
+   * matched, no top-level key touched — and a document whose shape cannot be
+   * proven safe is reported as a conflict instead of written.
+   *
+   * Requires `publicBaseUrl` (the hostname to match) and the three explicit
+   * fields below. The named-tunnel token's internal format is never parsed, and
+   * a failed sync never affects the tunnel itself: the phone keeps the origin it
+   * already has and the panel reports why.
+   */
+  ingressSync?: boolean
+  /**
+   * Account-level Cloudflare API token allowed to read and write this one
+   * tunnel's configuration. Stored as a settings secret and read back redacted;
+   * sent only to `https://api.cloudflare.com` and never to a log line, a status
+   * frame, a child process argument, or a browser-visible field.
+   */
+  cfApiToken?: string
+  /** Cloudflare account id the named tunnel belongs to (`cfAccountId`). */
+  cfAccountId?: string
+  /** The named tunnel's id — not its run token (`cfTunnelId`). */
+  cfTunnelId?: string
+  /**
    * Stable-origin relay: when on (default), the quick tunnel is fronted by a
    * fixed `https://<id>.dsh-market.com` subdomain (the dsh-market worker's
    * registry), so the phone's bookmark and pairing cookie survive `dsh web`
@@ -255,6 +283,10 @@ export const Config = z.object({
   devicesFile: z.string(),
   autoTunnel: z.boolean().default(false).volatile(),
   tunnelToken: z.string().role('secret').volatile(),
+  ingressSync: z.boolean().default(false).volatile(),
+  cfApiToken: z.string().role('secret').volatile(),
+  cfAccountId: z.string().volatile(),
+  cfTunnelId: z.string().volatile(),
   relay: z.boolean().default(true).volatile(),
   lanBind: z.boolean().volatile(),
   profile: z.string().pattern(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
@@ -276,13 +308,19 @@ const PORT_SETTLE_RETRY_MS = 1_000
  * which legitimately resolves to `undefined` when unset (the schema keeps it
  * optional, so `Required` alone would over-narrow it to `string`).
  */
-type ResolvedConfig = Required<Omit<Config, 'publicBaseUrl' | 'trustedHosts' | 'devicesFile' | 'lanBind' | 'profile' | 'tunnelToken'>> & {
+type ResolvedConfig = Required<Omit<Config, 'publicBaseUrl' | 'trustedHosts' | 'devicesFile' | 'lanBind' | 'profile' | 'tunnelToken' | 'cfApiToken' | 'cfAccountId' | 'cfTunnelId'>> & {
   publicBaseUrl: string | undefined
   trustedHosts: string[] | undefined
   devicesFile: string
   /** undefined until the user flips the toggle once; undefined never writes the patch. */
   lanBind: boolean | undefined
   tunnelToken: string | undefined
+  /** Cloudflare API token (secret); undefined keeps the ingress sync unconfigured. */
+  cfApiToken: string | undefined
+  /** Cloudflare account id the named tunnel belongs to. */
+  cfAccountId: string | undefined
+  /** Named tunnel id (never the tunnel's run token). */
+  cfTunnelId: string | undefined
   profile: string
 }
 
@@ -311,6 +349,10 @@ export interface ResolvedConfigFields {
   devicesFile?: ConfigField<string>
   autoTunnel?: ConfigField<boolean>
   tunnelToken?: ConfigField<string>
+  ingressSync?: ConfigField<boolean>
+  cfApiToken?: ConfigField<string>
+  cfAccountId?: ConfigField<string>
+  cfTunnelId?: ConfigField<string>
   relay?: ConfigField<boolean>
   lanBind?: ConfigField<boolean>
   profile?: ConfigField<string>
@@ -378,6 +420,10 @@ const DEFAULTS: ResolvedConfig = {
   devicesFile: defaultDevicesFile(),
   autoTunnel: false,
   tunnelToken: undefined,
+  ingressSync: false,
+  cfApiToken: undefined,
+  cfAccountId: undefined,
+  cfTunnelId: undefined,
   relay: true,
   lanBind: undefined,
   profile: resolveManagedProfile(undefined, undefined, process.env.DSH_PROFILE),
@@ -556,6 +602,10 @@ function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
     devicesFile: readConfigField(config?.devicesFile, DEFAULTS.devicesFile),
     autoTunnel: readConfigField(config?.autoTunnel, DEFAULTS.autoTunnel),
     tunnelToken: readOptionalConfigField(config?.tunnelToken),
+    ingressSync: readConfigField(config?.ingressSync, DEFAULTS.ingressSync),
+    cfApiToken: readOptionalConfigField(config?.cfApiToken),
+    cfAccountId: readOptionalConfigField(config?.cfAccountId),
+    cfTunnelId: readOptionalConfigField(config?.cfTunnelId),
     relay: readConfigField(config?.relay, DEFAULTS.relay),
     lanBind: readOptionalConfigField(config?.lanBind),
     profile: resolveManagedProfile(readOptionalConfigField(config?.profile), launchedProfileName(ctx), process.env.DSH_PROFILE),
@@ -769,6 +819,27 @@ function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
     tunnel.dispose()
     if (portSettleTimer !== undefined) clearTimeout(portSettleTimer)
   }, 'remote-web-ui: auto tunnel')
+
+  // ── update-only ingress sync (issue #1948) ────────────────────────────────
+  // A named tunnel's public hostname is permanent, but its ingress rule names a
+  // fixed local port: after a port change the hostname keeps resolving and
+  // answers 502. This runner keeps that one number following the port the host
+  // actually bound — one read on start, one proven write on drift, nothing else.
+  // Its frame rides the pairing snapshot, so the panel and the settings card can
+  // explain a failure without the account token leaving this process.
+  let ingressEnabledOnce = false
+  const ingress = new IngressSync({
+    onFrame: (frame: IngressSyncFrame) => {
+      if (frame.state !== 'off') ingressEnabledOnce = true
+      service.setIngressStatus(ingressEnabledOnce ? frame : undefined)
+      if (frame.state === 'failed' || frame.state === 'conflict') {
+        const code = frame.code === undefined ? '' : ` (${frame.code})`
+        const detail = frame.detail === undefined ? '' : `: ${frame.detail}`
+        console.warn(`remote-web-ui: ingress sync ${frame.state}${code}${detail}`)
+      }
+    },
+  })
+  ctx.effect(() => () => { ingress.dispose() }, 'remote-web-ui: ingress sync')
   // The bind facts are known by now (webServer is an inject edge): the LAN
   // bases are frozen per process, matching the CLI's once-per-invocation
   // sampling stance. The QR can only advertise addresses the fence accepts;
@@ -1261,6 +1332,22 @@ function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
     }
   }
 
+  /**
+   * Feed the ingress sync the resolved settings. The bound port is the only
+   * target fact, so an unbound listener schedules a zero-request wait and the
+   * port-settle retry re-plans it. The quick tunnel is never an ingress target:
+   * it mints a new hostname per start and owns the public base while it runs,
+   * so a deployment on it has no named tunnel to update (the switch reads as
+   * off there rather than editing an unrelated tunnel).
+   * @param value - the resolved settings.
+   * @param port - the bound web server port, undefined before the listener binds.
+   */
+  const scheduleIngressSync = (value: ResolvedConfig, port: number | undefined): void => {
+    // The switch precedence and the hostname derivation live in the tested
+    // adapter (ingressInputOf): this call site only supplies the settings.
+    ingress.schedule(ingressInputOf(value, port))
+  }
+
   // Apply the effective configuration to the running surfaces once per
   // activation: the service tunables, the LAN-bind block/firewall, the tunnel
   // plan, the pairing routes, the presence sweep, and the posture probe.
@@ -1272,8 +1359,12 @@ function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
     // pass can run this apply before the listener binds: defer the tunnel
     // branch (and re-plan on a short timer) instead of minting an
     // http://127.0.0.1:undefined target; everything else in sync applies.
-    const livePort = ctx.webServer.port
-    if (livePort === undefined && value.autoTunnel === true) {
+    // Read through the normalizer: a half-read webServer can hand NaN/Infinity,
+    // and that must take the unbound-port path (settle retry, no request) rather
+    // than mint a ":NaN" target or leave every dependent surface waiting.
+    const livePort = livePortOf(ctx.webServer.port)
+    const tunnelNeedsPort = livePort === undefined && value.autoTunnel === true
+    if (tunnelNeedsPort) {
       if (!portSettleWarned) {
         portSettleWarned = true
         console.warn('remote-web-ui: autoTunnel is on but the web server port is not bound yet — the quick tunnel starts once the port settles')
@@ -1283,6 +1374,11 @@ function applyImpl(ctx: Context, config?: ResolvedConfigFields): void {
       portSettleWarned = false
       applyTunnelPlan(value, livePort)
     }
+    // The ingress sync learns the live port in both branches: an unbound
+    // listener is a zero-request wait there, and the same settle timer delivers
+    // the port — no second retry loop of its own.
+    scheduleIngressSync(value, livePort)
+    if (livePort === undefined && !tunnelNeedsPort && value.ingressSync === true) schedulePortSettleRetry()
     // The lease and the bridge are transport-owned, not tunnel-owned: a
     // bridge-mode instance has to reach its object even when no quick tunnel
     // runs (the claim is the only answer that carries the bridge grant, and

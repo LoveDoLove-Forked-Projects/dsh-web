@@ -25,6 +25,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { PostureHost, PostureSnapshot } from './posture.ts'
+import { sameIngressFrame, type IngressSyncFrame } from './ingress-sync.ts'
 
 /** The observable pairing phases the panel renders. */
 export type PairingPhase =
@@ -139,6 +140,12 @@ export interface PairingSnapshot {
   tunnel?: TunnelStatus
   /** Relay-registry status, while the stable-origin relay is in play. */
   relay?: RelayStatus
+  /**
+   * Update-only Cloudflare ingress sync status (issue #1948), once the feature
+   * has been enabled in this process. The public hostname, the local port and
+   * the two service strings are audit facts, not credentials.
+   */
+  ingress?: IngressSyncFrame
   /** Latest /api posture probe (undefined until the first round completes). */
   posture?: PostureSnapshot
   /** Opaque (non-secret) id of the active token (undefined when stopped/lan-required). */
@@ -247,6 +254,7 @@ export class PairingService {
   /** Auto-tunnel status, while the auto-tunnel feature is active. */
   private tunnelStatus: TunnelStatus | undefined
   private relayStatus: RelayStatus | undefined
+  private ingressStatus: IngressSyncFrame | undefined
   private posture: PostureSnapshot | undefined
   /** True when lastSeenAt changed since the last persist (flushed on sweep). */
   private dirty = false
@@ -419,6 +427,12 @@ export class PairingService {
   /** Set or clear the relay-registry status frame (undefined when not in play). */
   setRelayStatus(status: RelayStatus | undefined): void {
     this.relayStatus = status
+    this.notify()
+  }
+
+  /** Set or clear the ingress-sync status frame (undefined before it ever ran). */
+  setIngressStatus(status: IngressSyncFrame | undefined): void {
+    this.ingressStatus = status
     this.notify()
   }
 
@@ -665,6 +679,7 @@ export class PairingService {
       ...(this.publicBase !== undefined ? { publicUrl: this.publicBase } : {}),
       ...(this.tunnelStatus !== undefined ? { tunnel: this.tunnelStatus } : {}),
       ...(this.relayStatus !== undefined ? { relay: this.relayStatus } : {}),
+      ...(this.ingressStatus !== undefined ? { ingress: this.ingressStatus } : {}),
       ...(this.posture !== undefined ? { posture: this.posture } : {}),
       ...(token !== undefined ? { tokenId: token.record.id, tokenExpiresAt: token.record.expiresAt } : {}),
       deviceCount: this.devices.size,
@@ -768,6 +783,7 @@ function snapshotsEqual(a: PairingSnapshot, b: PairingSnapshot): boolean {
     && a.publicUrl === b.publicUrl
     && tunnelEqual(a.tunnel, b.tunnel)
     && relayEqual(a.relay, b.relay)
+    && ingressEqual(a.ingress, b.ingress)
     && postureEqual(a.posture, b.posture)
     && a.tokenId === b.tokenId
     && a.tokenExpiresAt === b.tokenExpiresAt
@@ -794,6 +810,19 @@ function devicesEqual(a: readonly DeviceSnapshot[], b: readonly DeviceSnapshot[]
 function tunnelEqual(a: TunnelStatus | undefined, b: TunnelStatus | undefined): boolean {
   return a === b || (a !== undefined && b !== undefined
     && a.state === b.state && a.url === b.url && a.error === b.error)
+}
+
+/**
+ * Ingress frame equality: the audit state, not the timestamp. A re-read that
+ * proves the same convergence must not emit a second snapshot.
+ * @param a - one frame (or undefined).
+ * @param b - the other frame (or undefined).
+ * @returns whether both describe the same audit state.
+ */
+function ingressEqual(a: IngressSyncFrame | undefined, b: IngressSyncFrame | undefined): boolean {
+  if (a === b) return true
+  if (a === undefined || b === undefined) return false
+  return sameIngressFrame(a, b)
 }
 
 /** Relay frame equality (same shape as the tunnel frame). */
