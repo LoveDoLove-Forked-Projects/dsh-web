@@ -222,19 +222,21 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
             <h2 className={css.modalTitle}>{t('tags.title')}</h2>
             {/* The clear control belongs to the whole ledger, not to the row above
                 it, so it lives in the card's corner instead of after the list. Its
-                rule rides on the `?`: a native title for the hover text every
-                icon button here already uses, plus a visually hidden description so
-                the explanation survives without a pointer. */}
+                rule rides on the `?` as a real bubble rather than a native title:
+                Electron did not paint the title here, the bubble also answers
+                keyboard focus, and it is the element aria-describedby names. */}
             <div className={css.tagCleanup}>
-              <button
-                type="button"
-                className={css.helpButton}
-                aria-label={t('tags.help')}
-                aria-describedby={ruleId}
-                title={ruleText}
-              >
-                ?
-              </button>
+              <div className={css.helpTipWrap}>
+                <button
+                  type="button"
+                  className={css.helpButton}
+                  aria-label={t('tags.help')}
+                  aria-describedby={ruleId}
+                >
+                  ?
+                </button>
+                <span id={ruleId} className={css.helpTip} role="tooltip">{ruleText}</span>
+              </div>
               <label className={css.scheduleZone}>
                 <span>{t('tags.cleanupThreshold')}</span>
                 <input
@@ -258,7 +260,6 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
                 {t('tags.cleanup')}
               </button>
             </div>
-            <span id={ruleId} className={css.srOnly}>{ruleText}</span>
             <button
               type="button"
               className={css.iconButton}

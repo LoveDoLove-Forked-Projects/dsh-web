@@ -270,21 +270,21 @@ describe('label manager cleanup', () => {
     // And one commit offers to run it
     expect([...container.querySelectorAll('button')].some(button => button.textContent === t('tags.cleanup'))).toBe(true)
 
-    // And the rule rides on a question mark instead of a paragraph: the button
-    // carries the sentence as its hover text and as the description assistive
-    // technology reads, so the corner stays a control.
-    // The one question mark carries everything the dialog used to say in prose:
-    // what labels are and what renaming/deleting does, then the clear rule.
+    // And the rule rides on a question mark instead of a paragraph. The bubble is a
+    // real element, not a native title: Electron does not paint the title, and this
+    // is also the description assistive technology reads.
     const rule = t('tags.hint') + '\n\n' + t('tags.cleanupHint')
     const help = [...container.querySelectorAll('button')]
       .find(button => button.getAttribute('aria-label') === t('tags.help'))
     expect(help).toBeDefined()
     expect(help!.textContent).toBe('?')
-    expect(help!.getAttribute('title')).toBe(rule)
+    // No native title: the bubble below is the only carrier.
+    expect(help!.getAttribute('title')).toBeNull()
     const describedBy = help!.getAttribute('aria-describedby')
     expect(describedBy).toBeTruthy()
     const described = [...container.querySelectorAll('[id]')].find(node => node.id === describedBy)
     expect(described?.textContent).toBe(rule)
+    expect(described?.getAttribute('role')).toBe('tooltip')
     // And neither sentence is painted in the body any more: the copy stays in the
     // DOM only as the question mark's visually hidden description, so no rendered
     // paragraph carries it.

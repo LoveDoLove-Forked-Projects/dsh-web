@@ -971,10 +971,10 @@
  * labeled field contract the schedule rows carry (.scheduleZone is already a label
  * wrapping its text and its control) and both buttons reuse .ghostButton and
  * .helpButton, so the corner never grows a second control style. The rule itself
- * is not painted here: it is the `?` button's native title (shown on pointer
- * hover, and never clipped by this modal's overflow) plus a visually hidden
- * description, so assistive technology reads the rule without a pointer; a styled
- * tooltip was rejected because .modal clips its own overflow. The notice
+ * is not painted in the body: the `?` carries it as a bubble anchored under the
+ * button, which keeps it inside the modal box this stylesheet clips at .modal, and
+ * the same element is the button's aria-describedby target — one copy, shown on
+ * pointer hover and on keyboard focus alike. The notice
  * stays plain supporting text in the body, not the error slot: "nothing matched"
  * is an answer, not a failure.
  * ----------------------------------------------------------------------------- */
@@ -1017,18 +1017,45 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The same rule for assistive technology: kept in the DOM so the `?` has an
-   aria-describedby target without painting the sentence in the corner. */
-.srOnly {
+/* Anchor for the bubble: the header's flex row sizes it like the button alone. */
+.helpTipWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* The rule itself, anchored under the `?` so it stays inside the modal box that
+   .modal clips. pre-line keeps the two sentences in their own paragraphs, and the
+   element doubles as the button's description. */
+.helpTip {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 4;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 340px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-line;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.helpTipWrap:hover .helpTip,
+.helpTipWrap:focus-within .helpTip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .tagCleanupInput {
