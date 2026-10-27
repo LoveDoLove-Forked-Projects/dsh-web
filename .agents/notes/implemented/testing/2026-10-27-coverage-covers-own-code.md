@@ -30,9 +30,9 @@ Paths are package relative because the gate runs vitest with the package as its 
 
 ## Numbers
 
-Repository totals rose from lines 79.25% before the exclusion to 83.09% after, and 54 metrics across the fleet rose beyond the 0.5-point epsilon.
+Repository totals are lines 83.05% with the exclusion, against 79.25% without it. The baseline records what the CI runner measures, not this workstation: the first Nightly after the change (run 40449496263, 2026-10-27) measured nine metrics below a locally recorded baseline and six above it, with dsh-web-all alone 3.6 points lower on CI because that package's percentage depends on the bundle the lane rebuilds before instrumenting. `docs/development.md` already requires recording the CI side, so the recorded numbers come from that run.
 
-Six metrics in two packages remain below their 2026-10-22 values and are recorded as the new floor: dsh-session-id lines 83.87 -> 82.75 and branches 78 -> 75; dsh-remote-bridge lines 91.43 -> 90.6, statements 86.39 -> 85.22, functions 88.59 -> 87.21 and branches 82.31 -> 80.87. Both packages carried well-covered copies, so removing those files from the denominator lowers their percentage with no test change.
+Seven metrics in three packages remain below their 2026-10-22 values and are recorded as the new floor: dsh-remote-bridge lines 91.43 -> 90.6, statements 86.39 -> 85.22, functions 88.59 -> 87.21 and branches 82.31 -> 80.87; dsh-session-id lines 83.87 -> 82.75 and branches 78 -> 75; dsh-web-all lines 87.78 -> 86.37. The first two carried well-covered copies, so removing those files from the denominator lowers their percentage with no test change; dsh-web-all's floor follows the bundle its own lane rebuilds.
 
 The two packages that had never been recorded are now in the baseline: dsh-browser-view (lines 79.92) and dsh-message-edit (lines 95.34).
 

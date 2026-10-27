@@ -30,9 +30,9 @@ Nightly 的覆盖率棘轮通道连红三晚：run 40079811095（2026-10-24）�
 
 ## Numbers
 
-仓库总量从排除前的 lines 79.25% 升到排除后的 83.09%，全库有 54 个指标在 0.5 点的 epsilon 之外上升。
+仓库总量在排除后是 lines 83.05%，排除前是 79.25%。基线记录的是 CI runner 实测值而不是本机值：改动后的第一次 Nightly（run 40449496263，2026-10-27）有九个指标低于本机记录的基线、六个高于它，其中 dsh-web-all 在 CI 上低了 3.6 点，因为该包的百分比取决于车道在插桩前重新构建的 bundle。`docs/development.md` 本就要求按 CI 侧记录，因此基线取自那次运行。
 
-两个包里有六个指标仍低于它们在 2026-10-22 的值，作为新的下限记录：dsh-session-id lines 83.87 -> 82.75 与 branches 78 -> 75；dsh-remote-bridge lines 91.43 -> 90.6、statements 86.39 -> 85.22、functions 88.59 -> 87.21 与 branches 82.31 -> 80.87。这两个包的副本本来覆盖得很好，所以把这些文件从分母里去掉会降低它们的百分比，而测试一行都没改。
+三个包里有七个指标仍低于它们在 2026-10-22 的值，作为新的下限记录：dsh-remote-bridge lines 91.43 -> 90.6、statements 86.39 -> 85.22、functions 88.59 -> 87.21 与 branches 82.31 -> 80.87；dsh-session-id lines 83.87 -> 82.75 与 branches 78 -> 75；dsh-web-all lines 87.78 -> 86.37。前两个包的副本本来覆盖得很好，所以把这些文件从分母里去掉会降低它们的百分比，而测试一行都没改；dsh-web-all 的下限跟着它自己车道重建的 bundle 走。
 
 两个此前从未被记录的包现在进了基线：dsh-browser-view（lines 79.92）与 dsh-message-edit（lines 95.34）。
 
