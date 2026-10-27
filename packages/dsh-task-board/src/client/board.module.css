@@ -965,9 +965,10 @@
  * labeled field contract the schedule rows carry (.scheduleZone is already a label
  * wrapping its text and its control) and both buttons reuse .ghostButton and
  * .helpButton, so the corner never grows a second control style. The rule itself
- * is not painted here: it is the `?` button's native title plus its visually
- * hidden description, which keeps the corner two controls wide while the
- * explanation stays reachable by pointer, keyboard and screen reader. The notice
+ * is not painted here: it is the `?` button's native title (shown on pointer
+ * hover, and never clipped by this modal's overflow) plus a visually hidden
+ * description, so assistive technology reads the rule without a pointer; a styled
+ * tooltip was rejected because .modal clips its own overflow. The notice
  * stays plain supporting text in the body, not the error slot: "nothing matched"
  * is an answer, not a failure.
  * ----------------------------------------------------------------------------- */
