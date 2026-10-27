@@ -910,6 +910,12 @@
 .modalHeader > .modalTitle {
   flex: 1;
   min-width: 0;
+  /* A header can now carry a fixed-width control cluster (the label manager's
+     clear rule), so the title has to shrink honestly instead of overflowing onto
+     it — the longer localised titles are where this shows. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tagManageList {
