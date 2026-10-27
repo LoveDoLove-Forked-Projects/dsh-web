@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { apply, inject, servesTeamRuntime } from '../src/index.ts'
+import { apply, inject, OFFICIAL_TEAMS_BUNDLE, servesTeamRuntime, teamRuntimeGate } from '../src/index.ts'
 import { DSH_AGENTS_ROUTE_PATHS } from '../src/protocol.ts'
 import { TeamService, type TeamServiceContext } from '../src/team/index.ts'
 import { installTeamTools } from '../src/tools/index.ts'
@@ -44,6 +44,8 @@ interface FakeHost {
   readonly routes: string[]
   /** First argument of every `ctx.logger.warn` call. */
   readonly warnings: string[]
+  /** Name of every `ctx.on` subscription the row made, in order. */
+  readonly events: string[]
   /** Drop everything the row disposed through `ctx.effect`. */
   release(): void
 }
@@ -84,6 +86,7 @@ function servedTeamServices(projections: Projection[]): Record<string, unknown> 
 function createFakeHost(services: Record<string, unknown> = {}, options: FakeHostOptions = {}): FakeHost {
   const routes: string[] = []
   const warnings: string[] = []
+  const events: string[] = []
   const disposers: Array<() => unknown> = []
   const available = new Map<string, unknown>(Object.entries(services))
 
@@ -105,7 +108,10 @@ function createFakeHost(services: Record<string, unknown> = {}, options: FakeHos
       if (typeof dispose === 'function') disposers.push(dispose as () => unknown)
       return () => undefined
     },
-    on: () => () => undefined,
+    on: (name: string) => {
+      events.push(name)
+      return () => undefined
+    },
     get: (name: string) => available.get(name),
     logger: { warn: (message: unknown) => { warnings.push(String(message)) } },
     fiber: { effect: (callback: () => unknown) => callback() },
@@ -142,6 +148,7 @@ function createFakeHost(services: Record<string, unknown> = {}, options: FakeHos
     ctx,
     routes,
     warnings,
+    events,
     release: () => {
       for (const dispose of disposers.splice(0)) {
         try {
@@ -185,14 +192,64 @@ describe('row mount under an inject-enforcing context', () => {
   })
 
   it('operator mounts the forked team runtime exactly once when the deployment serves all five services', () => {
-    // Given a Host that serves all five, When the row applies, Then the same routes register and the Team service registers its one agentTeam projection.
+    // Given a Host that serves all five while its profile mounts no official Agent Teams bundle, When the row applies, Then the same routes register and the Team service registers its one agentTeam projection.
     const projections: Projection[] = []
-    const host = createFakeHost(servedTeamServices(projections))
+    const host = createFakeHost({
+      ...servedTeamServices(projections),
+      profileContext: { startedBundles: ['@deepseek-ai/dsh-base', '@linxin666/dsh-web-all'] },
+    })
 
+    expect(teamRuntimeGate(host.ctx)).toBe('ready')
     expect(servesTeamRuntime(host.ctx)).toBe(true)
     expect(() => apply(host.ctx, { enabled: true })).not.toThrow()
     expect(host.routes).toEqual([...DSH_AGENTS_ROUTE_PATHS])
     expect(projections).toEqual([{ key: 'agentTeam', stateVersion: 4 }])
+    expect(host.warnings.some(message => message.includes('forked Agent Teams runtime stays unmounted'))).toBe(false)
+    host.release()
+  })
+
+  it('operator keeps the official Team runtime when the profile mounts its bundle before that row applies', () => {
+    // Given a profile whose startup bundles include the official Agent Teams bundle while its service does not exist yet, When the row applies, Then the forked runtime stays out for the same reason the registered service gives - the later official row keeps the name instead of failing its own mount.
+    const projections: Projection[] = []
+    const host = createFakeHost({
+      ...servedTeamServices(projections),
+      profileContext: { startedBundles: ['@deepseek-ai/dsh-base', '@linxin666/dsh-web-all', OFFICIAL_TEAMS_BUNDLE] },
+    })
+
+    expect(teamRuntimeGate(host.ctx)).toBe('host-teams-declared')
+    expect(servesTeamRuntime(host.ctx)).toBe(false)
+
+    expect(() => apply(host.ctx, { enabled: true })).not.toThrow()
+    expect(host.routes).toEqual([...DSH_AGENTS_ROUTE_PATHS])
+    // Nothing of the fork may claim agentTeams before the official row applies.
+    expect(projections).toEqual([])
+    expect(host.events.filter(name => name.startsWith('agent/'))).toEqual([])
+    expect((host.ctx as unknown as { get(name: string): unknown }).get('agentTeams')).toBeUndefined()
+    expect(host.warnings.some(message => message.includes('mounts the official Agent Teams runtime bundle'))).toBe(true)
+    expect(host.warnings.some(message => message.includes('already serves the official Agent Teams runtime'))).toBe(false)
+    host.release()
+  })
+
+  it('operator keeps the official Team runtime when the deployment already serves agentTeams', () => {
+    // Given a Host that serves all five team-runtime services and an agentTeams service of its own, When the row applies, Then it mounts the ledger routes, neither service nor tool surface is registered a second time, and the warning names the official runtime as the reason.
+    const projections: Projection[] = []
+    const official = { tryMembership: () => undefined, listMembers: () => [] }
+    const host = createFakeHost({ ...servedTeamServices(projections), agentTeams: official })
+
+    expect(teamRuntimeGate(host.ctx)).toBe('host-teams')
+    expect(servesTeamRuntime(host.ctx)).toBe(false)
+
+    expect(() => apply(host.ctx, { enabled: true })).not.toThrow()
+    expect(host.routes).toEqual([...DSH_AGENTS_ROUTE_PATHS])
+    // The official runtime owns agentTeam/4, so the fork registers no projection.
+    expect(projections).toEqual([])
+    // Neither the forked TeamService nor installTeamTools subscribes to these
+    // events, so their absence is the mount's own evidence that the whole fork
+    // block stayed out - not merely its constructor.
+    expect(host.events.filter(name => name.startsWith('agent/'))).toEqual([])
+    // The service the deployment published is still the object it published.
+    expect((host.ctx as unknown as { get(name: string): unknown }).get('agentTeams')).toBe(official)
+    expect(host.warnings.some(message => message.includes('already serves the official Agent Teams runtime'))).toBe(true)
     expect(host.warnings.some(message => message.includes('forked Agent Teams runtime stays unmounted'))).toBe(false)
     host.release()
   })
@@ -288,5 +345,81 @@ describe('team runtime mount on a real cordis tree', () => {
     expect(instance).toBeInstanceOf(TeamService)
     expect(projections).toEqual([{ key: 'agentTeam', stateVersion: 4 }])
     expect(instance.membership(lead).role).toBe('lead')
+  })
+
+  it('operator applies the row without a second registration when a real cordis sibling already provided agentTeams', async () => {
+    // Given a real cordis tree whose sibling fiber registered agentTeams before this row, When the row's apply runs, Then it completes instead of throwing cordis' duplicate-service error, registers no fork projection, and leaves the sibling's service in place.
+    const root = new Context()
+    const projections: Projection[] = []
+    const routes: string[] = []
+    const official = { tryMembership: () => undefined, listMembers: () => [] }
+
+    root.plugin({
+      name: 'fake-official-agent-teams',
+      apply(provider: Context) {
+        provider.provide('agentTeams', official)
+      },
+    })
+    root.plugin({
+      name: 'fake-host-services',
+      apply(provider: Context) {
+        provider.provide('systemPrompt', {
+          section: () => () => undefined,
+          context: () => () => undefined,
+          getSectionOrder: () => 0,
+          getContextOrder: () => 0,
+        })
+        provider.provide('typertGateway', {})
+        provider.provide('webServer', {
+          register: (route: { path: string }): (() => void) => {
+            routes.push(route.path)
+            return () => undefined
+          },
+        })
+        provider.provide('agents', { get: () => undefined, list: () => [] })
+        provider.provide('sessions', { get: () => undefined, flush: async () => undefined })
+        provider.provide('sessionPersistence', { open: async () => undefined })
+        provider.provide('sessionProjections', {
+          register: (definition: Projection) => {
+            projections.push({ key: definition.key, stateVersion: definition.stateVersion })
+            return () => undefined
+          },
+          stateOf: () => undefined,
+        })
+        provider.provide('subagents', {
+          startActivation: async () => undefined,
+          drainChildren: async () => undefined,
+          interrupt: () => undefined,
+        })
+      },
+    })
+
+    let applied = false
+    let failure: unknown
+    root.plugin({
+      name: 'dsh-agents-row',
+      inject: [...inject],
+      apply(row: Context) {
+        try {
+          apply(row, { enabled: true })
+          applied = true
+        } catch (error) {
+          failure = error
+        }
+      },
+    })
+
+    // The routes are the row's own output, so wait on them rather than on a
+    // fixed delay; a row that never applied fails here instead of hanging.
+    await vi.waitFor(() => {
+      expect(routes).toEqual([...DSH_AGENTS_ROUTE_PATHS])
+    })
+
+    expect(failure).toBeUndefined()
+    expect(applied).toBe(true)
+    // cordis would have rejected the fork's own provide() of this name, so an
+    // empty projection list and the untouched identity are the coexistence.
+    expect(projections).toEqual([])
+    expect(root.get('agentTeams')).toBe(official)
   })
 })

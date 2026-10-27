@@ -199,11 +199,61 @@ function resolveTypertGateway(ctx: Context): TypertGatewayFace | undefined {
 }
 
 /**
- * Whether this deployment serves every face the forked Agent Teams runtime
- * needs. TeamService declares them as its own inject list; a deployment missing
- * one keeps M1's ledger, routes and member brief and loses only the team runtime.
+ * Why the forked Agent Teams runtime is, or is not, mounted in this deployment.
+ *
+ * Neither `host-teams` value is a degradation a cleverer probe could avoid: one
+ * service name has one owner, and cordis refuses a second registration with
+ * `service "agentTeams" has been registered at <fiber>`. Whichever side loses
+ * that race loses its own mount, which is exactly the install/update failure the
+ * official Agent Teams bundle exposes - so this row yields in BOTH directions
+ * instead of depending on which entry the Loader starts first.
  */
-export function servesTeamRuntime(ctx: Context): boolean {
+export type TeamRuntimeGate = 'ready' | 'host-teams' | 'host-teams-declared' | 'missing-faces'
+
+/**
+ * Published activation unit of the official Agent Teams runtime: enabling this
+ * bundle in a profile is what inserts the rows that provide `agentTeams`.
+ */
+export const OFFICIAL_TEAMS_BUNDLE = '@deepseek-ai/dsh-experimental-agent-team-profile'
+
+/** The launcher's profile facts, narrowed to the one field this gate reads. */
+interface ProfileBundlesFace {
+  readonly startedBundles?: readonly string[]
+}
+
+/**
+ * Whether this profile mounts the official Agent Teams bundle.
+ *
+ * The startup bundle list is the only fact that exists before the official row
+ * applies, and it is the one that decides the race: entries are composed in
+ * `dsh.profile.bundles` order, and a bundle enabled later is appended after
+ * this family's, so the official row would be the side that loses the
+ * registration. A deployment that cannot answer (no launcher-provided profile
+ * context, a bare cordis tree) falls through to the service probe.
+ * @param ctx - the plugin context.
+ * @returns true when the launcher reports the official bundle among its startup bundles.
+ */
+export function profileMountsOfficialTeams(ctx: Context): boolean {
+  const profile = readService<ProfileBundlesFace>(ctx, 'profileContext', false)
+  return Array.isArray(profile?.startedBundles) && profile.startedBundles.includes(OFFICIAL_TEAMS_BUNDLE)
+}
+
+/**
+ * Decide what this deployment gets from the forked runtime.
+ * @param ctx - the plugin context.
+ * @returns `ready` when this row must mount the fork; `host-teams` when the
+ *   deployment already serves an Agent Teams runtime of its own;
+ *   `host-teams-declared` when its profile mounts the official bundle that will
+ *   provide that service; `missing-faces` when one of the five faces the fork
+ *   drives is absent.
+ */
+export function teamRuntimeGate(ctx: Context): TeamRuntimeGate {
+  // Read before the face probe so the operator is told the real reason. The
+  // official runtime publishes the same projection key and stateVersion as the
+  // fork (agentTeam / 4), so the browser half keeps reading live state either
+  // way; what must not happen is a second service registration for one name.
+  if (readService<unknown>(ctx, 'agentTeams', false) !== undefined) return 'host-teams'
+  if (profileMountsOfficialTeams(ctx)) return 'host-teams-declared'
   // Every face is read through `ctx.get`: this fiber injects three services, so
   // a property read of any other service throws "cannot get property ... without
   // inject" and the whole row would fail to mount instead of skipping the
@@ -213,7 +263,7 @@ export function servesTeamRuntime(ctx: Context): boolean {
   const sessionPersistence = readService<unknown>(ctx, 'sessionPersistence', false)
   const sessionProjections = readService<{ register?: unknown; stateOf?: unknown }>(ctx, 'sessionProjections', false)
   const subagents = readService<{ startActivation?: unknown }>(ctx, 'subagents', false)
-  return typeof agents?.get === 'function'
+  const servesFaces = typeof agents?.get === 'function'
     && typeof agents?.list === 'function'
     && typeof sessions?.get === 'function'
     && typeof sessions?.flush === 'function'
@@ -221,6 +271,19 @@ export function servesTeamRuntime(ctx: Context): boolean {
     && typeof sessionProjections?.register === 'function'
     && typeof sessionProjections?.stateOf === 'function'
     && typeof subagents?.startActivation === 'function'
+  return servesFaces ? 'ready' : 'missing-faces'
+}
+
+/**
+ * Whether this deployment serves every face the forked Agent Teams runtime
+ * needs, and serves no Agent Teams runtime of its own. TeamService declares the
+ * faces as its own inject list; a deployment missing one keeps M1's ledger,
+ * routes and member brief and loses only the team runtime.
+ * @param ctx - the plugin context.
+ * @returns true only when this row must mount the forked runtime.
+ */
+export function servesTeamRuntime(ctx: Context): boolean {
+  return teamRuntimeGate(ctx) === 'ready'
 }
 
 /**
@@ -322,7 +385,16 @@ export function apply(ctx: Context, config?: Config): void {
         warn(ctx, '[dsh-agents] this deployment serves no systemPrompt service; member briefs and the squad context stay un-injected')
       }
 
-      if (!servesTeamRuntime(ctx)) {
+      const gate = teamRuntimeGate(ctx)
+      if (gate === 'host-teams' || gate === 'host-teams-declared') {
+        // Whole block, not just the constructor: the fork's tools resolve
+        // `agentTeams` through the service accessor and would then drive the
+        // official runtime with this package's gate and member pins, which is a
+        // second owner of one service rather than a coexistence.
+        warn(ctx, gate === 'host-teams'
+          ? '[dsh-agents] this deployment already serves the official Agent Teams runtime (agentTeams); the forked Agent Teams runtime and its Team tools stay unmounted so one service keeps one owner, and squads keep member runs, the ledger and the routes'
+          : '[dsh-agents] this deployment mounts the official Agent Teams runtime bundle (@deepseek-ai/dsh-experimental-agent-team-profile); the forked Agent Teams runtime and its Team tools stay unmounted so that row keeps the agentTeams service, and squads keep member runs, the ledger and the routes')
+      } else if (gate === 'missing-faces') {
         warn(ctx, '[dsh-agents] this deployment does not serve the agents/sessions/sessionPersistence/sessionProjections/subagents set; the forked Agent Teams runtime stays unmounted and only member runs are available')
       } else {
         // TeamService registers itself as ctx.agentTeams and registers the
