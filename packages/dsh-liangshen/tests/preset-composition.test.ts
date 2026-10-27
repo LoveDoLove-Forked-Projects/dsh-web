@@ -141,6 +141,35 @@ describe('liangshen preset composition', () => {
     expect(row('reasoning-effort')).toBe('')
   })
 
+  it('operator gets the human /goal command beside the goal tool from the preset', () => {
+    // Given: the shipped composition, read the way the preset loader reads it.
+    const rows = readCompositionRows(preset, presetDir) as CompositionRow[]
+    // When: the goals section's rows are inspected.
+    const commandGoal = rows.filter((entry) => entry.id === 'command-goal')
+    const goalTool = rows.filter((entry) => entry.id === 'tool-goal')
+    // Then: the human /goal command is one TOP-LEVEL row. The builtin
+    // standard, ptc, and cordis presets declare it exactly that way, so it
+    // resolves the host `commands` service; an entry-local realm would hide
+    // that service and the command would never register.
+    expect(commandGoal.map((entry) => entry.name)).toEqual(['@deepseek-ai/dsh-command-goal'])
+    // Then: the model-facing goal tool stays mounted beside it, so the preset
+    // keeps both consumers of the one host goal domain.
+    expect(goalTool.map((entry) => entry.name)).toEqual(['@deepseek-ai/dsh-tool-goal'])
+    // Then: the file declares the command exactly once, and no group holds a
+    // second copy of the row.
+    expect(preset.match(/name: '@deepseek-ai\/dsh-command-goal'/gu)).toHaveLength(1)
+    const nested = rows
+      .filter((entry) => Array.isArray(entry.config))
+      .flatMap((entry) => leafRows(entry.config as CompositionRow[]))
+    expect(nested.map((entry) => entry.id)).not.toContain('command-goal')
+    // Then: the guard is not vacuous - the exact edit that drops the row reads
+    // back as its absence instead of passing silently.
+    const stripped = preset.replace("- id: command-goal\n  name: '@deepseek-ai/dsh-command-goal'\n", '')
+    expect(stripped).not.toBe(preset)
+    expect((readCompositionRows(stripped, presetDir) as CompositionRow[]).map((entry) => entry.id))
+      .not.toContain('command-goal')
+  })
+
   it('keeps the native and ptc presentation variants structurally valid', () => {
     for (const mode of ['native', 'ptc']) {
       const variant = preset.replace("presentation: 'ptc'", `presentation: '${mode}'`)
