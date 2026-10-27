@@ -96,6 +96,54 @@ export const name = 'liangshen-tool-catalog'
 /** Prompt assembly must exist before the wire catalog can be observed. */
 export const inject = ['systemPrompt']
 
+/**
+ * The paged namespaces each agent scope carries, published by the paging sync
+ * below for the sibling `tool-activate` row.
+ *
+ * The activation tool cannot recompute this itself: the live restriction the
+ * catalog installs is what removes the paged names from every scoped reader, so
+ * `tools.schemas(agent)` inside the activation tool already lacks exactly the
+ * names it must offer. Publishing the pre-restriction partition keeps one fact
+ * behind both the catalog message and the tool that loads a namespace back.
+ * Keyed by agent, and by the agent's session for a caller that reaches the same
+ * session through another scope object; both are weak, so a departed scope
+ * leaves nothing behind.
+ */
+const pagedSurfaceByAgent = new WeakMap()
+const pagedSurfaceBySession = new WeakMap()
+
+/**
+ * Publish (or, with `undefined`, retract) one scope's paged namespaces.
+ * @param agent - agent scope the partition belongs to.
+ * @param surface - namespace-keyed namespaces, as `partitionWireTools` returns.
+ */
+function publishPagedSurface(agent, surface) {
+  if (agent === undefined || agent === null) return
+  const session = agent.session
+  if (surface === undefined) {
+    pagedSurfaceByAgent.delete(agent)
+    if (session !== undefined && session !== null) pagedSurfaceBySession.delete(session)
+    return
+  }
+  pagedSurfaceByAgent.set(agent, surface)
+  if (session !== undefined && session !== null) pagedSurfaceBySession.set(session, surface)
+}
+
+/**
+ * The paged namespaces one agent scope carries, keyed by namespace to that
+ * namespace's tool schemas.
+ * @param agent - agent scope the caller acts for.
+ * @returns the published partition, or undefined when nothing paged this scope.
+ */
+export function pagedNamespacesFor(agent) {
+  if (agent === undefined || agent === null) return undefined
+  const byAgent = pagedSurfaceByAgent.get(agent)
+  if (byAgent !== undefined) return byAgent
+  const session = agent.session
+  if (session === undefined || session === null) return undefined
+  return pagedSurfaceBySession.get(session)
+}
+
 /** Default cap for one tool's one-line summary in the injected compact list. */
 const DEFAULT_DESCRIPTION_MAX_LENGTH = 200
 
@@ -705,6 +753,10 @@ export function apply(ctx, config) {
    */
   const syncScopePaging = (agent) => {
     clearScopePaging(agent)
+    // Retract the earlier publication first: every early return below means this
+    // scope is not paged, and a stale page would keep advertising namespaces the
+    // activation tool can no longer reach.
+    publishPagedSurface(agent, undefined)
 
     const tools = agent?.ctx?.tools
     if (tools === undefined || typeof tools.restrict !== 'function') {
@@ -719,6 +771,10 @@ export function apply(ctx, config) {
     // assembly-path emergency that warning describes.
     const fullSurface = quietSchemas(agent) ?? []
     if (fullSurface.length === 0) return undefined
+    // Publish before the withhold decision: with every namespace already active
+    // there is nothing to restrict, and the activation tool must still know the
+    // namespace exists to report it as active instead of unknown.
+    publishPagedSurface(agent, inactiveNamespaces(fullSurface, pagedToolPatterns, []))
     const active = replayActivations(sessionEvents(agent?.session), maxActiveNamespaces, pagedToolPatterns).active
     const withheld = withheldToolNames(fullSurface, pagedToolPatterns, active)
     if (withheld.length === 0) return undefined

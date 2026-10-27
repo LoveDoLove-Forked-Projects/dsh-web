@@ -26,6 +26,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { apply, name } from '../presets/liangshen/tool-catalog.mjs'
+import { apply as applyActivate } from '../presets/liangshen/tool-activate.mjs'
 
 type Listener = (first: any, second: any, third: any) => Promise<any>
 
@@ -404,5 +405,44 @@ describe('gentle paging under the collapsed ptc wire', () => {
     // and the transport survives.
     expect(h.tools.sdkSchemas(agent).map((tool: any) => tool.name)).toEqual(['bash', 'read'])
     expect(h.warnings).toEqual([])
+  })
+})
+
+/**
+ * The activation tool has to offer exactly the namespaces the catalog
+ * advertises, and under `ptc` those are the ones the live restriction already
+ * removed from every scoped reader. Both preset rows are mounted on ONE
+ * registry here, so the activation tool faces the same filtered scope the
+ * production session does: reading `tools.schemas(agent)` back would find an
+ * empty page and refuse a namespace the same request's catalog names.
+ */
+describe('tool_activate against the restricted ptc surface', () => {
+  /** Mount the sibling row against the harness registry and return its tool. */
+  function activateTool(): any {
+    const registered: any[] = []
+    applyActivate({ tools: { register: (spec: any) => registered.push(spec) }, get: () => undefined }, {})
+    expect(registered).toHaveLength(1)
+    return registered[0]
+  }
+
+  it('activates a namespace the restriction hid from the scope projection', async () => {
+    const h = harness()
+    const agent = await agentOf(h)
+    // The page is real: the projection the activation tool could read itself
+    // no longer lists the paged names.
+    expect(h.tools.schemas(agent).map((tool: any) => tool.name)).toEqual(['bash', 'read'])
+
+    const result = await activateTool().execute({ namespace: 'github' }, { callId: 'call-1', agent })
+    expect(result.text).toContain('Activated namespace "github" (2 tools): mcp__github__create_issue, mcp__github__list_prs')
+  })
+
+  it('still names a namespace whose tools are all already active', async () => {
+    const h = harness()
+    const agent = await agentOf(h, [...activation('github', 'call-a')])
+    // Nothing of github is withheld any more, so that half of the page is not
+    // in the projection at all — the publication is what keeps it nameable.
+    expect(h.tools.schemas(agent).map((tool: any) => tool.name)).toContain('mcp__github__create_issue')
+    await expect(activateTool().execute({ namespace: 'github' }, { callId: 'call-b', agent }))
+      .rejects.toThrow(/already active/)
   })
 })

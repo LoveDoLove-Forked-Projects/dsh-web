@@ -33,6 +33,7 @@ import {
   replayActivations,
   validatePagedToolPatterns,
 } from './paging.mjs'
+import { pagedNamespacesFor } from './tool-catalog.mjs'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'liangshen-tool-activate'
@@ -79,6 +80,45 @@ export function apply(ctx, config) {
     return []
   }
 
+  /**
+   * The paged namespaces this scope carries, keyed by namespace to the sorted
+   * names of its tools.
+   *
+   * The catalog publishes the pre-restriction partition of every scope it
+   * pages, and reading it back is the only faithful source: the catalog's live
+   * `tools.restrict` filter removes the paged names from every scoped reader,
+   * so recomputing from `tools.schemas(agent)` finds an empty page and refuses
+   * activations the same request's catalog advertises. The schema read stays as
+   * the fallback for a scope nothing pages — a native presentation, a
+   * deployment without the catalog row, or a test stub.
+   * @param agent - agent scope the call acts for.
+   * @returns namespace to tool-name map, empty when nothing is paged.
+   */
+  const pagedToolsOf = (agent) => {
+    const paged = new Map()
+    const published = pagedNamespacesFor(agent)
+    if (published !== undefined && published.size > 0) {
+      for (const [namespace, group] of published) {
+        paged.set(namespace, group.map(tool => tool?.name).filter(toolName => typeof toolName === 'string').sort())
+      }
+      return paged
+    }
+    for (const schema of schemasFor(agent)) {
+      const toolName = schema?.name
+      if (typeof toolName !== 'string' || toolName === 'tool_activate') continue
+      const owner = namespaceOf(toolName, pagedToolPatterns)
+      if (owner === undefined) continue
+      let group = paged.get(owner)
+      if (group === undefined) {
+        group = []
+        paged.set(owner, group)
+      }
+      group.push(toolName)
+    }
+    for (const group of paged.values()) group.sort()
+    return paged
+  }
+
   ctx.tools.register({
     name: 'tool_activate',
     description: [
@@ -120,24 +160,10 @@ export function apply(ctx, config) {
     async execute(args, exec) {
       const namespace = args.namespace
       const agent = exec?.agent
-      const schemas = schemasFor(agent)
 
       // The paged namespaces the session actually carries, with their tools in
       // stable name order for deterministic reporting.
-      const paged = new Map()
-      for (const schema of schemas) {
-        const toolName = schema?.name
-        if (typeof toolName !== 'string' || toolName === 'tool_activate') continue
-        const owner = namespaceOf(toolName, pagedToolPatterns)
-        if (owner === undefined) continue
-        let group = paged.get(owner)
-        if (group === undefined) {
-          group = []
-          paged.set(owner, group)
-        }
-        group.push(toolName)
-      }
-      for (const group of paged.values()) group.sort()
+      const paged = pagedToolsOf(agent)
 
       if (!paged.has(namespace)) {
         const available = [...paged.keys()].sort()
