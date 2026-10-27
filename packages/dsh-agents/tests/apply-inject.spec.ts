@@ -12,11 +12,13 @@
  * was not mounted at all.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { apply, inject, OFFICIAL_TEAMS_BUNDLE, servesTeamRuntime, teamRuntimeGate } from '../src/index.ts'
 import { DSH_AGENTS_ROUTE_PATHS } from '../src/protocol.ts'
 import { TeamService, type TeamServiceContext } from '../src/team/index.ts'
@@ -421,5 +423,131 @@ describe('team runtime mount on a real cordis tree', () => {
     // empty projection list and the untouched identity are the coexistence.
     expect(projections).toEqual([])
     expect(root.get('agentTeams')).toBe(official)
+  })
+})
+
+/**
+ * The workspace registry is resolved per use, never once at apply.
+ *
+ * The official registry initializes asynchronously, after this row applies, so a
+ * face captured at apply time stays undefined for the life of the process: the
+ * panel then offers no workspace to pin and every pinned run answers
+ * workspace-unavailable. Only a real cordis tree whose sibling fiber provides the
+ * service AFTER the row applied can tell per-use resolution from a cached face.
+ */
+describe('a workspace registry that activates after the row applied', () => {
+  it('operator offers the registry to the picker and to a pinned run once it activates', async () => {
+    // Given a real cordis Host that serves no workspaceRegistry when the row applies, When a sibling fiber provides one and the panel then reads state and runs a member pinned to ws-1, Then the state view carries the offered workspaces and createSession is handed the pinned workspace id.
+    const root = new Context()
+    const routes: WebRoute[] = []
+    const calls: Array<{ namespace: string; method: string; args: Record<string, unknown> }> = []
+
+    root.plugin({
+      name: 'fake-host-services',
+      apply(provider: Context) {
+        provider.provide('systemPrompt', {
+          section: () => () => undefined,
+          context: () => () => undefined,
+          getSectionOrder: () => 0,
+          getContextOrder: () => 0,
+        })
+        provider.provide('typertGateway', {
+          invoke: async (request: { namespace: string; method: string; args: Record<string, unknown> }): Promise<unknown> => {
+            calls.push({ namespace: request.namespace, method: request.method, args: request.args })
+            return request.namespace === 'session' && request.method === 'create' ? { sessionId: 'session-1' } : {}
+          },
+        })
+        provider.provide('webServer', {
+          register: (route: WebRoute): (() => void) => {
+            routes.push(route)
+            return () => undefined
+          },
+        })
+      },
+    })
+
+    let failure: unknown
+    root.plugin({
+      name: 'dsh-agents-row',
+      inject: [...inject],
+      apply(row: Context) {
+        try {
+          apply(row, { enabled: true })
+        } catch (error) {
+          failure = error
+        }
+      },
+    })
+
+    // The registered route table is the row's own output, so wait on it rather
+    // than on a fixed delay; a row that never applied fails here.
+    await vi.waitFor(() => {
+      expect(routes.map(route => route.path)).toEqual([...DSH_AGENTS_ROUTE_PATHS])
+    })
+    expect(failure).toBeUndefined()
+
+    // Serve the captured table the way the host would: one exact route per path.
+    const server = createServer((req, res) => {
+      const path = new URL(req.url ?? '/', 'http://local').pathname
+      const route = routes.find(candidate => candidate.path === path)
+      if (route === undefined) {
+        res.writeHead(404)
+        res.end()
+        return
+      }
+      void Promise.resolve(route.handler(req, res)).catch(() => {
+        if (!res.headersSent) res.writeHead(500)
+        res.end()
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('the test server did not bind')
+    const base = 'http://127.0.0.1:' + String(address.port)
+    const get = async (path: string): Promise<Record<string, unknown>> => {
+      const response = await fetch(base + path, { headers: { 'sec-fetch-site': 'same-origin' } })
+      expect(response.status).toBe(200)
+      return await response.json() as Record<string, unknown>
+    }
+    const post = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+      const response = await fetch(base + path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' },
+        body: JSON.stringify(body),
+      })
+      expect(response.status).toBe(200)
+      return await response.json() as Record<string, unknown>
+    }
+
+    try {
+      // The registry is genuinely absent where the row applied.
+      expect('workspaces' in await get('/dsh-agents/api/state')).toBe(false)
+
+      root.plugin({
+        name: 'late-workspace-registry',
+        apply(provider: Context) {
+          provider.provide('workspaceRegistry', { list: () => [{ id: 'ws-1', title: 'repo' }] })
+        },
+      })
+      await vi.waitFor(() => {
+        expect(root.get('workspaceRegistry')).toBeDefined()
+      })
+
+      // The SAME running row now serves the picker out of the live registry.
+      expect((await get('/dsh-agents/api/state')).workspaces).toEqual([{ id: 'ws-1', title: 'repo' }])
+
+      const created = await post('/dsh-agents/api/team', { team: { name: 'Squad', workspaceId: 'ws-1' } })
+      const team = created.team as { id: string }
+      const added = await post('/dsh-agents/api/member', { teamId: team.id, member: { name: 'M' } })
+      const memberId = (added.team as { members: Array<{ id: string }> }).members[0].id
+      const run = await post('/dsh-agents/api/run', { teamId: team.id, memberId })
+
+      expect(run.run).toMatchObject({ sessionId: 'session-1', status: 'running' })
+      // createSession received the pin the live registry validated.
+      expect(calls).toContainEqual({ namespace: 'session', method: 'create', args: { request: { workspaceId: 'ws-1' } } })
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => { server.close(error => { if (error) reject(error); else resolve() }) })
+    }
   })
 })

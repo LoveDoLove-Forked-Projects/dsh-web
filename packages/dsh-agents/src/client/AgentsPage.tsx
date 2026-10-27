@@ -56,7 +56,7 @@ function presetsOf(state: AgentsStateView): readonly string[] {
   return Array.isArray(state.presets) ? state.presets : []
 }
 
-/** The workspaces a Host offers as a squad pin, or none: none means "type an id". */
+/** The workspaces a Host offers as a squad pin; none leaves only the bind-none row, since binding none runs in the Host default session directory. */
 function workspacesOf(state: AgentsStateView): readonly AgentsWorkspaceOption[] {
   return Array.isArray(state.workspaces) ? state.workspaces : []
 }
