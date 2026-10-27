@@ -1030,11 +1030,15 @@
 .helpTip {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  left: 0;
   z-index: 4;
   box-sizing: border-box;
   width: max-content;
-  max-width: 340px;
+  /* Anchored to the left edge of the `?` and opening rightwards: the `?` sits just
+     left of the clear control, so a right-anchored bubble would run past the modal's
+     left edge and be clipped by .modal's own overflow. 260px keeps the bubble inside
+     the card in every shipped locale. */
+  max-width: 260px;
   padding: 10px 12px;
   background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2);
