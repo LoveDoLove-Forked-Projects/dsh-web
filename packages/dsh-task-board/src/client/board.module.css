@@ -958,6 +958,49 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* --- label cleanup (bulk clear) ----------------------------------------------
+ * Clearing is a secondary tool under the label list, never a peer of it: the
+ * list is what the dialog is opened for, so this block starts below it behind a
+ * hairline and keeps the dialog's own spacing token. Only the block, its one
+ * row and the field's width are new — the threshold field reuses the labeled
+ * field contract the schedule rows carry (.scheduleZone is already a label
+ * wrapping its text and its control) and the commit reuses .ghostButton, so
+ * nothing here paints a control of its own. The notice under the row is plain
+ * supporting text, not the error slot: "nothing matched" is an answer, not a
+ * failure.
+ * ----------------------------------------------------------------------------- */
+
+.tagCleanup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dsh-tb-control-gap);
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.tagCleanupRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--dsh-tb-control-gap);
+}
+
+.tagCleanupRow .ghostButton {
+  flex: none;
+}
+
+.tagCleanupInput {
+  flex: none;
+  width: 64px;
+}
+
+.tagCleanupNotice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* --- form sections (create/edit dialog) --------------------------------------
  * The task form groups its configuration into collapsible regions so the
  * dialog fits without a scrollbar: only the content region starts open, and

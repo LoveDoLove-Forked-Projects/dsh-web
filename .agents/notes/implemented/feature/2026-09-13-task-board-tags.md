@@ -52,7 +52,7 @@ A task row carries an optional `tags: { name, promptPrefix? }[]`. The name is th
 
 - An untagged task is unaffected in every layer: same prompt bytes, same patch shape on the wire, same ledger document.
 - Labels are editable after the first run, so they are not covered by the content-freeze gate; an edit changes future runs only.
-- The board filter's candidate list is derived from the ledger rather than from a declaration, so a label disappears from the filter as soon as no task carries it — deliberate, and the reason no cleanup UI exists.
+- The board filter's candidate list is derived from the ledger rather than from a declaration, so a label disappears from the filter as soon as no task carries it, and the label manager's cleanup row is the deliberate way to remove a label from the cards that still carry it — see [task-board-label-management](2026-10-01-task-board-label-management.md).
 - The prompt now has one more client-asserted preamble. It is gated, delimiter-escaped, and placed outside the provenance wrap, but a user who writes a hint can still influence every run of that task — which is the point of the feature.
 - Required verification: `tests/tags.spec.ts` covers repair, the strict gate, the no-tag byte-identity, injection order, delimiter escaping, and the conjunctive filter; `pnpm --filter @linxin666/dsh-client-ui-task-board test` and `pnpm i18n:check` are the package gates.
 

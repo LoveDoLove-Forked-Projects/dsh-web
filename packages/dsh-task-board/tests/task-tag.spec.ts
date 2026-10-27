@@ -8,7 +8,7 @@
  * whole ledger, not against one card.
  */
 import { describe, expect, it } from 'vitest'
-import { applyDeleteTag, applyRenameTag } from '../src/core/use-cases/task-tag.ts'
+import { applyDeleteTag, applyRenameTag, cleanupCandidates } from '../src/core/use-cases/task-tag.ts'
 import { TAG_NAME_MAX_LENGTH, createTask, type TaskRecord, type TaskTag } from '../src/core/tasks.ts'
 
 const NOW = 1_700_000_000_000
@@ -20,6 +20,11 @@ function task(id: string, tags?: TaskTag[], updatedAt = NOW - 10): TaskRecord {
     ...(tags === undefined ? {} : { tags }),
     updatedAt,
   }
+}
+
+/** The same task in a finished column (done or failed). */
+function finished(id: string, status: 'done' | 'failed', tags?: TaskTag[], updatedAt = NOW - 10): TaskRecord {
+  return { ...task(id, tags, updatedAt), status }
 }
 
 describe('label management', () => {
@@ -136,5 +141,101 @@ describe('label management', () => {
 
     // Then the stored name is the trimmed one
     expect(result.tasks[0]?.tags).toEqual([{ name: 'release' }])
+  })
+})
+
+describe('label cleanup selection', () => {
+  it('operator clearing rarely used labels is offered the ones only finished tasks carry', () => {
+    // Given one label on a done card and one label on a card still in the todo column
+    const tasks = [finished('a', 'done', [{ name: 'ship' }]), task('b', [{ name: 'live' }])]
+
+    // When the whole ledger is judged at the default threshold
+    const candidates = cleanupCandidates(tasks, 5)
+
+    // Then only the finished label is offered, with its usage count
+    expect(candidates).toEqual([{ name: 'ship', count: 1 }])
+  })
+
+  it('operator judging a label whose usage reaches the threshold is not offered it', () => {
+    // Given a label carried by two finished cards
+    const tasks = [finished('a', 'done', [{ name: 'ship' }]), finished('b', 'failed', [{ name: 'ship' }])]
+
+    // When the threshold sits exactly at that usage
+    const atBound = cleanupCandidates(tasks, 2)
+
+    // Then the bound is exclusive, and one step above it is offered
+    expect(atBound).toEqual([])
+    expect(cleanupCandidates(tasks, 3)).toEqual([{ name: 'ship', count: 2 }])
+  })
+
+  it('operator with live work on a label keeps that label out of the cleanup', () => {
+    // Given three labels whose extra card sits in the todo, backlog and running columns
+    const tasks: TaskRecord[] = [
+      finished('only-finished', 'done', [{ name: 'shipped' }]),
+      finished('todo-done', 'done', [{ name: 'todo-label' }]),
+      task('todo-live', [{ name: 'todo-label' }]),
+      finished('backlog-done', 'done', [{ name: 'backlog-label' }]),
+      { ...task('backlog-live', [{ name: 'backlog-label' }]), status: 'backlog' },
+      finished('running-failed', 'failed', [{ name: 'running-label' }]),
+      { ...task('running-live', [{ name: 'running-label' }]), status: 'running' },
+    ]
+
+    // When the ledger is judged at a threshold above every usage
+    const candidates = cleanupCandidates(tasks, 9)
+
+    // Then only the label with no live card behind it is offered
+    expect(candidates).toEqual([{ name: 'shipped', count: 1 }])
+  })
+
+  it('operator cleaning up lets an archived card that finished release its label', () => {
+    // Given a label carried only by an archived card in a finished column
+    const tasks = [{ ...finished('a', 'failed', [{ name: 'ship' }]), archivedAt: NOW - 1 }]
+
+    // When the ledger is judged
+    const candidates = cleanupCandidates(tasks, 5)
+
+    // Then archiving neither hides it nor keeps it
+    expect(candidates).toEqual([{ name: 'ship', count: 1 }])
+  })
+
+  it('operator cleaning up is held back by an archived card still in a live column', () => {
+    // Given a label carried by an archived card that never finished
+    const tasks: TaskRecord[] = [{ ...task('a', [{ name: 'ship' }]), status: 'todo', archivedAt: NOW - 1 }]
+
+    // When the ledger is judged
+    const candidates = cleanupCandidates(tasks, 5)
+
+    // Then the archived live column still keeps the label
+    expect(candidates).toEqual([])
+  })
+
+  it('operator reading the offer sees labels in listing order with their usage counts', () => {
+    // Given three labels whose first-seen order is not their size order
+    const tasks = [
+      finished('a', 'done', [{ name: 'beta' }, { name: 'alpha' }]),
+      finished('b', 'done', [{ name: 'alpha' }]),
+      finished('c', 'done', [{ name: 'alpha' }, { name: 'gamma' }, { name: 'beta' }]),
+    ]
+
+    // When the ledger is judged above every usage
+    const candidates = cleanupCandidates(tasks, 9)
+
+    // Then the order is the manager's listing order and each count is the whole usage
+    expect(candidates).toEqual([
+      { name: 'beta', count: 2 },
+      { name: 'alpha', count: 3 },
+      { name: 'gamma', count: 1 },
+    ])
+  })
+
+  it('operator with a threshold that is not a usage bound is offered nothing', () => {
+    // Given a label that would otherwise be offered
+    const tasks = [finished('a', 'done', [{ name: 'ship' }])]
+
+    // When the threshold is not a finite number, or cannot exceed one task
+    const offers = [Number.NaN, 0, 1, Number.POSITIVE_INFINITY].map(threshold => cleanupCandidates(tasks, threshold))
+
+    // Then every one of them selects no label, and never throws
+    expect(offers).toEqual([[], [], [], []])
   })
 })
