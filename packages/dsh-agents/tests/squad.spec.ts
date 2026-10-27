@@ -95,7 +95,7 @@ function service(options: { gateway?: MemberRunGateway; dir?: string } = {}): Ag
   const instance = new AgentsHostService({
     dir: options.dir ?? tempDir(),
     gateway: options.gateway ?? gateway(),
-    workspaces,
+    workspaces: () => workspaces,
     now: () => NOW + counter++,
     idFactory: () => 'id-' + (++counter),
   })
@@ -201,7 +201,7 @@ describe('whole-squad run', () => {
     instance = new AgentsHostService({
       dir: tempDir(),
       gateway: pins,
-      workspaces,
+      workspaces: () => workspaces,
       now: () => NOW,
       idFactory: () => 'id-' + (++minted),
       onSquadRun,
@@ -225,14 +225,18 @@ describe('whole-squad run', () => {
     expect(instance.squadContext('lead-session')).toContain('Squad goal: Ship the M2 runtime')
   })
 
-  it('operator fails closed before any session exists when the team pins no workspace', async () => {
-    // Given a squad that pins no workspace, When the Host runs the whole squad, Then workspace-required is refused and no session is created.
-    const pins = gateway()
+  it('operator runs a squad that pins no workspace and its Lead lands on the host default', async () => {
+    // Given a squad that pins no workspace, When the Host runs the whole squad, Then a Lead session is created with no workspaceId and the run is recorded.
+    const requested: unknown[] = []
+    const pins = gateway({ createSession: vi.fn(async (input) => { requested.push(input); return { sessionId: 'lead-session' } }) })
     const instance = service({ gateway: pins })
     const seeded = instance.saveTeam({ name: 'Research squad' })
 
-    expect(await codeOf(() => instance.runSquad({ teamId: seeded.id }))).toBe('workspace-required')
-    expect(pins.createSession).not.toHaveBeenCalled()
+    const run = await instance.runSquad({ teamId: seeded.id })
+    expect(requested).toEqual([{}])
+    expect(requested.map(input => Object.keys(input as Record<string, unknown>))).toEqual([[]])
+    expect(run).toMatchObject({ teamId: seeded.id, sessionId: 'lead-session', kind: 'squad', status: 'running' })
+    expect(instance.state.runs).toEqual([run])
   })
 
   it('operator fails closed when the pinned lead preset is unknown', async () => {
@@ -266,7 +270,7 @@ describe('M2 protocol additions stay backwards compatible', () => {
       teams: [],
       runs: [{ id: 'run-old', teamId: 'team-1', memberId: 'member-1', sessionId: 'session-1', createdAt: NOW, status: 'running' }],
     }))
-    const instance = new AgentsHostService({ dir, gateway: gateway(), workspaces })
+    const instance = new AgentsHostService({ dir, gateway: gateway(), workspaces: () => workspaces })
     services.push(instance)
 
     const runs = instance.state.runs

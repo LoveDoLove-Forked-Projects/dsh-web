@@ -87,8 +87,8 @@ describe('agents transport failure classes', () => {
   })
 
   it('operator sees the no-workspace refusal of a run keep its own class', async () => {
-    // Given a Host that refuses the run because nothing binds a workspace
-    const refusing = fetchAnswering(409, '{"ok":false,"code":"workspace-required","error":"No workspace is pinned."}')
+    // Given a Host that refuses the run because the pinned workspace is gone
+    const refusing = fetchAnswering(409, '{"ok":false,"code":"workspace-unknown","error":"The pinned workspace is not in the registry."}')
     // When the member is started
     try {
       await createAgentsTransport(refusing).run('team-1', 'member-1')

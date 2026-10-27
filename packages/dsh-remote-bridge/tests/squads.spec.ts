@@ -451,11 +451,11 @@ describe('the refusals the squad domain raises', () => {
     expect(answerOf(harness, 3)).toEqual({ ok: false, e: { code: 'member-not-found', msg: 'no member with that id exists in the addressed team' } })
   })
 
-  it('user whose squad pins an unusable preset or no workspace is told the domain own code', async () => {
+  it('user whose squad pins an unusable preset or an unusable workspace is told the domain own code', async () => {
     // Given a domain that refuses the preset pin and then the workspace pin
     const answers = [
       new SquadRefusal('preset-unknown', 'the pinned agent preset is not in this host registry'),
-      new SquadRefusal('workspace-required', 'the squad pins no workspace and this host never guesses one'),
+      new SquadRefusal('workspace-unavailable', 'this deployment serves no workspace registry to validate the pin against'),
     ]
     const host = new FakeSquadHost()
     let index = 0
@@ -470,7 +470,7 @@ describe('the refusals the squad domain raises', () => {
     await harness.connection.handleText(requestFrame(3, 'squads.runMember', { squadId: 'squad-1', memberId: 'm-2' }))
     // Then both codes crossed unchanged
     expect(answerOf(harness, 2)).toEqual({ ok: false, e: { code: 'preset-unknown', msg: 'the pinned agent preset is not in this host registry' } })
-    expect(answerOf(harness, 3)).toEqual({ ok: false, e: { code: 'workspace-required', msg: 'the squad pins no workspace and this host never guesses one' } })
+    expect(answerOf(harness, 3)).toEqual({ ok: false, e: { code: 'workspace-unavailable', msg: 'this deployment serves no workspace registry to validate the pin against' } })
   })
 
   it('user whose transport fails without a code is told the domain is unreachable', async () => {

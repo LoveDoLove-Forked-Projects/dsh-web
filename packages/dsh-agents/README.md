@@ -63,7 +63,7 @@ These ten are cross-session definition management, so every session sees them. T
 
 ### Failure surface
 
-A domain refusal is a value, not an exception: `{ ok: false, code, message }`, with `code` drawn from the package's own error codes — `invalid-request` for a malformed call, `team-not-found`, `member-not-found`, `preset-registry-unavailable`, `preset-unknown`, `preset-unavailable`, `workspace-required`, `workspace-unavailable`, `workspace-unknown`, `ledger-corrupt` and the rest. The tool surface adds no code of its own; only a failure this plugin did not raise is thrown.
+A domain refusal is a value, not an exception: `{ ok: false, code, message }`, with `code` drawn from the package's own error codes — `invalid-request` for a malformed call, `team-not-found`, `member-not-found`, `preset-registry-unavailable`, `preset-unknown`, `preset-unavailable`, `workspace-unavailable`, `workspace-unknown`, `ledger-corrupt` and the rest. The tool surface adds no code of its own; only a failure this plugin did not raise is thrown.
 
 ## Install
 
@@ -111,7 +111,7 @@ POST /dsh-agents/api/describe
 
 ## Known limitations
 
-- A team must pin a workspace: an unpinned team is refused with `workspace-required` instead of running in whatever directory the Host process happens to use.
+- A workspace pin is optional: an unpinned team runs in the Host's default session directory, and a pin is never ignored — `workspace-unavailable` when this deployment serves no workspace registry to validate it against, and `workspace-unknown` when that registry does not list the pinned id.
 - A pinned preset must be served by the host registry; an unknown or broken preset fails closed before any session exists.
 - A preset that registers a `complete` system-prompt section owns the prompt alone, and the member brief is dropped; see [docs/member-prompt.md](docs/member-prompt.md) for that exception and the fallback design.
 - The reasoning effort is sent only together with the model pin it belongs to, so a member that pins an effort without a model runs at the session default.

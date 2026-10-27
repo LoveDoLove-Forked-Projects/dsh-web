@@ -98,7 +98,7 @@ describe('agents squad run', () => {
     // Given a Host that can refuse a squad run for its three familiar reasons
     const refusals = [
       { status: 409, body: '{"ok":false,"code":"preset-unknown","error":"the host agent-preset registry has no preset"}', copy: t('error.unknownPreset'), code: 'preset-unknown' },
-      { status: 409, body: '{"ok":false,"code":"workspace-required","error":"the squad pins no workspace"}', copy: t('error.noWorkspace'), code: 'workspace-required' },
+      { status: 409, body: '{"ok":false,"code":"workspace-unknown","error":"the pinned workspace is not in the host registry"}', copy: t('error.noWorkspace'), code: 'workspace-unknown' },
       { status: 404, body: 'not found', copy: t('error.notMounted'), code: 'not found' },
     ]
     for (const refusal of refusals) {

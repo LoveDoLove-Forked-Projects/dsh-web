@@ -125,6 +125,12 @@ function resolveSystemPrompt(ctx: Context): MemberPromptRegistry | undefined {
 /**
  * Read the optional workspace registry. The Host serves it as a cordis service;
  * a capture-only test context or a stripped deployment simply has none.
+ *
+ * Read per call, like {@link resolveLlm}: the official registry's
+ * `[Service.init]` is asynchronous and finishes after this row applies, so a
+ * face captured at apply time is undefined for the life of the process.
+ * @param ctx - the plugin context.
+ * @returns the registry, or undefined when this deployment serves none yet.
  */
 export function resolveWorkspaceRegistry(ctx: Context): WorkspaceRegistryFace | undefined {
   const registry = readService<WorkspaceRegistryFace>(ctx, 'workspaceRegistry')
@@ -339,11 +345,14 @@ declare module '@deepseek-ai/cordis' {
 export function apply(ctx: Context, config?: Config): void {
   if (readConfigField(config?.enabled, DEFAULT_ENABLED) !== true) return
   const abort = new AbortController()
-  const workspaces = resolveWorkspaceRegistry(ctx)
+  // The face is resolved on every use instead of once here: the official
+  // workspace registry initializes asynchronously, after this row applies, so a
+  // captured face would stay undefined and the panel would offer no workspace to
+  // pin while every pinned run answered workspace-unavailable.
+  const workspaces = (): WorkspaceRegistryFace | undefined => resolveWorkspaceRegistry(ctx)
   const gateway = createHostRunGateway({
     ...(resolveTypertGateway(ctx) === undefined ? {} : { gateway: resolveTypertGateway(ctx) }),
     ...(resolveCommandDispatcher(ctx) === undefined ? {} : { commands: resolveCommandDispatcher(ctx) }),
-    ...(workspaces === undefined ? {} : { workspaces }),
     ...(resolveAgents(ctx) === undefined ? {} : { agents: resolveAgents(ctx) }),
     signal: abort.signal,
   })
@@ -353,7 +362,7 @@ export function apply(ctx: Context, config?: Config): void {
   const service = new AgentsHostService({
     dir: agentsHomeDirectory(),
     gateway,
-    ...(workspaces === undefined ? {} : { workspaces }),
+    workspaces,
     describer: createLlmSquadDescriber(() => resolveLlm(ctx)),
     onSquadRun: () => { teamTools?.refresh() },
   })

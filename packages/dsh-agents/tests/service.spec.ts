@@ -36,14 +36,20 @@ function gateway(overrides: Partial<MemberRunGateway> = {}): MemberRunGateway {
   }
 }
 
-const workspaces = { list: (): readonly Workspace[] => [{ id: 'ws-1', name: 'repo' } as unknown as Workspace] }
+/** One fake host workspace registry: the face the service resolves per call. */
+interface FakeRegistry {
+  list(): readonly Workspace[]
+}
 
-function service(options: { gateway?: MemberRunGateway; workspaces?: typeof workspaces; dir?: string } = {}): AgentsHostService {
+const workspaces: FakeRegistry = { list: (): readonly Workspace[] => [{ id: 'ws-1', name: 'repo' } as unknown as Workspace] }
+
+function service(options: { gateway?: MemberRunGateway; workspaces?: FakeRegistry; dir?: string } = {}): AgentsHostService {
   let counter = 0
+  const picked = 'workspaces' in options ? options.workspaces : workspaces
   const instance = new AgentsHostService({
     dir: options.dir ?? tempDir(),
     gateway: options.gateway ?? gateway(),
-    ...('workspaces' in options ? (options.workspaces === undefined ? {} : { workspaces: options.workspaces }) : { workspaces }),
+    ...(picked === undefined ? {} : { workspaces: () => picked }),
     now: () => NOW + counter++,
     idFactory: () => 'id-' + (++counter),
   })
@@ -150,13 +156,20 @@ describe('definition CRUD', () => {
 })
 
 describe('run: failures before a session exists', () => {
-  it('operator refuses a team that pins no workspace instead of guessing one', async () => {
-    // Given an unpinned team, When its member runs, Then the run is refused and no record was written.
-    const instance = service()
+  it('operator runs a member of a team that pins no workspace and the session lands on the host default', async () => {
+    // Given an unpinned team, When its member runs, Then a session is created with no workspaceId at all and the run is recorded.
+    const requested: unknown[] = []
+    const fake = gateway({ createSession: vi.fn(async (input) => { requested.push(input); return { sessionId: 'session-1' } }) })
+    const instance = service({ gateway: fake })
     const team = instance.saveTeam({ name: 'Squad' })
     const member = instance.saveMember(team.id, { name: 'M' }).members[0]
-    expect(await asyncCodeOf(() => instance.run({ teamId: team.id, memberId: member.id }))).toBe('workspace-required')
-    expect(instance.state.runs).toEqual([])
+
+    const run = await instance.run({ teamId: team.id, memberId: member.id })
+    expect(fake.createSession).toHaveBeenCalledTimes(1)
+    expect(requested).toEqual([{}])
+    expect(requested.map(input => Object.keys(input as Record<string, unknown>))).toEqual([[]])
+    expect(run).toMatchObject({ teamId: team.id, memberId: member.id, sessionId: 'session-1', status: 'running' })
+    expect(instance.state.runs).toEqual([run])
   })
 
   it('operator refuses to run when the deployment serves no workspace registry', async () => {
@@ -440,6 +453,34 @@ describe('workspaces and description drafts this Host can offer', () => {
     expect('workspaces' in await without.stateView()).toBe(false)
     const throwing = { list: (): readonly Workspace[] => { throw new Error('no workspace registry here') } }
     expect('workspaces' in await service({ workspaces: throwing }).stateView()).toBe(false)
+  })
+
+  it('operator sees a registry that activates after construction on the next state read and the next run', async () => {
+    // Given a Host whose registry appears only later, When the panel reads state and a pinned member then runs, Then both read the registry as it is now.
+    const fake = gateway()
+    let current: FakeRegistry | undefined
+    let minted = 0
+    const instance = new AgentsHostService({
+      dir: tempDir(),
+      gateway: fake,
+      workspaces: () => current,
+      now: () => NOW,
+      idFactory: () => 'id-' + String(++minted),
+    })
+    services.push(instance)
+    const team = instance.saveTeam({ name: 'Squad', workspaceId: 'ws-1' })
+    const member = instance.saveMember(team.id, { name: 'M' }).members[0]
+
+    // Before it activates there is no picker to offer and the pin cannot be validated.
+    expect('workspaces' in await instance.stateView()).toBe(false)
+    expect(await asyncCodeOf(() => instance.run({ teamId: team.id, memberId: member.id }))).toBe('workspace-unavailable')
+
+    // Once it activates, the same instance serves the picker and launches the pinned session.
+    current = { list: () => [{ id: 'ws-1', title: 'repo' } as unknown as Workspace] }
+    expect(await instance.stateView()).toMatchObject({ workspaces: [{ id: 'ws-1', title: 'repo' }] })
+    const run = await instance.run({ teamId: team.id, memberId: member.id })
+    expect(fake.createSession).toHaveBeenCalledWith({ workspaceId: 'ws-1' })
+    expect(run).toMatchObject({ sessionId: 'session-1', status: 'running' })
   })
 
   it('operator drafts a description through the catalog route it offers', async () => {

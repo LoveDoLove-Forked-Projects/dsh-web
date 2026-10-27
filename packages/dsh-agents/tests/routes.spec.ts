@@ -49,7 +49,7 @@ beforeEach(async () => {
   service = new AgentsHostService({
     dir,
     gateway: gateway(),
-    workspaces: { list: (): readonly Workspace[] => [{ id: 'ws-1', name: 'repo' } as unknown as Workspace] },
+    workspaces: () => ({ list: (): readonly Workspace[] => [{ id: 'ws-1', name: 'repo' } as unknown as Workspace] }),
     now: () => NOW + counter++,
     idFactory: () => 'id-' + (++counter),
   })
@@ -200,15 +200,27 @@ describe('running a member', () => {
     expect(response.body.run).toMatchObject({ teamId, memberId, sessionId: 'session-1', status: 'running' })
   })
 
-  it('operator serves the fail-closed code when the definition cannot run', async () => {
-    // Given a team that pins no workspace, When its member runs, Then the reply is 409 workspace-required and no session was created.
+  it('user runs a member of a team that pins no workspace and the session lands on the host default', async () => {
+    // Given a team that pins no workspace, When its member runs, Then the reply carries the run and exactly one session was recorded.
     const team = await post('/dsh-agents/api/team', { team: { name: 'Squad' } })
     const teamId = (team.body.team as { id: string }).id
     const withMember = await post('/dsh-agents/api/member', { teamId, member: { name: 'M' } })
     const memberId = (withMember.body.team as { members: { id: string }[] }).members[0].id
     const response = await post('/dsh-agents/api/run', { teamId, memberId })
+    expect(response.status).toBe(200)
+    expect(response.body.run).toMatchObject({ teamId, memberId, sessionId: 'session-1', status: 'running' })
+    expect((await get('/dsh-agents/api/state')).body.runs).toHaveLength(1)
+  })
+
+  it('operator serves the fail-closed code when the pinned workspace is not served', async () => {
+    // Given a team pinned to a workspace the host does not list, When its member runs, Then the reply is 409 workspace-unknown and no session was created.
+    const team = await post('/dsh-agents/api/team', { team: { name: 'Squad', workspaceId: 'ws-gone' } })
+    const teamId = (team.body.team as { id: string }).id
+    const withMember = await post('/dsh-agents/api/member', { teamId, member: { name: 'M' } })
+    const memberId = (withMember.body.team as { members: { id: string }[] }).members[0].id
+    const response = await post('/dsh-agents/api/run', { teamId, memberId })
     expect(response.status).toBe(409)
-    expect(response.body.code).toBe('workspace-required')
+    expect(response.body.code).toBe('workspace-unknown')
     expect((await get('/dsh-agents/api/state')).body.runs).toEqual([])
   })
 })

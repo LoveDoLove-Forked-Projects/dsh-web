@@ -41,7 +41,12 @@ function gateway(overrides: Partial<MemberRunGateway> = {}): MemberRunGateway {
   }
 }
 
-const workspaces = { list: (): readonly Workspace[] => [{ id: 'ws-1', name: 'repo' } as unknown as Workspace] }
+/** One fake host workspace registry: the face the service resolves per call. */
+interface FakeRegistry {
+  list(): readonly Workspace[]
+}
+
+const workspaces: FakeRegistry = { list: (): readonly Workspace[] => [{ id: 'ws-1', name: 'repo' } as unknown as Workspace] }
 
 interface Harness {
   host: AgentsHostService
@@ -50,17 +55,18 @@ interface Harness {
 
 interface HarnessOptions {
   gateway?: MemberRunGateway
-  workspaces?: typeof workspaces | undefined
+  workspaces?: FakeRegistry | undefined
   dir?: string
 }
 
 function harness(options: HarnessOptions = {}): Harness {
   const dir = options.dir ?? tempDir()
   let counter = 0
+  const picked = 'workspaces' in options ? options.workspaces : workspaces
   const host = new AgentsHostService({
     dir,
     gateway: options.gateway ?? gateway(),
-    ...('workspaces' in options ? (options.workspaces === undefined ? {} : { workspaces: options.workspaces }) : { workspaces }),
+    ...(picked === undefined ? {} : { workspaces: () => picked }),
     now: () => NOW + counter++,
     idFactory: () => 'id-' + String(++counter),
   })
@@ -288,15 +294,22 @@ describe('domain refusals carry a stable code', () => {
     expect(String(refused.message)).toContain('its model route is gone')
   })
 
-  it('operator running a squad that pins no workspace is refused as workspace-required', async () => {
+  it('operator running a squad that pins no workspace launches its Lead on the host default directory', async () => {
     // Given a squad without a workspace, When its Lead run is asked for
-    const live = harness()
+    const requested: unknown[] = []
+    const fake = gateway({ createSession: vi.fn(async (input) => { requested.push(input); return { sessionId: 'session-1' } }) })
+    const live = harness({ gateway: fake })
     const created = await call(live, 'squads_create', { name: 'Squad' })
     const squadId = (created.squad as TeamDefinition).id
 
-    // Then the host refuses instead of landing the session in its own directory
-    expect(await call(live, 'squads_run_squad', { squadId, goal: 'ship it' })).toMatchObject({ ok: false, code: 'workspace-required' })
-    expect(live.host.state.runs).toEqual([])
+    // Then a real session is created with no workspaceId and the squad run is recorded
+    const launched = await call(live, 'squads_run_squad', { squadId, goal: 'ship it' })
+    expect(launched.ok).toBe(true)
+    expect(fake.createSession).toHaveBeenCalledTimes(1)
+    expect(requested).toEqual([{}])
+    expect(requested.map(input => Object.keys(input as Record<string, unknown>))).toEqual([[]])
+    expect(live.host.state.runs.map(run => ({ kind: run.kind, teamId: run.teamId, status: run.status })))
+      .toEqual([{ kind: 'squad', teamId: squadId, status: 'running' }])
   })
 
   it('operator running on a deployment that serves no workspace registry is refused as workspace-unavailable', async () => {

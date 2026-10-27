@@ -63,7 +63,7 @@ DSH Web GUI 的 Agent 小队：可复用的成员定义（agent 预设、权限�
 
 ### 失败面
 
-领域拒绝是返回值，不是抛异常：`{ ok: false, code, message }`，`code` 取自本包既有的错误码——参数非法是 `invalid-request`，其余如 `team-not-found`、`member-not-found`、`preset-registry-unavailable`、`preset-unknown`、`preset-unavailable`、`workspace-required`、`workspace-unavailable`、`workspace-unknown`、`ledger-corrupt`。工具面不新增任何码；只有本插件之外的失败才会被抛出。
+领域拒绝是返回值，不是抛异常：`{ ok: false, code, message }`，`code` 取自本包既有的错误码——参数非法是 `invalid-request`，其余如 `team-not-found`、`member-not-found`、`preset-registry-unavailable`、`preset-unknown`、`preset-unavailable`、`workspace-unavailable`、`workspace-unknown`、`ledger-corrupt`。工具面不新增任何码；只有本插件之外的失败才会被抛出。
 
 ## 安装
 
@@ -111,7 +111,7 @@ POST /dsh-agents/api/describe
 
 ## 已知限制
 
-- 小队必须钉住工作区：未钉住的小队以 `workspace-required` 拒绝，不会落在 Host 进程碰巧所处的目录里。
+- 工作区钉住是可选的：未钉住的小队直接在宿主默认会话目录里运行；已钉住的工作区不会被忽略——本部署没有可用来校验它的工作区注册表时以 `workspace-unavailable` 拒绝，注册表里没有这条 id 时以 `workspace-unknown` 拒绝。
 - 钉住的预设必须由宿主注册表提供；未知或损坏的预设会在任何会话存在之前 fail closed。
 - 注册了 `complete` 系统提示词段的预设独占提示词，成员简报会被丢弃；该例外与兜底设计见 [docs/member-prompt.md](docs/member-prompt.md)。
 - 思考档位只随它所属的模型钉住一起下发，因此只钉档位未钉模型的成员按会话默认运行。

@@ -145,16 +145,47 @@ describe('the squad form', () => {
     expect(must(form, '[data-dsh-part="team-form-preview"]').textContent).toContain('Architecture review')
   })
 
-  it('user keeps typed ids when the Host reports no workspace or preset list', async () => {
-    // Given a Host reporting neither list, When the form opens, Then both fields are text inputs rather than empty pickers.
-    const transport = fakeTransport({ state: async () => stateOf([teamOf()]) })
+  it('user picks the workspace from a list even when the Host reports no registry, and binding none is the only row', async () => {
+    // Given a Host that publishes an empty workspace list, When the new-squad form opens, Then the workspace field is still a picker whose one row binds none.
+    const transport = fakeTransport({ state: async () => stateOf([teamOf()], [], undefined, []) })
     const page = mount(<AgentsPage transport={transport} />)
     await flush()
     click(buttonByText(page.container, t('list.new')))
     await flush()
     const form = must(page.container, '[data-dsh-part="team-form"]')
-    expect(form.querySelectorAll('select')).toHaveLength(0)
-    expect(form.querySelectorAll('input')).toHaveLength(3)
+    const workspace = must(form, 'select[aria-label="' + t('form.workspace') + '"]') as HTMLSelectElement
+    expect(workspace.tagName).toBe('SELECT')
+    expect([...workspace.options].map(option => option.textContent)).toEqual([t('form.workspaceInherit')])
+    expect(workspace.value).toBe('')
+    // And its field carries no text box: an unbound squad is a choice, not a blank to fill.
+    expect((workspace.parentElement as HTMLElement).querySelectorAll('input')).toHaveLength(0)
+    // The Lead preset is the only field left that falls back to typing an id.
+    expect(form.querySelectorAll('select')).toHaveLength(1)
+    expect(form.querySelectorAll('input')).toHaveLength(2)
+  })
+
+  it('user sees a workspace the Host no longer lists kept in the picker and submitted unchanged', async () => {
+    // Given a squad pinned to a workspace the registry does not report, When its form opens, Then that pin is its own row and saving keeps it.
+    const transport = fakeTransport({
+      state: async () => stateOf([teamOf({ workspaceId: 'workspace-gone' })], [], undefined, [{ id: 'ws-1', title: 'repo', path: '/repo' }]),
+      createTeam: async (draft) => teamOf({ ...draft, id: 'team-1' }),
+    })
+    const page = mount(<AgentsPage transport={transport} />)
+    await flush()
+    click(must(page.container, '[aria-label="' + t('list.open', { name: 'Squad one' }) + '"]'))
+    await flush()
+    click(buttonByText(page.container, t('detail.editTeam')))
+    await flush()
+    const form = must(page.container, '[data-dsh-part="team-form"]')
+    const workspace = must(form, 'select[aria-label="' + t('form.workspace') + '"]') as HTMLSelectElement
+    // Then the pin stays listed, stays selected, and is labelled as unlisted
+    expect([...workspace.options].map(option => option.value)).toEqual(['', 'ws-1', 'workspace-gone'])
+    expect([...workspace.options].map(option => option.textContent)).toEqual([t('form.workspaceInherit'), 'repo', 'workspace-gone' + t('form.workspaceUnlisted')])
+    expect(workspace.value).toBe('workspace-gone')
+    // And a save that never touches the field submits the pin it arrived with
+    click(buttonByText(form as HTMLElement, t('form.save')))
+    await flush()
+    expect(transport.teamSaves.map(draft => draft.workspaceId)).toEqual(['workspace-gone'])
   })
 
   it('user drafts the description with the Host model and sees the reply in the field', async () => {

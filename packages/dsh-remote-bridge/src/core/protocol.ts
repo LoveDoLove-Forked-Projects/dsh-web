@@ -560,7 +560,7 @@ export const CODE_COMMANDS_UNAVAILABLE = 'commands-unavailable'
  * it is a fact about this bridge, not about what a particular host mounts — and
  * only a call that needs the domain fails. A refusal the `dsh-agents` plugin
  * itself raised crosses with the plugin's own code instead (`team-not-found`,
- * `member-not-found`, `preset-unknown`, `workspace-required` and their
+ * `member-not-found`, `preset-unknown`, `workspace-unavailable` and their
  * neighbours).
  */
 export const CODE_SQUADS_UNAVAILABLE = 'squads-unavailable'

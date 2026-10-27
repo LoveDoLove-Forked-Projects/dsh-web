@@ -7,9 +7,13 @@
  * - Definitions are the ledger's. Ids are minted here, timestamps are stamped
  *   here, and a draft never reaches disk unchecked.
  * - A run fails closed BEFORE a session exists whenever its definition cannot be
- *   honoured (unusable model pin, unknown preset, missing or unknown workspace),
- *   and every failure AFTER a session exists is recorded on a run record, so no
- *   session this plugin created can be invisible to the user.
+ *   honoured (unusable model pin, unknown preset, or a pinned workspace this
+ *   deployment cannot resolve), and every failure AFTER a session exists is
+ *   recorded on a run record, so no session this plugin created can be invisible
+ *   to the user. A squad that pins no workspace at all is not a refusal: its
+ *   session is created without a workspace id, in the Host's own default
+ *   directory, because the registry this Host serves is the user's choice and an
+ *   unpinned squad simply made none.
  * - A squad run record is written BEFORE the Lead's first message is queued: the
  *   Lead's own assembly reads that record to learn which squad it leads, and the
  *   Team tool installer reads it to decide whether this session may see the Team
@@ -45,8 +49,13 @@ export interface AgentsHostServiceOptions {
   dir?: string
   /** The host run gateway. */
   gateway: MemberRunGateway
-  /** The host workspace registry, when this deployment serves one. */
-  workspaces?: WorkspaceRegistryFace
+  /**
+   * The host workspace registry, resolved per call rather than captured here.
+   * The Host's registry is an async service that activates after this row
+   * applies, so a face read once at construction would stay undefined and the
+   * panel would never be offered a workspace to pin.
+   */
+  workspaces?: () => WorkspaceRegistryFace | undefined
   /**
    * Called with the squad run record once it is durable and before the Lead's
    * first message is queued, so the Team tool installer can publish the tool
@@ -78,7 +87,7 @@ function describe(error: unknown): string {
  */
 export class AgentsHostService {
   private readonly gateway: MemberRunGateway
-  private readonly workspaces: WorkspaceRegistryFace | undefined
+  private readonly workspaces: (() => WorkspaceRegistryFace | undefined) | undefined
   private readonly onSquadRun: ((run: RunRecord) => void) | undefined
   private readonly describer: SquadDescriber | undefined
   private readonly now: () => number
@@ -145,7 +154,7 @@ export class AgentsHostService {
     const state = this.state
     const presets = await listOfferedPresets(this.gateway)
     const catalog = await listOfferedModelCatalog(this.gateway)
-    const workspaces = listOfferedWorkspaces(this.workspaces)
+    const workspaces = listOfferedWorkspaces(this.workspaces?.())
     return {
       ...state,
       ...(presets === undefined ? {} : { presets }),
@@ -307,7 +316,7 @@ export class AgentsHostService {
       throw new AgentsError('member-not-found', 'no member has the id "' + request.memberId + '" in team "' + request.teamId + '"')
     }
 
-    const workspaceId = this.requireWorkspace(team)
+    const workspaceId = this.resolveWorkspacePin(team)
 
     // A pin the Host cannot honour is refused before any session exists; a
     // half-parsed route would otherwise select a model the user never chose.
@@ -319,7 +328,7 @@ export class AgentsHostService {
 
     let sessionId: string
     try {
-      sessionId = (await this.gateway.createSession({ workspaceId, ...(agentPreset === undefined ? {} : { agentPreset }) })).sessionId
+      sessionId = (await this.gateway.createSession({ ...(workspaceId === undefined ? {} : { workspaceId }), ...(agentPreset === undefined ? {} : { agentPreset }) })).sessionId
     } catch (error) {
       throw new AgentsError('session-create-failed', 'the host refused to create the member session: ' + describe(error))
     }
@@ -352,24 +361,25 @@ export class AgentsHostService {
   }
 
   /**
-   * Validate the team's pinned workspace for any run.
+   * Resolve the team's pinned workspace for any run.
    *
-   * The Host never guesses a workspace: an unpinned team is refused rather than
-   * landing the session in whatever directory the Host process happens to run in.
+   * An unpinned squad is not a refusal: the run is created without a workspace id
+   * and the Host composes the session in its own default directory. A pin that IS
+   * set still fails closed when this deployment cannot validate it, so a run
+   * never lands in a directory other than the one the user chose.
    * @param team - the team about to run.
-   * @returns the validated workspace id.
-   * @throws AgentsError `workspace-required`, `workspace-unavailable` or
-   *   `workspace-unknown`.
+   * @returns the validated workspace id, or undefined when the team pins none.
+   * @throws AgentsError `workspace-unavailable` when this deployment serves no
+   *   registry, or `workspace-unknown` when it does not serve the pinned id.
    */
-  private requireWorkspace(team: TeamDefinition): string {
+  private resolveWorkspacePin(team: TeamDefinition): string | undefined {
     const workspaceId = team.workspaceId
-    if (workspaceId === undefined) {
-      throw new AgentsError('workspace-required', 'team "' + team.name + '" pins no workspace; set one before running a member')
-    }
-    if (this.workspaces === undefined) {
+    if (workspaceId === undefined) return undefined
+    const registry = this.workspaces?.()
+    if (registry === undefined) {
       throw new AgentsError('workspace-unavailable', 'this deployment serves no workspace registry, so the pinned workspace cannot be validated')
     }
-    if (!this.workspaces.list().some(workspace => workspace.id === workspaceId)) {
+    if (!registry.list().some(workspace => workspace.id === workspaceId)) {
       throw new AgentsError('workspace-unknown', 'the host workspace registry has no workspace "' + workspaceId + '"')
     }
     return workspaceId
@@ -397,7 +407,7 @@ export class AgentsHostService {
   /**
    * Launch the Lead session of one whole squad.
    *
-   * The Lead is composed exactly like a member session (validated workspace,
+   * The Lead is composed exactly like a member session (resolved workspace pin,
    * optional pinned preset, title, first message). The difference is ordering:
    * the squad run record is written BEFORE the first message is queued, because
    * the Lead's first assembly reads it to learn which squad it leads, and the
@@ -409,12 +419,12 @@ export class AgentsHostService {
     const ledger = this.requireLedger()
     const team = findTeam(ledger.snapshot().teams, request.teamId)
     if (team === undefined) throw new AgentsError('team-not-found', 'no team has the id "' + request.teamId + '"')
-    const workspaceId = this.requireWorkspace(team)
+    const workspaceId = this.resolveWorkspacePin(team)
     const agentPreset = await resolvePinnedPreset(this.gateway, team.leadPreset)
 
     let sessionId: string
     try {
-      sessionId = (await this.gateway.createSession({ workspaceId, ...agentPreset === undefined ? {} : { agentPreset } })).sessionId
+      sessionId = (await this.gateway.createSession({ ...(workspaceId === undefined ? {} : { workspaceId }), ...agentPreset === undefined ? {} : { agentPreset } })).sessionId
     } catch (error) {
       throw new AgentsError('session-create-failed', 'the host refused to create the squad Lead session: ' + describe(error))
     }

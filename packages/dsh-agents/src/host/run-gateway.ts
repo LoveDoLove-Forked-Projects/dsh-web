@@ -29,8 +29,12 @@ export interface PresetInfo {
 
 /** What the host needs to compose one member session. */
 export interface CreateSessionInput {
-  /** Pinned, validated workspace; the Host never guesses one. */
-  workspaceId: string
+  /**
+   * The validated workspace pin. Absent when the squad pins none: the request
+   * then carries no workspace id at all and the Host composes the session in its
+   * own default directory, which is the documented behaviour of an unbound squad.
+   */
+  workspaceId?: string
   /** Pinned agent preset, absent when the member pins none. */
   agentPreset?: string
 }
@@ -128,7 +132,6 @@ export interface TypertGatewayFace {
 export interface HostRunFaces {
   gateway?: TypertGatewayFace
   commands?: CommandDispatcherFace
-  workspaces?: WorkspaceRegistryFace
   agents?: { get(sessionId: string): Agent | undefined }
   /** Aborts every in-flight call when the plugin fiber disposes. */
   signal?: AbortSignal
@@ -191,7 +194,7 @@ export function createHostRunGateway(faces: HostRunFaces): MemberRunGateway {
     },
     async createSession(input) {
       const created = await call('session', 'create', {
-        workspaceId: input.workspaceId,
+        ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
         ...(input.agentPreset === undefined ? {} : { agentPreset: input.agentPreset }),
       }) as { sessionId?: unknown }
       if (typeof created?.sessionId !== 'string' || created.sessionId === '') {

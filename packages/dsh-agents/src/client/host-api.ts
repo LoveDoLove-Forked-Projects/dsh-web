@@ -113,7 +113,6 @@ const HOST_FAILURE_CODES: Partial<Record<AgentsErrorCode, AgentsFailure>> = {
   'preset-registry-unavailable': 'unknown-preset',
   'preset-unknown': 'unknown-preset',
   'preset-unavailable': 'unknown-preset',
-  'workspace-required': 'no-workspace',
   'workspace-unknown': 'no-workspace',
   'workspace-unavailable': 'no-workspace',
   // A deployment with no model service and one with no model route make the

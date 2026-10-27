@@ -39,7 +39,6 @@ const STATUS_BY_CODE: Record<AgentsErrorCode, number> = {
   'preset-registry-unavailable': 503,
   'preset-unknown': 409,
   'preset-unavailable': 409,
-  'workspace-required': 409,
   'workspace-unavailable': 503,
   'workspace-unknown': 409,
   'model-pin-invalid': 409,

@@ -57,7 +57,7 @@ export const AGENTS_TOOL_NAMES = [
 ] as const
 
 /** Model-facing announcement: what the surface does, what it costs, what it refuses. */
-export const AGENTS_TOOL_GUIDANCE = 'dsh-agents owns this Host\'s agent-squad definitions, and the Web GUI squad panel edits the same ledger. squads_list and squads_read inspect definitions; squads_create, squads_update, squads_delete, squad_member_add, squad_member_update and squad_member_remove edit them; squads_run_member and squads_run_squad launch sessions. A squad is a named set of member definitions sharing one workspace; a member may pin an agent preset, a permission preset, a model route with a reasoning effort, and a brief that becomes that member session system prompt. An update is a partial merge: an omitted field keeps its current value and an empty string clears it, and a name must not be blank. squads_delete and squad_member_remove require confirm: true and answer with the deleted name. A run costs API quota: squads_run_member opens one real DSH session for that member, and squads_run_squad opens the Lead session of the whole squad with the goal carried by the squad context, never by a first message. A run is refused before any session exists when the squad pins no workspace, when the pinned workspace or agent preset is unknown to this Host, or when the ledger is unreadable; refusals arrive as ok:false with a stable code. Chinese triggers: 小队 / 小队定义 / 智能体小队.'
+export const AGENTS_TOOL_GUIDANCE = 'dsh-agents owns this Host\'s agent-squad definitions, and the Web GUI squad panel edits the same ledger. squads_list and squads_read inspect definitions; squads_create, squads_update, squads_delete, squad_member_add, squad_member_update and squad_member_remove edit them; squads_run_member and squads_run_squad launch sessions. A squad is a named set of member definitions sharing one workspace; a member may pin an agent preset, a permission preset, a model route with a reasoning effort, and a brief that becomes that member session system prompt. An update is a partial merge: an omitted field keeps its current value and an empty string clears it, and a name must not be blank. squads_delete and squad_member_remove require confirm: true and answer with the deleted name. A run costs API quota: squads_run_member opens one real DSH session for that member, and squads_run_squad opens the Lead session of the whole squad with the goal carried by the squad context, never by a first message. A squad that pins no workspace is runnable: its session is composed in the Host default session directory. A run is refused before any session exists when a pinned workspace cannot be resolved on this Host, when the pinned agent preset is unknown, or when the ledger is unreadable; refusals arrive as ok:false with a stable code. Chinese triggers: 小队 / 小队定义 / 智能体小队.'
 
 /**
  * The narrow Host face the tools need. `AgentsHostService` satisfies it
@@ -225,7 +225,7 @@ function buildCreateTool(host: AgentsToolHost): ToolDefinition {
     parameters: {
       name: { type: 'string', required: true, description: 'Squad name; it must not be blank and prefixes the title of every session the squad launches.' },
       description: { type: 'string', description: 'What the squad is for, shown in the panel.' },
-      workspaceId: { type: 'string', description: 'Host workspace id every run of this squad lands in. A run without one is refused.' },
+      workspaceId: { type: 'string', description: 'Host workspace id every run of this squad lands in. Optional: a squad that pins none runs in the Host default session directory.' },
       leadPreset: { type: 'string', description: 'Agent preset id the whole-squad run composes its Lead session from.' },
       members: {
         type: 'array',
@@ -282,7 +282,7 @@ function buildUpdateTool(host: AgentsToolHost): ToolDefinition {
       squadId: { type: 'string', description: 'Squad id to change. Required.' },
       name: { type: 'string', description: 'Replacement name; it must not be blank.' },
       description: { type: 'string', description: 'Replacement description; an empty string clears it.' },
-      workspaceId: { type: 'string', description: 'Replacement workspace id; an empty string clears it, and a squad with none cannot run.' },
+      workspaceId: { type: 'string', description: 'Replacement workspace id; an empty string clears it, and a squad that pins none runs in the Host default session directory.' },
       leadPreset: { type: 'string', description: 'Replacement Lead agent preset id; an empty string clears it.' },
     },
     output: { schema: { type: 'json' }, render: renderJson },
@@ -458,7 +458,7 @@ function buildMemberRemoveTool(host: AgentsToolHost): ToolDefinition {
 function buildRunMemberTool(host: AgentsToolHost): ToolDefinition {
   return defineTool({
     name: 'squads_run_member',
-    description: 'Launch one real DSH session for one member of one squad, and record the run. This is not free: it creates a session and spends API quota. It fails closed before any session exists when the squad pins no workspace, when the pinned workspace or agent preset is unknown to this Host, or when the member pins an unusable model route. The member brief reaches the session through its system prompt, so firstMessage is only ever the first user message.',
+    description: 'Launch one real DSH session for one member of one squad, and record the run. This is not free: it creates a session and spends API quota. It fails closed before any session exists when the pinned workspace or agent preset cannot be resolved on this Host, or when the member pins an unusable model route; a squad that pins no workspace runs in the Host default session directory. The member brief reaches the session through its system prompt, so firstMessage is only ever the first user message.',
     parameters: {
       squadId: { type: 'string', description: 'Squad the member belongs to. Required.' },
       memberId: { type: 'string', description: 'Member id to launch. Required.' },
@@ -484,7 +484,7 @@ function buildRunMemberTool(host: AgentsToolHost): ToolDefinition {
 function buildRunSquadTool(host: AgentsToolHost): ToolDefinition {
   return defineTool({
     name: 'squads_run_squad',
-    description: 'Launch the Lead session of one whole squad, and record the run. This is not free: it creates a session and spends API quota, and the Lead then works through the teams it composes. The goal travels through the squad system-prompt context, never as a first message, so the Lead reads it as its own charter; a run without one leaves the Lead without a stated goal. The same definition and workspace checks refuse the run before any session exists.',
+    description: 'Launch the Lead session of one whole squad, and record the run. This is not free: it creates a session and spends API quota, and the Lead then works through the teams it composes. The goal travels through the squad system-prompt context, never as a first message, so the Lead reads it as its own charter; a run without one leaves the Lead without a stated goal. The same definition and workspace checks refuse the run before any session exists, and a squad that pins no workspace runs in the Host default session directory.',
     parameters: {
       squadId: { type: 'string', description: 'Squad to lead. Required.' },
       goal: { type: 'string', description: 'What the squad must achieve, carried by the squad context. Omit to leave the Lead without a stated goal.' },

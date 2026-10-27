@@ -12,6 +12,11 @@
  * typing is exactly how a member ends up pinning an id no Host will honour. The
  * model and effort rows come from the catalog the Host publishes, and the
  * inherit row is the first one in each.
+ *
+ * The squad workspace follows the same rule and is ALWAYS a picker, even on a
+ * Host that reports no registry: binding none is a first-class choice that runs
+ * the squad in the Host default session directory, so the field never falls
+ * back to a text box that asks the user to type an id.
  */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
@@ -89,7 +94,11 @@ export function TeamForm({ team, busy, presets, workspaces, onDescribe, onSubmit
   const invalidName = trimmedName === '' && nameTouched
   const canSubmit = trimmedName !== ''
   const selectedWorkspace = workspaces.find(workspace => workspace.id === workspaceId)
-  const workspaceLabel = selectedWorkspace === undefined ? t('detail.noWorkspace') : selectedWorkspace.title
+  // A pin the registry no longer lists keeps a name in the preview: calling it
+  // "unbound" would claim the squad runs on the Host default when it does not.
+  const workspaceLabel = selectedWorkspace !== undefined
+    ? selectedWorkspace.title
+    : workspaceId === '' ? t('detail.noWorkspace') : workspaceId + t('form.workspaceUnlisted')
   const leadLabel = leadPreset === '' ? t('squad.leadPresetInherit') : leadPreset
   const generate = (): void => {
     if (onDescribe === undefined || generating) return
@@ -184,17 +193,18 @@ export function TeamForm({ team, busy, presets, workspaces, onDescribe, onSubmit
             <p className={css.formGroupHint}>{t('form.runtimeHint')}</p>
             <div className={css.field}>
               <span className={css.fieldLabel}>{t('form.workspace')}</span>
-              {workspaces.length === 0 ? (
-                <input className={css.input} value={workspaceId} placeholder={t('form.workspacePlaceholder')} onChange={(event) => { setWorkspaceId(event.target.value) }} />
-              ) : (
-                <select className={css.input} value={workspaceId} aria-label={t('form.workspace')} onChange={(event) => { setWorkspaceId(event.target.value) }}>
-                  <option value="">{t('form.workspaceInherit')}</option>
-                  {workspaces.map(workspace => (
-                    <option key={workspace.id} value={workspace.id} title={workspace.path ?? workspace.id}>{workspace.title}</option>
-                  ))}
-                </select>
-              )}
-              <span className={css.fieldHint}>{workspaces.length === 0 ? t('form.workspaceHintTyped') : t('form.workspaceHint')}</span>
+              {/* A pin this registry does not list keeps its own row: dropping it
+                  would quietly clear a workspace the next save then loses. */}
+              <select className={css.input} aria-label={t('form.workspace')} value={workspaceId} onChange={(event) => { setWorkspaceId(event.target.value) }}>
+                <option value="">{t('form.workspaceInherit')}</option>
+                {workspaces.map(workspace => (
+                  <option key={workspace.id} value={workspace.id} title={workspace.path ?? workspace.id}>{workspace.title}</option>
+                ))}
+                {selectedWorkspace !== undefined || workspaceId === '' ? null : (
+                  <option key={workspaceId} value={workspaceId}>{workspaceId + t('form.workspaceUnlisted')}</option>
+                )}
+              </select>
+              <span className={css.fieldHint}>{t('form.workspaceHint')}</span>
             </div>
             <div className={css.field}>
               <span className={css.fieldLabel}>{t('form.leadPreset')}</span>

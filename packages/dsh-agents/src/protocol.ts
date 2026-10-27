@@ -79,8 +79,6 @@ export const AGENTS_ERROR_CODES = [
   'preset-unknown',
   /** The pinned agent preset exists but the host reports it unusable. */
   'preset-unavailable',
-  /** The team pins no workspace and this Host never guesses one. */
-  'workspace-required',
   /** The deployment serves no workspace registry. */
   'workspace-unavailable',
   /** The pinned workspace id is not in the host workspace registry. */
