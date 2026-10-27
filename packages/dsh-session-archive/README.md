@@ -39,9 +39,11 @@ The family bundle (`dsh-web-all`) includes this plugin. For a standalone profile
 dsh plugin --profile web add link:/path/to/dsh-web/packages/dsh-session-archive
 ```
 
-Restart `dsh web`. The plugin **owns the "Archived sessions" Settings entry** instead of adding a parallel first-level one: it seats the official `settings.section` id (`archived-sessions`) at nav order (25), so Settings shows a single archive entry carrying both the native restore behaviour (the section opens on the archived view) and this plugin's management surface. DSH `0.1.7-alpha.2` no longer mounts the official `@deepseek-ai/dsh-client-ui-settings-unarchive-sessions` page that used to own that id, so no composition-layer retirement is needed.
+Restart `dsh web`. The plugin adds its own Archived sessions Settings entry: it seats the plugin's own `settings.section` id (`dsh-session-archive`) at nav order (25), carrying this plugin's management surface. The section opens on the archived view.
 
-A standalone install mounts the same single entry: nothing else registers the `archived-sessions` section id on the supported cohort.
+The section id is deliberately this plugin's own namespace rather than the official `archived-sessions` id. The settings shell renders one nav row per registration and never merges same-id sections, and its registry refuses a second registration of the same `id` at the same `priority` (default 0) while `order` only sorts the rows. Two archive plugins claiming the same section id therefore collide whatever order they pick: one registration throws, or one of the two entries silently disappears. With its own id the entry coexists with the official Archived sessions page and with any third-party archive plugin, one entry each.
+
+A standalone install, or an install with no other archive plugin enabled, shows this single entry.
 
 ## Configuration
 

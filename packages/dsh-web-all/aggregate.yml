@@ -185,12 +185,16 @@ rows:
 inactive:
   - web-ui-ssh
   - web-ui-skill-explorer
-# 归档设置入口（2026-09-15 原生优先决策）：dsh-session-archive 注册官方 section id
-# archived-sessions 与 order 25 接管该入口，把「原生恢复列表 + 家族批量归档/删除/
-# 自动策略」放在同一页。>=0.2.1-rc.2 的官方 dsh-web-app 不再挂载
-# ui-settings-unarchive-sessions 行，所以这里没有 retire 目标：对不存在的行写
-# disabled 覆盖只会让 loader 每次启动都报 "patch: entry ... not found"。加回 retire
-# 目标前必须先在当前 cohort 上用 dsh --profile <name> --dump-config 确认该外部行存在。
+# 归档设置入口（2026-10-27 共存决策）：dsh-session-archive 以自己的 section id
+# dsh-session-archive 与 order 25 注册，紧邻官方 archived-sessions 入口而不占用它。
+# 设置外壳对每条注册各渲染一个导航项、不合并同 id 的 section，并按「同一 id + 同一
+# priority（缺省 0）」拒绝重复注册，order 只决定排序；占用官方 id 会与任何同样注册该
+# id 的归档插件相撞，选什么 order 都避不开（一条注册抛错，或一条入口静默消失）。
+# 自有 id 让多个归档插件各有一条入口，单插件安装仍只有一条。
+# >=0.2.1-rc.2 的官方 dsh-web-app 不再挂载 ui-settings-unarchive-sessions 行，所以
+# 这里没有 retire 目标：对不存在的行写 disabled 覆盖只会让 loader 每次启动都报
+# "patch: entry ... not found"。加回 retire 目标前必须先在当前 cohort 上用
+# dsh --profile <name> --dump-config 确认该外部行存在。
 # 兼容退役子插件导出：避免老用户 profile 残留旧条目时 Node.js 抛出 ERR_PACKAGE_PATH_NOT_EXPORTED
 # 2026-09-23：describe-image 与 doctor 两个插件自家族移除，同样保留空壳导出。
 tombstones:

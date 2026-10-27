@@ -257,9 +257,10 @@ test('web-ui-all declares no retire target the current cohort no longer mounts',
   // the official archived-sessions page (`ui-settings-unarchive-sessions`) is
   // gone from dsh-web-app, so a retire override for it changed nothing while
   // making the loader warn `patch: entry ... not found` on every profile boot.
-  // `dsh-session-archive` owning the official `archived-sessions` section id
-  // (2026-09-15 native-first decision) stands on its own. Declaring a target
-  // again requires proving the foreign row exists in the SAME cohort with
+  // `dsh-session-archive` seats its own `dsh-session-archive` section id at
+  // order 25 (2026-10-27 coexistence decision), so no archive seat is taken
+  // over and no foreign row needs retiring. Declaring a target again requires
+  // proving the foreign row exists in the SAME cohort with
   // `dsh --profile <name> --dump-config`, then updating this test.
   const yml = readFileSync(join(ROOT, 'packages/dsh-web-all/aggregate.yml'), 'utf8')
   let section = null
