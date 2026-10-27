@@ -46,6 +46,32 @@ dsh Web GUI 的远程 SSH 运维插件：Host 进程内的持久 ssh2 连接池 
   视图卸载只 detach、重新挂载按 id reattach 并回放滚动缓冲；只有显式
   `close` 帧、远端退出后的宽限期到期或空闲回收才结束会话。路由层只做
   loopback 围栏与 socket 接线，会话表随路由注销一并 dispose。
+- **终端多标签（#1950）**：标签与其状态（alias / host session id / status / 待答
+  2FA / 关闭失败）都存 `panel/controller.ts`，视图只保留**一个 xterm**，切 tab 是
+  重绑这一个终端而不是叠终端。切走已 ready 的标签只 detach，切回按 sessionId
+  attach 回放。
+- **ready 之前不得 detach**：此时没有 sessionId 可回连，丢掉 socket 等于把 Host
+  上的 connecting 会话晾成无人认领的孤儿 PTY（参考实现在这里的缺陷）。连接交给
+  controller 的 `adoptTerminalLink`，拿到 id 后按意图 detach 或 close；
+  `reclaimTerminalLink` 让切回的标签复用同一条连接，不重复开 PTY。
+- **意图在 ready 时现读**：`adoptTerminalLink` 的 onReady 必须从当时的登记项读取
+  intent，不能沿用认领闭包里的值；关闭仍在连接的标签时 `closeTerminalTab` 把意图
+  改成 close（而不是丢弃登记项），否则 ready 之后仍会 detach，留下无主 PTY。
+  视图里 tab 已不存在且未 ready 的 socket 同样以 close 兜底。
+- **认领期间不丢输出**：adopt 期间 `onOutput` 写入该标签保留画面，取回 socket 时先
+  画出来再继续写入；每次绑定（新开 / 切回 / exited 重绘）都要先按"这块屏当前属于别的
+  标签"清屏，否则会串台。
+- **2FA 答案按标签隔离**：挑战与答案（`authPrompt` / `authAnswers`）都存标签记录，
+  后台挑战不得清当前输入，提交只发当前标签自己的答案；视图不持有答案状态。
+- **远端 exit 只清 sessionId**：标签、位置与最后一屏输出保留，不得删标签，也不得
+  让 placeholder 盖住画面；只有"没有任何标签"时终端区才显示 placeholder。
+- **关闭后台标签**走 `api.closeTerminalSession`：短暂 attach 后发 `close` 帧，
+  不新增 HTTP 路由。判定是"会话是否已不在运行"：帧落到已 OPEN 的 socket，或 Host 回
+  `exit`（未知 id 回 `terminal session expired`）都算已关闭；socket 报错、打开前
+  关闭、或在有界等待（默认 5s）内无结论则算未证明，保留标签与 sessionId 并报
+  `closeError`，不得谎称已关闭。同一标签同时只允许一次关闭尝试（in-flight 防重）；
+  恢复语义是"重试"或"把该标签切到前台用其自身 socket 关闭"，陈旧 `closeError` 在
+  ready / exit / fail 时清除，绝不因为关不掉就静默移除标签。
 - **终端 socket 走外壳公布的 Host**（`src/client/api.ts` 的 `terminalSocketUrl`）：
   应用交付的页面（桌面版 `dsh-app://app/`）不能在自己的 scheme 上升级 socket，
   但外壳已经通过官方钩子 `__DSH_TRANSPORT__.streamBaseUrl` 公布它拥有的 Host
