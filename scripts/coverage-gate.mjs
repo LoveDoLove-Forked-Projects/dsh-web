@@ -41,6 +41,22 @@
  * coverage is the metric worth reading, because it is the one that exposes an
  * untested failure path.
  *
+ * A package's percentage covers only the code the package owns. The family
+ * settings card trio and the shared host modules live once under shared/ and
+ * are mirrored into consumers by scripts/sync-shared.mjs; every copy is byte
+ * identical, committed, and tested where the source lives (shared/tests carries
+ * settings-form.spec.ts, mount-once.spec.ts and the rest), so counting a copy in
+ * its consumer measures one source once per consumer instead of once for the
+ * fleet - the newest copy landing moved 28 metrics across 8 packages at once,
+ * with no test change anywhere. A generated copy is therefore not the package's
+ * own code and does not enter that package's coverage, uniformly: every manifest
+ * target inside packages/<pkg>/ is excluded for that package, whether or not the
+ * copy happens to be well covered, with no per-file or per-package exception.
+ * The MANIFEST in scripts/sync-shared.mjs is the authority for which files those
+ * are; this gate derives the list through its copyEntries() export and repeats
+ * no file name and no package list of its own, so a copy added to the manifest is
+ * excluded from its consumer without touching this file.
+ *
  * Usage:
  *   node scripts/coverage-gate.mjs                     # compare against the baseline
  *   node scripts/coverage-gate.mjs --report            # print the current table, exit 0
@@ -52,6 +68,7 @@ import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync
 import { cpus, tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { copyEntries } from './sync-shared.mjs'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const ROOT = join(dirname(SCRIPT_PATH), '..')
@@ -112,7 +129,42 @@ function round(value) {
 }
 
 /**
+ * The coverage exclusions a package carries: every scripts/sync-shared.mjs
+ * MANIFEST target written inside `packages/<packageName>/`, relative to the
+ * package directory.
+ *
+ * The list is read from copyEntries() rather than repeated here, so the manifest
+ * stays the single place a generated copy is declared. Paths are package
+ * relative because the gate runs vitest with the package as its working
+ * directory, and vitest matches a coverage exclusion against the instrumented
+ * path with contains semantics, so `src/client/settings-form.ts` removes
+ * `<root>/packages/<pkg>/src/client/settings-form.ts` without an absolute path
+ * (measured on vitest 4.1, see coverageArgs).
+ * @param packageName - the package directory name under packages/.
+ * @param entries - copyEntries() output; injected only by tests.
+ * @returns package-relative paths, sorted; empty when the package has no copies.
+ */
+export function sharedCopyExcludes(packageName, entries = copyEntries()) {
+  const marker = '/packages/' + packageName + '/'
+  const excludes = []
+  for (const entry of entries) {
+    const target = String(entry.target).split('\\').join('/')
+    const at = target.lastIndexOf(marker)
+    if (at < 0) continue
+    const rel = target.slice(at + marker.length)
+    if (rel.length > 0) excludes.push(rel)
+  }
+  return excludes.sort()
+}
+
+/**
  * The vitest argv this gate runs for one package.
+ *
+ * `excludes` are package-relative paths carrying the same rule as
+ * {@link sharedCopyExcludes}: a copied shared source is not this package's own
+ * code. Repeated --coverage.exclude flags accumulate in vitest rather than
+ * overriding each other, which is what lets every copy keep its literal path
+ * instead of being folded into one brace glob.
  *
  * excludeAfterRemap re-applies the exclusions after coverage is remapped to
  * original sources. Without it a package whose built bundle inlines a
@@ -124,12 +176,13 @@ function round(value) {
  * on cannot drop a file the default rules keep — it is a no-op for every
  * package that only instruments files inside its own directory.
  */
-export function coverageArgs(outDir) {
+export function coverageArgs(outDir, excludes = []) {
   return [
     'run',
     '--coverage',
     '--coverage.reporter=json-summary',
     '--coverage.reportsDirectory=' + outDir,
+    ...excludes.map((exclude) => '--coverage.exclude=' + exclude),
     '--coverage.excludeAfterRemap=true',
   ]
 }
@@ -174,7 +227,7 @@ export function coverPackage(pkg) {
   const bin = join(pkg.dir, 'node_modules', '.bin', 'vitest')
   if (!existsSync(bin)) return Promise.resolve({ ok: false, error: 'vitest is not installed in ' + pkg.rel })
   return new Promise((resolve) => {
-    const child = spawn(bin, coverageArgs(outDir), { cwd: pkg.dir, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(bin, coverageArgs(outDir, sharedCopyExcludes(pkg.name)), { cwd: pkg.dir, stdio: ['ignore', 'pipe', 'pipe'] })
     // The two streams stay separate so the captured text is stdout followed by
     // stderr, byte for byte what the previous spawnSync call produced; merging
     // them in arrival order would reorder a failure's evidence.
