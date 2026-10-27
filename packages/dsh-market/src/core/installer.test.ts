@@ -5,9 +5,9 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, existsSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { brotliCompressSync } from 'node:zlib'
 import {
   DEFAULT_INSTALL_RETRIES,
@@ -131,6 +131,8 @@ describe('installAsset', () => {
     expect(result.dest).toBe(targetDir(home, 'skin', 'whale-song'))
     expect(readFileSync(join(home, 'skins', 'whale-song', 'skin.json'), 'utf8')).toBe('data-skin.json')
     expect(readFileSync(join(home, 'skins', 'whale-song', 'assets', 'whale-art.webp'), 'utf8')).toBe('data-whale-art.webp')
+    // The rename target is the plain id: staging left nothing visible behind
+    expect(readdirSync(join(home, 'skins'))).toEqual(['whale-song'])
   })
 
   it('user installs a skin while the host fetch cannot decode compressed bodies', async () => {
@@ -218,19 +220,53 @@ describe('installAsset', () => {
     expect(readFileSync(join(dest, 'pet.json'), 'utf8')).toBe('data-pet.json')
   })
 
-  it('cleans the temp dir and keeps nothing partial on download failure', async () => {
+  // Staging is a sibling of the destination, so a scanner that lists the kind
+  // directory meets it unless its name starts with a dot. A failed install
+  // must therefore leave no visible entry, and a staging directory the
+  // best-effort cleanup could not remove must still be dot-prefixed
+  // (issue #1952). The previous version of this test called
+  // require('node:fs') — which throws in an ES module — inside a try/catch
+  // that swallowed the error, so its assertion held without reading a
+  // directory at all.
+  it.each([
+    { kind: 'skin' as const, id: 'whale-song', file: 'whale-art.webp' },
+    { kind: 'pet' as const, id: 'whale-girl', file: 'spritesheet.webp' },
+    { kind: 'preset' as const, id: 'demo-preset', file: 'hook.mjs' },
+  ])('operator gets no visible $kind entry after a failed download', async ({ kind, id, file }) => {
+    // Given an asset whose last file answers 404
     const home = tmpHome()
-    await expect(
-      installAsset('skin', 'whale-song', { dshHome: home, fetchImpl: mockFetch({ 'whale-art.webp': 404 }) }),
-    ).rejects.toMatchObject({ code: 'download' })
-    const dest = targetDir(home, 'skin', 'whale-song')
+    const dest = targetDir(home, kind, id)
+    const parent = dirname(dest)
+    const inFlight: string[] = []
+    const base = mockFetch({ [file]: 404 })
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/' + file)) {
+        // The staging directory is created before the first download, so this
+        // is exactly what a scanner lists while the install is still running.
+        inFlight.push(...readdirSync(parent))
+      }
+      return base(input, init)
+    }) as typeof fetch
+
+    // When the install fails
+    await expect(installAsset(kind, id, { dshHome: home, fetchImpl }))
+      .rejects.toMatchObject({ code: 'download' })
+
+    // Then the entry a scanner could have met was a hidden sibling of the
+    // destination, which keeps the rename an atomic same-volume move
+    expect(inFlight).toHaveLength(1)
+    const staged = inFlight[0] ?? ''
+    expect(staged).toMatch(new RegExp('^\\.' + id + '\\.install-[0-9a-z]+-[0-9a-z]+$'))
+    expect(join(parent, staged)).not.toBe(dest)
+    expect(dirname(join(parent, staged))).toBe(parent)
+
+    // And no visible entry survives the failure, so a scanner lists nothing
+    const survivors = readdirSync(parent)
+    expect(survivors.filter((name) => !name.startsWith('.'))).toEqual([])
+    // ...and a staging directory the cleanup could not remove is still hidden
+    expect(survivors.filter((name) => name.startsWith('.'))).toEqual(survivors)
+    expect(survivors).not.toContain(id)
     expect(existsSync(dest)).toBe(false)
-    const leftovers = dirs.map((d) => {
-      try {
-        return require('node:fs').readdirSync(join(home, 'skins')).filter((n: string) => n.startsWith('whale-song'))
-      } catch { return [] }
-    }).flat()
-    expect(leftovers).toEqual([])
   })
 
   it('rejects unknown ids with manifest error', async () => {

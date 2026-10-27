@@ -20,9 +20,16 @@
  *    hostile manifest cannot exhaust host memory or disk while a slow or
  *    transiently unavailable origin still has a real chance to answer
  *    (issues #1941);
- *  - writes are staged in a temp dir next to the destination and renamed
- *    into place only after every file downloaded successfully, so a failed
- *    install never leaves a half-written asset directory;
+ *  - writes are staged in a hidden sibling of the destination — the parent
+ *    directory's '.' + <id> + '.install-<suffix>' — and renamed into place
+ *    only after every file downloaded successfully, so a failed install never
+ *    leaves a half-written asset directory. Staging and destination share one
+ *    directory, so the rename stays an atomic same-volume move. Consumers that
+ *    skip dot entries — the pet registry and the preset library do — never
+ *    list it; the skin center lists every directory and refuses one whose
+ *    skin.json is missing or whose manifest id differs from the directory
+ *    name, so its refusal is that consistency check, not a name filter (issue
+ *    #1952);
  *  - an existing directory is replaced only with force (the UI confirms);
  *  - every install records dsh-market.provenance.json (sha256 of each
  *    installed file, pinned to MARKET_ORIGIN), so consumers like the skin
@@ -34,7 +41,7 @@
 
 import { createHash } from 'node:crypto'
 import { mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join, sep } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { withIdentityEncoding } from '../http.ts'
 
 export const MARKET_ORIGIN = 'https://dsh-market.com'
@@ -392,7 +399,13 @@ export async function installAsset(
     throw new MarketInstallError('conflict', `destination already exists: ${dest}`)
   }
 
-  const tmp = dest + '.install-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
+  // Staging lives in the destination's own parent with a dot prefix: one
+  // volume (so the rename stays atomic) while scanners that list entries by
+  // name never see a half-finished asset next to a real one (issue #1952).
+  const tmp = join(
+    dirname(dest),
+    '.' + basename(dest) + '.install-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
+  )
   try {
     mkdirSync(tmp, { recursive: true })
     const hashes: Record<string, string> = {}
