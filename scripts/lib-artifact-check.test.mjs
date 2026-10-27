@@ -1,11 +1,10 @@
 /**
  * Unit tests for the committed-lib fingerprint guard: which files reach a
- * bundle, that the fingerprint is order-independent and content-sensitive, and
- * that the aggregate manifest's package lists are read completely.
+ * bundle, and that the fingerprint is order-independent and content-sensitive.
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { fingerprintEntries, isBundledSource, parseAggregateInputs } from './lib-artifact-check.mjs'
+import { fingerprintEntries, isBundledSource } from './lib-artifact-check.mjs'
 
 describe('isBundledSource', () => {
   it('keeps shipped sources', () => {
@@ -35,31 +34,5 @@ describe('fingerprintEntries', () => {
     assert.notEqual(base, fingerprintEntries([['a.ts', '2']]))
     assert.notEqual(base, fingerprintEntries([['a.ts', '1'], ['b.ts', '1']]))
     assert.notEqual(base, fingerprintEntries([['b.ts', '1']]))
-  })
-})
-
-describe('parseAggregateInputs', () => {
-  it('reads every ../ entry from the list sections', () => {
-    const yaml = [
-      'patchFrom:',
-      '  - ../dsh-market',
-      '  - ../dsh-usage',
-      'self:',
-      '  - ../dsh-web-all',
-      'deps:',
-      '  - ../dsh-preset-center',
-      'inactive:',
-      '  - web-ui-pet',
-    ].join('\n')
-    assert.deepEqual(parseAggregateInputs(yaml), [
-      'packages/dsh-market',
-      'packages/dsh-usage',
-      'packages/dsh-web-all',
-      'packages/dsh-preset-center',
-    ].sort())
-  })
-
-  it('ignores lines that are not list entries', () => {
-    assert.deepEqual(parseAggregateInputs('# comment\ndeps:\n'), [])
   })
 })

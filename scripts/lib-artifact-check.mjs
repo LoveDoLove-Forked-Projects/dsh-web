@@ -6,20 +6,21 @@
  * per package): a consumer that resolves the package without rebuilding it
  * gets exactly those bytes. The satellite repositories (dsh-skins,
  * dsh-presets) carry the same rule for their own packages in their own CI.
- * When
- * that output was produced from a source snapshot that later moved on, the
+ * When that output was produced from a source snapshot that later moved on, the
  * repository ships stale code — the maid-atelier reviewed-hooks table did
  * exactly that (the committed bundle kept the previous hash while
- * src/reviewed-hooks.generated.ts already held the new one), and the aggregate
- * package inlines every child plugin's src/client, which its own AGENTS.md
- * documents as the cause of the 2026-09-09 "restart changed nothing" incident.
+ * src/reviewed-hooks.generated.ts already held the new one).
  *
  * Comparing the committed bytes against a fresh build cannot work here: a build
  * embeds the checkout's absolute path into bundles (CSS-module hashes), so
  * rebuilt bytes differ per machine — the CI workflow says the same. This check
  * therefore fingerprints the SOURCE INPUTS each committed lib/ was built from
- * (own src/, plus every child package's src/ for the aggregate) and fails when
- * those inputs moved without the fingerprint being refreshed.
+ * and fails when those inputs moved without the fingerprint being refreshed.
+ *
+ * The inputs stop at each package's own src/. The aggregate's lib/ is the compat
+ * shim plus the fault-isolation shell, and every family row mounts the child
+ * package itself, so no child plugin source reaches its bundle (issue #1901):
+ * a child's src/ moves that child's own lib/ and nothing here.
  *
  * Usage:
  *   node scripts/lib-artifact-check.mjs           # check (CI gate)
@@ -35,9 +36,6 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const MANIFEST = join(ROOT, 'scripts', 'lib-artifact-fingerprints.json')
-const AGGREGATE = join(ROOT, 'packages', 'dsh-web-all', 'aggregate.yml')
-/** The aggregate inlines its children's client sources, so it owns their inputs too. */
-const AGGREGATE_PACKAGE = 'packages/dsh-web-all'
 
 /**
  * Whether one source path reaches a bundle.
@@ -68,21 +66,6 @@ export function fingerprintEntries(entries) {
     hash.update('\n')
   }
   return hash.digest('hex')
-}
-
-/**
- * Package directories the aggregate manifest pulls in.
- * @param text - aggregate.yml contents.
- * @returns sorted package directories, repo-relative.
- */
-export function parseAggregateInputs(text) {
-  const dirs = new Set()
-  for (const line of text.split('\n')) {
-    const match = /^\s*-\s+\.\.\/(.+?)\s*$/.exec(line)
-    if (match === null) continue
-    dirs.add('packages/' + match[1].replace(/\/+$/, ''))
-  }
-  return [...dirs].sort()
 }
 
 /** Every bundled source file under one directory, as sorted POSIX paths. */
@@ -126,15 +109,9 @@ function trackedLibPackages() {
   return [...packages].sort()
 }
 
-/** Fingerprint one package's inputs, including the aggregate's children. */
+/** Fingerprint one package's inputs: the bundled sources under its own src/. */
 function packageFingerprint(pkgDir) {
-  let entries = sourceEntries(pkgDir)
-  if (pkgDir === AGGREGATE_PACKAGE && existsSync(AGGREGATE)) {
-    for (const child of parseAggregateInputs(readFileSync(AGGREGATE, 'utf8'))) {
-      entries = entries.concat(sourceEntries(child).map(([rel, digest]) => [child + '/' + rel, digest]))
-    }
-  }
-  return fingerprintEntries(entries)
+  return fingerprintEntries(sourceEntries(pkgDir))
 }
 
 const isCli = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url
