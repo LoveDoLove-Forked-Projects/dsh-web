@@ -19,7 +19,7 @@
  * what would go before anything is written. The Host ledger stays the authority
  * either way — this surface only decides what to ask for.
  */
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import type { BoardController } from '../../core/controller.ts'
 import { TAG_NAME_MAX_LENGTH, collectKnownTags, type TaskRecord } from '../../core/tasks.ts'
 import { cleanupCandidates, type TagCleanupCandidate } from '../../core/use-cases/task-tag.ts'
@@ -114,6 +114,8 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
   const [threshold, setThreshold] = useState(String(CLEANUP_THRESHOLD_DEFAULT))
   /** Supporting answer to a clear press (nothing matched), never an error. */
   const [notice, setNotice] = useState<string | undefined>(undefined)
+  /** Description target of the corner `?`: the same rule as its hover text. */
+  const cleanupHintId = useId()
   const confirmPresence = usePresence(confirmDelete !== undefined)
   const cleanupPresence = usePresence(confirmCleanup !== undefined)
   // Escape and a backdrop press peel one layer at a time: an open row editor
@@ -212,6 +214,45 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
         >
           <header className={css.modalHeader}>
             <h2 className={css.modalTitle}>{t('tags.title')}</h2>
+            {/* The clear control belongs to the whole ledger, not to the row above
+                it, so it lives in the card's corner instead of after the list. Its
+                rule rides on the `?`: a native title for the hover text every
+                icon button here already uses, plus a visually hidden description so
+                the explanation survives without a pointer. */}
+            <div className={css.tagCleanup}>
+              <button
+                type="button"
+                className={css.helpButton}
+                aria-label={t('tags.cleanupHelp')}
+                aria-describedby={cleanupHintId}
+                title={t('tags.cleanupHint')}
+              >
+                ?
+              </button>
+              <label className={css.scheduleZone}>
+                <span>{t('tags.cleanupThreshold')}</span>
+                <input
+                  className={css.input + ' ' + css.tagCleanupInput}
+                  type="number"
+                  min={CLEANUP_THRESHOLD_MIN}
+                  max={CLEANUP_THRESHOLD_MAX}
+                  step={1}
+                  inputMode="numeric"
+                  value={threshold}
+                  disabled={busy}
+                  aria-label={t('tags.cleanupThreshold')}
+                  onChange={event => {
+                    setThreshold(event.target.value)
+                    setNotice(undefined)
+                    setError(undefined)
+                  }}
+                />
+              </label>
+              <button type="button" className={css.ghostButton} disabled={busy} onClick={startCleanup}>
+                {t('tags.cleanup')}
+              </button>
+            </div>
+            <span id={cleanupHintId} className={css.srOnly}>{t('tags.cleanupHint')}</span>
             <button
               type="button"
               className={css.iconButton}
@@ -225,6 +266,7 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
 
           <div className={css.modalBody}>
             <p className={css.fieldHint}>{t('tags.hint')}</p>
+            {notice !== undefined && <p className={css.tagCleanupNotice} role="status">{notice}</p>}
             {rows.length === 0
               ? <p className={css.detailText}>{t('tags.empty')}</p>
               : (
@@ -292,34 +334,6 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
                   ))}
                 </ul>
                 )}
-            <div className={css.tagCleanup}>
-              <p className={css.fieldHint}>{t('tags.cleanupHint')}</p>
-              <div className={css.tagCleanupRow}>
-                <label className={css.scheduleZone}>
-                  <span>{t('tags.cleanupThreshold')}</span>
-                  <input
-                    className={css.input + ' ' + css.tagCleanupInput}
-                    type="number"
-                    min={CLEANUP_THRESHOLD_MIN}
-                    max={CLEANUP_THRESHOLD_MAX}
-                    step={1}
-                    inputMode="numeric"
-                    value={threshold}
-                    disabled={busy}
-                    aria-label={t('tags.cleanupThreshold')}
-                    onChange={event => {
-                      setThreshold(event.target.value)
-                      setNotice(undefined)
-                      setError(undefined)
-                    }}
-                  />
-                </label>
-                <button type="button" className={css.ghostButton} disabled={busy} onClick={startCleanup}>
-                  {t('tags.cleanup')}
-                </button>
-              </div>
-              {notice !== undefined && <p className={css.tagCleanupNotice} role="status">{notice}</p>}
-            </div>
             {error !== undefined && <p className={css.formError}>{error}</p>}
           </div>
 

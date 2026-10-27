@@ -267,6 +267,28 @@ describe('label manager cleanup', () => {
 
     // And one commit offers to run it
     expect([...container.querySelectorAll('button')].some(button => button.textContent === t('tags.cleanup'))).toBe(true)
+
+    // And the rule rides on a question mark instead of a paragraph: the button
+    // carries the sentence as its hover text and as the description assistive
+    // technology reads, so the corner stays a control.
+    const help = [...container.querySelectorAll('button')]
+      .find(button => button.getAttribute('aria-label') === t('tags.cleanupHelp'))
+    expect(help).toBeDefined()
+    expect(help!.textContent).toBe('?')
+    expect(help!.getAttribute('title')).toBe(t('tags.cleanupHint'))
+    const describedBy = help!.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    const described = [...container.querySelectorAll('[id]')].find(node => node.id === describedBy)
+    expect(described?.textContent).toBe(t('tags.cleanupHint'))
+
+    // And the clear control lives in the card's header — the corner — rather than
+    // trailing the label list it does not belong to.
+    const header = container.querySelector('header')
+    expect(header).not.toBeNull()
+    expect(header!.contains(help!)).toBe(true)
+    const commit = [...container.querySelectorAll('button')]
+      .find(button => button.textContent === t('tags.cleanup'))
+    expect(header!.contains(commit!)).toBe(true)
   })
 
   it('user typing a threshold the field would refuse judges at the field ceiling, not the raw number', () => {
