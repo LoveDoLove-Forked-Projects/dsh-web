@@ -114,8 +114,14 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
   const [threshold, setThreshold] = useState(String(CLEANUP_THRESHOLD_DEFAULT))
   /** Supporting answer to a clear press (nothing matched), never an error. */
   const [notice, setNotice] = useState<string | undefined>(undefined)
-  /** Description target of the corner `?`: the same rule as its hover text. */
-  const cleanupHintId = useId()
+  /** Description target of the corner `?`: the same text as its hover text. */
+  const ruleId = useId()
+  /**
+   * Everything this dialog explains, in reading order: what labels are and what
+   * renaming or deleting does to the cards, then the clear rule. The body keeps
+   * the list alone; the corner `?` carries the prose.
+   */
+  const ruleText = `${t('tags.hint')}\n\n${t('tags.cleanupHint')}`
   const confirmPresence = usePresence(confirmDelete !== undefined)
   const cleanupPresence = usePresence(confirmCleanup !== undefined)
   // Escape and a backdrop press peel one layer at a time: an open row editor
@@ -223,9 +229,9 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
               <button
                 type="button"
                 className={css.helpButton}
-                aria-label={t('tags.cleanupHelp')}
-                aria-describedby={cleanupHintId}
-                title={t('tags.cleanupHint')}
+                aria-label={t('tags.help')}
+                aria-describedby={ruleId}
+                title={ruleText}
               >
                 ?
               </button>
@@ -252,7 +258,7 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
                 {t('tags.cleanup')}
               </button>
             </div>
-            <span id={cleanupHintId} className={css.srOnly}>{t('tags.cleanupHint')}</span>
+            <span id={ruleId} className={css.srOnly}>{ruleText}</span>
             <button
               type="button"
               className={css.iconButton}
@@ -265,7 +271,6 @@ export function TagManagerModal({ controller, onClose, phase = 'open' }: TagMana
           </header>
 
           <div className={css.modalBody}>
-            <p className={css.fieldHint}>{t('tags.hint')}</p>
             {notice !== undefined && <p className={css.tagCleanupNotice} role="status">{notice}</p>}
             {rows.length === 0
               ? <p className={css.detailText}>{t('tags.empty')}</p>

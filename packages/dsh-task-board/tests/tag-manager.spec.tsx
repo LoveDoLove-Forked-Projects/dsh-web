@@ -254,8 +254,10 @@ describe('label manager cleanup', () => {
     // When the manager opens
     const container = render(<TagManagerModal controller={controller} onClose={() => {}} />)
 
-    // Then the clear area explains the rule and starts at five tasks
+    // Then the rule lives on the corner question mark, not as body prose, and the
+    // clear control starts at five tasks
     expect(container.textContent).toContain(t('tags.cleanupHint'))
+    expect(container.textContent).toContain(t('tags.hint'))
     expect(container.textContent).toContain(t('tags.cleanupThreshold'))
     const field = container.querySelector('input[type="number"]') as HTMLInputElement
     expect(field.value).toBe('5')
@@ -271,15 +273,24 @@ describe('label manager cleanup', () => {
     // And the rule rides on a question mark instead of a paragraph: the button
     // carries the sentence as its hover text and as the description assistive
     // technology reads, so the corner stays a control.
+    // The one question mark carries everything the dialog used to say in prose:
+    // what labels are and what renaming/deleting does, then the clear rule.
+    const rule = t('tags.hint') + '\n\n' + t('tags.cleanupHint')
     const help = [...container.querySelectorAll('button')]
-      .find(button => button.getAttribute('aria-label') === t('tags.cleanupHelp'))
+      .find(button => button.getAttribute('aria-label') === t('tags.help'))
     expect(help).toBeDefined()
     expect(help!.textContent).toBe('?')
-    expect(help!.getAttribute('title')).toBe(t('tags.cleanupHint'))
+    expect(help!.getAttribute('title')).toBe(rule)
     const describedBy = help!.getAttribute('aria-describedby')
     expect(describedBy).toBeTruthy()
     const described = [...container.querySelectorAll('[id]')].find(node => node.id === describedBy)
-    expect(described?.textContent).toBe(t('tags.cleanupHint'))
+    expect(described?.textContent).toBe(rule)
+    // And neither sentence is painted in the body any more: the copy stays in the
+    // DOM only as the question mark's visually hidden description, so no rendered
+    // paragraph carries it.
+    const paintedParagraphs = [...container.querySelectorAll('p')].map(node => node.textContent ?? '')
+    expect(paintedParagraphs.some(text => text.includes('标签是顶栏筛选'))).toBe(false)
+    expect(paintedParagraphs.some(text => text.includes('任务数少于阈值'))).toBe(false)
 
     // And the clear control lives in the card's header — the corner — rather than
     // trailing the label list it does not belong to.
