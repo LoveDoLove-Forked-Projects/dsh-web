@@ -411,10 +411,12 @@ describe('gentle paging under the collapsed ptc wire', () => {
 /**
  * The activation tool has to offer exactly the namespaces the catalog
  * advertises, and under `ptc` those are the ones the live restriction already
- * removed from every scoped reader. Both preset rows are mounted on ONE
- * registry here, so the activation tool faces the same filtered scope the
- * production session does: reading `tools.schemas(agent)` back would find an
- * empty page and refuse a namespace the same request's catalog names.
+ * removed from every scoped reader. The catalog pages the harness registry and
+ * the activation row resolves its enumeration through that same registry via
+ * `agent.ctx.tools` — only the row's own `ctx` is a capture stub — so the
+ * activation faces the same filtered scope the production session does:
+ * reading `tools.schemas(agent)` back would find an empty page and refuse a
+ * namespace the same request's catalog names.
  */
 describe('tool_activate against the restricted ptc surface', () => {
   /** Mount the sibling row against the harness registry and return its tool. */
