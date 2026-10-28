@@ -36,6 +36,14 @@
   `"@deepseek-ai/dsh": ">=<cohort>"`，与 `dsh.engines.dsh` 下限同源、随 cohort 同步
   （门禁 `scripts/family-dsh-engines.test.mjs`）；禁止 tsconfig 指向任何 DSH 源码
   checkout。
+- **宿主核包不进 `dependencies`**：`@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-*` 只写
+  `devDependencies`（类型与 host 半区的值导入），运行时那一份一律由宿主提供。插件管理器
+  会把这个段装进用户 profile，且 profile 副本优先于宿主加载，于是预发布范围就成了用户没
+  点过的版本开关：`^0.2.1-rc.3` 等于 `>=0.2.1-rc.3 <0.3.0-0`，下一个 rc 照样满足，
+  宿主 0.2.1-rc.3 上装进 rc.4 会让 `sessionProjections` 注册失败、`agent-loop` 无法激活
+  并拖垮整套插件（[#1966](https://github.com/zhu1090093659/dsh-web/issues/1966)，门禁
+  `scripts/family-host-dependencies.test.mjs`）。`@deepseek-ai/schemastery` /
+  `@deepseek-ai/cordis` 是普通库，不受此限。
 - **共享构建预设**：所有 tsdown 包 import `shared/tsdown.client.ts`，禁止复制到
   包内；tsconfig 分层（solution + host/client 各自 program，参照
   `dsh-git-graph`/`dsh-task-board`）。

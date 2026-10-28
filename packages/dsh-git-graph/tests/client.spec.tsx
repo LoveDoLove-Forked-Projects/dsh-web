@@ -15,6 +15,7 @@ import type { BranchesView, GraphView, RepoStatus, SwitchResult, WorktreeListVie
 import type { GitGraphInjected } from '../src/client/index.ts'
 import type { BranchChipProps } from '../src/client/chips/BranchChip.tsx'
 import { BranchChip } from '../src/client/chips/BranchChip.tsx'
+import { resolvePopoverDirection } from '../src/client/chips/BranchPopover.tsx'
 import { GraphDialog } from '../src/client/graph/GraphDialog.tsx'
 import { zh, type GitGraphKey } from '../src/client/locales.ts'
 import css from '../src/client/chips/context.module.css'
@@ -227,6 +228,20 @@ describe('BranchChip', () => {
     // The popover is absolutely positioned against the chip wrapper, so it
     // stays flush with the chip no matter how the dock anchor is padded.
     expect(chipWrap.contains(popover)).toBe(true)
+  })
+
+  it('user sees the hero popover open below the chip while it has not been measured yet', async () => {
+    // Given the hero seat's own contract, where the official workspace picker
+    // beside the chip opens downward
+    bench({ blank: true, openState: 'open' })
+
+    // When the user opens the branch picker
+    fireEvent.click(await screen.findByRole('button', { name: '分支' }))
+    const popover = await screen.findByRole('listbox', { name: '搜索分支' })
+
+    // Then the card keeps that side until its first measurement says otherwise
+    expect(popover.getAttribute('data-gitgraph-side')).toBe('down')
+    expect(popover.className).toContain(css.popoverHero)
   })
 
   it('enters the hero seat while a blank session composer is still loading', async () => {
@@ -636,6 +651,60 @@ describe('popover search box focus', () => {
     fireEvent.click(chip)
     const input = await screen.findByPlaceholderText(/搜索分支/)
     expect(document.activeElement).toBe(input)
+  })
+})
+
+describe('popover side', () => {
+  const anchorAt = (top: number, bottom: number) => ({ top, bottom })
+
+  it('user sees the popover keep its seat side while the card fits there', () => {
+    // Given a chip mid-window and a card shorter than the room on either side.
+    const anchor = anchorAt(300, 328)
+
+    // When either seat measures the room around its own side.
+    const fromDock = resolvePopoverDirection(anchor, 200, 800, 'up')
+    const fromHero = resolvePopoverDirection(anchor, 200, 800, 'down')
+
+    // Then each keeps the side its seat ships with.
+    expect(fromDock).toBe('up')
+    expect(fromHero).toBe('down')
+  })
+
+  it('user gets the popover above the chip when the row sits at the window bottom', () => {
+    // Given the Claude Code studio home, where the hero row sits at 700 of an
+    // 800px window: 64px below it and 692 above.
+    const anchor = anchorAt(700, 728)
+
+    // When the hero seat asks for its downward side.
+    const side = resolvePopoverDirection(anchor, 300, 800, 'down')
+
+    // Then the card flips upward instead of running off the window.
+    expect(side).toBe('up')
+  })
+
+  it('user gets the popover below the chip when the row sits at the window top', () => {
+    // Given a dock row 20px under the window's top edge.
+    const anchor = anchorAt(20, 48)
+
+    // When the dock seat asks for its upward side.
+    const side = resolvePopoverDirection(anchor, 300, 800, 'up')
+
+    // Then the card flips downward, where the room is.
+    expect(side).toBe('down')
+  })
+
+  it('user gets the roomier side when neither side fits a card taller than the window', () => {
+    // Given a card taller than the window and a chip in the middle of it, where
+    // both sides differ by less than the card.
+    const anchor = anchorAt(380, 420)
+
+    // When each seat measures the room.
+    const fromHero = resolvePopoverDirection(anchor, 900, 800, 'down')
+    const fromTightTop = resolvePopoverDirection(anchorAt(60, 100), 900, 800, 'up')
+
+    // Then the side with the most room wins, whichever seat asked.
+    expect(fromHero).toBe('down')
+    expect(fromTightTop).toBe('down')
   })
 })
 
