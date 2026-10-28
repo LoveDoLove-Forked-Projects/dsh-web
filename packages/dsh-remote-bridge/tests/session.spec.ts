@@ -122,8 +122,8 @@ describe('session methods over protocol v1', () => {
     })
   })
 
-  it('user asking twice for the same session reuses the one follow stream', async () => {
-    // Given a session already subscribed
+  it('user asking twice for a session that stayed silent reuses the one follow stream', async () => {
+    // Given a session already subscribed whose stream has delivered nothing since its opening frame
     const harness = makeConnection({ paired: true })
     const follow = new ControllableStream()
     harness.gateway.follow = call => follow.attach(call.signal).iterable()
@@ -135,6 +135,41 @@ describe('session methods over protocol v1', () => {
     // Then the same stream answered and no second one was opened
     expect(harness.gateway.streamRequests).toHaveLength(1)
     expect((answerOf(harness, 4).r as { lastSeq: number }).lastSeq).toBe(7)
+  })
+
+  it('user snapshots a session that ran a turn on its stream and a fresh stream answers the new cursor', async () => {
+    // Given a session already subscribed with an empty opening window
+    const harness = makeConnection({ paired: true })
+    const opening = new ControllableStream()
+    const reopened = new ControllableStream()
+    const streams = [opening, reopened]
+    harness.gateway.follow = call => (streams.shift() ?? new ControllableStream()).attach(call.signal).iterable()
+    const first = harness.connection.handleText(requestFrame(21, 'session.snapshot', { sessionId: 's-1' }))
+    opening.push({ type: 'snapshot', header: {}, cursor: 3, hasMore: false, projections: {}, records: [] })
+    await first
+    // When the session runs a turn on that very stream
+    opening.push(record('turn/start', 466, 200, { turn: 1 }))
+    await settle()
+    // And the user asks for the snapshot again
+    const second = harness.connection.handleText(requestFrame(22, 'session.snapshot', { sessionId: 's-1' }))
+    reopened.push({
+      type: 'snapshot',
+      header: {},
+      cursor: 21,
+      hasMore: false,
+      projections: {},
+      records: [
+        record('turn/start', 17, 300, { turn: 2 }),
+        record('user/message', 18, 301, { content: 'again' }),
+        record('turn/end', 19, 302, { turn: 2, reason: { kind: 'completed' } }),
+      ],
+    })
+    await second
+    // Then the moved stream was retired, one fresh stream was opened, and its own opening cursor is the answer
+    expect(harness.gateway.streamRequests).toHaveLength(2)
+    expect(opening.aborted).toBe(true)
+    expect(turnsOf(harness, 22)).toHaveLength(1)
+    expect(lastSeqOf(harness, 22)).toBe(21)
   })
 
   it('user sees assistant text, reasoning and tool arguments as increments', async () => {

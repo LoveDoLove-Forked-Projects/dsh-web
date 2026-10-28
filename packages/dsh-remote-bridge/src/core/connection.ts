@@ -326,6 +326,13 @@ interface Subscription {
    */
   address: SessionAddress
   opened: Promise<Opening>
+  /**
+   * Whether this stream has delivered any frame after its opening one. The
+   * opening window is a moment, not a state: once the stream moves, that window
+   * is as old as the moment it was opened and can no longer answer for a session
+   * that has run a turn since.
+   */
+  advanced: boolean
 }
 
 /** The refusal half of every dispatch outcome. */
@@ -1356,7 +1363,7 @@ export class BridgeConnection {
     if (sessionId === undefined) return refusal(CODE_INVALID_ARGS, 'session.snapshot requires sessionId')
     const unfollowable = await this.#unfollowable(sessionId)
     if (unfollowable !== undefined) return refusal(CODE_SESSION_NOT_FOLLOWABLE, unfollowable)
-    const opening = await this.#awaitOpening(this.#ensureSubscription(sessionId))
+    const opening = await this.#openingForBaseline(sessionId)
     if (!opening.ok) return refusal(opening.code, `session ${sessionId} produced no opening frame (${opening.msg})`)
     // A client that declared the trim capability chooses what it is sent, never
     // which turns it gets: the projection is trimmed inside each turn first, and
@@ -1479,7 +1486,7 @@ export class BridgeConnection {
     if (!budget.ok) return budget
     const unfollowable = await this.#unfollowable(sessionId)
     if (unfollowable !== undefined) return refusal(CODE_SESSION_NOT_FOLLOWABLE, unfollowable)
-    const opening = await this.#awaitOpening(this.#ensureSubscription(sessionId))
+    const opening = await this.#openingForBaseline(sessionId)
     if (!opening.ok) return refusal(opening.code, `session ${sessionId} produced no opening frame (${opening.msg})`)
     const page = pageTurns(this.#projectionOf(opening.baseline.records), before, budget.maxBytes, (turns, nextBefore, hasMore) =>
       Buffer.byteLength(JSON.stringify(responseFrame(id, { turns, ...(nextBefore === undefined ? {} : { nextBefore }), hasMore })), 'utf8'))
@@ -2434,6 +2441,7 @@ export class BridgeConnection {
       sessionId,
       controller: new AbortController(),
       address: this.#addressOf(sessionId),
+      advanced: false,
       // Resolved without ever rejecting: a caller may subscribe without awaiting
       // the opening frame (`session.prompt` does exactly that), and an unobserved
       // rejection would take the whole host process down under node's default
@@ -2583,6 +2591,7 @@ export class BridgeConnection {
       for (;;) {
         const next = await iterator.next()
         if (next.done === true) return
+        subscription.advanced = true
         const delta = deltaOfFollowFrame(next.value, this.#toolCalls, this.#messages, memory)
         if (delta === undefined) continue
         this.#emit(TOPIC_SESSION_DELTA, { sessionId: subscription.sessionId, ...delta })
@@ -2621,6 +2630,28 @@ export class BridgeConnection {
     }
     this.#options.push?.notify(pushEventOfTurnEnd(reason), sessionId)
     this.#options.liveActivity?.noteTurnEnd(sessionId, reason)
+  }
+
+  /**
+   * The opening frame a baseline read is answered from.
+   *
+   * A subscription that has delivered nothing since its opening frame still
+   * holds the window that frame opened, so it is awaited and reused: a session
+   * asked about while it stays silent costs one stream however often it is read.
+   * One that HAS delivered a frame since has moved past that window, and reusing
+   * it would answer a session that ran a turn on this very stream with the empty
+   * baseline of the moment before that turn. Such a subscription is dropped —
+   * its drain aborted and itself forgotten — and a fresh stream answers with the
+   * window the harness opens now, which is the session as it is.
+   * @param sessionId - the session whose baseline is wanted.
+   * @returns that stream's opening frame, or why there is none.
+   */
+  async #openingForBaseline(sessionId: string): Promise<Opening> {
+    const subscription = this.#ensureSubscription(sessionId)
+    if (!subscription.advanced) return this.#awaitOpening(subscription)
+    this.#forget(subscription)
+    subscription.controller.abort()
+    return this.#awaitOpening(this.#ensureSubscription(sessionId))
   }
 
   /** Await a subscription's opening frame under a bounded wait. */
