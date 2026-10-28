@@ -10,8 +10,9 @@ import {
 import { createOwnerPeer } from '../src/core/owner-peer.ts'
 import { PushNotifier, type PushAddress, type PushNotification, type PushSendResult, type PushSender } from '../src/core/push.ts'
 import {
+  TURN_END_PHONE_PROMPTED_MAX,
   TURN_END_QUIET_INTERVAL_MS,
-  TURN_END_QUIET_MAX_MS,
+  TURN_END_QUIET_REPORT_MS,
   TurnEndQuietGate,
   sessionQuietProbe,
   type QuietAnswer,
@@ -166,8 +167,8 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
     gate.dispose()
   })
 
-  it('user is still told about the turn when the session never falls quiet inside the budget', async () => {
-    // Given a host that never reports the session quiet
+  it('user is told nothing while the family stays busy, however long the turn end is held', async () => {
+    // Given a host that never reports the family quiet
     const { clock } = useSuiteClock()
     const sink = sinksAt(clock)
     const lines: string[] = []
@@ -178,50 +179,64 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
       now: () => clock.now,
       log: line => { lines.push(line) },
     })
-    // When the turn ends and the budget has not run out yet
+    // When the turn ends and the hold reaches the bridge's own report point
     gate.noteTurnEnd('s-1', 'completed')
-    advance(clock, TURN_END_QUIET_MAX_MS - TURN_END_QUIET_INTERVAL_MS)
-    await settle()
-    // Then nothing has been announced, and the wait is the bridge's own default
-    expect(TURN_END_QUIET_MAX_MS).toBe(600_000)
-    expect(sink.notices).toHaveLength(0)
-    expect(gate.held).toBe(1)
-    // When the budget runs out
     advance(clock, TURN_END_QUIET_INTERVAL_MS)
     await settle()
-    // Then the announcement goes out anyway, and the line names what was still going
-    expect(sink.notices).toHaveLength(1)
-    expect(sink.cards).toHaveLength(1)
-    expect(lines.some(line => line.includes('still-busy(job-live(job-9))'))).toBe(true)
+    expect(TURN_END_QUIET_REPORT_MS).toBe(600_000)
+    expect(sink.notices).toHaveLength(0)
+    advance(clock, TURN_END_QUIET_REPORT_MS - TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then nothing has been announced on either channel, and one line says the wait goes on
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    expect(lines.filter(line => line.includes('still waiting'))).toHaveLength(1)
+    expect(lines).toContain('turn-end still waiting session=s-1 waited=600000ms busy=job-live(job-9), nothing announced')
+    expect(gate.held).toBe(1)
+    // When a minute more passes with the family still busy
+    advance(clock, 60_000)
+    await settle()
+    // Then the turn end is still held and still unannounced, and the line was written once
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    expect(gate.held).toBe(1)
+    expect(lines.filter(line => line.includes('still waiting'))).toHaveLength(1)
     gate.dispose()
   })
 
-  it('operator moves the quiet budget with one environment variable', async () => {
-    // Given the bridge's own default and one configured budget
+  it('operator moves the still-waiting line with one environment variable and no send moves with it', async () => {
+    // Given the bridge's own default and one configured point
     expect(turnEndQuietMaxWait({})).toBe(600_000)
     expect(turnEndQuietMaxWait({ [TURN_END_QUIET_MAX_ENV]: '1500' })).toBe(1500)
     // Then an unreadable or non-positive value falls back instead of closing the window
     expect(turnEndQuietMaxWait({ [TURN_END_QUIET_MAX_ENV]: '0' })).toBe(600_000)
     expect(turnEndQuietMaxWait({ [TURN_END_QUIET_MAX_ENV]: 'nonsense' })).toBe(600_000)
-    // When a gate runs on the configured budget over a session that stays busy
+    // When a gate runs on the configured point over a family that stays busy
     const { clock } = useSuiteClock()
     const sink = sinksAt(clock)
+    const lines: string[] = []
     const gate = new TurnEndQuietGate({
       push: sink.push,
       liveActivity: sink.liveActivity,
       probe: async () => ({ quiet: false, busy: 'session-running' }),
       now: () => clock.now,
+      log: line => { lines.push(line) },
       intervalMs: 500,
-      maxWaitMs: turnEndQuietMaxWait({ [TURN_END_QUIET_MAX_ENV]: '1500' }),
+      reportAfterMs: turnEndQuietMaxWait({ [TURN_END_QUIET_MAX_ENV]: '1500' }),
     })
     gate.noteTurnEnd('s-1', 'completed')
     advance(clock, 1_000)
     await settle()
     expect(sink.notices).toHaveLength(0)
+    expect(lines.some(line => line.includes('still waiting'))).toBe(false)
     advance(clock, 500)
     await settle()
-    // Then it announces on the configured budget rather than the constant
-    expect(sink.notices).toHaveLength(1)
+    // Then the line is written at the configured point rather than the constant, and the
+    // turn end is still held: the knob moves a log line, never a send
+    expect(lines.some(line => line.includes('still waiting'))).toBe(true)
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    expect(gate.held).toBe(1)
     gate.dispose()
   })
 
@@ -247,7 +262,7 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
     expect(gate.held).toBe(0)
     expect(lines).toContain('turn-end dropped session=s-1 reason=new-turn')
     // And nothing is announced even long after the budget would have run out
-    advance(clock, TURN_END_QUIET_MAX_MS)
+    advance(clock, TURN_END_QUIET_REPORT_MS)
     await settle()
     expect(sink.notices).toHaveLength(0)
     expect(sink.cards).toHaveLength(0)
@@ -308,7 +323,7 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
     expect(gate.enabled).toBe(false)
     expect(gate.held).toBe(0)
     expect(vi.getTimerCount()).toBe(0)
-    advance(clock, TURN_END_QUIET_MAX_MS)
+    advance(clock, TURN_END_QUIET_REPORT_MS)
     await settle()
     expect(asked).toEqual([])
     gate.dispose()
@@ -333,44 +348,55 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
     // Then no timer is left and nothing is announced afterwards
     expect(vi.getTimerCount()).toBe(0)
     expect(gate.held).toBe(0)
-    advance(clock, TURN_END_QUIET_MAX_MS)
+    advance(clock, TURN_END_QUIET_REPORT_MS)
     await settle()
     expect(sink.notices).toHaveLength(0)
     expect(sink.cards).toHaveLength(0)
   })
 
-  it('user waits for a descendant session the host still reports running', async () => {
-    // Given a host whose session list names a child and a grandchild
+  it('user waits for the whole family, whichever member is the one still working', async () => {
+    // Given a host whose session list names a root, a child and a grandchild
     const gateway = new FakeGateway()
     const registry = new FakeJobRegistry()
     const jobs = new JobRoster({ faces: () => ({ jobs: registry }), log: () => undefined })
     const probe = sessionQuietProbe({ gateway, peer: createOwnerPeer(new Context()), jobs })
     listOf(gateway, [sessionRow('s-1', false), sessionRow('s-2', true, 's-1'), sessionRow('s-3', false, 's-2')])
-    // Then the parent is not quiet while the work it started is still going
+    // Then the root is not quiet while the work under it is still going
     expect(await probe('s-1')).toEqual({ quiet: false, busy: 'descendant-running(s-2)' })
-    // And a session outside that lineage is not made to wait for it
-    expect(await probe('s-3')).toEqual({ quiet: true })
+    // And a grandchild is not quiet either: the family is the root's, so a leaf waits
+    // for the running member above it instead of announcing its own turn end
+    expect(await probe('s-3')).toEqual({ quiet: false, busy: 'ancestor-running(s-2)' })
+    expect(await probe('s-2')).toEqual({ quiet: false, busy: 'session-running' })
+    // And a session in another tree is not made to wait for that work
+    listOf(gateway, [sessionRow('s-1', false), sessionRow('s-2', true, 's-1'), sessionRow('s-9', false)])
+    expect(await probe('s-9')).toEqual({ quiet: true })
     // When the host's own chain loops back on itself
     listOf(gateway, [sessionRow('s-4', false, 's-5'), sessionRow('s-5', false, 's-4'), sessionRow('s-6', true, 's-6')])
     // Then the walk stops instead of following it
     expect(await probe('s-4')).toEqual({ quiet: true })
+    // And a looping chain stops at the repeat rather than climbing for ever, which
+    // leaves the two sessions in one family — what the chain itself claims
+    listOf(gateway, [sessionRow('s-4', false, 's-5'), sessionRow('s-5', true, 's-4')])
+    expect(await probe('s-4')).toEqual({ quiet: false, busy: 'descendant-running(s-5)' })
     jobs.dispose()
   })
 
-  it('user waits for a job the host still holds under the session', async () => {
-    // Given a host holding a job owned by a descendant session, still stopping
+  it('user waits for a job the host still holds under any member of the family', async () => {
+    // Given a host holding a job owned by a grandchild session, still stopping
     const gateway = new FakeGateway()
     const registry = new FakeJobRegistry()
     const jobs = new JobRoster({ faces: () => ({ jobs: registry }), log: () => undefined })
     const probe = sessionQuietProbe({ gateway, peer: createOwnerPeer(new Context()), jobs })
-    listOf(gateway, [sessionRow('s-1', false), sessionRow('s-2', false, 's-1')])
-    const stopping: JobViewLike = { id: 'job-1', kind: 'bash', label: 'build', owner: 's-2', status: 'stopping', startedAt: 1 }
+    listOf(gateway, [sessionRow('s-1', false), sessionRow('s-2', false, 's-1'), sessionRow('s-3', false, 's-2')])
+    const stopping: JobViewLike = { id: 'job-1', kind: 'bash', label: 'build', owner: 's-3', status: 'stopping', startedAt: 1 }
     const unowned: JobViewLike = { id: 'job-0', kind: 'bash', label: 'nobody', status: 'running', startedAt: 1 }
-    registry.set([stopping, unowned])
-    // Then the parent waits for it, and a job no session owns is not its work
+    const stranger: JobViewLike = { id: 'job-2', kind: 'bash', label: 'elsewhere', owner: 'x-9', status: 'running', startedAt: 1 }
+    registry.set([stopping, unowned, stranger])
+    // Then the root waits for it, a job no session owns is not its work, and a job
+    // another family owns is not either
     expect(await probe('s-1')).toEqual({ quiet: false, busy: 'job-live(job-1)' })
     // When the host's own projection says that job finished
-    registry.set([{ ...stopping, status: 'succeeded', finishedAt: 2 }, unowned])
+    registry.set([{ ...stopping, status: 'succeeded', finishedAt: 2 }, unowned, stranger])
     expect(await probe('s-1')).toEqual({ quiet: true })
     // When the session's own agent is the one running
     listOf(gateway, [sessionRow('s-1', true)])
@@ -451,7 +477,7 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
     expect(gate.held).toBe(0)
     expect(lines).toContain('turn-end dropped session=s-1 reason=new-turn')
     // And no announcement is made for the turn the user already left behind
-    advance(clock, TURN_END_QUIET_MAX_MS)
+    advance(clock, TURN_END_QUIET_REPORT_MS)
     await settle()
     expect(sink.notices).toHaveLength(0)
     expect(sink.cards).toHaveLength(0)
@@ -596,11 +622,249 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
     expect(gate.held).toBe(0)
     expect(lines).toContain('turn-end dropped session=s-1 reason=new-turn')
     // And nothing is announced for the turn the user already left behind
-    advance(clock, TURN_END_QUIET_MAX_MS)
+    advance(clock, TURN_END_QUIET_REPORT_MS)
     await settle()
     expect(sink.notices).toHaveLength(0)
     expect(sink.cards).toHaveLength(0)
     gate.dispose()
     harness.connection.dispose()
+  })
+
+  it('user hears nothing while any depth of the family runs and hears the turn end once the family is quiet', async () => {
+    // Given a host whose root session is idle while its child and grandchild still work
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const gateway = new FakeGateway()
+    const registry = new FakeJobRegistry()
+    const jobs = new JobRoster({ faces: () => ({ jobs: registry }), log: () => undefined })
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: sessionQuietProbe({ gateway, peer: createOwnerPeer(new Context()), jobs }),
+      now: () => clock.now,
+    })
+    listOf(gateway, [sessionRow('s-1', false), sessionRow('s-2', true, 's-1'), sessionRow('s-3', true, 's-2')])
+    // When the root's turn ends
+    gate.noteTurnEnd('s-1', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then nothing is announced for it on either channel
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    expect(gate.held).toBe(1)
+    // When only the grandchild is still going
+    listOf(gateway, [sessionRow('s-1', false), sessionRow('s-2', false, 's-1'), sessionRow('s-3', true, 's-2')])
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    expect(sink.notices).toHaveLength(0)
+    expect(gate.held).toBe(1)
+    // When the whole family is idle
+    listOf(gateway, [sessionRow('s-1', false), sessionRow('s-2', false, 's-1'), sessionRow('s-3', false, 's-2')])
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then one notification and one card end went out, for the session whose turn ended
+    expect(sink.notices).toHaveLength(1)
+    expect(sink.notices[0]?.st).toBe('turn-end')
+    expect(sink.notices[0]?.s).toBe('s-1')
+    expect(sink.cards).toHaveLength(1)
+    expect(gate.held).toBe(0)
+    // And a further wait says nothing more about that turn
+    advance(clock, TURN_END_QUIET_INTERVAL_MS * 10)
+    await settle()
+    expect(sink.notices).toHaveLength(1)
+    expect(sink.cards).toHaveLength(1)
+    gate.dispose()
+    jobs.dispose()
+  })
+
+  it('user hears nothing while a job lives under any member of the family and hears it once the job is done', async () => {
+    // Given a host holding a live job under a grandchild of the session that ended
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const gateway = new FakeGateway()
+    const registry = new FakeJobRegistry()
+    const jobs = new JobRoster({ faces: () => ({ jobs: registry }), log: () => undefined })
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: sessionQuietProbe({ gateway, peer: createOwnerPeer(new Context()), jobs }),
+      now: () => clock.now,
+    })
+    listOf(gateway, [sessionRow('s-1', false), sessionRow('s-2', false, 's-1'), sessionRow('s-3', false, 's-2')])
+    const build: JobViewLike = { id: 'job-7', kind: 'bash', label: 'build', owner: 's-3', status: 'running', startedAt: 1 }
+    const unowned: JobViewLike = { id: 'job-0', kind: 'bash', label: 'nobody', status: 'running', startedAt: 1 }
+    registry.set([build, unowned])
+    // When the root's turn ends
+    gate.noteTurnEnd('s-1', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then the family's work holds it back, and a job no session owns never does
+    expect(sink.notices).toHaveLength(0)
+    expect(gate.held).toBe(1)
+    // When the host's own projection says that job finished
+    registry.set([{ ...build, status: 'succeeded', finishedAt: 2 }, unowned])
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then the turn end is announced
+    expect(sink.notices).toHaveLength(1)
+    expect(sink.notices[0]?.s).toBe('s-1')
+    expect(gate.held).toBe(0)
+    gate.dispose()
+    jobs.dispose()
+  })
+
+  it('user is told nothing about a subagent session the phone never prompted', async () => {
+    // Given a host that says the session was spawned by another one
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const lines: string[] = []
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: async () => ({ quiet: true, subagent: true }),
+      now: () => clock.now,
+      log: line => { lines.push(line) },
+    })
+    // When that subagent session ends its own turn
+    gate.noteTurnEnd('s-child', 'completed')
+    expect(gate.held).toBe(1)
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then the registration is dropped on the host's own word, in one line
+    expect(gate.held).toBe(0)
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    expect(lines).toContain('turn-end dropped session=s-child reason=subagent-not-prompted')
+    // And nothing arrives for it later either
+    advance(clock, TURN_END_QUIET_REPORT_MS)
+    await settle()
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    gate.dispose()
+  })
+
+  it('user who prompted a subagent session itself is told when its family falls quiet', async () => {
+    // Given a gate and a paired phone, and a host that says the session is a subagent's
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: async () => ({ quiet: true, subagent: true }),
+      now: () => clock.now,
+    })
+    const harness = makeConnection({ paired: true, push: sink.push, liveActivity: sink.liveActivity, turnEndQuiet: gate })
+    // When the phone prompts that session over the wire
+    await harness.connection.handleText(requestFrame(7, 'session.prompt', { sessionId: 's-child', text: 'keep going', requestId: 'r-1' }))
+    expect(harness.gateway.lastArgs('session', 'prompt')).toMatchObject({ request: { sessionId: 's-child' } })
+    // And its turn ends while the host says the family is quiet
+    gate.noteTurnEnd('s-child', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then that turn end is announced, addressed to the session the phone prompted
+    expect(sink.notices).toHaveLength(1)
+    expect(sink.notices[0]?.st).toBe('turn-end')
+    expect(sink.notices[0]?.s).toBe('s-child')
+    // And the card path ends a card only for the session it names, which is another one
+    expect(sink.cards).toHaveLength(0)
+    expect(gate.held).toBe(0)
+    gate.dispose()
+    harness.connection.dispose()
+  })
+
+  it('user is told nothing while the host cannot answer and the held turn end survives the failed question', async () => {
+    // Given a host whose session list cannot be read for now
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const lines: string[] = []
+    let readable = false
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: async (): Promise<QuietAnswer> => {
+        if (!readable) throw new Error('gateway closed')
+        return { quiet: true }
+      },
+      now: () => clock.now,
+      log: line => { lines.push(line) },
+    })
+    // When the turn ends and the question gets no answer
+    gate.noteTurnEnd('s-1', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then nothing is announced, the entry is still held, and the failure is one line
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    expect(gate.held).toBe(1)
+    expect(lines).toContain('turn-end quiet check failed session=s-1: gateway closed')
+    // When the host does answer at the next question
+    readable = true
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then the turn end is announced
+    expect(sink.notices).toHaveLength(1)
+    expect(sink.cards).toHaveLength(1)
+    expect(gate.held).toBe(0)
+    gate.dispose()
+  })
+
+  it('user gets an error from a session list with no item table, never a quiet answer', async () => {
+    // Given a probe over one gateway
+    const gateway = new FakeGateway()
+    const jobs = new JobRoster({ faces: () => ({}), log: () => undefined })
+    const probe = sessionQuietProbe({ gateway, peer: createOwnerPeer(new Context()), jobs })
+    // When the host answers the session list with something else entirely
+    gateway.handler = async () => ({})
+    // Then the probe throws instead of claiming the family is quiet
+    await expect(probe('s-1')).rejects.toThrow('session/list returned no item table')
+    jobs.dispose()
+  })
+
+  it('operator gets a capped memory of what the phone prompted, oldest dropped first', async () => {
+    // Given the bridge's own ceiling and a gate lowered to two sessions
+    expect(TURN_END_PHONE_PROMPTED_MAX).toBe(5_000)
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: async () => ({ quiet: true, subagent: true }),
+      now: () => clock.now,
+      phonePromptLimit: 2,
+    })
+    gate.notePhonePrompt('s-a')
+    gate.notePhonePrompt('s-b')
+    // When a third session is prompted
+    gate.notePhonePrompt('s-c')
+    // Then the oldest was forgotten, so its subagent turn end is dropped again
+    gate.noteTurnEnd('s-a', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    expect(sink.notices).toHaveLength(0)
+    expect(gate.held).toBe(0)
+    // And the two most recent are still remembered
+    gate.noteTurnEnd('s-b', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    expect(sink.notices).toHaveLength(1)
+    expect(sink.notices[0]?.s).toBe('s-b')
+    gate.dispose()
+    // When a deployment asks for more than the bridge allows, the ceiling still holds
+    const capped = sinksAt(clock)
+    const ceiling = new TurnEndQuietGate({
+      push: capped.push,
+      liveActivity: capped.liveActivity,
+      probe: async () => ({ quiet: true, subagent: true }),
+      now: () => clock.now,
+      phonePromptLimit: 99_999,
+    })
+    for (let index = 1; index <= TURN_END_PHONE_PROMPTED_MAX + 1; index += 1) ceiling.notePhonePrompt(`p-${index}`)
+    ceiling.noteTurnEnd('p-1', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then the first of those was evicted rather than kept, so nothing is announced for it
+    expect(capped.notices).toHaveLength(0)
+    expect(ceiling.held).toBe(0)
+    ceiling.dispose()
   })
 })

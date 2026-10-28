@@ -59,7 +59,7 @@ import { QuestionClaims } from './core/questions.ts'
 import { UiCards } from './core/ui.ts'
 import { WS_PATH } from './core/protocol.ts'
 import { SessionMeta, type SessionStoreFace, type SessionTitleFace, type WorkspacesFace } from './core/session-meta.ts'
-import { sessionQuietProbe, TURN_END_QUIET_MAX_MS, TurnEndQuietGate } from './core/turn-end-quiet.ts'
+import { sessionQuietProbe, TURN_END_QUIET_REPORT_MS, TurnEndQuietGate } from './core/turn-end-quiet.ts'
 import { SessionPermissions, type ApprovalPolicyFace, type PermissionPresetsFace, type SandboxPolicyFace } from './core/session-permissions.ts'
 import { selectionOf, modelSelectionOf } from './core/connection.ts'
 import { UsageService, type CredentialStoreFace, type SessionRosterFace, type SessionRouteFace, type SettingsFace } from './core/usage.ts'
@@ -108,25 +108,29 @@ export function offlineClaimTtl(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(configured) && configured > 0 ? configured : OFFLINE_QUESTION_CLAIM_TTL_MS
 }
 
-/** The environment variable that moves how long a finished turn waits for its session to go quiet (§28). */
+/**
+ * The environment variable that moves when a still-waiting turn end is reported (§28).
+ *
+ * The name is the one deployments already set and is kept as it is; what it moves is
+ * the point at which the bridge says it is still waiting, because the wait itself has
+ * no cap.
+ */
 export const TURN_END_QUIET_MAX_ENV = 'DSH_REMOTE_BRIDGE_TURN_END_QUIET_MAX_MS'
 
 /**
- * The quiet-wait budget this process runs with.
+ * The still-waiting report point this process runs with.
  *
- * The budget is the bridge's own constant and never a host fact, so a deployment
- * moves it here. A value that is missing, unreadable or not positive falls back to
- * the constant instead of closing the window: a zero budget would announce every
- * turn end at its frame, and an operator who wanted that would be turning push
- * off. The budget only bounds the wait — a session that does fall quiet inside it
- * is announced then, and one that does not is announced at the end with the
- * reason it was still busy.
+ * It is the bridge's own constant and never a host fact, so a deployment moves it
+ * here. A value that is missing, unreadable or not positive falls back to the
+ * constant: the point only decides when the log line saying the wait continues is
+ * written, and nothing about it can make the bridge announce work that is still
+ * running or withhold a turn end whose family is quiet.
  * @param env - the process environment, injectable for a suite.
- * @returns the budget in milliseconds.
+ * @returns the report point in milliseconds.
  */
 export function turnEndQuietMaxWait(env: NodeJS.ProcessEnv = process.env): number {
   const configured = Number(env[TURN_END_QUIET_MAX_ENV])
-  return Number.isFinite(configured) && configured > 0 ? configured : TURN_END_QUIET_MAX_MS
+  return Number.isFinite(configured) && configured > 0 ? configured : TURN_END_QUIET_REPORT_MS
 }
 
 /** This machine's IANA time zone, or undefined when the platform has none. */
@@ -431,15 +435,17 @@ function applyImpl(ctx: Context): void {
     },
   })
   // The quiet gate both channels announce a finished turn through: §28's
-  // notification and §29's card end wait for the host's own answer that nothing is
-  // left running under that session — its own agent, any descendant, and any job
-  // the host attributes to either. Inert while no key is configured, because both
-  // channels are then off and no timer is worth arming.
+  // notification and §29's card end wait for the host's own answer that the session's
+  // whole family is quiet — the root its parent chain climbs to, every session under
+  // that root at any depth, and any job the host attributes to one of them. A family
+  // that stays busy is never announced, and a subagent session's own turn end is
+  // dropped unless the phone prompted it. Inert while no key is configured, because
+  // both channels are then off and no timer is worth arming.
   const turnEndQuiet = new TurnEndQuietGate({
     push,
     liveActivity,
     probe: sessionQuietProbe({ gateway: ctx.typertGateway, peer: ownerPeer, jobs }),
-    maxWaitMs: turnEndQuietMaxWait(),
+    reportAfterMs: turnEndQuietMaxWait(),
     log,
   })
   // The bridge's own follow streams (§28/§29): a suspended phone has no socket,

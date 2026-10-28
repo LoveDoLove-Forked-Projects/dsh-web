@@ -1630,6 +1630,11 @@ export class BridgeConnection {
     if (!attachments.ok) return attachments
     const receipt = `${sessionId}\u0000${requestId}`
     if (this.#receipts.has(receipt)) return { ok: true, r: { accepted: true } }
+    // A session the phone prompts is the phone's own work, which is the one thing that
+    // makes its turn end announceable at all: the host's own subagent sessions are
+    // dropped by the quiet gate unless they were prompted from here (§28/§29). The
+    // fact is what the wire carried, not what the host accepted.
+    this.#options.turnEndQuiet?.notePhonePrompt(sessionId)
     // A client may prompt without snapshotting first; the subscription is what
     // makes its own deltas reachable.
     this.#ensureSubscription(sessionId)

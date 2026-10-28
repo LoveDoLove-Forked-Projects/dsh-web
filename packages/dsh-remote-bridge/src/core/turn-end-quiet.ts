@@ -1,32 +1,41 @@
 /**
- * When a finished turn may be announced: after the session it belongs to falls
+ * When a finished turn may be announced: after the family it belongs to falls
  * quiet, not when the frame arrives.
  *
  * A `turn/end` increment is a fact about one turn and nothing more. The work the
- * user started with it may still be going: the child sessions it delegated to and
- * the background jobs the host still holds under those sessions outlive the turn
- * that started them. A phone told "turn finished" at the frame wakes on a session
- * the roster still badges as running, reads a card that says ended while the work
- * goes on, and is told again by a second turn end it never asked for. §28's
- * notification and §29's card answer the same question — "is this session working
- * right now" — and that question has one answer, the one the client already
- * computes in `SessionRun`: the host's own `agentRunning` for the session, any
- * descendant session still running, and any job the host attributes to either.
+ * user started with it may still be going: the subagent sessions the host spawned
+ * under it at any depth, and the background jobs the host still holds under any of
+ * them, outlive the turn that started them. A phone told "turn finished" at the
+ * frame wakes on a roster that still badges a session running, reads a card that
+ * says ended while the work goes on, and is told again by a second turn end it
+ * never asked for. §28's notification and §29's card answer the same question — "is
+ * this work still going" — and that question has one answer, the family's.
  *
- * So a turn end is registered here instead of sent, and sent once the host says
- * the session is quiet. Three rules hold that together:
+ * The family is the root a session's parent chain climbs to, plus every session
+ * under that root at any depth. A leaf session's own turn end therefore waits for
+ * the root and for the siblings and cousins it shares that root with, which is the
+ * work the user actually started. So a turn end is registered here instead of sent,
+ * and sent once the host says the family is quiet. Three rules hold that together:
  *
- * - the answer comes from the host and nowhere else: one `session/list` read for
- *   the running flag and the parent chain, and the host's job registry for the
- *   jobs it attributes to a session. This module invents no timer-based guess and
- *   reads no client state, because a guess that says "quiet" is a lock screen
- *   saying the work finished when it did not;
+ * - the answer comes from the host and nowhere else: one `session/list` read for the
+ *   running flags, the parent chain and each session's origin, and the host's job
+ *   registry for the jobs it attributes to a session. This module invents no
+ *   timer-based guess and reads no client state, because a guess that says "quiet"
+ *   is a lock screen saying the work finished when it did not;
  * - nothing on the frame path waits: a registration stores five fields and arms a
  *   timer, so a follow stream still publishes its increment at the speed it did
  *   before;
- * - the wait is bounded. At {@link TURN_END_QUIET_MAX_MS} the announcement goes
- *   out anyway and the line it logs names what was still going, because a
- *   notification that never arrives is the failure this channel exists to prevent.
+ * - the wait has no deadline. A family that stays busy is never announced, and a
+ *   host that cannot answer is asked again rather than read as quiet: announcing
+ *   work that is still running is the failure this channel exists to prevent, and a
+ *   notification that never arrives is the lesser one. One line at
+ *   {@link TURN_END_QUIET_REPORT_MS} says the bridge is still waiting, so an
+ *   operator is not left guessing why a phone stayed silent.
+ *
+ * Not every turn end is the phone's to hear. A session the host spawned as a
+ * subagent (`origin: "subagent"`) ends turns nobody asked this bridge about, so its
+ * turn end is dropped on its first answer unless the phone itself prompted that
+ * session over the wire.
  * @module dsh-remote-bridge/core/turn-end-quiet
  */
 
@@ -36,29 +45,54 @@ import type { LiveActivityNotifier } from './liveactivity.ts'
 import { pushEventOfTurnEnd, type PushEvent, type PushNotifier } from './push.ts'
 import { wireArgs, type BridgeGateway, type GatewayPeer } from './wire.ts'
 
-/** Longest a registered turn end waits for its session to fall quiet, in milliseconds. */
-export const TURN_END_QUIET_MAX_MS = 600_000
+/**
+ * How long a held turn end waits before the bridge logs that it is still waiting,
+ * in milliseconds.
+ *
+ * A progress line and never a send: the wait itself has no cap, because announcing a
+ * turn while its family still works is exactly what this module exists to prevent.
+ */
+export const TURN_END_QUIET_REPORT_MS = 600_000
 
 /**
  * How long a held turn end waits before asking the host again, in milliseconds.
  *
- * A turn end usually finds its session already quiet — the host clears the flag
- * as the turn finishes — so the first question is the one that matters, and five
+ * A turn end usually finds its family already quiet — the host clears the flag as
+ * the turn finishes — so the first question is the one that matters, and five
  * seconds is short enough that the notification a user waits for is not visibly
  * late. The interval is also what bounds how many questions one held turn end can
  * cost: at most one every five seconds, never more than one in flight.
  */
 export const TURN_END_QUIET_INTERVAL_MS = 5_000
 
-/** The host's answer about the work one session still holds. */
+/**
+ * How many session ids the gate remembers the phone prompting, at most.
+ *
+ * The set exists to tell the phone's own subagent sessions from the ones it merely
+ * watches, and a bridge that runs for weeks must not grow it without end: the oldest
+ * id is dropped first, and a session dropped that way and prompted again enters as a
+ * new one.
+ */
+export const TURN_END_PHONE_PROMPTED_MAX = 5_000
+
+/** The host's answer about the work one session's family still holds. */
 export interface QuietAnswer {
-  /** Whether nothing under this session is still going. */
+  /** Whether nothing in this session's family is still going. */
   readonly quiet: boolean
   /** What was still going when it was not, in one token for the log line. */
   readonly busy?: string
+  /**
+   * Present only when the host says another session spawned this one
+   * (`origin: "subagent"`).
+   *
+   * Absent is a host that said nothing about the session's origin, which is not the
+   * same as saying it has none: a turn end is announced for anything the host does
+   * not name as a subagent.
+   */
+  readonly subagent?: boolean
 }
 
-/** Whether one session is quiet right now, as the host answers it. */
+/** Whether one session's family is quiet right now, as the host answers it. */
 export type QuietProbe = (sessionId: string) => Promise<QuietAnswer>
 
 export interface TurnEndQuietOptions {
@@ -69,20 +103,25 @@ export interface TurnEndQuietOptions {
   /**
    * The host's own answer, asked off the frame path.
    *
-   * Absent is a bridge assembled without one, which cannot tell a quiet session
-   * from a busy one and therefore reports at the frame rather than holding
-   * anything back.
+   * Absent is a bridge assembled without one, which cannot tell a quiet family from
+   * a busy one — nor a subagent session from the phone's own — and therefore reports
+   * at the frame rather than holding anything back.
    */
   readonly probe?: QuietProbe
   readonly now?: () => number
   readonly log?: (message: string) => void
-  /** The wait budget; the default is {@link TURN_END_QUIET_MAX_MS}, and a deployment moves it. */
-  readonly maxWaitMs?: number
+  /** When the still-waiting line is logged; the default is {@link TURN_END_QUIET_REPORT_MS}. */
+  readonly reportAfterMs?: number
   /** The re-check interval; the default is {@link TURN_END_QUIET_INTERVAL_MS}. */
   readonly intervalMs?: number
+  /**
+   * How many phone-prompted session ids to remember; the default and the ceiling are
+   * both {@link TURN_END_PHONE_PROMPTED_MAX}, and a deployment lowers it for a suite.
+   */
+  readonly phonePromptLimit?: number
 }
 
-/** One turn end held until its session is quiet. */
+/** One turn end held until its family is quiet. */
 interface Waiting {
   readonly sessionId: string
   /** §28's event, decided when the turn end was registered. */
@@ -90,11 +129,10 @@ interface Waiting {
   /** The host's own reason, kept because §29 decides ended versus failed from it. */
   reason: string
   readonly registeredAt: number
-  readonly deadline: number
-  /** The question to the host that is armed, if one is. */
+  /** The next question to the host that is armed, if one is. */
   check: NodeJS.Timeout | undefined
-  /** The timer that announces at the deadline whatever the answer is then. */
-  expiry: NodeJS.Timeout | undefined
+  /** The one-shot timer that says the wait is still going, if it has not fired. */
+  report: NodeJS.Timeout | undefined
   /** Why the last question answered "not quiet". */
   busy: string | undefined
   /** Set while a question is in flight, so one entry never has two out at once. */
@@ -115,12 +153,17 @@ export class TurnEndQuietGate {
   readonly #log: (message: string) => void
   /** Held turn ends by session id; one session has one thing to announce. */
   readonly #waiting = new Map<string, Waiting>()
+  /** The sessions the phone itself prompted, oldest first. */
+  readonly #phonePrompted = new Set<string>()
+  readonly #phonePromptLimit: number
   #disposed = false
 
   constructor(options: TurnEndQuietOptions) {
     this.#options = options
     this.#now = options.now ?? (() => Date.now())
     this.#log = options.log ?? (() => undefined)
+    // The ceiling is this module's own rule, so a configured limit can only lower it.
+    this.#phonePromptLimit = Math.max(1, Math.min(options.phonePromptLimit ?? TURN_END_PHONE_PROMPTED_MAX, TURN_END_PHONE_PROMPTED_MAX))
   }
 
   /** @returns whether either channel can send, which is the only case a turn end is held at all. */
@@ -135,7 +178,7 @@ export class TurnEndQuietGate {
   }
 
   /**
-   * Hold one finished turn until its session is quiet, then announce it.
+   * Hold one finished turn until its family is quiet, then announce it.
    *
    * Returns at once and never awaits a host read: the caller is a follow stream
    * that has already published its increment.
@@ -148,6 +191,29 @@ export class TurnEndQuietGate {
       this.#register(sessionId, reason)
     } catch (error) {
       this.#log(`turn-end for ${sessionId} could not be held: ${failureText(error)}`)
+    }
+  }
+
+  /**
+   * Remember that the phone itself prompted one session.
+   *
+   * This is the one thing that makes a subagent session's turn end announceable: the
+   * host spawns those on its own, and a phone that never asked that session anything
+   * is not waiting to hear how its turn went. Bounded and first in, first out, so the
+   * memory is the recent work rather than everything since the bridge started.
+   * @param sessionId - the session a `session/prompt` frame carried.
+   */
+  notePhonePrompt(sessionId: string): void {
+    if (sessionId === '') return
+    // A session prompted again keeps its place: the question is whether the phone ever
+    // prompted it, and the oldest entry is the one whose answer is least likely to be
+    // asked again.
+    if (this.#phonePrompted.has(sessionId)) return
+    this.#phonePrompted.add(sessionId)
+    while (this.#phonePrompted.size > this.#phonePromptLimit) {
+      const oldest = this.#phonePrompted.values().next().value
+      if (oldest === undefined) break
+      this.#phonePrompted.delete(oldest)
     }
   }
 
@@ -174,6 +240,7 @@ export class TurnEndQuietGate {
     this.#disposed = true
     for (const waiting of [...this.#waiting.values()]) this.#forget(waiting)
     this.#waiting.clear()
+    this.#phonePrompted.clear()
   }
 
   /** Store one registration, or fold it into the one already held for that session. */
@@ -181,8 +248,8 @@ export class TurnEndQuietGate {
     const held = this.#waiting.get(sessionId)
     if (held !== undefined) {
       // One session has one thing to announce, so a second turn end replaces what
-      // will be said and keeps the deadline the first one registered: a session
-      // that keeps ending turns cannot postpone its own announcement for ever.
+      // will be said and keeps the instant the first one registered: a session that
+      // keeps ending turns cannot postpone its own announcement for ever.
       held.event = pushEventOfTurnEnd(reason)
       held.reason = reason
       this.#log(`turn-end registered session=${sessionId} event=${held.event} replaces=held`)
@@ -194,9 +261,8 @@ export class TurnEndQuietGate {
       event: pushEventOfTurnEnd(reason),
       reason,
       registeredAt: now,
-      deadline: now + Math.max(0, this.#options.maxWaitMs ?? TURN_END_QUIET_MAX_MS),
       check: undefined,
-      expiry: undefined,
+      report: undefined,
       busy: undefined,
       asking: false,
     }
@@ -206,35 +272,32 @@ export class TurnEndQuietGate {
       return
     }
     this.#log(`turn-end registered session=${sessionId} event=${waiting.event}`)
-    const expiry = setTimeout(() => {
-      waiting.expiry = undefined
-      this.#deliver(waiting, waiting.busy ?? 'unanswered')
-    }, Math.max(0, waiting.deadline - now))
+    const report = setTimeout(() => {
+      waiting.report = undefined
+      this.#stillWaiting(waiting)
+    }, Math.max(0, this.#options.reportAfterMs ?? TURN_END_QUIET_REPORT_MS))
     // A notification waiting on work it did not start must never keep the host
     // process alive.
-    expiry.unref?.()
-    waiting.expiry = expiry
+    report.unref?.()
+    waiting.report = report
     this.#arm(waiting)
   }
 
-  /** Arm the next question to the host, unless the budget runs out first. */
+  /** Arm the next question to the host. */
   #arm(waiting: Waiting): void {
     if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
-    const remaining = waiting.deadline - this.#now()
-    // The expiry timer is what answers a budget that has run out, so no question
-    // is armed past it: two timers due in the same millisecond would otherwise
-    // turn into a zero-delay loop on a session that never falls quiet.
-    if (remaining <= 0) return
-    const interval = this.#options.intervalMs ?? TURN_END_QUIET_INTERVAL_MS
+    // A zero interval would turn the re-check into a zero-delay loop on a family that
+    // never falls quiet, so the floor is one millisecond.
+    const interval = Math.max(1, this.#options.intervalMs ?? TURN_END_QUIET_INTERVAL_MS)
     const timer = setTimeout(() => {
       waiting.check = undefined
       this.#check(waiting)
-    }, Math.max(0, Math.min(interval, remaining)))
+    }, interval)
     timer.unref?.()
     waiting.check = timer
   }
 
-  /** Ask the host once whether a held entry's session is quiet. */
+  /** Ask the host once whether a held entry's family is quiet. */
   #check(waiting: Waiting): void {
     if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
     const probe = this.#options.probe
@@ -245,13 +308,21 @@ export class TurnEndQuietGate {
       .then((answer) => {
         waiting.asking = false
         if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
+        // A session the host spawned as a subagent is not the phone's own work, so its
+        // turn end is dropped rather than announced — unless the phone prompted that
+        // session itself, in which case it is exactly what the phone is waiting for.
+        if (answer.subagent === true && !this.#phonePrompted.has(waiting.sessionId)) {
+          this.#forget(waiting)
+          this.#log(`turn-end dropped session=${waiting.sessionId} reason=subagent-not-prompted`)
+          return
+        }
         if (answer.quiet) {
           this.#deliver(waiting)
           return
         }
-        // The reason is kept rather than logged here: a session that is busy for a
+        // The reason is kept rather than logged here: a family that is busy for a
         // minute would otherwise write twelve lines saying the same thing, and the
-        // one line worth reading is the one the announcement carries.
+        // lines worth reading are the still-waiting one and the announcement's.
         waiting.busy = answer.busy ?? 'unstated'
         this.#arm(waiting)
       })
@@ -259,11 +330,21 @@ export class TurnEndQuietGate {
         waiting.asking = false
         if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
         // An unreadable answer is one line and another try: the host may answer the
-        // next one, and the expiry timer bounds how long that can go on.
+        // next one, and nothing is announced on a question that got no answer.
         waiting.busy = 'unreadable'
         this.#log(`turn-end quiet check failed session=${waiting.sessionId}: ${failureText(error)}`)
         this.#arm(waiting)
       })
+  }
+
+  /**
+   * Say once that a held turn end is still waiting, and keep holding it.
+   * @param waiting - the entry that has been held this long.
+   */
+  #stillWaiting(waiting: Waiting): void {
+    if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
+    const waited = this.#now() - waiting.registeredAt
+    this.#log(`turn-end still waiting session=${waiting.sessionId} waited=${waited}ms busy=${waiting.busy ?? 'unanswered'}, nothing announced`)
   }
 
   /**
@@ -272,15 +353,12 @@ export class TurnEndQuietGate {
    * The rate windows are booked inside the two calls below, at this instant: what
    * the channels admit is what they really send, never what was once registered.
    * @param waiting - the entry to announce.
-   * @param stillBusy - what kept it waiting, when the budget ran out first.
    */
-  #deliver(waiting: Waiting, stillBusy?: string): void {
+  #deliver(waiting: Waiting): void {
     this.#forget(waiting)
     const sessionId = waiting.sessionId
     const waited = this.#now() - waiting.registeredAt
-    this.#log(stillBusy === undefined
-      ? `turn-end quiet session=${sessionId} waited=${waited}ms event=${waiting.event}`
-      : `turn-end session=${sessionId} still-busy(${stillBusy}) waited=${waited}ms, announcing anyway`)
+    this.#log(`turn-end quiet session=${sessionId} waited=${waited}ms event=${waiting.event}`)
     try {
       this.#options.push?.notify(waiting.event, sessionId)
     } catch (error) {
@@ -298,9 +376,9 @@ export class TurnEndQuietGate {
   /** Drop one entry and both of its timers. */
   #forget(waiting: Waiting): void {
     if (waiting.check !== undefined) clearTimeout(waiting.check)
-    if (waiting.expiry !== undefined) clearTimeout(waiting.expiry)
+    if (waiting.report !== undefined) clearTimeout(waiting.report)
     waiting.check = undefined
-    waiting.expiry = undefined
+    waiting.report = undefined
     if (this.#waiting.get(waiting.sessionId) === waiting) this.#waiting.delete(waiting.sessionId)
   }
 }
@@ -316,14 +394,14 @@ export interface SessionQuietProbeOptions {
 }
 
 /**
- * The host's answer to "is this session quiet", built from its own two facts.
+ * The host's answer to "is this session's family quiet", built from its own facts.
  *
- * The session list is where the running flag and the parent chain come from, and
- * the job registry is where a job's owner and status come from; neither is
- * captured once, because both move while a held turn end waits. A read that cannot
- * be made is thrown rather than answered as quiet: "the host did not answer" and
- * "nothing is running" are different facts, and the caller retries the one and
- * announces the other.
+ * The session list is where the running flags, the parent chain and each session's
+ * origin come from, and the job registry is where a job's owner and status come
+ * from; neither is captured once, because both move while a held turn end waits. A
+ * read that cannot be made is thrown rather than answered as quiet: "the host did
+ * not answer" and "nothing is running" are different facts, and the caller retries
+ * the one and announces the other.
  * @param options - the faces the answer is read through.
  * @returns the probe the gate asks.
  */
@@ -339,22 +417,32 @@ export function sessionQuietProbe(options: SessionQuietProbeOptions): QuietProbe
     if (!Array.isArray(items)) throw new Error('session/list returned no item table')
     const running = new Set<string>()
     const parents = new Map<string, string>()
+    let subagent: true | undefined
     for (const item of items) {
       if (typeof item !== 'object' || item === null) continue
-      const row = item as { sessionId?: unknown; running?: unknown; parentSessionId?: unknown }
+      const row = item as { sessionId?: unknown; running?: unknown; parentSessionId?: unknown; origin?: unknown }
       if (typeof row.sessionId !== 'string' || row.sessionId === '') continue
       if (row.running === true) running.add(row.sessionId)
       if (typeof row.parentSessionId === 'string' && row.parentSessionId !== '') parents.set(row.sessionId, row.parentSessionId)
+      // The subagent plugin writes `origin: "subagent"` on the sessions it spawned, so
+      // that one word is the whole of the host's own answer about provenance.
+      if (row.sessionId === sessionId && row.origin === 'subagent') subagent = true
     }
-    // The host answers `running` for a session's own agent, so a parent reads idle
-    // while the work it started goes on: the parent chain is walked here, to any
-    // depth, and stops at an id it has already walked so a looping chain ends.
-    if (running.has(sessionId)) return { quiet: false, busy: 'session-running' }
+    // The host answers `running` for a session's own agent, so every member of a
+    // family reads idle while the family's work goes on: the family is resolved here
+    // — the root the parent chain climbs to, and every session under that root at any
+    // depth — because a leaf's turn end waits for what its siblings are still doing.
+    const root = familyRootOf(sessionId, parents)
+    const family = new Set<string>([root])
+    for (const id of parents.keys()) if (descendsFrom(id, root, parents)) family.add(id)
+    if (running.has(sessionId)) return { quiet: false, busy: 'session-running', ...(subagent === undefined ? {} : { subagent }) }
     for (const id of running) {
-      if (descendsFrom(id, sessionId, parents)) return { quiet: false, busy: `descendant-running(${id})` }
+      if (id === sessionId || !family.has(id)) continue
+      // The token says which side of the session the work sits on, because the log
+      // line is read by someone deciding whether the wait is reasonable.
+      const side = descendsFrom(id, sessionId, parents) ? 'descendant' : 'ancestor'
+      return { quiet: false, busy: `${side}-running(${id})`, ...(subagent === undefined ? {} : { subagent }) }
     }
-    const family = new Set<string>([sessionId])
-    for (const id of parents.keys()) if (descendsFrom(id, sessionId, parents)) family.add(id)
     for (const id of family) {
       const roster = options.jobs.read(id)
       // A host that composes no job registry holds no job this bridge can name,
@@ -362,17 +450,30 @@ export function sessionQuietProbe(options: SessionQuietProbeOptions): QuietProbe
       if (roster === undefined) continue
       for (const job of roster.jobs) {
         // Only the jobs the host names an owner for count: an unowned job is not a
-        // fact about this session, and spreading it over the roster would be a
-        // claim the payload does not support.
+        // fact about this family, and spreading it over the roster would be a claim
+        // the payload does not support.
         if (job.ownerSessionId === undefined || !family.has(job.ownerSessionId)) continue
-        // The host's own projection omits `finishedAt` while a job is live, which
-        // is what makes `stopping` count as work in progress and keeps a status
-        // this bridge has never heard of from being read as a finished one.
-        if (job.finishedAt === undefined) return { quiet: false, busy: `job-live(${job.id})` }
+        // The host's own projection omits `finishedAt` while a job is live, which is
+        // what makes `stopping` count as work in progress and keeps a status this
+        // bridge has never heard of from being read as a finished one.
+        if (job.finishedAt === undefined) return { quiet: false, busy: `job-live(${job.id})`, ...(subagent === undefined ? {} : { subagent }) }
       }
     }
-    return { quiet: true }
+    return { quiet: true, ...(subagent === undefined ? {} : { subagent }) }
   }
+}
+
+/** @returns the session a parent chain climbs to, stopping where the chain repeats. */
+function familyRootOf(sessionId: string, parents: ReadonlyMap<string, string>): string {
+  const walked = new Set<string>([sessionId])
+  let root = sessionId
+  let cursor = parents.get(sessionId)
+  while (cursor !== undefined && !walked.has(cursor)) {
+    root = cursor
+    walked.add(cursor)
+    cursor = parents.get(cursor)
+  }
+  return root
 }
 
 /** @returns whether one session sits under another in the host's own parent chain. */
