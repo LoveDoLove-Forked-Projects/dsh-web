@@ -28,9 +28,12 @@
  * - the wait has no deadline. A family that stays busy is never announced, and a
  *   host that cannot answer is asked again rather than read as quiet: announcing
  *   work that is still running is the failure this channel exists to prevent, and a
- *   notification that never arrives is the lesser one. One line at
- *   {@link TURN_END_QUIET_REPORT_MS} says the bridge is still waiting, so an
- *   operator is not left guessing why a phone stayed silent.
+ *   notification that never arrives is the lesser one. One question, though, is
+ *   bounded ({@link TURN_END_QUIET_PROBE_TIMEOUT_MS}): a read the gateway never
+ *   returns is abandoned as that question's own failure and the entry asks again, so
+ *   a stuck call cannot leave the entry holding no question to ask and no way to
+ *   speak. One line at {@link TURN_END_QUIET_REPORT_MS} says the bridge is still
+ *   waiting, so an operator is not left guessing why a phone stayed silent.
  *
  * Not every turn end is the phone's to hear. A session the host spawned as a
  * subagent (`origin: "subagent"`) ends turns nobody asked this bridge about, so its
@@ -64,6 +67,20 @@ export const TURN_END_QUIET_REPORT_MS = 600_000
  * cost: at most one every five seconds, never more than one in flight.
  */
 export const TURN_END_QUIET_INTERVAL_MS = 5_000
+
+/**
+ * How long one question to the host may stay unanswered before the bridge abandons
+ * that question, in milliseconds.
+ *
+ * Three times {@link TURN_END_QUIET_INTERVAL_MS}. A `session/list` read the host is
+ * willing to make comes back well inside one interval, so a question that outlives
+ * three of them is a call that will not return — a stuck gateway request, not a slow
+ * host — and an entry that keeps waiting for it has no next question to ask, which is
+ * exactly how a phone goes permanently silent. The bound belongs to the question and
+ * never to the turn end: an abandoned question answers nothing, the entry stays held,
+ * and the next question leaves on the usual interval.
+ */
+export const TURN_END_QUIET_PROBE_TIMEOUT_MS = 15_000
 
 /**
  * How many session ids the gate remembers the phone prompting, at most.
@@ -135,8 +152,16 @@ interface Waiting {
   report: NodeJS.Timeout | undefined
   /** Why the last question answered "not quiet". */
   busy: string | undefined
-  /** Set while a question is in flight, so one entry never has two out at once. */
-  asking: boolean
+  /**
+   * The generation of the question in flight, or zero when none is out.
+   *
+   * A generation rather than a flag: a question the bound has abandoned settles under
+   * a number that is no longer current, so its answer can neither announce anything
+   * nor ask again, and one entry never has two questions out at once.
+   */
+  asking: number
+  /** The one-shot bound on the question in flight, until it answers or is abandoned. */
+  deadline: NodeJS.Timeout | undefined
 }
 
 /**
@@ -156,6 +181,8 @@ export class TurnEndQuietGate {
   /** The sessions the phone itself prompted, oldest first. */
   readonly #phonePrompted = new Set<string>()
   readonly #phonePromptLimit: number
+  /** The last question generation handed out, so no question is ever minted twice. */
+  #asked = 0
   #disposed = false
 
   constructor(options: TurnEndQuietOptions) {
@@ -263,8 +290,9 @@ export class TurnEndQuietGate {
       registeredAt: now,
       check: undefined,
       report: undefined,
+      deadline: undefined,
       busy: undefined,
-      asking: false,
+      asking: 0,
     }
     this.#waiting.set(sessionId, waiting)
     if (this.#options.probe === undefined) {
@@ -297,16 +325,58 @@ export class TurnEndQuietGate {
     waiting.check = timer
   }
 
-  /** Ask the host once whether a held entry's family is quiet. */
+  /**
+   * Ask the host once whether a held entry's family is quiet.
+   *
+   * One question is out at a time, and every question carries its own bound: a read
+   * the gateway never returns would otherwise leave the entry holding a question that
+   * has no answer coming, with no next question armed behind it — the channel silenced
+   * for as long as the entry is held. The bound ends that one question only; the entry
+   * keeps waiting and the next question leaves on the usual interval.
+   */
   #check(waiting: Waiting): void {
     if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
     const probe = this.#options.probe
-    if (probe === undefined || waiting.asking) return
-    waiting.asking = true
+    if (probe === undefined || waiting.asking !== 0) return
+    // Every question is one generation, minted here and never reused. A question the
+    // bound abandons settles under a generation that is no longer in flight, so it can
+    // neither announce anything nor ask a second time.
+    const generation = ++this.#asked
+    waiting.asking = generation
     void Promise.resolve()
-      .then(async () => await probe(waiting.sessionId))
+      .then(async (): Promise<QuietAnswer | undefined> => {
+        if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return undefined
+        if (waiting.asking !== generation) return undefined
+        // The bound is armed here, where the question really leaves, rather than at the
+        // call site: it times the host read itself and not the turn of the loop that
+        // queued it. Nothing short of that loop never running can starve this line.
+        const deadline = setTimeout(() => {
+          waiting.deadline = undefined
+          if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
+          // Only the question this bound was armed for is abandoned: one that has
+          // already answered has armed the next question and is not this bound's to
+          // touch.
+          if (waiting.asking !== generation) return
+          waiting.asking = 0
+          // An answer that never came is not a quiet answer: the token says which
+          // failure it was, one line says the question was given up on, and the entry
+          // asks again on its interval.
+          waiting.busy = 'unreadable'
+          this.#log(`turn-end quiet check unreadable session=${waiting.sessionId} after=${TURN_END_QUIET_PROBE_TIMEOUT_MS}ms`)
+          this.#arm(waiting)
+        }, TURN_END_QUIET_PROBE_TIMEOUT_MS)
+        // A question waiting on a host that may never answer must never keep the host
+        // process alive either.
+        deadline.unref?.()
+        waiting.deadline = deadline
+        return await probe(waiting.sessionId)
+      })
       .then((answer) => {
-        waiting.asking = false
+        // Nothing to take an answer for: the question never left, or the bound has
+        // already abandoned this generation.
+        if (answer === undefined || waiting.asking !== generation) return
+        waiting.asking = 0
+        this.#dropDeadline(waiting)
         if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
         // A session the host spawned as a subagent is not the phone's own work, so its
         // turn end is dropped rather than announced — unless the phone prompted that
@@ -327,7 +397,9 @@ export class TurnEndQuietGate {
         this.#arm(waiting)
       })
       .catch((error: unknown) => {
-        waiting.asking = false
+        if (waiting.asking !== generation) return
+        waiting.asking = 0
+        this.#dropDeadline(waiting)
         if (this.#disposed || this.#waiting.get(waiting.sessionId) !== waiting) return
         // An unreadable answer is one line and another try: the host may answer the
         // next one, and nothing is announced on a question that got no answer.
@@ -335,6 +407,12 @@ export class TurnEndQuietGate {
         this.#log(`turn-end quiet check failed session=${waiting.sessionId}: ${failureText(error)}`)
         this.#arm(waiting)
       })
+  }
+
+  /** Cancel the bound on the question in flight, if it is still armed. */
+  #dropDeadline(waiting: Waiting): void {
+    if (waiting.deadline !== undefined) clearTimeout(waiting.deadline)
+    waiting.deadline = undefined
   }
 
   /**
@@ -373,12 +451,16 @@ export class TurnEndQuietGate {
     }
   }
 
-  /** Drop one entry and both of its timers. */
+  /** Drop one entry and every timer it holds. */
   #forget(waiting: Waiting): void {
     if (waiting.check !== undefined) clearTimeout(waiting.check)
     if (waiting.report !== undefined) clearTimeout(waiting.report)
+    this.#dropDeadline(waiting)
     waiting.check = undefined
     waiting.report = undefined
+    // A question already in flight is disowned here, so its answer can neither
+    // announce nor ask again for an entry that is gone.
+    waiting.asking = 0
     if (this.#waiting.get(waiting.sessionId) === waiting) this.#waiting.delete(waiting.sessionId)
   }
 }

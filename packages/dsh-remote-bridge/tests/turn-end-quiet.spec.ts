@@ -12,6 +12,7 @@ import { PushNotifier, type PushAddress, type PushNotification, type PushSendRes
 import {
   TURN_END_PHONE_PROMPTED_MAX,
   TURN_END_QUIET_INTERVAL_MS,
+  TURN_END_QUIET_PROBE_TIMEOUT_MS,
   TURN_END_QUIET_REPORT_MS,
   TurnEndQuietGate,
   sessionQuietProbe,
@@ -804,6 +805,150 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
     // Then the turn end is announced
     expect(sink.notices).toHaveLength(1)
     expect(sink.cards).toHaveLength(1)
+    expect(gate.held).toBe(0)
+    gate.dispose()
+  })
+
+  it('operator sees a question the host never answers abandoned and asked again, never a quiet answer', async () => {
+    // Given a host whose every question hangs
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const lines: string[] = []
+    const asked: string[] = []
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: (sessionId): Promise<QuietAnswer> => {
+        asked.push(sessionId)
+        return new Promise<QuietAnswer>(() => undefined)
+      },
+      now: () => clock.now,
+      log: line => { lines.push(line) },
+    })
+    // When the turn ends and a minute passes with no answer at all
+    gate.noteTurnEnd('s-1', 'completed')
+    // The clock is stepped rather than jumped: a question leaves on a microtask, and a
+    // real clock lets that microtask run between two timers, so only stepping models it
+    for (let elapsed = 0; elapsed < 60_000; elapsed += TURN_END_QUIET_INTERVAL_MS) {
+      advance(clock, TURN_END_QUIET_INTERVAL_MS)
+      await settle()
+    }
+    // Then nothing was announced for it, and the entry is still held
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    expect(gate.held).toBe(1)
+    // And the bound gave that question up in one line instead of waiting for ever
+    expect(lines).toContain(`turn-end quiet check unreadable session=s-1 after=${TURN_END_QUIET_PROBE_TIMEOUT_MS}ms`)
+    // And the entry asked again on its interval rather than stopping at that question
+    expect(asked.length).toBeGreaterThan(1)
+    gate.dispose()
+  })
+
+  it('user hears the turn end once a later question answers quiet after the first one never came back', async () => {
+    // Given a host that hangs on the first question and answers the question after it
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const lines: string[] = []
+    let asked = 0
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: (): Promise<QuietAnswer> => {
+        asked += 1
+        return asked === 1 ? new Promise<QuietAnswer>(() => undefined) : Promise.resolve<QuietAnswer>({ quiet: true })
+      },
+      now: () => clock.now,
+      log: line => { lines.push(line) },
+    })
+    gate.noteTurnEnd('s-1', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    expect(asked).toBe(1)
+    // When that first question outlives its bound
+    advance(clock, TURN_END_QUIET_PROBE_TIMEOUT_MS)
+    await settle()
+    // Then the entry is held rather than dropped, and one line says nothing came back
+    expect(gate.held).toBe(1)
+    expect(sink.notices).toHaveLength(0)
+    expect(lines.some(line => line.includes('unreadable'))).toBe(true)
+    // When the next question finds the family quiet
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    // Then exactly one notification goes out, for the session whose turn ended
+    expect(sink.notices).toHaveLength(1)
+    expect(sink.notices[0]?.s).toBe('s-1')
+    expect(sink.cards).toHaveLength(1)
+    expect(gate.held).toBe(0)
+    gate.dispose()
+  })
+
+  it('operator gets nothing from a question that answers after the bound abandoned it, and no extra question', async () => {
+    // Given a host whose first question answers by hand and whose later ones stay busy
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const asked: string[] = []
+    let release: ((answer: QuietAnswer) => void) | undefined
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: (sessionId): Promise<QuietAnswer> => {
+        asked.push(sessionId)
+        if (asked.length > 1) return Promise.resolve<QuietAnswer>({ quiet: false, busy: 'session-running' })
+        return new Promise<QuietAnswer>(resolve => { release = resolve })
+      },
+      now: () => clock.now,
+    })
+    gate.noteTurnEnd('s-1', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    expect(asked).toHaveLength(1)
+    // When that question outlives its bound and the entry asks again
+    advance(clock, TURN_END_QUIET_PROBE_TIMEOUT_MS)
+    await settle()
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    expect(asked).toHaveLength(2)
+    // When the abandoned question finally comes back with a quiet answer
+    release?.({ quiet: true })
+    await settle()
+    // Then it announces nothing and asks nothing: its generation is no longer current
+    expect(sink.notices).toHaveLength(0)
+    expect(sink.cards).toHaveLength(0)
+    expect(asked).toHaveLength(2)
+    expect(gate.held).toBe(1)
+    // And the entry keeps its own cadence from the question really in flight
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    expect(asked).toHaveLength(3)
+    gate.dispose()
+  })
+
+  it('user hears the turn end from a question that answers slowly but inside its bound', async () => {
+    // Given a host that takes most of the bound to answer
+    const { clock } = useSuiteClock()
+    const sink = sinksAt(clock)
+    const lines: string[] = []
+    let release: ((answer: QuietAnswer) => void) | undefined
+    const gate = new TurnEndQuietGate({
+      push: sink.push,
+      liveActivity: sink.liveActivity,
+      probe: () => new Promise<QuietAnswer>(resolve => { release = resolve }),
+      now: () => clock.now,
+      log: line => { lines.push(line) },
+    })
+    gate.noteTurnEnd('s-1', 'completed')
+    advance(clock, TURN_END_QUIET_INTERVAL_MS)
+    await settle()
+    expect(release).toBeDefined()
+    // When the answer arrives nine seconds later, still inside the bound
+    advance(clock, 9_000)
+    release?.({ quiet: true })
+    await settle()
+    // Then the turn end is announced, and no question was given up on the way
+    expect(sink.notices).toHaveLength(1)
+    expect(sink.notices[0]?.s).toBe('s-1')
+    expect(sink.cards).toHaveLength(1)
+    expect(lines.some(line => line.includes('unreadable'))).toBe(false)
     expect(gate.held).toBe(0)
     gate.dispose()
   })
