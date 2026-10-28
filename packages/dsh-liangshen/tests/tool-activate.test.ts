@@ -54,7 +54,10 @@ function dispatch(namespace: string, subCallId: string, isError = false) {
 }
 
 describe('paging helpers', () => {
-  it('derives namespaces from prefix patterns', () => {
+  it('operator gets namespaces derived from prefix patterns', () => {
+    // Given a wire name and the patterns a profile declares
+    // When the name is resolved against the pattern chain
+    // Then the middle segment is the namespace, and a name no pattern claims has none
     expect(patternNamespace('mcp__codegraph__codegraph_explore', 'mcp__*')).toBe('codegraph')
     expect(patternNamespace('mcp__github__create_issue', 'mcp__*')).toBe('github')
     expect(patternNamespace('mcp__github__create_issue', 'mcp__github__*')).toBe('create_issue')
@@ -64,7 +67,10 @@ describe('paging helpers', () => {
     expect(namespaceOf('read', ['mcp__*'])).toBeUndefined()
   })
 
-  it('validates the pattern config', () => {
+  it('operator gets the declared pattern config validated', () => {
+    // Given an absent config and the configs a profile could declare
+    // When the config is validated
+    // Then the default fills in, a valid list passes through, and each malformed entry throws its own reason
     expect(validatePagedToolPatterns('p', undefined)).toEqual(['mcp__*'])
     expect(validatePagedToolPatterns('p', ['foo_*'])).toEqual(['foo_*'])
     expect(() => validatePagedToolPatterns('p', 'mcp__*' as never)).toThrow(/must be an array/)
@@ -73,7 +79,10 @@ describe('paging helpers', () => {
     expect(() => validatePagedToolPatterns('p', ['m*p__*'])).toThrow(/trailing/)
   })
 
-  it('partitions the wire into resident tools and inactive namespaces', () => {
+  it('operator gets the wire partitioned into resident tools and inactive namespaces', () => {
+    // Given a wire carrying resident tools and namespaced ones
+    // When the wire is partitioned with nothing activated, then with github activated
+    // Then resident tools stay reachable while namespaced ones page under their namespace
     const wire = [
       { name: 'bash' },
       { name: 'mcp__github__create_issue' },

@@ -530,7 +530,8 @@ describe('a workspace registry that activates after the row applied', () => {
         },
       })
       await vi.waitFor(() => {
-        expect(root.get('workspaceRegistry')).toBeDefined()
+        const registry = root.get('workspaceRegistry') as { list: () => unknown } | undefined
+        expect(registry?.list()).toEqual([{ id: 'ws-1', title: 'repo' }])
       })
 
       // The SAME running row now serves the picker out of the live registry.

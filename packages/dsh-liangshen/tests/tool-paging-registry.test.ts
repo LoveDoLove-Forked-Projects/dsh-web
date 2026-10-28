@@ -207,7 +207,10 @@ function activation(namespace: string, callId: string) {
 }
 
 describe('gentle paging under the collapsed ptc wire', () => {
-  it('pages the scope before its FIRST request, so that request renders a consistent SDK section', async () => {
+  it('operator gets the scope paged before its first request, so that request renders a consistent SDK section', async () => {
+    // Given a harness whose wire carries resident tools and paged namespaces
+    // When the scope is read before any assembly has run, and then assembled
+    // Then the first request already excludes the withheld namespaces and the wire itself stays collapsed
     const h = harness()
     const agent = await agentOf(h)
 
@@ -236,7 +239,10 @@ describe('gentle paging under the collapsed ptc wire', () => {
     expect(text).toContain('cannot be reached from inside a program either')
   })
 
-  it('activates a namespace through the post-call hook, onto the program surface and into the SDK projection', async () => {
+  it('operator activates a namespace through the post-call hook, onto the program surface and into the SDK projection', async () => {
+    // Given a harness whose collapsed wire has already been assembled
+    // When a tool_activate call lands and the next request is assembled
+    // Then the namespace reaches the program surface and the SDK projection while every other namespace stays withheld
     const h = harness()
     const agent = await agentOf(h)
     await h.assemble(agent)
@@ -261,7 +267,10 @@ describe('gentle paging under the collapsed ptc wire', () => {
     expect(text).not.toContain('Call `tool_activate({ namespace: "github" })`')
   })
 
-  it('withholds the evicted namespace again once a fourth activation pages it out', async () => {
+  it('operator sees the evicted namespace withheld again once a fourth activation pages it out', async () => {
+    // Given four activations recorded in the durable event stream
+    // When the next assembly publishes the page
+    // Then the least recently used namespace is withheld again while the newer ones stay reachable
     const h = harness()
     const agent = await agentOf(h, [
       ...activation('github', 'c1'),

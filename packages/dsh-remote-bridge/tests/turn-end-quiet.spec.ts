@@ -939,7 +939,7 @@ describe('turn-end quiet gate: one answer to "is this session still working"', (
     gate.noteTurnEnd('s-1', 'completed')
     advance(clock, TURN_END_QUIET_INTERVAL_MS)
     await settle()
-    expect(release).toBeDefined()
+    expect(typeof release).toBe('function')
     // When the answer arrives nine seconds later, still inside the bound
     advance(clock, 9_000)
     release?.({ quiet: true })
