@@ -273,6 +273,31 @@ describe('issue listing and editing', () => {
     expect(activity.map((row) => row.activity_type)).toContain('issue.assigned')
   })
 
+  it('member reads one issue by id with its collaboration state', async () => {
+    // Given an issue assigned to the admin
+    const { env, team, memberToken } = await fixture()
+    const created = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/issues', {
+      token: memberToken,
+      body: { title: 'read me', assignee_type: 'member', assignee_id: team.admin.id },
+    })
+
+    // When the member reads that issue by id
+    const fetched = await api(env, 'GET', '/api/v1/teams/' + team.teamId + '/issues/' + created.body.issue.id, {
+      token: memberToken,
+    })
+
+    // Then the issue comes back without any lease secret
+    expect(fetched.status).toBe(200)
+    expect(fetched.body.issue).toMatchObject({
+      id: created.body.issue.id,
+      title: 'read me',
+      status: 'assigned',
+      assignee_member_id: team.admin.id,
+      has_lease: false,
+    })
+    expect(fetched.body.issue.lease_token).toBeUndefined()
+  })
+
   it('member is refused an issue of another team', async () => {
     // Given an issue in one team
     const { env, memberToken } = await fixture()
