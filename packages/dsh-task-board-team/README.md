@@ -1,0 +1,66 @@
+# dsh-task-board-team · Team collaboration provider for the DSH task board
+
+English | [中文](README.zh.md)
+
+An external provider extension for the DeepSeek Harness (DSH) task board (`@linxin666/dsh-client-ui-task-board`). It connects this machine to a cloud `team-hub`: issues the hub assigns to a dsh-agents member bound here are claimed under a lease, executed as mirror cards on this Host, and settled back to the hub, while decision questions, comments and review rejections travel between the team and the session that is doing the work. The board's columns, ledger and execution rules are untouched, and the plugin mounts through `cordis.patch.yml` and profiles without any DSH source change.
+
+## Features
+
+- **Member bindings, not a shared queue**: the settings entry names dsh-agents member ids; the member definition supplies the name the hub resolves mentions by, the agent preset and the team workspace. An issue assigned to any other agent is never claimed here, even when the hub lists it.
+- **Registration and heartbeat**: the Host registers at startup with its hostname, client version and agent definitions, then heartbeats every 15 s, which is the cadence the protocol fixes.
+- **Lease-based claiming**: a claim returns a lease token and an execution attempt id; the mirror card stores both in this extension's own `integrations` payload, and the lease is renewed every 20 s while the card executes.
+- **Idempotent reconnect**: a reconnect re-registers, replays the channel from its last sequence number and re-claims with the attempt credentials the card already carries, so a hub that recognizes the attempt re-establishes it instead of duplicating the run, and no second card or session is created.
+- **Settlement write-back**: a settled execution becomes `succeeded` (the issue moves to `in_review`) only when automated acceptance passed; a failure or a cancellation becomes `failed` with the recorded reason, and the summary is clipped to the protocol's 4000-character cap.
+- **Question routing**: a decision question asked through `ask_user_question` in a mirror card's session is reported to the hub and answered by the issue's reviewer; the answer, an expiry or a local cancellation ends the ask, and every other session on the machine keeps its own answerer.
+- **Comments both ways**: the `team_comment` tool posts an agent comment on the issue behind a card, and a comment that mentions a bound agent is delivered into that card's session as a follow-up message.
+- **Review rework**: a rejected review claims a fresh attempt first and only then re-runs the card in its existing session with the reviewer's instructions; a refused claim starts nothing and records the refusal locally.
+- **Visible degradation**: follow-up delivery, rework and the execution trigger are probed at mount; a board revision that serves none of them loses that delivery, says so on the card and in the settings block, and keeps everything else working.
+- **Three browser seats**: a task-detail section (issue, hub status including `in_review`, assignee, reviewer, comment thread, activity stream and open questions), a hub-status badge on the card, and a configuration block inside the board's own settings card that stays reachable while the extension is switched off.
+- **One switch gates both halves**: turning the extension off stops the claim loop, the lease timers, the channel and the tool registration, drops the published summary and releases the rendering seats, without deleting a single card.
+
+## Install
+
+Install this package into the profile and restart `dsh web`:
+
+```sh
+dsh plugin --profile web add @linxin666/dsh-client-ui-task-board-team@latest
+```
+
+### Local development
+
+```sh
+pnpm install
+pnpm --filter @linxin666/dsh-client-ui-task-board-team build
+dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board-team
+```
+
+## Configure
+
+Open the task board settings and find the **Team collaboration** block; it stores the hub URL and team id as this plugin's own volatile settings and sends a pasted Host Token to the host once.
+
+- The Host Token is held in the harness credential store under `hostTokenRef` (default `DSH_TEAM_HUB_TOKEN`) or, failing that, in the environment variable of that name; no snapshot, summary or tool result carries its value.
+- The member bindings are dsh-agents member ids (comma separated in the block). A binding that names a member the dsh-agents ledger no longer defines is reported in the block and skipped.
+
+```yaml
+# profile patch equivalent
+hubUrl: https://hub.example.com
+teamId: team_01j7b5w8m4f9q2e3r6t1y8u4i5
+hostTokenRef: DSH_TEAM_HUB_TOKEN
+agents:
+  - memberId: mem_01j7b5w8m4f9q2e3r6t1y8u4i6
+```
+
+## Known limitations
+
+- **The agent preset is recorded, not pinned**: the provider contract's `tasks.create` draft carries no agent preset, so a mirror card stores the member's preset in its payload and the settings block shows it, while the run uses the deployment's own defaults.
+- **Starting an execution needs the board's action seat**: the contract has no "run" capability, so the mount probes the board's in-process action applier and, when a deployment serves none, the claimed card is created for the operator to start instead.
+- **The activity stream is what this Host observed**: the protocol exposes no activity endpoint, so the detail section renders the events this Host received over the channel since it started.
+- **Questions are reported one at a time**: a batch with several questions reports the first one and keeps the rest on this machine, because the hub's question schema stores a single question.
+- **A claimed question holds the ask for two minutes**: after that window the ask returns to the local answerer and the hub question is withdrawn, so a team that never answers cannot stall a session for the hub's 24-hour TTL.
+
+## Security model
+
+- **The Host Token never reaches the browser twice**: it is written once from the settings block into the credential store, read only by the host half, and reported afterwards as "configured" plus its source.
+- **Tool permission approvals never enter the hub**: this provider subscribes to `user-questions/request` only; `approval/request` has no listener here, so a tool sandbox decision stays on this machine and never becomes a remote request.
+- **Remote text is content, not authority**: an issue title, body or comment becomes card text, a summary field or a session message, and never a permission, a workspace identity, an agent preset or a `promptPrefix`.
+- **Claims are bounded by the lease**: a claim that this machine cannot mirror or start is logged and left to expire, and the lease renews only while this Host still holds it.
