@@ -21,15 +21,18 @@ import {
 } from './http'
 import {
   authenticate,
+  cookieValue,
   requireAdmin,
   requireHost,
   requireMember,
   revokeSession,
   rotateRefreshToken,
+  REFRESH_COOKIE,
+  SESSION_COOKIE,
   type Principal,
 } from './auth/session'
 import { GITHUB_CALLBACK_PATH } from './outbound'
-import { beginAuthorize, completeAuthorizationCode, handleCallback } from './auth/github'
+import { beginAuthorize, completeAuthorizationCode, handleCallback, sessionCookies } from './auth/github'
 import { consumeQuota } from './rate-limit'
 import {
   heartbeat,
@@ -115,8 +118,10 @@ function parseAgentDefinitions(value: unknown): AgentDefinition[] {
     if (typeof presetId !== 'string' || presetId === '') {
       fail('VALIDATION_FAILED', 'Every agent definition needs a preset_id.', { field: 'agents' })
     }
-    const description = typeof record.description === 'string' ? record.description : null
-    return { name, preset_id: presetId, description }
+    const model = typeof record.model === 'string' && record.model !== '' ? record.model : null
+    const reasoningEffort =
+      typeof record.reasoning_effort === 'string' && record.reasoning_effort !== '' ? record.reasoning_effort : null
+    return { name, preset_id: presetId, model, reasoning_effort: reasoningEffort }
   })
 }
 
@@ -138,14 +143,17 @@ const ROUTES: Route[] = [
   }),
   route('POST', '/auth/refresh', 'public', async ({ request, env, now }) => {
     const body = await readJsonBody(request)
-    const presented = optionalString(body, 'refresh_token') ?? cookieValue(request, 'th_refresh')
+    const presented = optionalString(body, 'refresh_token') ?? cookieValue(request, REFRESH_COOKIE)
     if (presented === null || presented === '') fail('INVALID_REFRESH_TOKEN', 'refresh_token is required.')
     const rotated = await rotateRefreshToken(env, presented, now)
-    return json({ ...rotated.tokens, member: toMemberView(rotated.member) })
+    const response = json({ ...rotated.tokens, member: toMemberView(rotated.member) })
+    // Supplement A4.8: the web flow keeps both cookies in step with the rotation.
+    for (const cookie of sessionCookies(rotated.tokens)) response.headers.append('set-cookie', cookie)
+    return response
   }),
   route('POST', '/auth/revoke', 'member', async ({ request, env, now }) => {
     const body = await readJsonBody(request)
-    const presented = optionalString(body, 'refresh_token') ?? cookieValue(request, 'th_refresh')
+    const presented = optionalString(body, 'refresh_token') ?? cookieValue(request, REFRESH_COOKIE)
     if (presented === null || presented === '') fail('UNAUTHORIZED', 'refresh_token is required.')
     await revokeSession(env, presented, now)
     return ok()
@@ -477,16 +485,6 @@ function matchRoute(method: string, segments: string[]): { route: Route; params:
 
 export function routeInventories(): { method: string; path: string; auth: AuthPolicy }[] {
   return ROUTES.map((entry) => ({ method: entry.method, path: entry.path, auth: entry.auth }))
-}
-
-function cookieValue(request: Request, name: string): string | null {
-  const header = request.headers.get('cookie')
-  if (header === null) return null
-  for (const part of header.split(';')) {
-    const [key, ...rest] = part.trim().split('=')
-    if (key === name) return rest.join('=')
-  }
-  return null
 }
 
 function clientIp(request: Request): string {

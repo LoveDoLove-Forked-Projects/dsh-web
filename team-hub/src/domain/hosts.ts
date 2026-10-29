@@ -5,10 +5,19 @@ import { mintHostToken as mintToken, type MemberPrincipal } from '../auth/sessio
 import { publishEvents } from '../channel'
 import type { AgentRow, HostRow } from '../types'
 
+/** Supplement A4.1: the agent definition the Host reports; preset_id is mandatory. */
 export interface AgentDefinition {
   name: string
   preset_id: string
-  description?: string | null
+  model?: string | null
+  reasoning_effort?: string | null
+}
+
+/** Supplement A4.1: the response the Host uses to map names to hub agent ids. */
+export interface RegistrationResult {
+  host_id: string
+  status: string
+  agents: { id: string; name: string }[]
 }
 
 export interface RegistrationBody {
@@ -98,13 +107,19 @@ async function markOnline(env: Env, host: HostRow, now: number): Promise<boolean
  * Agent rows are synchronised here; an agent the Host stops advertising is
  * marked offline rather than deleted, because issues still reference it.
  */
-export async function registerHost(env: Env, host: HostRow, body: RegistrationBody, now: number): Promise<{ host_id: string; status: string }> {
+export async function registerHost(
+  env: Env,
+  host: HostRow,
+  body: RegistrationBody,
+  now: number,
+): Promise<RegistrationResult> {
   await markOnline(env, host, now)
   await env.DB.prepare('UPDATE hosts SET hostname = ?, client_version = ?, updated_at = ? WHERE id = ?')
     .bind(body.hostname, body.client_version, now, host.id)
     .run()
 
   const names: string[] = []
+  const reported: { id: string; name: string }[] = []
   for (const definition of body.agents) {
     names.push(definition.name)
     const existing = await env.DB.prepare('SELECT * FROM agents WHERE team_id = ? AND name = ?')
@@ -118,27 +133,38 @@ export async function registerHost(env: Env, host: HostRow, body: RegistrationBo
     }
     if (existing) {
       await env.DB.prepare(
-        "UPDATE agents SET preset_id = ?, description = ?, owner_member_id = ?, status = 'idle', updated_at = ? WHERE id = ?",
-      )
-        .bind(definition.preset_id, definition.description ?? null, host.owner_member_id, now, existing.id)
-        .run()
-    } else {
-      await env.DB.prepare(
-        'INSERT INTO agents (id, team_id, host_id, owner_member_id, name, preset_id, description, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        "UPDATE agents SET preset_id = ?, model = ?, reasoning_effort = ?, owner_member_id = ?, status = 'idle', updated_at = ? WHERE id = ?",
       )
         .bind(
-          newId('agent', now),
+          definition.preset_id,
+          definition.model ?? null,
+          definition.reasoning_effort ?? null,
+          host.owner_member_id,
+          now,
+          existing.id,
+        )
+        .run()
+      reported.push({ id: existing.id, name: existing.name })
+    } else {
+      const agentId = newId('agent', now)
+      await env.DB.prepare(
+        'INSERT INTO agents (id, team_id, host_id, owner_member_id, name, preset_id, model, reasoning_effort, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+        .bind(
+          agentId,
           host.team_id,
           host.id,
           host.owner_member_id,
           definition.name,
           definition.preset_id,
-          definition.description ?? null,
+          definition.model ?? null,
+          definition.reasoning_effort ?? null,
           'idle',
           now,
           now,
         )
         .run()
+      reported.push({ id: agentId, name: definition.name })
     }
   }
   if (names.length > 0) {
@@ -149,7 +175,7 @@ export async function registerHost(env: Env, host: HostRow, body: RegistrationBo
   } else {
     await env.DB.prepare("UPDATE agents SET status = 'offline', updated_at = ? WHERE host_id = ?").bind(now, host.id).run()
   }
-  return { host_id: host.id, status: 'online' }
+  return { host_id: host.id, status: 'online', agents: reported }
 }
 
 /** Section 5 heartbeat: liveness of one Host, and the anchor of offline detection. */

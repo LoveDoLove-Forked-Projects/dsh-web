@@ -413,6 +413,7 @@ export async function patchIssue(
           { status: issue.status },
         )
       }
+      assertAssigneeOrAdmin(issue, actor)
       patch.status = 'in_review'
       activities.push({ type: 'issue.submitted_for_review', payload: {} })
       requestReview = true
@@ -425,6 +426,7 @@ export async function patchIssue(
           { status: issue.status },
         )
       }
+      assertAssigneeOrAdmin(issue, actor)
       patch.status = 'done'
       activities.push({ type: 'issue.completed', payload: {} })
     } else if (requestedStatus === 'assigned') {
@@ -466,6 +468,16 @@ async function assertReviewer(env: Env, issue: IssueRow, actor: MemberPrincipal)
   if (actor.member.role === 'admin') return
   if (issue.reviewer_member_id !== null && issue.reviewer_member_id === actor.member.id) return
   fail('FORBIDDEN', 'Only the reviewer or an admin can decide this review.', { issue_id: issue.id })
+}
+
+/** Supplement A4.8: only the assignee or an admin may submit or complete a member card. */
+function assertAssigneeOrAdmin(issue: IssueRow, actor: MemberPrincipal): void {
+  if (actor.member.role === 'admin') return
+  if (issue.assignee_member_id !== null && issue.assignee_member_id === actor.member.id) return
+  fail('FORBIDDEN', 'Only the assignee or an admin can move this issue to ' + issue.status + '.', {
+    issue_id: issue.id,
+    assignee_member_id: issue.assignee_member_id,
+  })
 }
 
 /** Section 8 approval: in_review to done. */

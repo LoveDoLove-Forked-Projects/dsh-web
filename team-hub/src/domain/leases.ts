@@ -40,23 +40,12 @@ async function assertHostOwnsIssue(env: Env, host: HostPrincipal, issue: IssueRo
   return agent
 }
 
-async function writeLease(
-  env: Env,
-  issue: IssueRow,
-  values: { status: string; leaseToken: string | null; leaseExpiresAt: number | null; attemptId: string | null; hostId: string | null },
-  now: number,
-): Promise<void> {
-  await env.DB.prepare(
-    'UPDATE issues SET status = ?, lease_token = ?, lease_expires_at = ?, execution_attempt_id = ?, executing_host_id = ?, updated_at = ? WHERE id = ?',
-  )
-    .bind(values.status, values.leaseToken, values.leaseExpiresAt, values.attemptId, values.hostId, now, issue.id)
-    .run()
-}
-
 /**
- * Section 5 claiming. An active lease held by a different attempt is refused
- * with LEASE_HELD_BY_OTHER; a reconnect that presents the previous attempt and
- * lease identifiers gets the same attempt back instead of a second execution.
+ * Section 5 claiming, supplement A4.4: the transition itself is one conditional
+ * UPDATE, so two Hosts racing for the same card cannot both win. The two
+ * statements below are the two legal shapes of that claim - a fresh claim of a
+ * card in assigned or waiting_host, and a reconnect that presents the running
+ * attempt's own attempt and lease identifiers - and exactly one of them applies.
  */
 export async function claimIssue(
   env: Env,
@@ -68,54 +57,62 @@ export async function claimIssue(
 ): Promise<ClaimResult> {
   const issue = await findIssue(env, teamId, issueId)
   await assertHostOwnsIssue(env, host, issue)
-  if (issue.status === 'done' || issue.status === 'canceled' || issue.status === 'in_review') {
-    fail('INVALID_STATE_TRANSITION', 'The issue is ' + issue.status + ' and cannot be claimed.', { status: issue.status })
-  }
 
   const presentedAttempt = body.execution_attempt_id
   const presentedLease = body.lease_token
-  const activeLease = issue.lease_token !== null && issue.lease_expires_at !== null && issue.lease_expires_at > now
-  if (activeLease) {
-    const sameAttempt = presentedAttempt !== undefined && presentedAttempt === issue.execution_attempt_id
-    const sameLease = presentedLease !== undefined && presentedLease === issue.lease_token
-    if (sameAttempt && sameLease) {
-      const expiresAt = now + LEASE_DURATION_MS
-      await env.DB.prepare('UPDATE issues SET lease_expires_at = ?, updated_at = ? WHERE id = ?')
-        .bind(expiresAt, now, issue.id)
-        .run()
-      return {
-        lease_token: issue.lease_token as string,
-        lease_expires_at: expiresAt,
-        execution_attempt_id: issue.execution_attempt_id as string,
-      }
-    }
-    fail('LEASE_HELD_BY_OTHER', 'Another execution attempt holds the active lease.', {
-      lease_expires_at: issue.lease_expires_at,
-    })
-  }
-
+  const expiresAt = now + LEASE_DURATION_MS
+  // A reconnect keeps the attempt it already owns instead of starting a second run.
   const reconnecting =
     presentedAttempt !== undefined &&
     presentedAttempt !== '' &&
-    presentedAttempt === issue.execution_attempt_id &&
-    issue.lease_token !== null
+    presentedLease !== undefined &&
+    presentedLease === issue.lease_token &&
+    presentedAttempt === issue.execution_attempt_id
   const leaseToken = reconnecting ? (issue.lease_token as string) : crypto.randomUUID()
   const attemptId = reconnecting
     ? (issue.execution_attempt_id as string)
     : presentedAttempt !== undefined && presentedAttempt !== ''
       ? presentedAttempt
       : crypto.randomUUID()
-  const expiresAt = now + LEASE_DURATION_MS
-  await writeLease(
-    env,
-    issue,
-    { status: 'running', leaseToken, leaseExpiresAt: expiresAt, attemptId, hostId: host.host.id },
-    now,
+
+  const claimed = await env.DB.prepare(
+    "UPDATE issues SET status = 'running', lease_token = ?, lease_expires_at = ?, execution_attempt_id = ?, executing_host_id = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('assigned', 'waiting_host') AND assignee_agent_id IN (SELECT id FROM agents WHERE host_id = ?)",
   )
+    .bind(leaseToken, expiresAt, attemptId, host.host.id, now, issueId, teamId, host.host.id)
+    .run()
+
+  if ((claimed.meta.changes ?? 0) === 0) {
+    const continued = reconnecting
+      ? await env.DB.prepare(
+          "UPDATE issues SET lease_expires_at = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status = 'running' AND execution_attempt_id = ? AND lease_token = ? AND assignee_agent_id IN (SELECT id FROM agents WHERE host_id = ?)",
+        )
+          .bind(expiresAt, now, issueId, teamId, presentedAttempt, presentedLease, host.host.id)
+          .run()
+      : null
+    if (continued === null || (continued.meta.changes ?? 0) === 0) {
+      // The read above may predate a claim that won in the meantime, so the
+      // reason is decided from the state the database holds now.
+      const current = await findIssue(env, teamId, issueId)
+      if (current.status === 'running') {
+        fail('LEASE_HELD_BY_OTHER', 'Another execution attempt holds the active lease.', {
+          lease_expires_at: current.lease_expires_at,
+        })
+      }
+      fail('INVALID_STATE_TRANSITION', 'The issue is ' + current.status + ' and cannot be claimed.', {
+        status: current.status,
+      })
+    }
+    return {
+      lease_token: leaseToken,
+      lease_expires_at: expiresAt,
+      execution_attempt_id: attemptId,
+    }
+  }
+
   await env.DB.prepare("UPDATE agents SET status = 'busy', updated_at = ? WHERE id = ?")
     .bind(now, issue.assignee_agent_id)
     .run()
-  const claimed = await findIssue(env, teamId, issueId)
+  const started = await findIssue(env, teamId, issueId)
   await recordActivity(env, {
     teamId,
     issueId,
@@ -128,9 +125,9 @@ export async function claimIssue(
     { event: 'issue.claimed', payload: { issue_id: issueId, executing_host_id: host.host.id } },
     {
       event: 'issue.status_changed',
-      payload: { issue_id: issueId, old_status: issue.status, new_status: claimed.status },
+      payload: { issue_id: issueId, old_status: issue.status, new_status: started.status },
     },
-    { event: 'issue.updated', payload: { issue: toIssueView(claimed), changed_fields: ['status', 'lease_expires_at'] } },
+    { event: 'issue.updated', payload: { issue: toIssueView(started), changed_fields: ['status', 'lease_expires_at'] } },
   ])
   return { lease_token: leaseToken, lease_expires_at: expiresAt, execution_attempt_id: attemptId }
 }
@@ -202,7 +199,7 @@ export async function settleIssue(
 
   const nextStatus = body.outcome === 'succeeded' ? 'in_review' : 'failed'
   await env.DB.prepare(
-    'UPDATE issues SET status = ?, execution_summary = ?, failure_error = ?, lease_token = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ?',
+    'UPDATE issues SET status = ?, execution_summary = ?, failure_error = ?, lease_token = NULL, lease_expires_at = NULL, rework_instructions = NULL, updated_at = ? WHERE id = ?',
   )
     .bind(
       nextStatus,

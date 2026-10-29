@@ -281,8 +281,9 @@ describe('quotas and payload caps', () => {
     }
     const throttled = await api(env, 'POST', path, { token: host.hostToken })
 
-    // Then the extra heartbeat is rate limited
-    expect(allowed).toBe(RATE_LIMIT_HOST)
+    // Then exactly the documented 120 heartbeats fit in the window
+    expect(RATE_LIMIT_HOST).toBe(120)
+    expect(allowed).toBe(120)
     expect(throttled.status).toBe(429)
   })
 

@@ -44,7 +44,7 @@ interface RefreshTokenRow {
   revoked_at: number | null
 }
 
-function base64url(bytes: Uint8Array): string {
+export function toBase64url(bytes: Uint8Array): string {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
@@ -88,9 +88,9 @@ async function signingKey(env: Env): Promise<CryptoKey> {
 
 async function signAccessToken(env: Env, memberId: string, sessionId: string, now: number): Promise<string> {
   const expiresAt = now + ACCESS_TOKEN_TTL_MS
-  const payload = base64url(new TextEncoder().encode(`${memberId}|${sessionId}|${expiresAt}`))
+  const payload = toBase64url(new TextEncoder().encode(`${memberId}|${sessionId}|${expiresAt}`))
   const signature = await crypto.subtle.sign('HMAC', await signingKey(env), new TextEncoder().encode(payload))
-  return `${ACCESS_TOKEN_PREFIX}${payload}.${base64url(new Uint8Array(signature))}`
+  return `${ACCESS_TOKEN_PREFIX}${payload}.${toBase64url(new Uint8Array(signature))}`
 }
 
 /** Verify a session access token: signature first, then expiry. */
@@ -106,7 +106,7 @@ export async function verifyAccessToken(
   const payload = body.slice(0, separator)
   const signature = body.slice(separator + 1)
   const expected = await crypto.subtle.sign('HMAC', await signingKey(env), new TextEncoder().encode(payload))
-  if (!timingSafeEquals(signature, base64url(new Uint8Array(expected)))) return null
+  if (!timingSafeEquals(signature, toBase64url(new Uint8Array(expected)))) return null
   let decoded: string
   try {
     decoded = new TextDecoder().decode(fromBase64url(payload))
@@ -221,20 +221,24 @@ export async function revokeMemberSessions(env: Env, memberId: string, now: numb
     .run()
 }
 
+/** One cookie of the request, or null when it is not present. */
+export function cookieValue(request: Request, name: string): string | null {
+  const header = request.headers.get('cookie')
+  if (header === null) return null
+  for (const part of header.split(';')) {
+    const [key, ...rest] = part.trim().split('=')
+    if (key === name && rest.length > 0) return rest.join('=')
+  }
+  return null
+}
+
 function bearerFromRequest(request: Request): string | null {
   const header = request.headers.get('authorization')
   if (header && header.toLowerCase().startsWith('bearer ')) {
     const value = header.slice(7).trim()
     if (value !== '') return value
   }
-  const cookies = request.headers.get('cookie')
-  if (cookies) {
-    for (const part of cookies.split(';')) {
-      const [name, ...rest] = part.trim().split('=')
-      if (name === SESSION_COOKIE && rest.length > 0) return rest.join('=')
-    }
-  }
-  return null
+  return cookieValue(request, SESSION_COOKIE)
 }
 
 /**

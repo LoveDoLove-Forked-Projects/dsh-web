@@ -350,3 +350,64 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 export { worker, workerEnv }
+function base64urlOf(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
+}
+
+/** A base64url state value the authorize endpoint accepts (32 random bytes). */
+export function oauthState(fill = 7): string {
+  return base64urlOf(new Uint8Array(32).fill(fill))
+}
+
+/** RFC 7636 S256: base64url(sha256(verifier)). */
+export async function pkceChallenge(verifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+  return base64urlOf(new Uint8Array(digest))
+}
+
+export interface IosLoginOptions {
+  verifier?: string
+  state?: string
+  challenge?: string
+}
+
+/**
+ * The full iOS flow: authorize with a PKCE challenge, receive the GitHub code
+ * through the app scheme, then exchange it at POST /auth/token.
+ */
+export async function iosLogin(env: Env, account: string, options: IosLoginOptions = {}): Promise<ApiResult> {
+  const verifier = options.verifier ?? 'verifier-for-' + account + '-0123456789abcdef'
+  const state = options.state ?? oauthState(account.length)
+  const challenge = options.challenge ?? (await pkceChallenge(verifier))
+  const authorize = await api(env, 'GET', '/auth/github/authorize', {
+    query: {
+      client: 'ios',
+      redirect_uri: 'whale://auth/callback',
+      state,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+    },
+  })
+  if (authorize.status !== 302) throw new Error('ios authorize failed: ' + authorize.text)
+  const callback = await api(env, 'GET', '/auth/github/callback', { query: { code: account, state } })
+  if (callback.status !== 302) throw new Error('ios callback failed: ' + callback.text)
+  return api(env, 'POST', '/auth/token', {
+    body: { code: account, code_verifier: verifier, redirect_uri: 'whale://auth/callback' },
+  })
+}
+
+/** Start a web authorization and return the state cookie the browser would keep. */
+export async function webAuthorize(
+  env: Env,
+  options: { redirectUri?: string; state?: string } = {},
+): Promise<{ state: string; cookie: string }> {
+  const state = options.state ?? oauthState(9)
+  const response = await api(env, 'GET', '/auth/github/authorize', {
+    query: { client: 'web', redirect_uri: options.redirectUri ?? 'https://hub.example/app', state },
+  })
+  const raw = response.headers.get('set-cookie') ?? ''
+  const cookie = raw.split(';')[0] ?? ''
+  return { state, cookie }
+}

@@ -157,6 +157,39 @@ describe('channel connection', () => {
     expect(body.error.code).toBe('UNAUTHORIZED')
   })
 
+  it('member is refused a socket that carries the token in the query string', async () => {
+    // Given a valid member session token
+    const context = await fixture()
+
+    // When the token is smuggled through the URL instead of the header
+    const response = await upgrade(
+      context.env,
+      '/api/v1/teams/' + context.team.teamId + '/ws',
+      { query: { protocol_version: '1.0.0', token: context.memberToken } },
+    )
+
+    // Then the handshake is refused, because tokens never belong in a URL
+    expect(response.status).toBe(401)
+    const body = (await response.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('UNAUTHORIZED')
+  })
+
+  it('member is refused a socket without any protocol version', async () => {
+    // Given a valid member session token
+    const context = await fixture()
+
+    // When the handshake declares no version, neither in the query nor in a header
+    const response = await upgrade(context.env, '/api/v1/teams/' + context.team.teamId + '/ws', {
+      token: context.memberToken,
+      omitProtocol: true,
+    })
+
+    // Then version negotiation refuses it before the socket opens
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('UNSUPPORTED_PROTOCOL_VERSION')
+  })
+
   it('member is told to resync when connecting without a sequence', async () => {
     // Given a channel that already published host status changes, which a
     // fresh connection does not know about

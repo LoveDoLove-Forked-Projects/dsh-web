@@ -1,4 +1,4 @@
-import { OAUTH_STATE_TTL_MS } from '../constants'
+import { OAUTH_STATE_TTL_MS, REFRESH_TOKEN_TTL_MS } from '../constants'
 import { fail } from '../errors'
 import {
   GITHUB_API_BASE,
@@ -8,7 +8,15 @@ import {
   transportOf,
 } from '../outbound'
 import type { MemberRow } from '../types'
-import { base64urlByteLength, issueSession, type SessionTokens } from './session'
+import {
+  base64urlByteLength,
+  cookieValue,
+  issueSession,
+  REFRESH_COOKIE,
+  SESSION_COOKIE,
+  toBase64url,
+  type SessionTokens,
+} from './session'
 
 export interface AuthorizeRequest {
   client: 'web' | 'ios'
@@ -114,14 +122,29 @@ export function parseAuthorizeRequest(url: URL): AuthorizeRequest {
   }
 }
 
-function redirect(location: string, headers: Record<string, string> = {}): Response {
-  return new Response(null, { status: 302, headers: { location, ...headers } })
+function redirect(location: string, cookies: string[] = []): Response {
+  const headers = new Headers({ location })
+  for (const cookie of cookies) headers.append('set-cookie', cookie)
+  return new Response(null, { status: 302, headers })
 }
+
+/** Supplement A4.8: the pending authorization state, bound to the browser that started it. */
+export const OAUTH_STATE_COOKIE = 'th_oauth_state'
 
 /** Serialise one session cookie; the Web GUI never reads these from JavaScript. */
 export function sessionCookie(name: string, value: string, maxAgeSeconds: number): string {
   return name + '=' + value + '; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=' + maxAgeSeconds
 }
+
+/** The pair the web flow writes after the callback and after every refresh. */
+function sessionCookies(tokens: SessionTokens): string[] {
+  return [
+    sessionCookie(SESSION_COOKIE, tokens.access_token, tokens.expires_in),
+    sessionCookie(REFRESH_COOKIE, tokens.refresh_token, Math.floor(REFRESH_TOKEN_TTL_MS / 1000)),
+  ]
+}
+
+export { sessionCookies }
 
 async function githubJson(env: Env, url: string, init: RequestInit): Promise<unknown> {
   const response = await transportOf(env)(url, init)
@@ -259,14 +282,15 @@ export async function beginAuthorize(env: Env, request: Request, now: number): P
     target.searchParams.set('code_challenge', params.codeChallenge)
     target.searchParams.set('code_challenge_method', 'S256')
   }
-  return redirect(target.toString())
+  const cookies =
+    params.client === 'web'
+      ? [sessionCookie(OAUTH_STATE_COOKIE, params.state, Math.floor(OAUTH_STATE_TTL_MS / 1000))]
+      : []
+  return redirect(target.toString(), cookies)
 }
 
-/**
- * Exchange an authorization code for a Hub session. Used by the Web callback
- * and by POST /auth/token, which is how the iOS app finishes the PKCE flow.
- */
-export async function completeAuthorizationCode(
+/** Exchange an authorization code at GitHub and open a Hub session. */
+export async function signInWithCode(
   env: Env,
   options: { code: string; codeVerifier: string | null; redirectUri: string; now: number },
 ): Promise<{ member: MemberRow; tokens: SessionTokens }> {
@@ -275,6 +299,44 @@ export async function completeAuthorizationCode(
   const member = await resolveMemberForGithubUser(env, user, options.now)
   const session = await issueSession(env, member, options.now)
   return { member, tokens: session.tokens }
+}
+
+/**
+ * Supplement A4.8: the hub checks the PKCE verifier itself. POST /auth/token
+ * carries only the code, so the pending authorization is found by that code and
+ * compared against the challenge the client stored at authorize time.
+ */
+async function verifyPkce(env: Env, code: string, codeVerifier: string | null, now: number): Promise<OauthStateRow> {
+  const row = await env.DB.prepare('SELECT * FROM oauth_states WHERE code = ?').bind(code).first<OauthStateRow>()
+  if (!row || row.expires_at <= now) {
+    fail('INVALID_OAUTH_CODE', 'The authorization code is unknown or expired.')
+  }
+  if (row.code_challenge !== null) {
+    if (codeVerifier === null || codeVerifier === '') {
+      fail('INVALID_PKCE', 'code_verifier is required for a PKCE authorization.', { field: 'code_verifier' })
+    }
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier))
+    const computed = toBase64url(new Uint8Array(digest))
+    if (computed !== row.code_challenge) {
+      fail('INVALID_PKCE', 'code_verifier does not match the stored code_challenge.')
+    }
+  }
+  return row
+}
+
+/**
+ * Exchange an authorization code for a Hub session. Used by POST /auth/token,
+ * which is how the iOS app finishes the PKCE flow: the verifier is verified
+ * here before GitHub is called, and the pending authorization is consumed once.
+ */
+export async function completeAuthorizationCode(
+  env: Env,
+  options: { code: string; codeVerifier: string | null; redirectUri: string; now: number },
+): Promise<{ member: MemberRow; tokens: SessionTokens }> {
+  const row = await verifyPkce(env, options.code, options.codeVerifier, options.now)
+  const result = await signInWithCode(env, options)
+  await env.DB.prepare('DELETE FROM oauth_states WHERE state = ?').bind(row.state).run()
+  return result
 }
 
 /** GET /auth/github/callback: finish the Web login or hand the code to the app. */
@@ -286,16 +348,22 @@ export async function handleCallback(env: Env, request: Request, now: number): P
   if (state === null || state === '') fail('INVALID_OAUTH_CODE', 'The callback carries no state.')
   const row = await env.DB.prepare('SELECT * FROM oauth_states WHERE state = ?').bind(state).first<OauthStateRow>()
   if (!row || row.expires_at <= now) fail('INVALID_OAUTH_CODE', 'The authorization state is unknown or expired.')
-  await env.DB.prepare('DELETE FROM oauth_states WHERE state = ?').bind(state).run()
+  if (row.client === 'web' && cookieValue(request, OAUTH_STATE_COOKIE) !== state) {
+    fail('INVALID_OAUTH_CODE', 'The callback state does not match the browser that started the login.')
+  }
 
   if (row.client === 'ios') {
+    // The app finishes the flow at POST /auth/token, so the code is recorded on
+    // the pending authorization instead of being consumed here.
+    await env.DB.prepare('UPDATE oauth_states SET code = ? WHERE state = ?').bind(code, state).run()
     const target = new URL(row.redirect_uri)
     target.searchParams.set('code', code)
     target.searchParams.set('state', state)
     return redirect(target.toString())
   }
 
-  const session = await completeAuthorizationCode(env, {
+  await env.DB.prepare('DELETE FROM oauth_states WHERE state = ?').bind(state).run()
+  const session = await signInWithCode(env, {
     code,
     codeVerifier: null,
     redirectUri: url.origin + GITHUB_CALLBACK_PATH,
@@ -303,7 +371,5 @@ export async function handleCallback(env: Env, request: Request, now: number): P
   })
   const target = new URL(row.redirect_uri)
   target.searchParams.set('state', state)
-  return redirect(target.toString(), {
-    'set-cookie': sessionCookie('th_session', session.tokens.access_token, session.tokens.expires_in),
-  })
+  return redirect(target.toString(), sessionCookies(session.tokens))
 }

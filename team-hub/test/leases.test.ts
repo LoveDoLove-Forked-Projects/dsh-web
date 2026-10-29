@@ -207,6 +207,68 @@ describe('claiming a lease', () => {
     expect(stored?.execution_attempt_id).toBe(first.body.execution_attempt_id)
   })
 
+  it('host is refused a claim on a todo issue', async () => {
+    // Given an agent card that nobody assigned yet
+    const fixture = await agentIssue()
+    await fixture.env.DB.prepare("UPDATE issues SET status = 'todo' WHERE id = ?").bind(fixture.issueId).run()
+
+    // When the host claims it
+    const claim = await api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), {
+      token: fixture.hostToken,
+      body: {},
+    })
+
+    // Then the state machine refuses the claim
+    expect(claim.status).toBe(422)
+    expect(claim.body.error.code).toBe('INVALID_STATE_TRANSITION')
+    expect(claim.body.error.details.status).toBe('todo')
+  })
+
+  it('host is refused a claim on a failed issue', async () => {
+    // Given an agent card whose last run failed
+    const fixture = await agentIssue()
+    await fixture.env.DB.prepare("UPDATE issues SET status = 'failed' WHERE id = ?").bind(fixture.issueId).run()
+
+    // When the host claims it instead of waiting for a retry
+    const claim = await api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), {
+      token: fixture.hostToken,
+      body: {},
+    })
+
+    // Then the claim is refused
+    expect(claim.status).toBe(422)
+    expect(claim.body.error.details.status).toBe('failed')
+  })
+
+  it('operator sees exactly one winner when two claims race for the same card', async () => {
+    // Given one agent card that two simultaneous claims aim at
+    const fixture = await agentIssue()
+
+    // When both claims arrive together
+    const [first, second] = await Promise.all([
+      api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), { token: fixture.hostToken, body: {} }),
+      api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), { token: fixture.hostToken, body: {} }),
+    ])
+
+    // Then one claim owns the card and the other is refused
+    const statuses = [first.status, second.status].sort()
+    expect(statuses).toEqual([200, 409])
+    const claims = await all<{ activity_type: string }>(
+      fixture.env,
+      "SELECT activity_type FROM activity WHERE issue_id = ? AND activity_type = 'issue.claimed'",
+      fixture.issueId,
+    )
+    expect(claims).toHaveLength(1)
+    const stored = await one<{ status: string; execution_attempt_id: string }>(
+      fixture.env,
+      'SELECT status, execution_attempt_id FROM issues WHERE id = ?',
+      fixture.issueId,
+    )
+    const winner = first.status === 200 ? first : second
+    expect(stored).toMatchObject({ status: 'running' })
+    expect(stored?.execution_attempt_id).toBe(winner.body.execution_attempt_id)
+  })
+
   it('host is refused a claim on an issue that is already done', async () => {
     // Given an agent issue that a human canceled
     const fixture = await agentIssue()
@@ -419,6 +481,47 @@ describe('settlement', () => {
     // Then the hub reports the expired lease
     expect(settled.status).toBe(412)
     expect(settled.body.error.code).toBe('LEASE_EXPIRED')
+  })
+
+  it('host sees the pending rework signal on the issue and settlement clears it', async () => {
+    // Given a card whose review was rejected, so it carries rework instructions
+    const fixture = await agentIssue()
+    const claimed = await api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), {
+      token: fixture.hostToken,
+      body: {},
+    })
+    await api(fixture.env, 'POST', '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId + '/settle', {
+      token: fixture.hostToken,
+      body: { outcome: 'succeeded', execution_attempt_id: claimed.body.execution_attempt_id },
+    })
+    await api(fixture.env, 'POST', '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId + '/review/reject', {
+      token: fixture.memberToken,
+      body: { instructions: 'Add the regression test' },
+    })
+
+    // When the host finds it through the issue list, claims it and settles
+    const listed = await api(fixture.env, 'GET', '/api/v1/teams/' + fixture.teamId + '/issues', {
+      token: fixture.hostToken,
+      query: { status: 'assigned' },
+    })
+    const pending = listed.body.issues.find((issue: { id: string }) => issue.id === fixture.issueId)
+    const rework = await api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), {
+      token: fixture.hostToken,
+      body: {},
+    })
+    await api(fixture.env, 'POST', '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId + '/settle', {
+      token: fixture.hostToken,
+      body: { outcome: 'succeeded', execution_attempt_id: rework.body.execution_attempt_id },
+    })
+
+    // Then the signal was visible while assigned and is gone after the run
+    expect(pending).toMatchObject({ status: 'assigned', rework_instructions: 'Add the regression test' })
+    const stored = await one<{ status: string; rework_instructions: string | null }>(
+      fixture.env,
+      'SELECT status, rework_instructions FROM issues WHERE id = ?',
+      fixture.issueId,
+    )
+    expect(stored).toEqual({ status: 'in_review', rework_instructions: null })
   })
 
   it('host settlement is idempotent when replayed', async () => {

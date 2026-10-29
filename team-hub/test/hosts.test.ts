@@ -41,6 +41,68 @@ describe('host registration', () => {
     expect(host.agents.every((agent) => agent.status === 'idle' && agent.host_id === host.hostId)).toBe(true)
   })
 
+  it('host registration answers with the hub agent ids and stores the binding', async () => {
+    // Given an admin session and a Host that reports a model and an effort
+    const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
+    const team = await seedTeam(env)
+    const adminToken = await tokenFor(env, team.admin)
+    const minted = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/hosts/tokens', {
+      token: adminToken,
+      body: { hostname: 'host-a' },
+    })
+
+    // When the Host registers with its agent definitions
+    const registered = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/hosts/register', {
+      token: minted.body.host_token as string,
+      body: {
+        hostname: 'host-a',
+        client_version: '0.2.1-rc.3',
+        agents: [
+          { name: 'qa-bot', preset_id: 'liangshen', model: 'deepseek/deepseek-v4', reasoning_effort: 'high' },
+          { name: 'review-bot', preset_id: 'reviewer' },
+        ],
+      },
+    })
+
+    // Then the response maps every name to a hub agent id and the row keeps the binding
+    expect(registered.status).toBe(200)
+    expect(registered.body).toEqual({
+      host_id: minted.body.host_id,
+      status: 'online',
+      agents: [
+        { id: expect.any(String), name: 'qa-bot' },
+        { id: expect.any(String), name: 'review-bot' },
+      ],
+    })
+    const stored = await all<{ name: string; preset_id: string; model: string | null; reasoning_effort: string | null }>(
+      env,
+      'SELECT name, preset_id, model, reasoning_effort FROM agents WHERE host_id = ? ORDER BY name',
+      minted.body.host_id,
+    )
+    expect(stored).toEqual([
+      { name: 'qa-bot', preset_id: 'liangshen', model: 'deepseek/deepseek-v4', reasoning_effort: 'high' },
+      { name: 'review-bot', preset_id: 'reviewer', model: null, reasoning_effort: null },
+    ])
+  })
+
+  it('host is refused an agent definition without a preset', async () => {
+    // Given a registered Host
+    const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
+    const team = await seedTeam(env)
+    const host = await seedHost(env, team.teamId, await tokenFor(env, team.admin), { hostname: 'host-a', agents: [] })
+
+    // When it reports an agent with an empty preset
+    const registered = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/hosts/register', {
+      token: host.hostToken,
+      body: { hostname: 'host-a', client_version: '1.0.0', agents: [{ name: 'ghost-bot', preset_id: '' }] },
+    })
+
+    // Then the definition is refused
+    expect(registered.status).toBe(400)
+    expect(registered.body.error.code).toBe('VALIDATION_FAILED')
+    expect(registered.body.error.details.field).toBe('agents')
+  })
+
   it('host re-registration updates an agent and retires one it no longer advertises', async () => {
     // Given a registered Host with two agents
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)

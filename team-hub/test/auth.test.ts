@@ -3,9 +3,13 @@ import {
   api,
   createEnv,
   externalTransport,
+  iosLogin,
+  oauthState,
   one,
+  pkceChallenge,
   seedTeam,
   T0,
+  webAuthorize,
   type GithubAccount,
 } from './helpers'
 import { PROTOCOL_HEADER } from '../src/constants'
@@ -150,29 +154,46 @@ describe('oauth callback and token exchange', () => {
     expect(location.searchParams.get('state')).toBe(state())
   })
 
-  it('user receives a web session cookie after the web callback', async () => {
-    // Given a web authorization for a member of a seeded team
+  it('user receives both session cookies after the web callback', async () => {
+    // Given a web authorization started by a browser, which keeps the state cookie
     const team = await seedTeam(createEnv(externalTransport({ github: { accounts: [] } }).transport))
     const outbound = externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } })
     const env = createEnv(outbound.transport)
-    await api(env, 'GET', '/auth/github/authorize', {
-      query: { client: 'web', redirect_uri: 'https://hub.example/app', state: state() },
-    })
+    const started = await webAuthorize(env)
 
-    // When GitHub redirects back with a valid code
+    // When GitHub redirects back with the same state in the query and the cookie
     const result = await api(env, 'GET', '/auth/github/callback', {
-      query: { code: 'octocat', state: state() },
+      query: { code: 'octocat', state: started.state },
+      headers: { cookie: started.cookie },
     })
 
-    // Then the member is redirected into the app with a session cookie
+    // Then the app receives an access cookie and a refresh cookie
     expect(result.status).toBe(302)
-    expect(result.headers.get('location')).toBe('https://hub.example/app?state=' + state())
-    const cookie = result.headers.get('set-cookie') as string
-    expect(cookie).toContain('th_session=th_usr_')
-    expect(cookie).toContain('HttpOnly')
+    expect(result.headers.get('location')).toBe('https://hub.example/app?state=' + started.state)
+    const cookies = result.headers.getSetCookie()
+    expect(cookies.some((value) => value.startsWith('th_session=th_usr_'))).toBe(true)
+    expect(cookies.some((value) => value.startsWith('th_refresh=th_ref_'))).toBe(true)
+    expect(cookies.every((value) => value.includes('HttpOnly') && value.includes('Secure') && value.includes('SameSite=Lax'))).toBe(true)
     const member = await one<{ status: string }>(env, 'SELECT status FROM members WHERE github_username = ?', 'octocat')
     expect(member?.status).toBe('active')
     expect(team.teamId.startsWith('team_')).toBe(true)
+  })
+
+  it('member is refused the web callback when the state cookie is missing', async () => {
+    // Given a web authorization whose state cookie the browser did not keep
+    const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
+    await seedTeam(env)
+    const started = await webAuthorize(env)
+
+    // When the callback arrives with the state but without that cookie
+    const result = await api(env, 'GET', '/auth/github/callback', {
+      query: { code: 'octocat', state: started.state },
+    })
+
+    // Then the login is refused
+    expect(result.status).toBe(400)
+    expect(result.body.error.code).toBe('INVALID_OAUTH_CODE')
+    expect(result.body.error.message).toContain('state')
   })
 
   it('user is rejected when the callback state is unknown', async () => {
@@ -194,10 +215,8 @@ describe('oauth callback and token exchange', () => {
     await seedTeam(createEnv(externalTransport({ github: { accounts: [] } }).transport))
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
 
-    // When the app exchanges the authorization code with its verifier
-    const result = await api(env, 'POST', '/auth/token', {
-      body: { code: 'hubot', code_verifier: 'verifier-value', redirect_uri: 'whale://auth/callback' },
-    })
+    // When the app finishes the iOS flow with its verifier
+    const result = await iosLogin(env, 'hubot')
 
     // Then a dual token pair and the member come back
     expect(result.status).toBe(200)
@@ -208,21 +227,48 @@ describe('oauth callback and token exchange', () => {
     expect(result.body.member.github_username).toBe('hubot')
   })
 
-  it('user is told the PKCE exchange failed when GitHub rejects the verifier', async () => {
-    // Given a seeded team and a GitHub that rejects the exchange
+  it('user is refused when the PKCE verifier does not match the stored challenge', async () => {
+    // Given an iOS authorization whose challenge was derived from one verifier
     await seedTeam(createEnv(externalTransport({ github: { accounts: [] } }).transport))
-    const env = createEnv(
-      externalTransport({ github: { accounts: [OCTOCAT], rejectCodes: ['octocat'] } }).transport,
-    )
+    const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
+    const verifier = 'correct-verifier-0123456789abcdef'
+    const started = await api(env, 'GET', '/auth/github/authorize', {
+      query: {
+        client: 'ios',
+        redirect_uri: 'whale://auth/callback',
+        state: oauthState(3),
+        code_challenge: await pkceChallenge(verifier),
+        code_challenge_method: 'S256',
+      },
+    })
+    expect(started.status).toBe(302)
+    await api(env, 'GET', '/auth/github/callback', { query: { code: 'octocat', state: oauthState(3) } })
 
-    // When the app exchanges a code GitHub refuses
+    // When the app presents a different verifier
     const result = await api(env, 'POST', '/auth/token', {
-      body: { code: 'octocat', code_verifier: 'wrong', redirect_uri: 'whale://auth/callback' },
+      body: { code: 'octocat', code_verifier: 'wrong-verifier-0123456789abcdef', redirect_uri: 'whale://auth/callback' },
     })
 
-    // Then the PKCE failure is reported
+    // Then the hub rejects it before GitHub is called
     expect(result.status).toBe(400)
     expect(result.body.error.code).toBe('INVALID_PKCE')
+    const sessions = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM refresh_tokens')
+    expect(sessions?.n).toBe(0)
+  })
+
+  it('user is refused the token endpoint without a pending authorization', async () => {
+    // Given a hub with no authorization in flight
+    const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
+    await seedTeam(env)
+
+    // When the app posts a code nobody started
+    const result = await api(env, 'POST', '/auth/token', {
+      body: { code: 'octocat', code_verifier: 'verifier-0123456789abcdef', redirect_uri: 'whale://auth/callback' },
+    })
+
+    // Then the code is refused
+    expect(result.status).toBe(400)
+    expect(result.body.error.code).toBe('INVALID_OAUTH_CODE')
   })
 
   it('user is refused a session when their GitHub account is not on the team', async () => {
@@ -234,9 +280,7 @@ describe('oauth callback and token exchange', () => {
     )
 
     // When the stranger logs in
-    const result = await api(envWithStranger, 'POST', '/auth/token', {
-      body: { code: 'stranger', code_verifier: 'verifier', redirect_uri: 'whale://auth/callback' },
-    })
+    const result = await iosLogin(envWithStranger, 'stranger')
 
     // Then the login is forbidden and no session was created
     expect(result.status).toBe(403)
@@ -259,9 +303,7 @@ describe('session lifecycle', () => {
     // Given a member with a session
     await seedTeam(createEnv(externalTransport({ github: { accounts: [] } }).transport))
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
-    const issued = await api(env, 'POST', '/auth/token', {
-      body: { code: 'hubot', code_verifier: 'verifier', redirect_uri: 'whale://auth/callback' },
-    })
+    const issued = await iosLogin(env, 'hubot')
     const firstRefresh = issued.body.refresh_token as string
 
     // When the client refreshes the session
@@ -270,6 +312,7 @@ describe('session lifecycle', () => {
     // Then a new pair is returned, the old refresh token is dead, and the new
     // access token is accepted by an authenticated endpoint
     expect(refreshed.status).toBe(200)
+    expect(refreshed.body.expires_in).toBe(7200)
     expect(refreshed.body.refresh_token).not.toBe(firstRefresh)
     expect(refreshed.body.member.github_username).toBe('hubot')
     const replay = await api(env, 'POST', '/auth/refresh', { body: { refresh_token: firstRefresh } })
@@ -284,9 +327,7 @@ describe('session lifecycle', () => {
     // Given a member with a session
     await seedTeam(createEnv(externalTransport({ github: { accounts: [] } }).transport))
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
-    const issued = await api(env, 'POST', '/auth/token', {
-      body: { code: 'hubot', code_verifier: 'verifier', redirect_uri: 'whale://auth/callback' },
-    })
+    const issued = await iosLogin(env, 'hubot')
     const accessToken = issued.body.access_token as string
     const refreshToken = issued.body.refresh_token as string
 
@@ -306,9 +347,7 @@ describe('session lifecycle', () => {
     // Given a member whose token was issued at the current instant
     const team = await seedTeam(createEnv(externalTransport({ github: { accounts: [] } }).transport))
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
-    const issued = await api(env, 'POST', '/auth/token', {
-      body: { code: 'hubot', code_verifier: 'verifier', redirect_uri: 'whale://auth/callback' },
-    })
+    const issued = await iosLogin(env, 'hubot')
     expect(team.teamId).toBe(issued.body.member.team_id)
 
     // When two hours pass
@@ -324,9 +363,7 @@ describe('session lifecycle', () => {
     // Given a member of one team
     const team = await seedTeam(createEnv(externalTransport({ github: { accounts: [] } }).transport))
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
-    const issued = await api(env, 'POST', '/auth/token', {
-      body: { code: 'octocat', code_verifier: 'verifier', redirect_uri: 'whale://auth/callback' },
-    })
+    const issued = await iosLogin(env, 'octocat')
 
     // When the client asks who it is
     const me = await api(env, 'GET', '/api/v1/me', { token: issued.body.access_token as string })
@@ -367,9 +404,7 @@ describe('protocol version gate', () => {
     // Given a seeded team and an admin session
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT] } }).transport)
     const team = await seedTeam(env)
-    const issued = await api(env, 'POST', '/auth/token', {
-      body: { code: 'octocat', code_verifier: 'verifier', redirect_uri: 'whale://auth/callback' },
-    })
+    const issued = await iosLogin(env, 'octocat')
 
     // When the client declares a compatible newer minor version
     const result = await api(env, 'GET', '/api/v1/teams/' + team.teamId + '/members', {

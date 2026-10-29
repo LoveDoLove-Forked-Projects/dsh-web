@@ -19,7 +19,7 @@ export const HEARTBEAT_INTERVAL_MS = 15_000
 export const HOST_OFFLINE_THRESHOLD_MS = 45_000
 /** Section 13: the Host renews a lease at this cadence. */
 export const LEASE_RENEWAL_CADENCE_MS = 20_000
-/** Section 13: session access token lifetime. */
+/** Section 13: session access token lifetime; expires_in reports this in seconds (7200). */
 export const ACCESS_TOKEN_TTL_MS = 7_200_000
 /** Section 13: session refresh token lifetime. */
 export const REFRESH_TOKEN_TTL_MS = 2_592_000_000
@@ -54,8 +54,8 @@ export const RATE_LIMIT_WINDOW_MS = 60_000
 export const RATE_LIMIT_AUTH_PER_IP = 20
 /** Section 11: member API requests per member per window. */
 export const RATE_LIMIT_MEMBER = 120
-/** Section 11: host execution requests per host per window. */
-export const RATE_LIMIT_HOST = 30
+/** Supplement A4.6: host execution requests per host per window. */
+export const RATE_LIMIT_HOST = 120
 /** Section 11: WebSocket frames per connection per window. */
 export const RATE_LIMIT_WS_FRAMES = 60
 

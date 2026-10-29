@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, createEnv, externalTransport, one, seedHost, seedTeam, T0, tokenFor, type GithubAccount } from './helpers'
+import {
+  api,
+  createEnv,
+  externalTransport,
+  iosLogin,
+  one,
+  seedHost,
+  seedTeam,
+  T0,
+  tokenFor,
+  type GithubAccount,
+} from './helpers'
 
 const OCTOCAT: GithubAccount = { id: 1001, login: 'octocat', name: 'Octo Cat', avatar_url: 'https://img/octo.png' }
 const HUBOT: GithubAccount = { id: 1002, login: 'hubot', name: 'Hub Ot', avatar_url: 'https://img/hubot.png' }
@@ -85,8 +96,8 @@ describe('team members', () => {
       body: { github_username: 'ghost', role: 'member' },
     })
 
-    // Then the missing GitHub account is reported
-    expect(result.status).toBe(400)
+    // Then the missing GitHub account is reported as not found
+    expect(result.status).toBe(404)
     expect(result.body.error.code).toBe('USER_NOT_FOUND')
   })
 
@@ -102,8 +113,8 @@ describe('team members', () => {
       body: { github_username: 'hubot', role: 'member' },
     })
 
-    // Then the duplicate membership is reported
-    expect(result.status).toBe(400)
+    // Then the duplicate membership is a conflict
+    expect(result.status).toBe(409)
     expect(result.body.error.code).toBe('ALREADY_MEMBER')
   })
 
@@ -117,10 +128,8 @@ describe('team members', () => {
       body: { github_username: 'newcomer', role: 'member' },
     })
 
-    // When that person completes the login
-    const login = await api(env, 'POST', '/auth/token', {
-      body: { code: 'newcomer', code_verifier: 'verifier', redirect_uri: 'whale://auth/callback' },
-    })
+    // When that person completes the iOS login
+    const login = await iosLogin(env, 'newcomer')
 
     // Then the membership is active and the session belongs to it
     expect(login.status).toBe(200)

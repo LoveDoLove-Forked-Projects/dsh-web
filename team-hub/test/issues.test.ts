@@ -298,6 +298,20 @@ describe('issue listing and editing', () => {
     expect(fetched.body.issue.lease_token).toBeUndefined()
   })
 
+  it('member is told the issue does not exist', async () => {
+    // Given a member session and no such issue
+    const { env, team, memberToken } = await fixture()
+
+    // When the member reads an unknown issue id
+    const fetched = await api(env, 'GET', '/api/v1/teams/' + team.teamId + '/issues/issue_missing', {
+      token: memberToken,
+    })
+
+    // Then the missing issue is reported as not found
+    expect(fetched.status).toBe(404)
+    expect(fetched.body.error.code).toBe('ISSUE_NOT_FOUND')
+  })
+
   it('member is refused an issue of another team', async () => {
     // Given an issue in one team
     const { env, memberToken } = await fixture()
@@ -328,11 +342,11 @@ describe('human driven transitions', () => {
   })
 
   it('member submits an assigned member issue for review', async () => {
-    // Given an issue assigned to a member with a reviewer
+    // Given an issue assigned to the member with the admin as reviewer
     const { env, team, memberToken } = await fixture()
     const created = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/issues', {
       token: memberToken,
-      body: { title: 'needs review', assignee_type: 'member', assignee_id: team.admin.id, reviewer_member_id: team.member.id },
+      body: { title: 'needs review', assignee_type: 'member', assignee_id: team.member.id, reviewer_member_id: team.admin.id },
     })
 
     // When the assignee submits it for review
@@ -368,11 +382,11 @@ describe('human driven transitions', () => {
   })
 
   it('member completes a member issue that has no reviewer', async () => {
-    // Given an assigned member issue with no reviewer
+    // Given an issue assigned to the member with no reviewer
     const { env, team, memberToken } = await fixture()
     const created = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/issues', {
       token: memberToken,
-      body: { title: 'direct done', assignee_type: 'member', assignee_id: team.admin.id },
+      body: { title: 'direct done', assignee_type: 'member', assignee_id: team.member.id },
     })
 
     // When the assignee marks it done
@@ -385,6 +399,30 @@ describe('human driven transitions', () => {
     expect(patched.body.issue.status).toBe('done')
     const activity = await all<{ activity_type: string }>(env, 'SELECT activity_type FROM activity WHERE issue_id = ?', created.body.issue.id)
     expect(activity.map((row) => row.activity_type)).toContain('issue.completed')
+  })
+
+  it('member who is not the assignee is refused submission for review', async () => {
+    // Given an issue assigned to the admin with a reviewer
+    const { env, team, memberToken } = await fixture()
+    const created = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/issues', {
+      token: memberToken,
+      body: {
+        title: 'someone else card',
+        assignee_type: 'member',
+        assignee_id: team.admin.id,
+        reviewer_member_id: team.admin.id,
+      },
+    })
+
+    // When a member who is neither the assignee nor an admin submits it
+    const patched = await api(env, 'PATCH', '/api/v1/teams/' + team.teamId + '/issues/' + created.body.issue.id, {
+      token: memberToken,
+      body: { status: 'in_review' },
+    })
+
+    // Then the transition is forbidden for them
+    expect(patched.status).toBe(403)
+    expect(patched.body.error.code).toBe('FORBIDDEN')
   })
 
   it('member is refused direct completion when a reviewer is set', async () => {
