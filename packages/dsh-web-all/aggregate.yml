@@ -21,6 +21,10 @@ patchFrom:
   # （GitHub Issues 同步），聚合展开的行序就是浏览器半区与宿主半区的装载
   # 顺序，扩展向看板的提供方席位登记之前看板必须先就位。
   - ../dsh-task-board-github
+  # dsh-task-board-team 是看板的第二个外部提供方（团队协作 / team-hub），同样
+  # 必须排在 `../dsh-task-board` 之后：它向看板的提供方席位与能力面登记，装载顺序
+  # 反了只是多等一次服务，但两份清单保持「提供方紧跟看板」的同一读法。
+  - ../dsh-task-board-team
   # dsh-agents 紧跟在看板这一对之后：它也是「定义 + 真实会话执行」的家族面，用户在同
   # 一处找它们。这只是阅读上的归类，没有装载顺序依赖——它只用官方服务（宿主半区
   # systemPrompt / typertGateway / webServer，浏览器半区 locale / renderer / sidebar /
@@ -72,6 +76,8 @@ deps:
   # 排在 ../dsh-task-board 之后：扩展依赖看板的提供方契约，deps 顺序与
   # patchFrom 顺序保持一致便于对照。
   - ../dsh-task-board-github
+  # 与 patchFrom 同序：看板的第二个提供方（团队协作）紧跟 github 提供方。
+  - ../dsh-task-board-team
   # 与 patchFrom 同序：dsh-agents 的行紧跟看板这一对之后（理由见上）。
   - ../dsh-agents
   - ../dsh-git-graph
