@@ -15,7 +15,7 @@ The team collaboration system connects multiple DeepSeek Harness (DSH) Host node
 `team-hub` is authoritative over collaboration fields (issues, assignees, collaboration status including `in_review`, comments, activity stream, pending questions). The Host executing the card is authoritative over execution (sessions, local workspace execution, automated acceptance, process execution sandbox). Neither domain may override or bypass the authority of the other.
 
 ### Protocol Version and Version Negotiation
-The protocol version string follows Semantic Versioning (`MAJOR.MINOR.PATCH`). The current protocol version defined by this document is `1.0.0`. All HTTP REST requests MUST include the header `X-Team-Hub-Protocol-Version: 1.0.0`. All WebSocket connection handshakes MUST supply `protocol_version=1.0.0` as a query parameter or include the `X-Team-Hub-Protocol-Version` header.
+The protocol version string follows Semantic Versioning (`MAJOR.MINOR.PATCH`). The current protocol version defined by this document is `1.0.0`. All HTTP REST requests MUST include the header `X-Team-Hub-Protocol-Version: 1.0.0`, with the exception of `GET /auth/github/authorize` and `GET /auth/github/callback` which are initiated via browser navigation and external OAuth redirect and cannot carry custom request headers. All WebSocket connection handshakes MUST supply `protocol_version=1.0.0` as a query parameter or include the `X-Team-Hub-Protocol-Version` header.
 
 | Condition | Server Response | Behavior |
 | --- | --- | --- |
@@ -28,7 +28,7 @@ The protocol version string follows Semantic Versioning (`MAJOR.MINOR.PATCH`). T
 The system identifies three classes of actors: human team members, execution nodes (Hosts), and autonomous Agents bound to Hosts.
 
 ### Human Authentication via GitHub OAuth
-Human team members authenticate exclusively through GitHub OAuth. No custom password or credentials database is maintained on the Hub.
+Human team members authenticate exclusively through GitHub OAuth. No custom password or credentials database is maintained on the Hub. Both `GET /auth/github/authorize` and `GET /auth/github/callback` are browser-navigated endpoints and are exempt from the `X-Team-Hub-Protocol-Version` header check.
 
 | Platform | OAuth Flow | Mechanics |
 | --- | --- | --- |
@@ -120,15 +120,15 @@ Execution nodes (Hosts) authenticate using a dedicated Host Token minted by a te
 | Storage | Plaintext token is returned exactly once at issuance. D1 stores SHA-256 hash (`token_hash`). |
 | Scope | Restricted strictly to Host execution endpoints: host registration, heartbeats, task claiming, lease renewal, question submission, settlement write-back, and agent comments. |
 | Restrictions | A Host Token cannot access administrative endpoints, invite members, modify team settings, create issues, or approve human reviews. |
-| Revocation | Team administrators can revoke any Host Token immediately via `POST /api/v1/teams/:teamId/hosts/:hostId/revoke-token`. Revoked tokens return `401 Unauthorized`. |
+| Revocation | Team administrators can revoke any Host Token immediately via `POST /api/v1/teams/:teamId/hosts/:hostId/revoke-token`. Revoked tokens return `401 Unauthorized`. In agent listings, agents bound to a revoked Host report `host_status: 'offline'`. |
 
 ### Member Invitation and Management
 Team administrators invite members by their GitHub username.
 
 | Step | Actor | Action | Result |
 | --- | --- | --- | --- |
-| 1 | Admin | Calls `POST /api/v1/teams/:teamId/members/invite` with `github_username` and `role`. | Member record created with status `invited`. |
-| 2 | Invitee | Authenticates via GitHub OAuth on Web or iOS Whale App. | Hub matches GitHub username, marks status `active`, and binds `github_user_id`. |
+| 1 | Admin | Calls `POST /api/v1/teams/:teamId/members/invite` with `github_username` and `role`. Hub resolves `github_user_id` via GitHub API `GET https://api.github.com/users/:username`. | Member record created with status `invited` and resolved `github_user_id`. |
+| 2 | Invitee | Authenticates via GitHub OAuth on Web or iOS Whale App. | Hub matches GitHub username, marks status `active`, and verifies `github_user_id`. |
 | 3 | Admin | Calls `DELETE /api/v1/teams/:teamId/members/:memberId` to remove a member. | Member status set to `suspended`; active sessions revoked immediately. |
 
 ## 3. D1 Database Schema
@@ -175,6 +175,30 @@ CREATE TABLE members (
   UNIQUE(team_id, github_username)
 );
 CREATE INDEX idx_members_team_status ON members(team_id, status);
+
+-- Refresh tokens table
+CREATE TABLE refresh_tokens (
+  id TEXT PRIMARY KEY,
+  member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE INDEX idx_refresh_tokens_member ON refresh_tokens(member_id);
+CREATE INDEX idx_refresh_tokens_session ON refresh_tokens(session_id);
+
+-- OAuth pending authorization states table
+CREATE TABLE oauth_states (
+  state TEXT PRIMARY KEY,
+  client TEXT NOT NULL CHECK(client IN ('web', 'ios')),
+  redirect_uri TEXT NOT NULL,
+  code_challenge TEXT,
+  code_challenge_method TEXT,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
 
 -- Execution Hosts table
 CREATE TABLE hosts (
@@ -226,6 +250,8 @@ CREATE TABLE issues (
   lease_expires_at INTEGER,
   execution_attempt_id TEXT,
   execution_summary TEXT,
+  rework_instructions TEXT,
+  failure_error TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE(team_id, issue_number)
@@ -310,6 +336,14 @@ CREATE TABLE push_tokens (
   UNIQUE(member_id, device_token)
 );
 CREATE INDEX idx_push_tokens_member ON push_tokens(member_id);
+
+-- Rate limiting persistent counters table
+CREATE TABLE rate_limits (
+  bucket_key TEXT NOT NULL,
+  window_start INTEGER NOT NULL,
+  request_count INTEGER NOT NULL,
+  PRIMARY KEY (bucket_key, window_start)
+);
 ```
 
 ## 4. Issue State Machine
@@ -337,6 +371,8 @@ When a Host node is offline, any issue assigned to an Agent bound to that Host r
 | `failed` | `assigned` | Retry execution | Human | Issue in `failed` status; human triggers retry; clears failure error. | `issue.retried` |
 | Any active state | `canceled` | Cancel task | Human | User cancels issue before completion. | `issue.canceled` |
 
+Human-driven lifecycle transitions (`submit-for-review` -> `in_review`, `complete task directly` -> `done`, `retry execution` -> `assigned`, and `cancel task` -> `canceled`) are performed via `PATCH /api/v1/teams/:teamId/issues/:issueId` with `{ status }` in the request body, and are validated strictly against the matrix preconditions. Disallowed transitions return HTTP `422 Unprocessable Entity` (`INVALID_STATE_TRANSITION`).
+
 ## 5. Host Execution Protocol
 
 The DSH Host plugin `@linxin666/dsh-task-board-team` coordinates local card execution with the Hub.
@@ -349,7 +385,7 @@ The DSH Host plugin `@linxin666/dsh-task-board-team` coordinates local card exec
 5. If Hub receives no heartbeat for 45,000 ms (3 consecutive misses), Hub marks host `offline` and marks running tasks `waiting_host`.
 
 ### Claiming Agent Cards and Lease Management
-1. Host queries `GET /api/v1/teams/:teamId/issues?assignee_host_id=:hostId&status=assigned,waiting_host`.
+1. Host queries `GET /api/v1/teams/:teamId/issues?assignee_host_id=:hostId&status=assigned,waiting_host`. The endpoint supports `assignee_host_id` and comma-separated `status` filters. When authenticated via Host Token, the returned issues are strictly scoped to cards assigned to agents bound to that Host.
 2. Host issues an atomic claim call: `POST /api/v1/teams/:teamId/issues/:issueId/claim`.
 3. Hub verifies the issue is assigned to an agent bound to this Host, issues a unique `lease_token` (UUIDv4), sets `lease_expires_at = now + 60000` ms, generates `execution_attempt_id`, transitions status to `running`, and returns the lease.
 4. While execution is active, Host renews the lease every 20,000 ms via `POST /api/v1/teams/:teamId/issues/:issueId/renew-lease`, passing `lease_token`.
@@ -364,8 +400,10 @@ If network connectivity drops temporarily or the Host process restarts:
 
 ### Settlement Write-Back
 When local execution completes:
-1. Success path: Automated acceptance passes on the Host. Host calls `POST /api/v1/teams/:teamId/issues/:issueId/settle` with `outcome: "succeeded"`, `summary`, and verification evidence. Hub transitions status to `in_review`.
-2. Failure path: Agent fails or automated acceptance is blocked. Host calls settle endpoint with `outcome: "failed"` and failure text. Hub transitions status to `failed`.
+1. Success path: Automated acceptance passes on the Host. Host calls `POST /api/v1/teams/:teamId/issues/:issueId/settle` with `outcome: "succeeded"`, optional `execution_attempt_id`, `summary`, and verification evidence. Hub transitions status to `in_review`.
+2. Failure path: Agent fails or automated acceptance is blocked. Host calls settle endpoint with `outcome: "failed"`, optional `execution_attempt_id`, and failure text. Hub transitions status to `failed`.
+
+Late settlement and lease expiration: The `settle` endpoint accepts an optional `execution_attempt_id`. If the active lease has expired, the Hub permits late settlement write-back only when the supplied `execution_attempt_id` matches the issue's current `execution_attempt_id`; otherwise, the Hub rejects the call with HTTP `412 Precondition Failed` (`LEASE_EXPIRED`).
 
 ## 6. Help-seeking and Questions
 
@@ -385,7 +423,7 @@ When an agent needs human guidance or user confirmation during execution, it rou
 A question terminates in one of three ways: answered, expired, or withdrawn.
 1. Answered: A human responds first, transitioning the question to `answered` and broadcasting `question.answered` (Step 5 above).
 2. Expired: If a pending question reaches its 24-hour TTL (86,400,000 ms) without an answer, the Hub marks question status `expired`, records `question.expired` activity, and broadcasts WebSocket event `question.expired` with `{ question_id, issue_id }`. The executing Host receives the event and resolves the waiting session question as unanswered / timed out, allowing the agent to proceed with default assumptions or pause.
-3. Withdrawn: If the agent cancels or aborts execution locally before an answer arrives, the Host calls `POST /api/v1/teams/:teamId/questions/:questionId/withdraw`. The Hub verifies the question is pending, marks status `dismissed`, records `question.withdrawn` activity, and broadcasts WebSocket event `question.withdrawn` with `{ question_id, issue_id }` so mobile and web clients dismiss the prompt.
+3. Withdrawn: If the agent cancels or aborts execution locally before an answer arrives, the Host calls `POST /api/v1/teams/:teamId/questions/:questionId/withdraw`. Only the Host that submitted the question (`host_id`) or a team administrator may withdraw the question. Calls by another Host return `403 Forbidden` (`HOST_MISMATCH`), and calls by non-admin members return `403 Forbidden` (`FORBIDDEN`). The Hub verifies the question is pending, marks status `dismissed`, records `question.withdrawn` activity, and broadcasts WebSocket event `question.withdrawn` with `{ question_id, issue_id }` so mobile and web clients dismiss the prompt.
 
 ### Question Queries
 Team members can query questions across the team via:
@@ -552,11 +590,11 @@ When automated acceptance passes on the Host, the issue transitions to `in_revie
 
 ### Approval
 1. Reviewer inspects execution output, diffs, and verification summary.
-2. Reviewer calls `POST /api/v1/teams/:teamId/issues/:issueId/review/approve`.
+2. Reviewer or team administrator calls `POST /api/v1/teams/:teamId/issues/:issueId/review/approve`. Only the designated `reviewer_member_id` or an admin may approve; calls by other members return `403 Forbidden` (`FORBIDDEN`).
 3. Hub transitions issue status to `done` and records `issue.approved` activity.
 
 ### Rejection and Rework
-1. Reviewer calls `POST /api/v1/teams/:teamId/issues/:issueId/review/reject` with `instructions`.
+1. Reviewer or team administrator calls `POST /api/v1/teams/:teamId/issues/:issueId/review/reject` with `instructions`. Only the designated `reviewer_member_id` or an admin may reject and request rework; calls by other members return `403 Forbidden` (`FORBIDDEN`).
 2. Hub stores rework instructions on the issue, clears any active lease, transitions issue status to `assigned` (or `waiting_host` if the bound Host is offline), and records `issue.rework_requested` activity.
 3. Hub delivers WebSocket event `issue.rework` with rework instructions to the bound Host as a notification signal to claim the card.
 4. Bound Host receives `issue.rework`, generates a new `execution_attempt_id`, and calls `POST /api/v1/teams/:teamId/issues/:issueId/claim` to acquire an active lease; only after the claim succeeds does it invoke the DSH task board extension capability `rework` (M0) to re-run the task in the same session (`reuseSession`) feeding rework instructions into the session context; if the claim fails, the Host aborts execution and records a local error without starting the rework session.
@@ -580,27 +618,27 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `GET` | `/api/v1/teams/:teamId/members` | Member | None | `{ members: Member[] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/members/invite` | Admin | `{ github_username, role }` | `{ member: Member }` | 201, 400, 403 | `USER_NOT_FOUND`, `ALREADY_MEMBER` |
 | `DELETE` | `/api/v1/teams/:teamId/members/:memberId` | Admin | None | `{ ok: true }` | 200, 403, 404 | `MEMBER_NOT_FOUND` |
-| `GET` | `/api/v1/teams/:teamId/agents` | Member | None | `{ agents: [{ id, name, host_id, owner_member_id, host_status }] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
+| `GET` | `/api/v1/teams/:teamId/agents` | Member | None | `{ agents: [{ id, name, host_id, owner_member_id, host_status }] }` (revoked hosts report `host_status: "offline"`) | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/hosts/tokens` | Admin | `{ hostname }` | `{ host_id, host_token }` | 201, 403 | `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/hosts/:hostId/revoke-token` | Admin | None | `{ ok: true }` | 200, 403, 404 | `HOST_NOT_FOUND` |
 | `POST` | `/api/v1/teams/:teamId/hosts/register` | Host | `{ hostname, client_version, agents: AgentDef[] }` | `{ host_id, status }` | 200, 401 | `UNAUTHORIZED` |
 | `POST` | `/api/v1/teams/:teamId/hosts/:hostId/heartbeat` | Host | None | `{ ok: true, server_time }` | 200, 401, 404 | `HOST_NOT_FOUND` |
-| `GET` | `/api/v1/teams/:teamId/issues` | Member/Host | None (query filters `status`, `assignee`) | `{ issues: Issue[] }` | 200, 401 | `UNAUTHORIZED` |
+| `GET` | `/api/v1/teams/:teamId/issues` | Member/Host | None (query filters: `status` [comma-separated, e.g. `assigned,waiting_host`], `assignee`, `assignee_host_id`) | `{ issues: Issue[] }` (Host Token restricted to its bound agents) | 200, 401 | `UNAUTHORIZED` |
 | `POST` | `/api/v1/teams/:teamId/issues` | Member | `{ title, description?, assignee_type?, assignee_id?, reviewer_member_id? }` | `{ issue: Issue }` | 201, 400, 401 | `VALIDATION_FAILED` |
 | `GET` | `/api/v1/teams/:teamId/issues/:issueId` | Member/Host | None | `{ issue: Issue }` | 200, 401, 404 | `ISSUE_NOT_FOUND` |
-| `PATCH` | `/api/v1/teams/:teamId/issues/:issueId` | Member | `{ title?, description?, assignee_type?, assignee_id?, reviewer_member_id?, status? }` | `{ issue: Issue }` | 200, 400, 401 | `INVALID_STATE_TRANSITION` |
+| `PATCH` | `/api/v1/teams/:teamId/issues/:issueId` | Member | `{ title?, description?, assignee_type?, assignee_id?, reviewer_member_id?, status? }` | `{ issue: Issue }` | 200, 400, 401, 422 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `INVALID_STATE_TRANSITION` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/claim` | Host | `{ execution_attempt_id?, lease_token? }` | `{ lease_token, lease_expires_at, execution_attempt_id }` | 200, 401, 409 | `LEASE_HELD_BY_OTHER`, `HOST_MISMATCH` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/renew-lease` | Host | `{ lease_token }` | `{ lease_expires_at }` | 200, 401, 412 | `LEASE_EXPIRED` |
-| `POST` | `/api/v1/teams/:teamId/issues/:issueId/settle` | Host | `{ outcome, summary?, error?, verification_evidence? }` | `{ ok: true, status }` | 200, 401, 412 | `LEASE_EXPIRED` |
-| `POST` | `/api/v1/teams/:teamId/issues/:issueId/review/approve` | Member | None | `{ ok: true, status: "done" }` | 200, 401, 422 | `INVALID_STATE_TRANSITION` |
-| `POST` | `/api/v1/teams/:teamId/issues/:issueId/review/reject` | Member | `{ instructions }` | `{ ok: true, status: "assigned" }` | 200, 400, 422 | `INVALID_STATE_TRANSITION` |
+| `POST` | `/api/v1/teams/:teamId/issues/:issueId/settle` | Host | `{ outcome, execution_attempt_id?, summary?, error?, verification_evidence? }` | `{ ok: true, status }` | 200, 400, 401, 412 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `LEASE_EXPIRED` |
+| `POST` | `/api/v1/teams/:teamId/issues/:issueId/review/approve` | Reviewer/Admin | None | `{ ok: true, status: "done" }` | 200, 401, 403, 422 | `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_STATE_TRANSITION` |
+| `POST` | `/api/v1/teams/:teamId/issues/:issueId/review/reject` | Reviewer/Admin | `{ instructions }` | `{ ok: true, status: "assigned" }` | 200, 400, 401, 403, 422 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_STATE_TRANSITION` |
 | `GET` | `/api/v1/teams/:teamId/issues/:issueId/comments` | Member/Host | None | `{ comments: Comment[] }` | 200, 401, 404 | `ISSUE_NOT_FOUND` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/comments` | Member/Host | `{ content, author_type?, author_agent_id? }` | `{ comment: Comment }` | 201, 400, 401 | `VALIDATION_FAILED` |
 | `GET` | `/api/v1/teams/:teamId/issues/:issueId/activity` | Member | None (query params `before`, `limit`) | `{ activity: Activity[], next_cursor: string | null }` | 200, 400, 401, 403, 404 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `ISSUE_NOT_FOUND` |
 | `GET` | `/api/v1/teams/:teamId/questions` | Member | None (query filters `status`, `issue_id`) | `{ questions: Question[] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/questions` | Host | `{ question_text, options?, multi_select? }` | `{ question: Question }` | 201, 400, 401 | `VALIDATION_FAILED` |
 | `POST` | `/api/v1/teams/:teamId/questions/:questionId/answer` | Member | `{ selected: string[], custom?: string }` | `{ ok: true }` | 200, 400, 401, 409 | `VALIDATION_FAILED`, `QUESTION_ALREADY_ANSWERED` |
-| `POST` | `/api/v1/teams/:teamId/questions/:questionId/withdraw` | Host | None | `{ ok: true, status: "dismissed" }` | 200, 401, 404, 409 | `QUESTION_NOT_PENDING`, `HOST_MISMATCH` |
+| `POST` | `/api/v1/teams/:teamId/questions/:questionId/withdraw` | Host/Admin | None | `{ ok: true, status: "dismissed" }` | 200, 401, 403, 404, 409 | `UNAUTHORIZED`, `FORBIDDEN`, `HOST_MISMATCH`, `QUESTION_NOT_PENDING` |
 | `POST` | `/api/v1/push-tokens` | Member | `{ platform, device_token, bundle_id, environment }` | `{ ok: true }` | 200, 400, 401 | `VALIDATION_FAILED` |
 | `DELETE` | `/api/v1/push-tokens/:token` | Member | None | `{ ok: true }` | 200, 401 | `UNAUTHORIZED` |
 
@@ -676,6 +714,11 @@ Each team is backed by one Durable Object (`TeamChannelDO`). Clients connect to:
 | `resume` | Client -> DO | `{ "t": "resume", "since_seq": <number> }` | Requests replaying missed events from `since_seq`. |
 | `event` | DO -> Client | `{ "t": "event", "seq": <number>, "event": "<name>", "payload": {...}, "ts": <number> }` | Broadcasts real-time team mutations. |
 | `resync_required` | DO -> Client | `{ "t": "resync_required", "reason": "<reason>", "latest_seq": <number> }` | Sent when `since_seq` is too old; client must re-fetch full state via REST. |
+
+#### WebSocket Close Codes
+When a WebSocket connection violates transmission rate limits or payload constraints, the Durable Object terminates the connection immediately using standard WebSocket close codes:
+- `1008` (Policy Violation): Rate limit exceeded (`RATE_LIMITED`).
+- `1009` (Message Too Big): Inbound message exceeds frame size limit (`PAYLOAD_TOO_LARGE`).
 
 ### WebSocket Event Types
 
@@ -793,12 +836,12 @@ The Hub communicates directly with Apple Push Notification service (APNs) over H
 | Issue activity stream (`/api/v1/teams/:teamId/issues/:issueId/activity`) | Yes | Yes | No | No |
 | Issue claiming and lease renewal | No | No | Yes | No |
 | Issue settlement write-back | No | No | Yes | No |
-| Human review approve / reject | Yes | Yes | No | No |
+| Human review approve / reject | Yes | Reviewer only | No | No |
 | Comment submission | Yes | Yes | Yes (Agent comments only) | No |
 | Question queries (`/api/v1/teams/:teamId/questions`) | Yes | Yes | No | No |
 | Question submission | No | No | Yes | No |
 | Question answering | Yes | Yes | No | No |
-| Question withdrawal | Yes | No | Yes | No |
+| Question withdrawal | Yes | No | Asking Host only | No |
 | Push token registration | Yes | Yes | No | No |
 
 ### Rate Limiting
@@ -808,7 +851,7 @@ The Hub communicates directly with Apple Push Notification service (APNs) over H
 | Authentication routes (`/auth/*`) | 60,000 ms (1 minute) | 20 requests per client IP |
 | Member API routes | 60,000 ms (1 minute) | 120 requests per member ID |
 | Host execution routes | 60,000 ms (1 minute) | 30 requests per host ID |
-| WebSocket frame transmissions | 60,000 ms (1 minute) | 60 frames per connection |
+| WebSocket frame transmissions | 60,000 ms (1 minute) | 60 frames per connection (violations close socket with code `1008` `RATE_LIMITED`) |
 
 ### Payload Size Limits
 
@@ -819,10 +862,10 @@ The Hub communicates directly with Apple Push Notification service (APNs) over H
 | Comment text | 32,768 bytes (32 KiB) |
 | Execution summary | 4,000 characters (aligned with DSH `EXECUTION_SUMMARY_LIMIT`) |
 | Total HTTP request body | 131,072 bytes (128 KiB) |
-| WebSocket text frame | 65,536 bytes (64 KiB) |
+| WebSocket text frame | 65,536 bytes (64 KiB) (violations close socket with code `1009` `PAYLOAD_TOO_LARGE`) |
 
 ### Audit Logging
-All state-modifying actions record an immutable record in the `activity` table. Activity stream entries are append-only. No API endpoint exists to update or delete activity records.
+All state-modifying actions on issues record an immutable record in the `activity` table. Activity stream entries are append-only. No API endpoint exists to update or delete activity records. Because `activity.issue_id` is a required foreign key (`NOT NULL REFERENCES issues(id)`), team-level operations (such as member invitations and member removals) do not record activity entries; all issue-scoped actions are recorded.
 
 Members can query the paginated activity stream for an issue via `GET /api/v1/teams/:teamId/issues/:issueId/activity?before=<activity_id>&limit=<1..100>` (default limit 50), which returns `{ activity: Activity[], next_cursor: string | null }`. Host Tokens cannot call this endpoint.
 
