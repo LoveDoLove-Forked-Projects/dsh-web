@@ -210,6 +210,30 @@ describe('settlement write-back', () => {
     expect(harness.hub.calls.filter(call => call.path.endsWith('/settle'))).toHaveLength(settles)
   })
 
+  it('operator sees a settlement refused for an unknown Host Token kept for the corrected token', async () => {
+    // Given a claimed card whose write-back meets a token the hub does not recognize
+    harness = makeHarness()
+    const { taskId, executionId } = await claimedCard(harness)
+    harness.hub.settleFailures.push({ status: 401, code: 'UNAUTHORIZED' })
+
+    // When the settlement is refused
+    harness.board.extensions.emitExecutionSettled({ taskId, executionId, outcome: 'succeeded' })
+    await flush()
+
+    // Then the outcome stays owed with its attempt, because a corrected token can still deliver it
+    const link = readTaskIssueLink(harness.tasks()[0])
+    expect(link?.pendingSettle?.execution_attempt_id).toBe('attempt_1')
+    expect(link?.attemptId).toBe('attempt_1')
+
+    // When the next sweep runs with the hub accepting again
+    await harness.service().sweep()
+    await flush()
+
+    // Then the same outcome lands and the debt is cleared
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('in_review')
+    expect(readTaskIssueLink(harness.tasks()[0])?.pendingSettle).toBeUndefined()
+  })
+
   it('operator sees a settlement lost to the network kept and retried by the next sweep', async () => {
     // Given a claimed card whose settlement never reached the hub
     harness = makeHarness()

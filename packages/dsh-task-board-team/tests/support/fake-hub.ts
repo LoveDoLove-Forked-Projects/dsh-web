@@ -311,11 +311,16 @@ export class FakeHub {
       && presentedLease !== undefined && presentedLease === issue.leaseToken
       && presentedAttempt === issue.attemptId
     if (issue.status === 'assigned' || issue.status === 'waiting_host') {
-      this.attempt += 1
-      this.lease += 1
+      // The real hub keeps a presented attempt and lease that still match the
+      // issue (team-hub/src/domain/leases.ts:65-79): a lapsed lease does not clear
+      // lease_token, so the Host whose run is still going gets the same attempt back.
+      if (!reconnecting) {
+        this.attempt += 1
+        this.lease += 1
+        issue.attemptId = 'attempt_' + String(this.attempt)
+        issue.leaseToken = 'lease_' + String(this.lease)
+      }
       issue.status = 'running'
-      issue.attemptId = 'attempt_' + String(this.attempt)
-      issue.leaseToken = 'lease_' + String(this.lease)
       issue.leaseExpiresAt = Date.now() + 60_000
       return await this.held(this.answerChecked(sample, 200, {
         lease_token: issue.leaseToken,

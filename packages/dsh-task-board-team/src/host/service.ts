@@ -1334,6 +1334,10 @@ function isSettlementFinal(error: unknown): boolean {
   if (!(error instanceof HubError)) return false
   if (error.code === 'LEASE_EXPIRED') return true
   if (error.status < 400 || error.status >= 500) return false
+  // 401 means this Host's token is unknown or revoked, which the operator fixes
+  // by pasting the right one; a 4xx without the hub's error envelope came from
+  // something in front of the hub (a CDN or firewall), not from its gates.
+  if (error.status === 401 || error.code === 'HTTP_' + String(error.status)) return false
   return error.status !== 408 && error.status !== 429
 }
 

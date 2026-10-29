@@ -95,7 +95,7 @@ describe('claiming team issues', () => {
     expect(afterTwo).toBe(before + 2)
   })
 
-  it('operator sees a lapsed lease claimed again without a second card or session', async () => {
+  it('operator sees a reconnect re-establish the attempt without a second card or session', async () => {
     // Given a claimed issue already executing in one session
     harness = makeHarness()
     harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
@@ -112,11 +112,13 @@ describe('claiming team issues', () => {
     await vi.advanceTimersByTimeAsync(1_000)
     await flush()
 
-    // Then the issue was claimed again for the card already mirrored here: one card, one session
+    // Then the same attempt was re-established: one card, one session, attempt_1 kept
     expect(harness.tasks()).toHaveLength(1)
     expect(harness.creates).toHaveLength(1)
     const reclaims = harness.hub.calls.filter(call => call.path.endsWith('/claim') && (call.body as { execution_attempt_id?: string }).execution_attempt_id !== undefined)
     expect(reclaims.length).toBeGreaterThanOrEqual(1)
+    expect(harness.hub.issues.get('issue_1')?.attemptId).toBe('attempt_1')
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('running')
   })
 
   it('operator sees the member preset pinned on the mirror card and the card started', async () => {
