@@ -1,0 +1,35 @@
+{
+  "interface": "issues.settle",
+  "description": "Write back the execution outcome; success enters in_review and clears any pending rework instructions.",
+  "method": "POST",
+  "path": "/api/v1/teams/:teamId/issues/:issueId/settle",
+  "auth": "Host",
+  "request": {
+    "headers": {
+      "Authorization": "Bearer th_host_<64 hex characters>",
+      "Content-Type": "application/json",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    },
+    "body": {
+      "outcome": "succeeded",
+      "summary": "All contract tests pass",
+      "verification_evidence": {
+        "suite": "pnpm test",
+        "passed": 160,
+        "failed": 0
+      },
+      "execution_attempt_id": "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "status": "in_review"
+    }
+  },
+  "notes": [
+    "outcome is either succeeded or failed; failure carries error and moves the card to failed along with failure_error on the issue.",
+    "Settlement clears rework_instructions, so the pending rework signal disappears with the run that consumed it."
+  ]
+}

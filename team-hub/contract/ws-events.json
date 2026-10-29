@@ -1,0 +1,184 @@
+{
+  "interface": "websocket.events",
+  "description": "Every event the channel can send, with the payload the Host has to understand.",
+  "events": [
+    {
+      "event": "issue.created",
+      "recipient": "all",
+      "payload": {
+        "issue": {
+          "id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+          "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
+          "issue_number": 14,
+          "title": "Confirm the API endpoint",
+          "description": "",
+          "status": "assigned",
+          "creator_member_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
+          "assignee_type": "agent",
+          "assignee_member_id": null,
+          "assignee_agent_id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8",
+          "reviewer_member_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
+          "executing_host_id": null,
+          "lease_expires_at": null,
+          "has_lease": false,
+          "execution_attempt_id": null,
+          "execution_summary": null,
+          "rework_instructions": "Add the regression test before settling again",
+          "failure_error": null,
+          "created_at": 1700000000000,
+          "updated_at": 1700000000000
+        }
+      }
+    },
+    {
+      "event": "issue.updated",
+      "recipient": "all",
+      "payload": {
+        "issue": {
+          "id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+          "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
+          "issue_number": 14,
+          "title": "Confirm the API endpoint",
+          "description": "",
+          "status": "assigned",
+          "creator_member_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
+          "assignee_type": "agent",
+          "assignee_member_id": null,
+          "assignee_agent_id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8",
+          "reviewer_member_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
+          "executing_host_id": null,
+          "lease_expires_at": null,
+          "has_lease": false,
+          "execution_attempt_id": null,
+          "execution_summary": null,
+          "rework_instructions": "Add the regression test before settling again",
+          "failure_error": null,
+          "created_at": 1700000000000,
+          "updated_at": 1700000000000
+        },
+        "changed_fields": [
+          "status",
+          "rework_instructions"
+        ]
+      }
+    },
+    {
+      "event": "issue.status_changed",
+      "recipient": "all",
+      "payload": {
+        "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+        "old_status": "running",
+        "new_status": "assigned"
+      }
+    },
+    {
+      "event": "issue.claimed",
+      "recipient": "all",
+      "payload": {
+        "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+        "executing_host_id": "host_01j7b5w8m4f9q2e3r6t1y8u4i7"
+      }
+    },
+    {
+      "event": "issue.rework",
+      "recipient": "bound host",
+      "payload": {
+        "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+        "instructions": "Add the regression test before settling again",
+        "reviewer_member_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6"
+      }
+    },
+    {
+      "event": "comment.created",
+      "recipient": "all",
+      "payload": {
+        "comment": {
+          "id": "comm_01j7b5w8m4f9q2e3r6t1y8u4ia",
+          "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
+          "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+          "author_type": "agent",
+          "author_member_id": null,
+          "author_agent_id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8",
+          "content": "Starting the run, will report back.",
+          "created_at": 1700000000000,
+          "updated_at": 1700000000000
+        }
+      }
+    },
+    {
+      "event": "comment.mentioned",
+      "recipient": "bound host",
+      "payload": {
+        "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+        "comment_id": "comm_01j7b5w8m4f9q2e3r6t1y8u4ia",
+        "author": "Octo Cat",
+        "content": "@qa-bot please pick this up"
+      }
+    },
+    {
+      "event": "question.created",
+      "recipient": "all",
+      "payload": {
+        "question": {
+          "id": "ques_01j7b5w8m4f9q2e3r6t1y8u4ic",
+          "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+          "text": "Which endpoint should ship first?",
+          "options": [
+            {
+              "label": "Plan A",
+              "description": "Ship the v1 endpoint"
+            },
+            {
+              "label": "Plan B",
+              "description": "Stage it behind a flag"
+            }
+          ],
+          "multi_select": false,
+          "status": "pending",
+          "answer": null,
+          "first_responder_member_id": null,
+          "created_at": 1700000000000,
+          "answered_at": null
+        }
+      }
+    },
+    {
+      "event": "question.answered",
+      "recipient": "all",
+      "payload": {
+        "question_id": "ques_01j7b5w8m4f9q2e3r6t1y8u4ic",
+        "answer": {
+          "selected": [
+            "Plan A"
+          ],
+          "custom": "Ship the v1 endpoint first"
+        },
+        "responder_member_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6"
+      }
+    },
+    {
+      "event": "question.expired",
+      "recipient": "all",
+      "payload": {
+        "question_id": "ques_01j7b5w8m4f9q2e3r6t1y8u4ic",
+        "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9"
+      }
+    },
+    {
+      "event": "question.withdrawn",
+      "recipient": "all",
+      "payload": {
+        "question_id": "ques_01j7b5w8m4f9q2e3r6t1y8u4ic",
+        "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9"
+      }
+    },
+    {
+      "event": "host.status_changed",
+      "recipient": "all",
+      "payload": {
+        "host_id": "host_01j7b5w8m4f9q2e3r6t1y8u4i7",
+        "status": "offline"
+      }
+    }
+  ]
+}

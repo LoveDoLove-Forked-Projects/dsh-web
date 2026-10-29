@@ -1,0 +1,27 @@
+{
+  "interface": "issues.claim",
+  "description": "Atomic claim of one card for the host that owns its agent; the reconnect variant returns the same attempt.",
+  "method": "POST",
+  "path": "/api/v1/teams/:teamId/issues/:issueId/claim",
+  "auth": "Host",
+  "request": {
+    "headers": {
+      "Authorization": "Bearer th_host_<64 hex characters>",
+      "Content-Type": "application/json",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "lease_token": "1f0c6c2e-5b5a-4f3e-9d47-6a1b2c3d4e5f",
+      "lease_expires_at": 1700000060000,
+      "execution_attempt_id": "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d"
+    }
+  },
+  "notes": [
+    "Reconnect sends { execution_attempt_id, lease_token } and receives the same pair back instead of a new attempt.",
+    "todo, failed, done, canceled and in_review are refused with 422 INVALID_STATE_TRANSITION; an active lease held by another attempt answers 409 LEASE_HELD_BY_OTHER."
+  ]
+}

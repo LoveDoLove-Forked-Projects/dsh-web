@@ -1,0 +1,24 @@
+{
+  "interface": "questions.withdraw",
+  "description": "The asking Host cancels a question before anyone answers it.",
+  "method": "POST",
+  "path": "/api/v1/teams/:teamId/questions/:questionId/withdraw",
+  "auth": "Host",
+  "request": {
+    "headers": {
+      "Authorization": "Bearer th_host_<64 hex characters>",
+      "Content-Type": "application/json",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "status": "dismissed"
+    }
+  },
+  "notes": [
+    "A question that is no longer pending answers 409 QUESTION_NOT_PENDING; another host answers 403 HOST_MISMATCH."
+  ]
+}

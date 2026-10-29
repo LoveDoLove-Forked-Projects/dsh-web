@@ -1,0 +1,51 @@
+{
+  "interface": "hosts.register",
+  "description": "The Host announces itself and the agents it owns; the response maps each name to the hub agent id.",
+  "method": "POST",
+  "path": "/api/v1/teams/:teamId/hosts/register",
+  "auth": "Host",
+  "request": {
+    "headers": {
+      "Authorization": "Bearer th_host_<64 hex characters>",
+      "Content-Type": "application/json",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    },
+    "body": {
+      "hostname": "macbook-pro-14",
+      "client_version": "0.2.1-rc.3",
+      "agents": [
+        {
+          "name": "qa-bot",
+          "preset_id": "liangshen",
+          "model": "deepseek/deepseek-v4",
+          "reasoning_effort": "max"
+        },
+        {
+          "name": "review-bot",
+          "preset_id": "reviewer"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "host_id": "host_01j7b5w8m4f9q2e3r6t1y8u4i7",
+      "status": "online",
+      "agents": [
+        {
+          "id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8",
+          "name": "qa-bot"
+        },
+        {
+          "id": "agent_01j7b5w8m4f9q2e3r6t1y8u4ia",
+          "name": "review-bot"
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Every agent needs a non-empty preset_id; the Host skips members without a preset instead of reporting them.",
+    "model and reasoning_effort are optional and describe the local binding."
+  ]
+}

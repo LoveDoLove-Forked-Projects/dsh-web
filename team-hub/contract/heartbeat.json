@@ -1,0 +1,24 @@
+{
+  "interface": "hosts.heartbeat",
+  "description": "Liveness of one Host; three missed intervals mark it offline.",
+  "method": "POST",
+  "path": "/api/v1/teams/:teamId/hosts/:hostId/heartbeat",
+  "auth": "Host",
+  "request": {
+    "headers": {
+      "Authorization": "Bearer th_host_<64 hex characters>",
+      "Content-Type": "application/json",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "server_time": 1700000000000
+    }
+  },
+  "notes": [
+    "The Host sends this every 15,000 ms; the hub marks it offline after 45,000 ms of silence."
+  ]
+}

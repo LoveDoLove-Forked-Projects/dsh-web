@@ -1,0 +1,57 @@
+{
+  "interface": "questions.create",
+  "description": "The Host routes an agent question to the reviewer of the card.",
+  "method": "POST",
+  "path": "/api/v1/teams/:teamId/issues/:issueId/questions",
+  "auth": "Host",
+  "request": {
+    "headers": {
+      "Authorization": "Bearer th_host_<64 hex characters>",
+      "Content-Type": "application/json",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    },
+    "body": {
+      "question_text": "Which endpoint should ship first?",
+      "options": [
+        {
+          "label": "Plan A",
+          "description": "Ship the v1 endpoint"
+        },
+        {
+          "label": "Plan B",
+          "description": "Stage it behind a flag"
+        }
+      ],
+      "multi_select": false
+    }
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "question": {
+        "id": "ques_01j7b5w8m4f9q2e3r6t1y8u4ic",
+        "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+        "text": "Which endpoint should ship first?",
+        "options": [
+          {
+            "label": "Plan A",
+            "description": "Ship the v1 endpoint"
+          },
+          {
+            "label": "Plan B",
+            "description": "Stage it behind a flag"
+          }
+        ],
+        "multi_select": false,
+        "status": "pending",
+        "answer": null,
+        "first_responder_member_id": null,
+        "created_at": 1700000000000,
+        "answered_at": null
+      }
+    }
+  },
+  "notes": [
+    "options is an array of objects with a label; the answer comes back through the question.answered event."
+  ]
+}

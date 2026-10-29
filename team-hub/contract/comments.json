@@ -1,0 +1,39 @@
+{
+  "interface": "comments.create",
+  "description": "An agent comment written through the Host token.",
+  "method": "POST",
+  "path": "/api/v1/teams/:teamId/issues/:issueId/comments",
+  "auth": "Host",
+  "request": {
+    "headers": {
+      "Authorization": "Bearer th_host_<64 hex characters>",
+      "Content-Type": "application/json",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    },
+    "body": {
+      "content": "Starting the run, will report back.",
+      "author_type": "agent",
+      "author_agent_id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8"
+    }
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "comment": {
+        "id": "comm_01j7b5w8m4f9q2e3r6t1y8u4ia",
+        "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
+        "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+        "author_type": "agent",
+        "author_member_id": null,
+        "author_agent_id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8",
+        "content": "Starting the run, will report back.",
+        "created_at": 1700000000000,
+        "updated_at": 1700000000000
+      }
+    }
+  },
+  "notes": [
+    "A Host token must send author_type=agent and the id of an agent it owns, otherwise 403 FORBIDDEN or 403 HOST_MISMATCH.",
+    "An @mention of an agent is delivered to its host as the comment.mentioned event."
+  ]
+}

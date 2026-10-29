@@ -1,0 +1,82 @@
+{
+  "interface": "websocket.handshake",
+  "description": "Opening the team channel: Bearer credentials in the header only, and the protocol version either as a query parameter or as a header.",
+  "url": "wss://<hub-domain>/api/v1/teams/:teamId/ws?protocol_version=1.0.0&since_seq=0",
+  "headers": {
+    "Authorization": "Bearer <member_session_access_token or th_host_ token>",
+    "X-Team-Hub-Protocol-Version": "1.0.0"
+  },
+  "rejected": [
+    {
+      "case": "token in the query string",
+      "example": "wss://<hub-domain>/api/v1/teams/:teamId/ws?token=th_usr_...&protocol_version=1.0.0",
+      "status": 401,
+      "error": "UNAUTHORIZED"
+    },
+    {
+      "case": "no protocol version",
+      "example": "wss://<hub-domain>/api/v1/teams/:teamId/ws?since_seq=0",
+      "status": 400,
+      "error": "UNSUPPORTED_PROTOCOL_VERSION"
+    },
+    {
+      "case": "no credentials",
+      "example": "wss://<hub-domain>/api/v1/teams/:teamId/ws?protocol_version=1.0.0",
+      "status": 401,
+      "error": "UNAUTHORIZED"
+    }
+  ],
+  "frames": {
+    "client": [
+      {
+        "t": "ping",
+        "ts": 1700000000000
+      },
+      {
+        "t": "resume",
+        "since_seq": 41
+      }
+    ],
+    "server": [
+      {
+        "t": "pong",
+        "ts": 1700000000000
+      },
+      {
+        "t": "resync_required",
+        "reason": "no_sequence",
+        "latest_seq": 42
+      },
+      {
+        "t": "event",
+        "seq": 42,
+        "event": "issue.created",
+        "payload": {
+          "issue": {
+            "id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+            "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
+            "issue_number": 14,
+            "title": "Confirm the API endpoint",
+            "description": "",
+            "status": "assigned",
+            "creator_member_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
+            "assignee_type": "agent",
+            "assignee_member_id": null,
+            "assignee_agent_id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8",
+            "reviewer_member_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
+            "executing_host_id": null,
+            "lease_expires_at": null,
+            "has_lease": false,
+            "execution_attempt_id": null,
+            "execution_summary": null,
+            "rework_instructions": "Add the regression test before settling again",
+            "failure_error": null,
+            "created_at": 1700000000000,
+            "updated_at": 1700000000000
+          }
+        },
+        "ts": 1700000000000
+      }
+    ]
+  }
+}
