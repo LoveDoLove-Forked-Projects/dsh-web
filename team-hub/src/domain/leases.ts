@@ -68,12 +68,12 @@ export async function claimIssue(
     presentedLease !== undefined &&
     presentedLease === issue.lease_token &&
     presentedAttempt === issue.execution_attempt_id
+  // Review R2: a fresh claim always starts a new execution attempt minted here.
+  // An identifier the Host presents is only honoured when the reconnect
+  // conditions hold, which is what keeps a late settlement from an earlier
+  // round from matching the current attempt.
   const leaseToken = reconnecting ? (issue.lease_token as string) : crypto.randomUUID()
-  const attemptId = reconnecting
-    ? (issue.execution_attempt_id as string)
-    : presentedAttempt !== undefined && presentedAttempt !== ''
-      ? presentedAttempt
-      : crypto.randomUUID()
+  const attemptId = reconnecting ? (issue.execution_attempt_id as string) : crypto.randomUUID()
 
   const claimed = await env.DB.prepare(
     "UPDATE issues SET status = 'running', lease_token = ?, lease_expires_at = ?, execution_attempt_id = ?, executing_host_id = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('assigned', 'waiting_host') AND assignee_agent_id IN (SELECT id FROM agents WHERE host_id = ?)",
@@ -177,6 +177,11 @@ export async function settleIssue(
   const summary = summaryWithinLimit(body.summary)
   const attemptMatches =
     body.execution_attempt_id !== undefined && body.execution_attempt_id === issue.execution_attempt_id
+  if (body.execution_attempt_id !== undefined && !attemptMatches) {
+    fail('LEASE_EXPIRED', 'This execution attempt is not the one running the issue.', {
+      execution_attempt_id: issue.execution_attempt_id,
+    })
+  }
 
   if (issue.status === 'in_review' || issue.status === 'failed') {
     if (body.execution_attempt_id === undefined || attemptMatches) {

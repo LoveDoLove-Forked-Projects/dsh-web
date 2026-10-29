@@ -123,6 +123,29 @@ describe('claiming a lease', () => {
     expect(stored?.status).toBe('waiting_host')
   })
 
+  it('host is given a hub minted attempt id on a fresh claim', async () => {
+    // Given an agent card and a Host that offers its own attempt identifier
+    const fixture = await agentIssue()
+
+    // When it claims the card with that identifier
+    const claim = await api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), {
+      token: fixture.hostToken,
+      body: { execution_attempt_id: 'host-chosen-attempt' },
+    })
+
+    // Then the hub mints a new attempt of its own, so an old identifier can
+    // never be recycled into a fresh execution
+    expect(claim.status).toBe(200)
+    expect(claim.body.execution_attempt_id).not.toBe('host-chosen-attempt')
+    expect(claim.body.execution_attempt_id).toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/)
+    const stored = await one<{ execution_attempt_id: string }>(
+      fixture.env,
+      'SELECT execution_attempt_id FROM issues WHERE id = ?',
+      fixture.issueId,
+    )
+    expect(stored?.execution_attempt_id).toBe(claim.body.execution_attempt_id)
+  })
+
   it('host is refused a claim while another attempt holds the lease', async () => {
     // Given a claimed issue
     const fixture = await agentIssue()
@@ -522,6 +545,93 @@ describe('settlement', () => {
       fixture.issueId,
     )
     expect(stored).toEqual({ status: 'in_review', rework_instructions: null })
+  })
+
+  it('host settlement from a previous attempt is refused after a rework round', async () => {
+    // Given a card that settled once, was rejected, and is running again under a new attempt
+    const fixture = await agentIssue()
+    const first = await api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), {
+      token: fixture.hostToken,
+      body: {},
+    })
+    await api(fixture.env, 'POST', '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId + '/settle', {
+      token: fixture.hostToken,
+      body: { outcome: 'succeeded', execution_attempt_id: first.body.execution_attempt_id },
+    })
+    await api(fixture.env, 'POST', '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId + '/review/reject', {
+      token: fixture.memberToken,
+      body: { instructions: 'Try again' },
+    })
+    const second = await api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), {
+      token: fixture.hostToken,
+      body: {},
+    })
+    expect(second.body.execution_attempt_id).not.toBe(first.body.execution_attempt_id)
+
+    // When the first attempt's settlement arrives late
+    const late = await api(
+      fixture.env,
+      'POST',
+      '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId + '/settle',
+      { token: fixture.hostToken, body: { outcome: 'succeeded', execution_attempt_id: first.body.execution_attempt_id } },
+    )
+
+    // Then it is refused and the second run is left running
+    expect(late.status).toBe(412)
+    expect(late.body.error.code).toBe('LEASE_EXPIRED')
+    const stored = await one<{ status: string; execution_attempt_id: string }>(
+      fixture.env,
+      'SELECT status, execution_attempt_id FROM issues WHERE id = ?',
+      fixture.issueId,
+    )
+    expect(stored).toMatchObject({ status: 'running' })
+    expect(stored?.execution_attempt_id).toBe(second.body.execution_attempt_id)
+  })
+
+  it('operator sees a retried card start from a clean attempt and lease', async () => {
+    // Given a card whose run failed
+    const fixture = await agentIssue()
+    const claim = await api(fixture.env, 'POST', claimPath(fixture.teamId, fixture.issueId), {
+      token: fixture.hostToken,
+      body: {},
+    })
+    await api(fixture.env, 'POST', '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId + '/settle', {
+      token: fixture.hostToken,
+      body: { outcome: 'failed', error: 'suite exploded', execution_attempt_id: claim.body.execution_attempt_id },
+    })
+
+    // When a human retries it
+    const retried = await api(fixture.env, 'PATCH', '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId, {
+      token: fixture.memberToken,
+      body: { status: 'assigned' },
+    })
+
+    // Then the failed attempt and its lease are gone, so nothing of that round
+    // can be settled against the next one
+    expect(retried.status).toBe(200)
+    const stored = await one<{
+      status: string
+      execution_attempt_id: string | null
+      lease_token: string | null
+      lease_expires_at: number | null
+    }>(
+      fixture.env,
+      'SELECT status, execution_attempt_id, lease_token, lease_expires_at FROM issues WHERE id = ?',
+      fixture.issueId,
+    )
+    expect(stored).toEqual({
+      status: 'assigned',
+      execution_attempt_id: null,
+      lease_token: null,
+      lease_expires_at: null,
+    })
+    const lateSettle = await api(
+      fixture.env,
+      'POST',
+      '/api/v1/teams/' + fixture.teamId + '/issues/' + fixture.issueId + '/settle',
+      { token: fixture.hostToken, body: { outcome: 'succeeded', execution_attempt_id: claim.body.execution_attempt_id } },
+    )
+    expect(lateSettle.status).toBe(412)
   })
 
   it('host settlement is idempotent when replayed', async () => {

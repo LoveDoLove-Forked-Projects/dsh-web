@@ -433,8 +433,14 @@ export async function patchIssue(
       if (issue.status !== 'failed') {
         fail('INVALID_STATE_TRANSITION', 'Only a failed issue can be retried.', { status: issue.status })
       }
+      // Review R2: the retry starts from a clean slate, so the failed run's
+      // attempt and lease cannot be reused or settled against.
       patch.status = 'assigned'
       patch.failure_error = null
+      patch.execution_attempt_id = null
+      patch.lease_token = null
+      patch.lease_expires_at = null
+      patch.executing_host_id = null
       activities.push({ type: 'issue.retried', payload: {} })
     } else {
       fail('INVALID_STATE_TRANSITION', 'The status ' + requestedStatus + ' is not a human-driven transition.', {
