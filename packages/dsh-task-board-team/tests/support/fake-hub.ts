@@ -55,6 +55,9 @@ interface FakeQuestion {
   answer: { selected: string[]; custom?: string } | null
 }
 
+/** One failure a test scripts for the next settlement; see {@link FakeHub.settleFailures}. */
+type SettleFailure = { status: number; code: string } | 'network' | 'lose-response'
+
 /** One comment row, in the wire shape `comments.json` and `comments-list.json` show. */
 interface FakeComment {
   id: string
@@ -108,8 +111,12 @@ export class FakeHub {
   failNextClaim: string | undefined
   /** When true the next question report is refused, as a hub outage would. */
   failNextQuestion = false
-  /** The refusal the next settlement answers with; absent means the hub accepts it. */
-  failNextSettle: { status: number; code: string } | undefined
+  /**
+   * The failures the next settlements meet, in order: a hub refusal, a transport
+   * error before anything was stored (`network`), or a lost answer after the hub
+   * really stored it (`lose-response`). An empty queue accepts every settlement.
+   */
+  readonly settleFailures: SettleFailure[] = []
   /** The frozen wire samples this checkout carries, when it carries them. */
   readonly contract: ContractSet = loadContractSamples()
   /** The server event catalogue every pushed frame is built from. */
@@ -280,12 +287,15 @@ export class FakeHub {
   }
 
   /**
-   * Claim one issue under the state gate of section 5.
+   * Claim one issue with the two legal shapes of `team-hub/src/domain/leases.ts`.
    *
-   * `todo` and `failed` are refused with 422, a reconnect is honoured only when
-   * its lease matches (otherwise 409, like any other attempt that already holds
-   * the lease), and a fresh claim always mints its own attempt id so the Host can
-   * never name one itself.
+   * The fresh claim (`leases.ts:79`) only moves a card in `assigned` or
+   * `waiting_host` and always mints its own attempt id, so the Host can never name
+   * one itself. The reconnect (`leases.ts:65`, `:87`) continues the attempt this
+   * Host already owns, and only when it presents BOTH the attempt and the lease
+   * the issue carries. Everything else is refused from the state the hub holds
+   * now (`leases.ts:96`): 409 while another attempt holds the lease, 422 for any
+   * status that cannot be claimed.
    */
   private async claim(issueId: string, body: Record<string, unknown>, sample: ContractSample | undefined): Promise<HubResponse> {
     const issue = this.issues.get(issueId)
@@ -295,68 +305,86 @@ export class FakeHub {
       this.failNextClaim = undefined
       return failure(403, code, 'the hub refused this claim')
     }
-    if (issue.status === 'todo' || issue.status === 'failed') {
-      return failure(422, 'INVALID_STATE_TRANSITION', 'this issue cannot be claimed in status ' + issue.status)
-    }
     const presentedAttempt = typeof body.execution_attempt_id === 'string' ? body.execution_attempt_id : undefined
     const presentedLease = typeof body.lease_token === 'string' ? body.lease_token : undefined
-    if (presentedAttempt !== undefined && issue.attemptId === presentedAttempt) {
-      // Section 5: matching attempt credentials re-establish the SAME lease and
-      // create no new execution; a lease another attempt holds is refused.
-      if (presentedLease !== undefined && issue.leaseToken !== undefined && presentedLease !== issue.leaseToken) {
-        return failure(409, 'LEASE_HELD_BY_OTHER', 'another attempt holds this lease')
-      }
-      if (issue.leaseToken !== undefined) {
-        issue.status = 'running'
-        issue.leaseExpiresAt = Date.now() + 60_000
-        return await this.held(this.answerChecked(sample, 200, {
-          lease_token: issue.leaseToken,
-          lease_expires_at: issue.leaseExpiresAt,
-          execution_attempt_id: issue.attemptId,
-        }))
-      }
+    const reconnecting = presentedAttempt !== undefined && presentedAttempt !== ''
+      && presentedLease !== undefined && presentedLease === issue.leaseToken
+      && presentedAttempt === issue.attemptId
+    if (issue.status === 'assigned' || issue.status === 'waiting_host') {
+      this.attempt += 1
+      this.lease += 1
+      issue.status = 'running'
+      issue.attemptId = 'attempt_' + String(this.attempt)
+      issue.leaseToken = 'lease_' + String(this.lease)
+      issue.leaseExpiresAt = Date.now() + 60_000
+      return await this.held(this.answerChecked(sample, 200, {
+        lease_token: issue.leaseToken,
+        lease_expires_at: issue.leaseExpiresAt,
+        execution_attempt_id: issue.attemptId,
+      }))
     }
-    if (issue.leaseToken !== undefined && issue.status === 'running') {
-      return failure(409, 'LEASE_HELD_BY_OTHER', 'another attempt holds this lease')
+    if (reconnecting && issue.status === 'running') {
+      issue.leaseExpiresAt = Date.now() + 60_000
+      return await this.held(this.answerChecked(sample, 200, {
+        lease_token: issue.leaseToken,
+        lease_expires_at: issue.leaseExpiresAt,
+        execution_attempt_id: issue.attemptId,
+      }))
     }
-    this.attempt += 1
-    this.lease += 1
-    issue.status = 'running'
-    issue.attemptId = 'attempt_' + String(this.attempt)
-    issue.leaseToken = 'lease_' + String(this.lease)
-    issue.leaseExpiresAt = Date.now() + 60_000
-    return await this.held(this.answerChecked(sample, 200, {
-      lease_token: issue.leaseToken,
-      lease_expires_at: issue.leaseExpiresAt,
-      execution_attempt_id: issue.attemptId,
-    }))
+    if (issue.status === 'running') {
+      return failure(409, 'LEASE_HELD_BY_OTHER', 'another execution attempt holds the active lease')
+    }
+    return failure(422, 'INVALID_STATE_TRANSITION', 'the issue is ' + issue.status + ' and cannot be claimed')
   }
 
   /**
-   * Write one settlement back.
+   * Write one settlement back under the rules of `team-hub/src/domain/leases.ts`.
    *
-   * A lease that already lapsed is only settled by the attempt it belonged to;
-   * anything else is a stale write the hub refuses (amendment A3 point 1), and
-   * `failNextSettle` lets a test drive a refusal the Host has to retry.
+   * `failNextSettle` scripts one failure for the Host to cope with: a hub refusal,
+   * a transport error before anything was stored, or a lost answer after the hub
+   * really stored the settlement.
    */
   private settle(issueId: string, body: Record<string, unknown>, sample: ContractSample | undefined): HubResponse {
     const issue = this.issues.get(issueId)
     if (issue === undefined) return failure(404, 'NOT_FOUND', 'issue not found')
-    if (this.failNextSettle !== undefined) {
-      const refusal = this.failNextSettle
-      this.failNextSettle = undefined
-      return failure(refusal.status, refusal.code, 'the hub refused this settlement')
+    const scripted = this.settleFailures.shift()
+    if (scripted === 'network') {
+      throw new Error('the connection to the hub dropped before the settlement arrived')
     }
-    const presentedAttempt = typeof body.execution_attempt_id === 'string' ? body.execution_attempt_id : undefined
+    if (scripted !== undefined && scripted !== 'lose-response') {
+      return failure(scripted.status, scripted.code, 'the hub refused this settlement')
+    }
+    const answer = this.applySettlement(issue, body, sample)
+    if (scripted === 'lose-response') {
+      // The hub stored it; only the answer never reached the Host.
+      throw new Error('the settlement answer was lost on the way back')
+    }
+    return answer
+  }
+
+  /** Store one settlement exactly as `settleIssue` does, including its refusals. */
+  private applySettlement(issue: FakeIssue, body: Record<string, unknown>, sample: ContractSample | undefined): HubResponse {
     const outcome = body.outcome === 'succeeded' || body.outcome === 'failed' ? body.outcome : undefined
-    if (outcome !== undefined && issue.leaseToken === undefined && issue.attemptId !== undefined
-      && presentedAttempt !== issue.attemptId) {
-      return failure(412, 'LEASE_EXPIRED', 'this attempt no longer holds the lease')
+    if (outcome === undefined) return failure(400, 'VALIDATION_FAILED', "outcome must be 'succeeded' or 'failed'")
+    const presentedAttempt = typeof body.execution_attempt_id === 'string' ? body.execution_attempt_id : undefined
+    const attemptMatches = presentedAttempt !== undefined && presentedAttempt === issue.attemptId
+    // `leases.ts:180`: a write-back naming an attempt the issue does not carry is
+    // a stale one, whatever else its body says.
+    if (presentedAttempt !== undefined && !attemptMatches) {
+      return failure(412, 'LEASE_EXPIRED', 'this execution attempt is not the one running the issue')
+    }
+    // `leases.ts:186`: an issue that already settled answers its own status.
+    if (issue.status === 'in_review' || issue.status === 'failed') {
+      return this.answerChecked(sample, 200, { ok: true, status: issue.status })
+    }
+    const reconnectWriteBack = issue.status === 'waiting_host' && attemptMatches
+    if (issue.status !== 'running' && !reconnectWriteBack) {
+      return failure(412, 'LEASE_EXPIRED', 'the issue is not running under this host')
     }
     issue.leaseToken = undefined
     // The hub clears the pending rework once the reworked run settles
     // (protocol amendment A4 point 5).
-    if (outcome !== undefined) issue.reworkInstructions = undefined
+    issue.reworkInstructions = undefined
     issue.status = outcome === 'succeeded' ? 'in_review' : 'failed'
     return this.answerChecked(sample, 200, { ok: true, status: issue.status })
   }

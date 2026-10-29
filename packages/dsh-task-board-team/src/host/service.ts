@@ -201,6 +201,8 @@ export class TeamSyncService {
   readonly #claiming = new Set<string>()
   /** Agent names the hub reported another Host already owns, by name. */
   readonly #agentConflicts = new Map<string, string>()
+  /** Issues whose owed settlement the current pass already retried. */
+  readonly #settledThisPass = new Set<string>()
 
   constructor(options: TeamSyncServiceOptions) {
     this.#options = options
@@ -329,12 +331,23 @@ export class TeamSyncService {
     const link = readTaskIssueLink(task)
     if (link === undefined) return
     this.#releaseLease(task.id)
+    const attemptId = link.attemptId
+    if (attemptId === undefined) {
+      // Every write-back names the attempt that ran, so the hub can refuse a late
+      // one from an earlier round (protocol section 5, review R2). A card that
+      // carries no attempt cannot report an outcome at all, and sending one
+      // anyway would let it land under whatever attempt the hub holds now.
+      this.#recordError(task.id, new Error(
+        'this card carries no execution attempt, so its outcome cannot be attributed and was not written back',
+      ))
+      return
+    }
     const body = buildSettleRequest({
       task,
       executionId: event.executionId,
       outcome: event.outcome,
       ...(event.error === undefined ? {} : { error: event.error }),
-      ...(link.attemptId === undefined ? {} : { attemptId: link.attemptId }),
+      attemptId,
     })
     // The write-back is recorded on the card BEFORE it is sent, so a refusal this
     // Host may retry keeps what the run produced instead of dropping it.
@@ -355,6 +368,12 @@ export class TeamSyncService {
    * @param body - the settlement body, as the card recorded it.
    */
   async #writeSettlement(taskId: string, issueId: string, body: SettleRequestBody): Promise<void> {
+    const attemptId = body.execution_attempt_id
+    if (attemptId === undefined) {
+      this.#writeLink(taskId, { pendingSettle: undefined })
+      this.#recordError(taskId, new Error('a settlement without an execution attempt is never sent to the hub'))
+      return
+    }
     try {
       const settled = await this.#options.hub.settle(issueId, body)
       this.#writeLink(taskId, {
@@ -364,22 +383,32 @@ export class TeamSyncService {
         hubStatus: readStatus(settled.status),
       })
     } catch (error) {
-      if (isSettlementExpired(error)) {
-        // An expired attempt is final: the issue no longer carries the attempt
-        // this body names, so no retry of it can ever be accepted. The card keeps
-        // the refusal and forgets the credentials of a run it can no longer
-        // report, and nothing here writes the collaboration status itself.
-        this.#writeLink(taskId, { pendingSettle: undefined, attemptId: undefined, leaseToken: undefined })
-        this.#recordError(taskId, new Error(
-          'the hub no longer holds this attempt (' + describe(error) + '), so the settlement of this run expired '
-          + 'and was not retried; start the card again to report a new outcome',
-        ))
+      if (!isSettlementFinal(error)) {
+        // Every refusal that may pass (a network failure, a timeout, a 5xx, a rate
+        // limit) leaves the outcome on the card for the next sweep or reconnect to
+        // place, and the hub's own gates still decide whether it lands.
+        this.#recordError(taskId, error)
         return
       }
-      // Every other refusal may pass: a network failure, a 5xx or a rate limit
-      // leaves the outcome on the card for the next sweep or reconnect to place,
-      // and the hub's own gates still decide whether it lands.
-      this.#recordError(taskId, error)
+      // A final refusal can never be accepted again: the attempt it names is gone
+      // or the hub forbids it outright, so a retry would only spend this Host's
+      // request budget. The card forgets the write-back.
+      const card = this.#options.host.tasks.get(taskId)
+      const current = card === undefined ? undefined : readTaskIssueLink(card)
+      if (current?.attemptId !== undefined && current.attemptId !== attemptId) {
+        // The card has since moved to a newer attempt (a rework or a retry minted
+        // one): this settlement belongs to the round that replaced it, so nothing
+        // of the current run may be released and the operator sees no error for a
+        // result the next run is about to report anyway.
+        this.#writeLink(taskId, { pendingSettle: undefined })
+        this.#options.log?.('dropped the settlement of a replaced attempt for ' + issueId, error)
+        return
+      }
+      this.#writeLink(taskId, { pendingSettle: undefined, attemptId: undefined, leaseToken: undefined })
+      this.#recordError(taskId, new Error(
+        'the hub refused this settlement for good (' + describe(error) + '); it was dropped instead of retried, '
+        + 'so start the card again to report a new outcome',
+      ))
     }
   }
 
@@ -397,6 +426,7 @@ export class TeamSyncService {
       const link = readTeamIssueLink(entry.payload)
       const pending = link?.pendingSettle
       if (link === undefined || pending === undefined) continue
+      this.#settledThisPass.add(link.issueId)
       await this.#writeSettlement(entry.task.id, link.issueId, pending)
     }
   }
@@ -442,7 +472,8 @@ export class TeamSyncService {
     if (this.#hostId === undefined) return 0
     this.#lastSweepAt = this.#options.now()
     // A pass first finishes what the last one could not hand over: a settlement
-    // the hub refused is retried before any new work is claimed.
+    // the hub refused is retried once, before any new work is claimed.
+    this.#settledThisPass.clear()
     await this.#retryPendingSettlements()
     let issues: readonly HubIssue[]
     try {
@@ -705,11 +736,17 @@ export class TeamSyncService {
    * Claim one issue and act on what the claim grants.
    *
    * The card is the one this Host already mirrors, when it mirrors one: a claim
-   * never creates a second card for one issue. What runs afterwards follows from
-   * the claim itself — a pending rework is the one thing that always runs, a
-   * reconnect runs nothing, and a card with nothing running here and nothing
-   * waiting to be written back is started again (a human retry moved the issue
-   * back to `assigned`, and nothing else would ever start that card).
+   * never creates a second card for one issue. A card whose run finished but
+   * whose outcome the hub has not accepted is never claimed at all: the claim
+   * would mint an attempt nothing here executes, and the retry of the old body
+   * would then be refused against that attempt, losing what the run produced.
+   * Only a pending rework may claim such a card, because the reviewer's
+   * rejection IS the newer round.
+   *
+   * What runs afterwards follows from the claim itself — a pending rework always
+   * runs, a reconnect runs nothing, and a card with nothing running here is
+   * started again (a human retry moved the issue back to `assigned`, and nothing
+   * else would ever start that card).
    * @param input - the issue, the agent it belongs to, and any rework the caller knows.
    * @returns whether this call created a card.
    */
@@ -729,10 +766,23 @@ export class TeamSyncService {
     // A caller that knows neither a mirrored card nor the issue behind one has
     // nothing the claim could act on, so nothing is asked of the hub.
     if (existing === undefined && (agent === undefined || issue === undefined)) return false
-    const claim = await this.#claimFromHub(input.issueId, existing, previous)
-    if (claim === undefined) return false
     const instructions = input.rework
       ?? (typeof issue?.rework_instructions === 'string' ? issue.rework_instructions.trim() : '')
+    // A run whose outcome the hub never accepted is finished here and must not be
+    // re-claimed: that claim would hand this Host a new attempt with nothing to
+    // execute, keep its lease alive, and make the next retry of the old body
+    // answer 412 against the new attempt, losing the result for good. The pass
+    // retries the write-back first (once, not twice), so a hub that is ready again
+    // moves the issue instead of this Host taking an attempt it cannot run.
+    if (existing !== undefined && previous?.pendingSettle !== undefined && instructions === '') {
+      if (!this.#settledThisPass.has(input.issueId)) {
+        this.#settledThisPass.add(input.issueId)
+        await this.#writeSettlement(existing.id, input.issueId, previous.pendingSettle)
+      }
+      if (this.#pendingSettleOf(existing.id) !== undefined) return false
+    }
+    const claim = await this.#claimFromHub(input.issueId, existing, previous)
+    if (claim === undefined) return false
 
     if (existing !== undefined) {
       // A hub that recognizes the attempt re-establishes the same lease, and this
@@ -747,6 +797,13 @@ export class TeamSyncService {
         hubStatus: 'running',
       })
       this.#ensureLease(existing, input.issueId, claim.lease_token)
+      // A settlement left by an earlier round belongs to an attempt the hub has
+      // replaced: it can never land again, and keeping it would make the next
+      // retry answer 412 against credentials the card no longer uses.
+      if (previous?.pendingSettle !== undefined
+        && previous.pendingSettle.execution_attempt_id !== claim.execution_attempt_id) {
+        this.#writeLink(existing.id, { pendingSettle: undefined })
+      }
       if (this.#localExecutionRunning(existing)) return false
       // A pending rework IS the one thing that has to run, and only after the
       // claim above succeeded.
@@ -754,9 +811,6 @@ export class TeamSyncService {
         this.#applyRework(existing.id, instructions)
         return false
       }
-      // A card whose run already finished and whose outcome the hub has not
-      // accepted is retried by the sweep, not re-run here.
-      if (previous?.pendingSettle !== undefined) return false
       // Nothing runs here and nothing waits to be written back: a human retry
       // moved the issue back to `assigned` while this card sat finished, and
       // this is the one entry that starts it again.
@@ -817,6 +871,17 @@ export class TeamSyncService {
     }
     this.#requestRun(task.id)
     return true
+  }
+
+  /**
+   * The settlement one card still owes the hub, read back from the card itself.
+   * @param taskId - the card to read.
+   * @returns the pending settlement, or undefined when the hub took it.
+   */
+  #pendingSettleOf(taskId: string): SettleRequestBody | undefined {
+    const task = this.#options.host.tasks.get(taskId)
+    if (task === undefined) return undefined
+    return readTaskIssueLink(task)?.pendingSettle
   }
 
   /**
@@ -1254,17 +1319,22 @@ function readAgentConflicts(answer: unknown): Array<{ name: string; reason: stri
 }
 
 /**
- * Whether one settlement refusal means the attempt it names is gone for good.
+ * Whether one settlement refusal means the hub will never accept that body.
  *
- * A hub answers 412 `LEASE_EXPIRED` when the issue no longer carries the attempt
- * the write-back presents — a rework, a retry or another attempt replaced it — so
- * the same body can never be accepted again and retrying it would only spend this
- * Host's request budget. Every other refusal may still pass on the next attempt.
+ * Two families are final. `412 LEASE_EXPIRED` says the issue no longer carries the
+ * attempt the write-back presents — a rework, a retry or another attempt replaced
+ * it — so the same body can never match again. Every other deterministic 4xx says
+ * the request itself is refused, which a later identical request does not change;
+ * `408` and `429` are the two that mean "not now" rather than "not ever", so those
+ * stay retryable along with transport failures and 5xx.
  * @param error - the refusal the settlement answered with.
  * @returns whether this settlement can never land.
  */
-function isSettlementExpired(error: unknown): boolean {
-  return error instanceof HubError && (error.status === 412 || error.code === 'LEASE_EXPIRED')
+function isSettlementFinal(error: unknown): boolean {
+  if (!(error instanceof HubError)) return false
+  if (error.code === 'LEASE_EXPIRED') return true
+  if (error.status < 400 || error.status >= 500) return false
+  return error.status !== 408 && error.status !== 429
 }
 
 /**

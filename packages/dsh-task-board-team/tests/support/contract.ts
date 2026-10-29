@@ -80,7 +80,19 @@ export const OPTIONAL_BODY_KEYS: Readonly<Record<string, readonly string[]>> = {
   'issues.claim': ['execution_attempt_id', 'lease_token'],
   'issues.settle': ['error'],
   'hosts.register': [],
-  'questions.create': ['options[].description'],
+  'questions.create': ['options[].description', 'multi_select'],
+}
+
+/**
+ * Protocol-optional members one answer may omit, by their path inside the
+ * response body.
+ *
+ * A response nests what a request sends (`question.options[]` against
+ * `options[]`), so the response paths are their own list instead of being reused
+ * from {@link OPTIONAL_BODY_KEYS}.
+ */
+export const OPTIONAL_RESPONSE_KEYS: Readonly<Record<string, readonly string[]>> = {
+  'questions.create': ['question.options[].description'],
 }
 
 /**
@@ -484,7 +496,7 @@ export function compareResponse(sample: ContractSample, body: Record<string, unk
   if (declared === undefined || body === undefined) return []
   const problems: string[] = []
   const context: CompareContext = {
-    optional: [],
+    optional: OPTIONAL_RESPONSE_KEYS[sample.interface] ?? [],
     open: OPEN_MEMBERS[sample.interface] ?? [],
     closed: false,
   }

@@ -32,6 +32,18 @@ async function claimedCard(current: Harness): Promise<string> {
 }
 
 /**
+ * Reject the review on the hub, the way `POST /review/reject` does: the issue
+ * returns to the bound Host for rework (`team-hub/PROTOCOL.md` section 8), which
+ * is the only status a rework claim may be granted from.
+ */
+function rejectOnHub(current: Harness, instructions: string): void {
+  const issue = current.hub.issues.get('issue_1')
+  if (issue === undefined) throw new Error('the fake hub lost the issue')
+  issue.status = 'assigned'
+  issue.reworkInstructions = instructions
+}
+
+/**
  * Let one settle-and-write-back pass happen for a card: the execution settles in
  * the ledger AND the board's own fanout tells the provider, which is what clears
  * the hub's lease and lets a rework claim succeed.
@@ -123,6 +135,7 @@ describe('rework', () => {
     await settleOnce(harness, taskId)
 
     // When the reviewer rejects with instructions
+    rejectOnHub(harness, 'add the missing test')
     harness.hub.push('issue.rework', { issue_id: 'issue_1', instructions: 'add the missing test', reviewer_member_id: 'mem_reviewer' })
     await flush()
 
@@ -148,10 +161,7 @@ describe('rework', () => {
     harness = makeHarness()
     const taskId = await claimedCard(harness)
     await settleOnce(harness, taskId)
-    const issue = harness.hub.issues.get('issue_1')
-    if (issue === undefined) throw new Error('the fake hub lost the issue')
-    issue.status = 'assigned'
-    issue.reworkInstructions = 'add the missing test'
+    rejectOnHub(harness, 'add the missing test')
 
     const claimsBefore = harness.hub.calls.filter(call => call.path.endsWith('/claim')).length
 
@@ -209,10 +219,7 @@ describe('rework', () => {
     harness = makeHarness()
     const taskId = await claimedCard(harness)
     await settleOnce(harness, taskId)
-    const issue = harness.hub.issues.get('issue_1')
-    if (issue === undefined) throw new Error('the fake hub lost the issue')
-    issue.status = 'assigned'
-    issue.reworkInstructions = 'add the missing test'
+    rejectOnHub(harness, 'add the missing test')
 
     // When the sweep claims the card again (no issue.rework event at all)
     await harness.service().sweep()
@@ -229,10 +236,7 @@ describe('rework', () => {
     harness = makeHarness()
     const taskId = await claimedCard(harness)
     await settleOnce(harness, taskId)
-    const issue = harness.hub.issues.get('issue_1')
-    if (issue === undefined) throw new Error('the fake hub lost the issue')
-    issue.status = 'assigned'
-    issue.reworkInstructions = 'try again'
+    rejectOnHub(harness, 'try again')
 
     // When the rejection event and the sweep arrive together
     harness.hub.push('issue.rework', { issue_id: 'issue_1', instructions: 'try again', reviewer_member_id: 'mem_reviewer' })
@@ -250,6 +254,7 @@ describe('rework', () => {
     harness = makeHarness()
     const taskId = await claimedCard(harness)
     await settleOnce(harness, taskId)
+    rejectOnHub(harness, 'add the missing test')
     const executionsBefore = harness.tasks()[0].executions.length
     harness.hub.failNextClaim = 'HOST_MISMATCH'
 
@@ -267,6 +272,7 @@ describe('rework', () => {
     harness = makeHarness({ withRework: false })
     const taskId = await claimedCard(harness)
     await settleOnce(harness, taskId)
+    rejectOnHub(harness, 'try again')
     const executionsBefore = harness.tasks()[0].executions.length
 
     // When the reviewer rejects

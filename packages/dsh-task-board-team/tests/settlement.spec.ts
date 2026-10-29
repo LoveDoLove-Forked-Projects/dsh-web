@@ -133,7 +133,7 @@ describe('settlement write-back', () => {
     // Given a claimed card whose settlement a hub outage refused
     harness = makeHarness()
     const { taskId, executionId } = await claimedCard(harness)
-    harness.hub.failNextSettle = { status: 503, code: 'HUB_UNAVAILABLE' }
+    harness.hub.settleFailures.push({ status: 503, code: 'HUB_UNAVAILABLE' })
 
     // When the board reports the settlement
     harness.board.extensions.emitExecutionSettled({ taskId, executionId, outcome: 'succeeded' })
@@ -172,7 +172,7 @@ describe('settlement write-back', () => {
     // credentials of the attempt it can never be reported under
     const link = readTaskIssueLink(harness.tasks()[0])
     expect(String(harness.service().summary().cards[taskId]?.lastError)).toContain('LEASE_EXPIRED')
-    expect(String(link?.lastError)).toContain('expired')
+    expect(String(link?.lastError)).toContain('dropped instead of retried')
     expect(link?.pendingSettle).toBeUndefined()
     expect(link?.attemptId).toBeUndefined()
     expect(link?.leaseToken).toBeUndefined()
@@ -183,6 +183,153 @@ describe('settlement write-back', () => {
     await flush()
     expect(harness.hub.calls.filter(call => call.path.endsWith('/settle'))).toHaveLength(settles)
     expect(harness.hub.issues.get('issue_1')?.status).not.toBe('in_review')
+  })
+
+  it('operator sees a settlement the hub forbids dropped instead of retried', async () => {
+    // Given a claimed card whose write-back the hub refuses outright
+    harness = makeHarness()
+    const { taskId, executionId } = await claimedCard(harness)
+    harness.hub.settleFailures.push({ status: 403, code: 'FORBIDDEN' })
+
+    // When the settlement is refused
+    harness.board.extensions.emitExecutionSettled({ taskId, executionId, outcome: 'succeeded' })
+    await flush()
+
+    // Then the refusal is visible and the write-back is gone, because the same
+    // request would be refused again
+    const link = readTaskIssueLink(harness.tasks()[0])
+    expect(String(harness.service().summary().cards[taskId]?.lastError)).toContain('FORBIDDEN')
+    expect(String(link?.lastError)).toContain('dropped instead of retried')
+    expect(link?.pendingSettle).toBeUndefined()
+    expect(link?.attemptId).toBeUndefined()
+
+    // When the next sweep runs, the hub is not asked a second time
+    const settles = harness.hub.calls.filter(call => call.path.endsWith('/settle')).length
+    await harness.service().sweep()
+    await flush()
+    expect(harness.hub.calls.filter(call => call.path.endsWith('/settle'))).toHaveLength(settles)
+  })
+
+  it('operator sees a settlement lost to the network kept and retried by the next sweep', async () => {
+    // Given a claimed card whose settlement never reached the hub
+    harness = makeHarness()
+    const { taskId, executionId } = await claimedCard(harness)
+    harness.hub.settleFailures.push('network')
+
+    // When the board reports the settlement
+    harness.board.extensions.emitExecutionSettled({ taskId, executionId, outcome: 'succeeded' })
+    await flush()
+
+    // Then the outcome stays on the card under the attempt that produced it, and
+    // nothing was dropped: a transport failure says nothing about the attempt
+    const owed = readTaskIssueLink(harness.tasks()[0])
+    expect(owed?.pendingSettle).toMatchObject({ outcome: 'succeeded', execution_attempt_id: 'attempt_1' })
+    expect(owed?.attemptId).toBe('attempt_1')
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('running')
+
+    // When the next sweep reaches a hub that answers again
+    await harness.service().sweep()
+    await flush()
+
+    // Then the write-back landed, and the card carries neither the pending record
+    // nor the attempt of the run it reported
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('in_review')
+    const link = readTaskIssueLink(harness.tasks()[0])
+    expect(link?.pendingSettle).toBeUndefined()
+    expect(link?.attemptId).toBeUndefined()
+  })
+
+  it('operator sees a settlement the hub could not take retried before the issue is claimed', async () => {
+    // Given a claimed card whose write-back two outages in a row refused
+    harness = makeHarness()
+    const { taskId, executionId } = await claimedCard(harness)
+    harness.hub.settleFailures.push({ status: 503, code: 'HUB_UNAVAILABLE' })
+    harness.board.extensions.emitExecutionSettled({ taskId, executionId, outcome: 'succeeded' })
+    await flush()
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    expect(readTaskIssueLink(harness.tasks()[0])?.pendingSettle).toMatchObject({ outcome: 'succeeded' })
+
+    // And its lease lapsed while the write-back was still owed
+    issue.leaseToken = undefined
+    issue.status = 'waiting_host'
+    const claims = harness.hub.calls.filter(call => call.path.endsWith('/claim')).length
+    const renewals = harness.hub.calls.filter(call => call.path.endsWith('/renew-lease')).length
+
+    // When the next sweep meets another refusal
+    harness.hub.settleFailures.push({ status: 503, code: 'HUB_UNAVAILABLE' })
+    await harness.service().sweep()
+    await flush()
+
+    // Then no attempt was taken for the card and nothing renewed a lease for it:
+    // a claim here would mint an attempt this Host never runs, and the retry of
+    // the owed body would then die against it
+    expect(harness.hub.calls.filter(call => call.path.endsWith('/claim'))).toHaveLength(claims)
+    expect(harness.hub.calls.filter(call => call.path.endsWith('/renew-lease'))).toHaveLength(renewals)
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('waiting_host')
+    expect(readTaskIssueLink(harness.tasks()[0])?.pendingSettle).toMatchObject({
+      outcome: 'succeeded',
+      execution_attempt_id: 'attempt_1',
+    })
+
+    // When a later sweep finds the hub ready, the result lands and the card
+    // carries nothing of the finished run any more
+    await harness.service().sweep()
+    await flush()
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('in_review')
+    const link = readTaskIssueLink(harness.tasks()[0])
+    expect(link?.pendingSettle).toBeUndefined()
+    expect(link?.attemptId).toBeUndefined()
+  })
+
+  it('operator sees a settlement of a replaced attempt dropped without touching the one that replaced it', async () => {
+    // Given a run whose settlement the hub stored but whose answer never arrived,
+    // so the card still owes it
+    harness = makeHarness()
+    const { taskId, executionId } = await claimedCard(harness)
+    harness.hub.settleFailures.push('lose-response')
+    harness.ledger.settle(taskId, executionId, 'succeeded')
+    harness.board.extensions.emitExecutionSettled({ taskId, executionId, outcome: 'succeeded' })
+    await flush()
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('in_review')
+    expect(readTaskIssueLink(harness.tasks()[0])?.pendingSettle).toMatchObject({ execution_attempt_id: 'attempt_1' })
+    const stale = readTaskIssueLink(harness.tasks()[0])?.pendingSettle
+
+    // When the reviewer rejects and the rework claims a fresh attempt whose own
+    // write-back a transport failure keeps on the card
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    issue.status = 'assigned'
+    issue.reworkInstructions = 'add the missing test'
+    harness.hub.settleFailures.push('network')
+    harness.hub.push('issue.rework', { issue_id: 'issue_1', instructions: 'add the missing test', reviewer_member_id: 'mem_reviewer' })
+    await flush()
+
+    // Then the claim dropped the round it replaced, and the card runs under the
+    // attempt the hub minted for the rework
+    const reworked = readTaskIssueLink(harness.tasks()[0])
+    expect(reworked?.attemptId).toBe('attempt_2')
+    expect(reworked?.leaseToken).toBe('lease_2')
+    expect(reworked?.pendingSettle).toMatchObject({ execution_attempt_id: 'attempt_2' })
+
+    // When a retry of the replaced round is still on its way out and meets the hub
+    const errorsBefore = readTaskIssueLink(harness.tasks()[0])?.lastError
+    const payload = harness.tasks()[0].integrations?.[TEAM_EXTENSION_ID] as Record<string, unknown>
+    harness.face().integration.write(taskId, { ...payload, pendingSettle: stale })
+    await harness.service().sweep()
+    await flush()
+
+    // Then the hub refused it as an attempt it no longer holds, the card kept the
+    // attempt and lease the rework runs under, and no error was invented for a
+    // round the newer run already replaced
+    const after = readTaskIssueLink(harness.tasks()[0])
+    expect(after?.attemptId).toBe('attempt_2')
+    expect(after?.leaseToken).toBe('lease_2')
+    expect(after?.pendingSettle).toBeUndefined()
+    // The card's error is still the one the rework's own lost write-back left;
+    // the refusal of the replaced round added nothing to it
+    expect(after?.lastError).toBe(errorsBefore)
+    expect(harness.service().summary().cards[taskId]?.lastError).toBe(errorsBefore)
   })
 
   it('operator sees a card that mirrors no issue write nothing back', async () => {

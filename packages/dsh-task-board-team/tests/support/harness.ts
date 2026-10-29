@@ -14,6 +14,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { expect } from 'vitest'
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import { HostTaskLedger } from '../../../dsh-task-board/src/host-ledger.ts'
 import { TaskBoardHostService } from '../../../dsh-task-board/src/host-service.ts'
@@ -281,9 +282,16 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
       return ledger.allTasks()
     },
     release() {
-      release()
-      board.dispose()
-      cleanupHarness()
+      try {
+        // Every flow this spec drove passed through the frozen wire samples, so a
+        // request or a response that drifted from them fails the spec that caused
+        // it instead of only the one test that reads the sample set directly.
+        expect(hub.contractProblems, 'a Host call drifted from the frozen wire samples').toEqual([])
+      } finally {
+        release()
+        board.dispose()
+        cleanupHarness()
+      }
     },
   }
 }
