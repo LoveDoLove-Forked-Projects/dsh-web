@@ -245,15 +245,17 @@ When a Host node is offline, any issue assigned to an Agent bound to that Host r
 | From | To | Trigger | Actor | Preconditions | Activity Logged |
 | --- | --- | --- | --- | --- | --- |
 | `todo` | `assigned` | Assign task | Human | Target member or agent specified. | `issue.assigned` |
-| `assigned` | `waiting_host` | Host offline check | Hub system | Assigned to agent; agent bound host status is `offline`. | `issue.waiting_host` |
-| `assigned` | `running` | Claim lease | Bound Host | Host online; holds valid Host Token; claims active lease. | `issue.claimed` |
-| `waiting_host` | `running` | Claim lease | Bound Host | Host returns online; claims active lease for its agent. | `issue.claimed` |
-| `running` | `waiting_host` | Lease expired / Host offline | Hub system | Lease timeout (60 s) expired without renewal or host missed 3 heartbeats. | `issue.host_offline` |
-| `running` | `in_review` | Settle success | Executing Host | Execution finished; automated acceptance tests passed locally. | `issue.settled_in_review` |
-| `running` | `failed` | Settle failure | Executing Host | Execution failed or unrecoverable error encountered. | `issue.failed` |
+| `assigned` | `waiting_host` | Host offline check | Hub system | `assignee_type='agent'`; agent bound host status is `offline`. | `issue.waiting_host` |
+| `assigned` | `running` | Claim lease | Bound Host | `assignee_type='agent'`; Host online; holds valid Host Token; claims active lease. | `issue.claimed` |
+| `waiting_host` | `running` | Claim lease | Bound Host | `assignee_type='agent'`; Host returns online; claims active lease for its agent. | `issue.claimed` |
+| `running` | `waiting_host` | Lease expired / Host offline | Hub system | `assignee_type='agent'`; lease timeout (60 s) expired without renewal or host missed 3 heartbeats. | `issue.host_offline` |
+| `running` | `in_review` | Settle success | Executing Host | `assignee_type='agent'`; execution finished; automated acceptance tests passed locally. | `issue.settled_in_review` |
+| `running` | `failed` | Settle failure | Executing Host | `assignee_type='agent'`; execution failed or unrecoverable error encountered. | `issue.failed` |
+| `assigned` | `in_review` | Submit for review | Human | `assignee_type='member'`; `reviewer_member_id` is set; human assignee finishes work and requests review. | `issue.submitted_for_review` |
+| `assigned` | `done` | Complete task directly | Human | `assignee_type='member'`; no `reviewer_member_id` set; human assignee marks task complete. | `issue.completed` |
 | `in_review` | `done` | Approve review | Human | Human reviewer accepts the work. | `issue.approved` |
-| `in_review` | `running` | Reject review (rework) | Human | Reviewer provides rework instructions; dispatched to Host. | `issue.rework_requested` |
-| `failed` | `running` | Retry execution | Bound Host | Host re-claims issue after failure inspection. | `issue.claimed` |
+| `in_review` | `assigned` | Reject review (rework) | Human | Reviewer provides rework instructions; instructions stored on issue. | `issue.rework_requested` |
+| `failed` | `assigned` | Retry execution | Human | Issue in `failed` status; human triggers retry; clears failure error. | `issue.retried` |
 | Any active state | `canceled` | Cancel task | Human | User cancels issue before completion. | `issue.canceled` |
 
 ## 5. Host Execution Protocol
@@ -293,12 +295,18 @@ When an agent needs human guidance or user confirmation during execution, it rou
 ### Workflow
 1. Host intercepts an agent's question event (such as `ask_user_question` or stuck input signal) in-process from the execution session.
 2. Host sends `POST /api/v1/teams/:teamId/issues/:issueId/questions` with the question text, options, and multi-select flag.
-3. Hub saves the question with status `pending`, emits WebSocket event `question.created`, and sends APNs push notifications to the issue creator, assignee, and reviewer.
+3. Hub saves the question with status `pending`, emits WebSocket event `question.created`, and sends APNs push notifications to the issue reviewer, plus the human assignee (if `assignee_type='member'`). By the default reviewer rule (Section 13), every agent-executed issue always has an active human reviewer (defaulting to the issue creator).
 4. An authorized team member responds via Whale iOS App or Web GUI by calling `POST /api/v1/teams/:teamId/questions/:questionId/answer`.
 5. Resolution rule: First response wins.
 - The first answer sets status to `answered`, recording `first_responder_member_id` and timestamp. - Any competing responses submitted after the first receive `409 Conflict` (`QUESTION_ALREADY_ANSWERED`).
 6. Hub broadcasts WebSocket event `question.answered` containing the selected answer.
 7. Host receives the WebSocket event, identifies the waiting agent session, injects the user answer, and resumes agent execution.
+
+### Question Termination Lifecycle
+A question terminates in one of three ways: answered, expired, or withdrawn.
+1. Answered: A human responds first, transitioning the question to `answered` and broadcasting `question.answered` (Step 5 above).
+2. Expired: If a pending question reaches its 24-hour TTL (86,400,000 ms) without an answer, the Hub marks question status `expired`, records `question.expired` activity, and broadcasts WebSocket event `question.expired` with `{ question_id, issue_id }`. The executing Host receives the event and resolves the waiting session question as unanswered / timed out, allowing the agent to proceed with default assumptions or pause.
+3. Withdrawn: If the agent cancels or aborts execution locally before an answer arrives, the Host calls `POST /api/v1/teams/:teamId/questions/:questionId/withdraw`. The Hub verifies the question is pending, marks status `dismissed`, records `question.withdrawn` activity, and broadcasts WebSocket event `question.withdrawn` with `{ question_id, issue_id }` so mobile and web clients dismiss the prompt.
 
 ### Invariant: Tool Permission Approvals Never Enter Hub
 Tool execution permission approvals (such as `approval/request`, terminal command execution, filesystem write grants outside sandbox, or `danger-full-access` permissions) belong exclusively to the local Host machine security domain. Tool permission approvals MUST NEVER enter `team-hub`. The Hub exposes NO endpoints, NO database schema, and NO WebSocket events for tool permissions. Tool permission requests are resolved strictly on the local machine by the Host owner (via local Web GUI or direct peer-to-peer bridge connection over Tailscale/LAN).
@@ -308,7 +316,7 @@ Tool execution permission approvals (such as `approval/request`, terminal comman
 The comment stream supports collaboration between human members and autonomous agents.
 
 ### Mention Syntax and Resolution
-Comments are formatted in Markdown. Mentions are parsed using the regular expression `/(?:^|s)@([a-zA-Z0-9_-]+)/`.
+Comments are formatted in Markdown. Mentions are parsed using the regular expression `/(?:^|\s)@([a-zA-Z0-9_-]+)/`.
 
 | Target Type | Identifier | Delivery Mechanism |
 | --- | --- | --- |
@@ -342,10 +350,9 @@ When automated acceptance passes on the Host, the issue transitions to `in_revie
 
 ### Rejection and Rework
 1. Reviewer calls `POST /api/v1/teams/:teamId/issues/:issueId/review/reject` with `instructions`.
-2. Hub transitions issue status back to `running` and records `issue.rework_requested` activity.
-3. Hub delivers WebSocket event `issue.rework` with rework instructions to the bound Host.
-4. Host invokes the DSH task board extension capability `rework` (M0).
-5. The task re-runs in the same session (`reuseSession`), feeding the rework instructions into the session context.
+2. Hub stores rework instructions on the issue, clears any active lease, transitions issue status to `assigned` (or `waiting_host` if the bound Host is offline), and records `issue.rework_requested` activity.
+3. Hub delivers WebSocket event `issue.rework` with rework instructions to the bound Host as a notification signal to claim the card.
+4. Bound Host receives `issue.rework`, invokes the DSH task board extension capability `rework` (M0), generates a new `execution_attempt_id`, claims the issue via `POST /api/v1/teams/:teamId/issues/:issueId/claim`, and re-runs the task in the same session (`reuseSession`), feeding rework instructions into the session context.
 
 ## 9. Wire Protocol and Transport
 
@@ -368,18 +375,19 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `POST` | `/api/v1/teams/:teamId/hosts/register` | Host | `{ hostname, client_version, agents: AgentDef[] }` | `{ host_id, status }` | 200, 401 | `UNAUTHORIZED` |
 | `POST` | `/api/v1/teams/:teamId/hosts/:hostId/heartbeat` | Host | None | `{ ok: true, server_time }` | 200, 401, 404 | `HOST_NOT_FOUND` |
 | `GET` | `/api/v1/teams/:teamId/issues` | Member/Host | None (query filters `status`, `assignee`) | `{ issues: Issue[] }` | 200, 401 | `UNAUTHORIZED` |
-| `POST` | `/api/v1/teams/:teamId/issues` | Member | `{ title, description, assignee_type?, assignee_id? }` | `{ issue: Issue }` | 201, 400, 401 | `VALIDATION_FAILED` |
+| `POST` | `/api/v1/teams/:teamId/issues` | Member | `{ title, description?, assignee_type?, assignee_id?, reviewer_member_id? }` | `{ issue: Issue }` | 201, 400, 401 | `VALIDATION_FAILED` |
 | `GET` | `/api/v1/teams/:teamId/issues/:issueId` | Member/Host | None | `{ issue: Issue }` | 200, 401, 404 | `ISSUE_NOT_FOUND` |
-| `PATCH` | `/api/v1/teams/:teamId/issues/:issueId` | Member | `{ title?, description?, assignee_type?, assignee_id?, status? }` | `{ issue: Issue }` | 200, 400, 401 | `INVALID_STATE_TRANSITION` |
+| `PATCH` | `/api/v1/teams/:teamId/issues/:issueId` | Member | `{ title?, description?, assignee_type?, assignee_id?, reviewer_member_id?, status? }` | `{ issue: Issue }` | 200, 400, 401 | `INVALID_STATE_TRANSITION` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/claim` | Host | `{ execution_attempt_id?, lease_token? }` | `{ lease_token, lease_expires_at, execution_attempt_id }` | 200, 401, 409 | `LEASE_HELD_BY_OTHER`, `HOST_MISMATCH` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/renew-lease` | Host | `{ lease_token }` | `{ lease_expires_at }` | 200, 401, 412 | `LEASE_EXPIRED` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/settle` | Host | `{ outcome, summary?, error?, verification_evidence? }` | `{ ok: true, status }` | 200, 401, 412 | `LEASE_EXPIRED` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/review/approve` | Member | None | `{ ok: true, status: "done" }` | 200, 401, 422 | `INVALID_STATE_TRANSITION` |
-| `POST` | `/api/v1/teams/:teamId/issues/:issueId/review/reject` | Member | `{ instructions }` | `{ ok: true, status: "running" }` | 200, 400, 422 | `INVALID_STATE_TRANSITION` |
+| `POST` | `/api/v1/teams/:teamId/issues/:issueId/review/reject` | Member | `{ instructions }` | `{ ok: true, status: "assigned" }` | 200, 400, 422 | `INVALID_STATE_TRANSITION` |
 | `GET` | `/api/v1/teams/:teamId/issues/:issueId/comments` | Member/Host | None | `{ comments: Comment[] }` | 200, 401, 404 | `ISSUE_NOT_FOUND` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/comments` | Member/Host | `{ content, author_type?, author_agent_id? }` | `{ comment: Comment }` | 201, 400, 401 | `VALIDATION_FAILED` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/questions` | Host | `{ question_text, options?, multi_select? }` | `{ question: Question }` | 201, 400, 401 | `VALIDATION_FAILED` |
 | `POST` | `/api/v1/teams/:teamId/questions/:questionId/answer` | Member | `{ selected_options?, custom_text? }` | `{ ok: true }` | 200, 401, 409 | `QUESTION_ALREADY_ANSWERED` |
+| `POST` | `/api/v1/teams/:teamId/questions/:questionId/withdraw` | Host | None | `{ ok: true, status: "dismissed" }` | 200, 401, 404, 409 | `QUESTION_NOT_PENDING`, `HOST_MISMATCH` |
 | `POST` | `/api/v1/push-tokens` | Member | `{ platform, device_token, bundle_id, environment }` | `{ ok: true }` | 200, 400, 401 | `VALIDATION_FAILED` |
 | `DELETE` | `/api/v1/push-tokens/:token` | Member | None | `{ ok: true }` | 200, 401 | `UNAUTHORIZED` |
 
@@ -407,6 +415,8 @@ Each team is backed by one Durable Object (`TeamChannelDO`). Clients connect to:
 | `comment.mentioned` | Bound Host | `{ issue_id: string, comment_id: string, author: string, content: string }` |
 | `question.created` | All connected | `{ question: Question }` |
 | `question.answered` | All connected | `{ question_id: string, answer: any, responder_member_id: string }` |
+| `question.expired` | All connected | `{ question_id: string, issue_id: string }` |
+| `question.withdrawn` | All connected | `{ question_id: string, issue_id: string }` |
 | `host.status_changed` | All connected | `{ host_id: string, status: "online" | "offline" }` |
 
 ### Monotonic Event Sequence and Resumption Rules
@@ -444,6 +454,8 @@ All error responses adhere to a single unified JSON schema:
 | `LEASE_HELD_BY_OTHER` | 409 | Task claim rejected because active lease is held by another execution attempt. |
 | `HOST_OFFLINE` | 400 | Operation requires target Host to be online. |
 | `QUESTION_ALREADY_ANSWERED` | 409 | Answering failed because another member already answered first. |
+| `QUESTION_NOT_PENDING` | 409 | Question cannot be answered or withdrawn because it is no longer pending. |
+| `HOST_MISMATCH` | 403 | Host is not authorized to claim, settle, or withdraw questions for this issue or host binding. |
 | `PAYLOAD_TOO_LARGE` | 413 | Request body exceeds configured byte limit. |
 | `RATE_LIMITED` | 429 | Request rate exceeded allowed quota. |
 | `INTERNAL_ERROR` | 500 | Unhandled internal server or database error. |
@@ -457,7 +469,7 @@ The Hub communicates directly with Apple Push Notification service (APNs) over H
 | APNs Category | Trigger Event | Target Recipient | Alert Format |
 | --- | --- | --- | --- |
 | `assigned` | Issue assigned | Assigned human member | "You were assigned to issue #<number>: <title>" |
-| `question_asked` | Agent asks question | Issue creator, human assignee, reviewer | "Agent <agent_name> asked a question on #<number>: <question_text>" |
+| `question_asked` | Agent asks question | Issue reviewer, plus human assignee (if `assignee_type='member'`) | "Agent <agent_name> asked a question on #<number>: <question_text>" |
 | `review_requested` | Issue enters `in_review` | Issue reviewer | "Issue #<number> is ready for review: <title>" |
 | `mentioned` | Comment mentions human | Mentioned human member | "<author_name> mentioned you on #<number>" |
 
@@ -506,6 +518,7 @@ The Hub communicates directly with Apple Push Notification service (APNs) over H
 | Comment submission | Yes | Yes | Yes (Agent comments only) | No |
 | Question submission | No | No | Yes | No |
 | Question answering | Yes | Yes | No | No |
+| Question withdrawal | Yes | No | Yes | No |
 | Push token registration | Yes | Yes | No | No |
 
 ### Rate Limiting
@@ -563,3 +576,4 @@ The following defaults are defined by this specification for operational paramet
 | Member API rate limit | 120 requests per minute | Accommodates rapid navigation in Web and iOS clients without triggering false rate limit rejections. |
 | Host API rate limit | 30 requests per minute | Provides headroom for simultaneous heartbeats, lease renewals, and occasional comment/question traffic. |
 | Auth route rate limit | 20 requests per minute per IP | Protects edge Worker authentication endpoints against brute-force attacks and abuse. |
+| Default reviewer for Agent issues | creator_member_id | When an issue is assigned to an Agent (`assignee_type='agent'`) and no explicit `reviewer_member_id` is provided, the issue creator automatically defaults to the reviewer. This guarantees that every agent-executed card has a designated human reviewer for questions, push notifications, and the `in_review` approval gate. |
