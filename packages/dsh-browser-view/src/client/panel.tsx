@@ -93,6 +93,8 @@ export function BrowserViewPanel({ t, sessionId, liveTitle, socketFactory, locat
   const socketRef = useRef<BrowserViewSocket | null>(null)
   /** Last active tab seen in a state push; a tab switch invalidates the picture. */
   const lastActiveTabRef = useRef<string | null>(null)
+  /** Browser source seen in the last state push; a source switch invalidates it too. */
+  const lastSourceRef = useRef<{ mode?: 'isolated' | 'cdp'; cdpEndpoint?: string }>({})
 
   const factory = useMemo<BrowserViewSocketFactory>(
     () => socketFactory ?? ((handlers) => connectBrowserViewSocket(handlers, { location, sessionId })),
@@ -103,10 +105,16 @@ export function BrowserViewPanel({ t, sessionId, liveTitle, socketFactory, locat
     const instance = factory({
       onStatus: (next) => { setStatus(next) },
       onState: (next) => {
-        // Compare outside the state updater: an updater must stay pure, and a
-        // frame from the previous tab would otherwise stay on screen after the
-        // page switched tabs.
-        if (lastActiveTabRef.current !== next.activeTabId) {
+        // Compare outside the state updater: an updater must stay pure. A frame
+        // from the old browser source or the previous tab must not outlive it.
+        const sourceChanged = lastSourceRef.current.mode !== next.mode
+          || lastSourceRef.current.cdpEndpoint !== next.cdpEndpoint
+        if (sourceChanged) {
+          lastSourceRef.current = { mode: next.mode, cdpEndpoint: next.cdpEndpoint }
+          lastActiveTabRef.current = next.activeTabId
+          setFrame(null)
+          setError(null)
+        } else if (lastActiveTabRef.current !== next.activeTabId) {
           lastActiveTabRef.current = next.activeTabId
           setFrame(null)
         }
@@ -153,6 +161,7 @@ export function BrowserViewPanel({ t, sessionId, liveTitle, socketFactory, locat
   // Three of the product's five dot states, in the order a viewer meets them:
   // nothing reached yet, a page still loading, a settled live picture.
   const dotState: StateDotState = status !== 'open' ? 'idle' : loading ? 'ongoing' : 'done'
+  const modeLabel = state.mode === 'cdp' ? t('panel.mode.real') : t('panel.mode.isolated')
   const pageTitle = activeTab === null || activeTab.title.length === 0 ? undefined : activeTab.title
   const url = activeTab?.url ?? ''
 
@@ -183,9 +192,18 @@ export function BrowserViewPanel({ t, sessionId, liveTitle, socketFactory, locat
             onClick={(event) => { event.currentTarget.select() }}
           />
         </div>
-        <span className={css.status} data-dsh-part={BROWSER_VIEW_PARTS.status} aria-live="polite">
+        <span
+          className={css.status}
+          data-dsh-part={BROWSER_VIEW_PARTS.status}
+          aria-live="polite"
+          title={state.cdpEndpoint ?? modeLabel}
+        >
           <StateDot state={dotState} size={10} />
           <span className={css.statusText}>{statusLabel}</span>
+          <span className={css.mode}>{modeLabel}</span>
+          {state.mode === 'cdp' && state.cdpEndpoint !== undefined && (
+            <span className={css.endpoint}>{state.cdpEndpoint}</span>
+          )}
         </span>
         <button
           type="button"

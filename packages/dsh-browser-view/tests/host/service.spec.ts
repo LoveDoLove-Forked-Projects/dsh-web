@@ -107,7 +107,7 @@ describe('panel commands', () => {
     expect(events[0]).toEqual({
       v: 1,
       kind: 'hello',
-      state: { tabs: [], activeTabId: null, running: false },
+      state: { tabs: [], activeTabId: null, running: false, mode: 'isolated' },
     })
     expect(browser.opens()).toBe(0)
   })
@@ -238,7 +238,7 @@ describe('panel attach follows, never creates', () => {
 
     await browser.service.handleCommand(sink, { v: 1, kind: 'attach', sessionId: 'session-panel' })
 
-    expect(browser.service.state()).toEqual({ tabs: [], activeTabId: null, running: false })
+    expect(browser.service.state()).toEqual({ tabs: [], activeTabId: null, running: false, mode: 'isolated' })
     expect(browser.opens()).toBe(0)
   })
 })

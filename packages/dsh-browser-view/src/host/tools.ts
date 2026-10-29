@@ -136,6 +136,7 @@ const TAB_VIEW_SCHEMA = {
     title: { type: 'string', required: true },
     loading: { type: 'boolean', required: true },
     sessionId: { type: 'string' },
+    origin: { type: 'string', description: 'created when DSH opened the target; adopted when it already existed in the real browser.' },
   },
 } as const
 
@@ -149,8 +150,8 @@ export function createBrowserTools(deps: BrowserToolDeps): ToolDefinition[] {
 
   const navigate = defineTool({
     name: 'browser_navigate',
-    description: 'Navigate the plugin\'s own browser tab to a URL and report the resulting page (url, title). '
-      + 'This browser is a real Chromium the host launched, so the page renders, runs scripts, and makes network requests exactly as it would for a user. '
+    description: 'Navigate the selected browser tab to a URL and report the resulting page (url, title). '
+      + 'This is a real Chromium either launched by the host or attached over CDP, so the page renders, runs scripts, and makes network requests exactly as it would for a user. '
       + 'Use it to inspect a local page or site, to verify rendered markup, or to set up a page before a snapshot, click, or screenshot. '
       + 'After navigating, call browser_snapshot before clicking anything: refs from before the navigation no longer exist. '
       + 'Without new_tab the call reuses this session\'s current tab, so the console and network buffers start over with the new document. '
@@ -506,7 +507,7 @@ title: ${value.title}
     name: 'browser_tabs',
     description: 'List the browser tabs this plugin currently has open, with their ids, urls, titles, and loading state. '
       + 'Call it when you need a tab id, when you are unsure whether a browser is running at all, or after the user closed a tab in the panel. '
-      + 'It never starts a browser: an empty list means nothing has been opened yet, so navigate first. '
+      + 'In isolated mode it never starts a browser; in real-browser mode it connects to the configured CDP endpoint and discovers existing page tabs. '
       + '中文触发词：有多少标签页、当前浏览器状态、打开着哪些页面。',
     parameters: {},
     output: {
@@ -532,10 +533,10 @@ title: ${value.title}
 
   const close = defineTool({
     name: 'browser_close',
-    description: 'Close the browser tab this session opened, and nothing else. '
+    description: 'Close browser tabs within the ownership rules of the selected mode. '
       + 'Call it when the work in the browser is finished: a tab left open is a page still running on the host and a chip still sitting in the panel, and the next thing anyone sees is somebody else\'s leftover. '
-      + 'It refuses a tab another session opened, because those pages belong to the sessions driving them; a session that owns no tab closes nothing and still succeeds, so the call is safe to make unconditionally. '
-      + 'Without tab_id it closes every tab this session opened; with tab_id it closes exactly that one. '
+      + 'Without tab_id it closes only tabs this session opened. In isolated mode an explicit tab_id must also belong to this session; in real-browser mode an explicit tab_id may close any listed page, including an adopted one. '
+      + 'A session that owns no tab and omits tab_id closes nothing and still succeeds, so cleanup is safe to make unconditionally. '
       + '中文触发词：关掉网页、关闭标签页、收尾清理。',
     parameters: {
       tab_id: {

@@ -55,6 +55,8 @@ function createShell(options: { bindThrows?: boolean } = {}): FakeShell {
   const tabs = createFakeTabRegistry()
 
   const ctx = {
+    get: () => undefined,
+    configForms: undefined,
     effect(factory: () => (() => void) | void): () => void {
       const dispose = factory()
       if (typeof dispose === 'function') disposers.push(dispose)
@@ -129,10 +131,13 @@ describe('browser view plugin wiring', () => {
 
     expect(browserViewInject).not.toContain('sidebarRight')
     expect(browserViewInject).toContain('sidebarRightTabs')
-    expect(shell.awaitedSeats).toEqual(['sidebar.right.pane.tab', 'sidebar.right.pane.tab.title'])
+    expect(shell.awaitedSeats).toEqual(['sidebar.right.pane.tab', 'sidebar.right.pane.tab.title', 'plugins.row.config'])
     expect(shell.registrations.map((registration) => registration.name)).toEqual([
       'sidebar.right.pane.tab',
       'sidebar.right.pane.tab.title',
+      'plugins.row.config',
+      'plugins.row.config',
+      'plugins.bundle.config',
     ])
     // No session-header entry any more, and nothing takes the center column or the global panel list over.
     expect(shell.awaitedSeats).not.toContain('conversation.session.header.actions')

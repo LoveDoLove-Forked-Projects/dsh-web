@@ -167,6 +167,7 @@ function readTab(value: unknown): BrowserTabView | null {
     title: candidate.title,
     loading: candidate.loading,
     ...(typeof candidate.sessionId === 'string' ? { sessionId: candidate.sessionId } : {}),
+    ...(candidate.origin === 'created' || candidate.origin === 'adopted' ? { origin: candidate.origin } : {}),
   }
 }
 
@@ -187,6 +188,8 @@ function readPanelState(value: unknown): BrowserPanelState | null {
     tabs,
     activeTabId: candidate.activeTabId as string | null,
     running: candidate.running,
+    ...(candidate.mode === 'isolated' || candidate.mode === 'cdp' ? { mode: candidate.mode } : {}),
+    ...(typeof candidate.cdpEndpoint === 'string' ? { cdpEndpoint: candidate.cdpEndpoint } : {}),
     ...(typeof candidate.message === 'string' ? { message: candidate.message } : {}),
   }
 }

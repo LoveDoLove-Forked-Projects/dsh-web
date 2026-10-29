@@ -203,6 +203,34 @@ describe('browser view event narrowing', () => {
     expect(event?.kind).toBe('state')
   })
 
+  it('user receives real-browser state and the client preserves its optional mode fields', () => {
+    // Given a state push carrying real mode, endpoint, and adopted origin
+    // When the client narrows the event
+    // Then every optional field survives intact
+    const event = parseBrowserViewEvent({
+      v: 1,
+      kind: 'state',
+      state: {
+        tabs: [{ id: 'tab-real', url: 'https://example.test', title: 'Real', loading: false, origin: 'adopted' }],
+        activeTabId: 'tab-real',
+        running: true,
+        mode: 'cdp',
+        cdpEndpoint: 'http://127.0.0.1:9222',
+      },
+    })
+    expect(event).toEqual({
+      v: 1,
+      kind: 'state',
+      state: {
+        tabs: [{ id: 'tab-real', url: 'https://example.test', title: 'Real', loading: false, origin: 'adopted' }],
+        activeTabId: 'tab-real',
+        running: true,
+        mode: 'cdp',
+        cdpEndpoint: 'http://127.0.0.1:9222',
+      },
+    })
+  })
+
   it('user receives a stale version, an unknown kind or malformed fields and the client narrows them to null', () => {
     // Given frames carrying version 2, an unknown kind, a non-array tab list, a frame with no pixels, non-JSON text and a null payload
     // When each frame is parsed

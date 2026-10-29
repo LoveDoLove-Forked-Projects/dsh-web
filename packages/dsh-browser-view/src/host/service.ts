@@ -26,6 +26,7 @@ import { ChromeProcess } from '../core/chrome.ts'
 import { TabManager, type ScreencastFrame } from '../core/tabs.ts'
 import { buildSnapshot, type SnapshotResult } from '../core/snapshot.ts'
 import { DOCUMENT_TEXT_EXPRESSION, isAuthChallengeText, isLoopbackTarget } from './auth.ts'
+import { fetchCdpVersion, parseCdpEndpoint, realBrowserConnectionError } from './cdp-endpoint.ts'
 import {
   clickElement,
   navigateTo,
@@ -74,8 +75,26 @@ export interface BrowserViewBackend {
   handleCommand(sink: BrowserViewSink, command: BrowserViewCommand): Promise<void>
 }
 
+export type BrowserMode = 'isolated' | 'cdp'
+
+/** Current browser source, resolved live when a session starts. */
+export interface BrowserConnectionConfig {
+  mode: BrowserMode
+  cdpEndpoint?: string
+}
+
+/** Options shared by the isolated and external session factories. */
+export interface OpenSessionOptions extends BrowserConnectionConfig {
+  jpegQuality: number
+  viewport: { width: number; height: number }
+  onFrame: (frame: ScreencastFrame) => void
+  onTabsChanged: () => void
+}
+
 /** One running browser plus the tab manager over it. */
 export interface BrowserSession {
+  /** Explicit ownership/lifecycle mode; never inferred from process fields. */
+  mode: BrowserMode
   /** Protocol transport the tabs and the actions share. */
   transport: CdpTransport
   /** Tabs of this browser. */
@@ -100,17 +119,14 @@ export interface BrowserViewServiceOptions {
    * the loader from `ctx.get('connection')`; absent here means no auth top-up.
    */
   authenticatedUrl?: (url: string) => string | undefined
+  /** Live browser source; called for state and every new connection. */
+  resolveConfig?: () => BrowserConnectionConfig
   /** Browser factory, replaced by tests. */
-  openSession?: (options: { jpegQuality: number; viewport: { width: number; height: number }; onFrame: (frame: ScreencastFrame) => void; onTabsChanged: () => void }) => Promise<BrowserSession>
+  openSession?: (options: OpenSessionOptions) => Promise<BrowserSession>
 }
 
-/** Start Chrome, connect CDP, and wrap both in a session. */
-async function openDefaultSession(options: {
-  jpegQuality: number
-  viewport: { width: number; height: number }
-  onFrame: (frame: ScreencastFrame) => void
-  onTabsChanged: () => void
-}): Promise<BrowserSession> {
+/** Start the default isolated Chrome and wrap it in a session. */
+async function openIsolatedSession(options: OpenSessionOptions): Promise<BrowserSession> {
   const chrome = await ChromeProcess.launch({ viewport: options.viewport })
   let cdp: CdpClient
   try {
@@ -127,6 +143,7 @@ async function openDefaultSession(options: {
     onTabsChanged: options.onTabsChanged,
   })
   return {
+    mode: 'isolated',
     transport: cdp,
     tabs,
     chrome,
@@ -138,6 +155,46 @@ async function openDefaultSession(options: {
   }
 }
 
+/** Connect to an existing real browser without owning its process or tabs. */
+async function openExternalSession(options: OpenSessionOptions): Promise<BrowserSession> {
+  const endpoint = parseCdpEndpoint(options.cdpEndpoint ?? '')
+  let cdp: CdpClient | undefined
+  let tabs: TabManager | undefined
+  try {
+    const version = await fetchCdpVersion(endpoint)
+    cdp = await CdpClient.connect(version.webSocketDebuggerUrl, { timeoutMs: 5_000 })
+    tabs = new TabManager({
+      transport: cdp,
+      jpegQuality: options.jpegQuality,
+      viewport: options.viewport,
+      pinViewport: false,
+      discoverTargets: true,
+      onFrame: options.onFrame,
+      onTabsChanged: options.onTabsChanged,
+    })
+    await tabs.discoverExistingTabs()
+    const attachedTabs = tabs
+    return {
+      mode: 'cdp',
+      transport: cdp,
+      tabs: attachedTabs,
+      async dispose() {
+        await attachedTabs.dispose()
+        cdp?.close()
+      },
+    }
+  } catch (error) {
+    if (tabs !== undefined) await tabs.dispose().catch(() => undefined)
+    cdp?.close()
+    throw realBrowserConnectionError(endpoint, error)
+  }
+}
+
+/** Resolve a factory that honors the selected mode without fallback. */
+function openConfiguredSession(options: OpenSessionOptions): Promise<BrowserSession> {
+  return options.mode === 'cdp' ? openExternalSession(options) : openIsolatedSession(options)
+}
+
 /**
  * The plugin's single browser service.
  */
@@ -146,6 +203,7 @@ export class BrowserViewService implements BrowserViewBackend {
   private readonly viewport: { width: number; height: number }
   private readonly now: () => number
   private readonly openSession: NonNullable<BrowserViewServiceOptions['openSession']>
+  private readonly resolveConfig: () => BrowserConnectionConfig
   private readonly authenticatedUrl: BrowserViewServiceOptions['authenticatedUrl']
   private readonly sinks = new Set<BrowserViewSink>()
   private readonly bindings = new Map<string, string>()
@@ -172,6 +230,7 @@ export class BrowserViewService implements BrowserViewBackend {
   private opening: Promise<BrowserSession> | undefined
   private openingTab: Promise<BrowserTabView> | undefined
   private lastError: string | undefined
+  private generation = 0
   private disposed = false
 
   /**
@@ -181,7 +240,8 @@ export class BrowserViewService implements BrowserViewBackend {
     this.jpegQuality = options.jpegQuality ?? DEFAULT_JPEG_QUALITY
     this.viewport = options.viewport ?? { width: DEFAULT_VIEWPORT.width, height: DEFAULT_VIEWPORT.height }
     this.now = options.now ?? Date.now
-    this.openSession = options.openSession ?? openDefaultSession
+    this.openSession = options.openSession ?? openConfiguredSession
+    this.resolveConfig = options.resolveConfig ?? (() => ({ mode: 'isolated' }))
     this.authenticatedUrl = options.authenticatedUrl
   }
 
@@ -192,10 +252,19 @@ export class BrowserViewService implements BrowserViewBackend {
 
   /** The current panel-facing state; safe to call before anything started. */
   state(): BrowserPanelState {
+    const config = this.resolveConfig()
     const state: BrowserPanelState = {
       tabs: this.session?.tabs.list() ?? [],
       activeTabId: this.session === undefined ? null : this.displayedOrDefault(),
       running: this.session !== undefined,
+      mode: config.mode,
+    }
+    if (config.mode === 'cdp' && config.cdpEndpoint !== undefined) {
+      try {
+        state.cdpEndpoint = parseCdpEndpoint(config.cdpEndpoint).baseUrl
+      } catch {
+        state.cdpEndpoint = config.cdpEndpoint
+      }
     }
     if (this.lastError !== undefined) state.message = this.lastError
     return state
@@ -211,7 +280,7 @@ export class BrowserViewService implements BrowserViewBackend {
     // The hello frame is the panel's first paint: it carries the current tabs
     // so a reconnecting panel does not have to ask.
     sink.send({ v: 1, kind: 'hello', state: this.state() })
-    void this.startStreaming()
+    void this.startStreaming().catch(() => undefined)
     return () => {
       this.sinks.delete(sink)
       if (this.sinks.size === 0) void this.stopStreaming()
@@ -255,6 +324,10 @@ export class BrowserViewService implements BrowserViewBackend {
           return
         }
         case 'close-tab': {
+          const tabs = await this.requireTabs()
+          if (tabs.tab(command.tabId).origin === 'adopted') {
+            throw new Error('an adopted real-browser tab can only be closed in the browser or by browser_close with an explicit tab_id')
+          }
           await this.closeTab(command.tabId)
           return
         }
@@ -313,12 +386,19 @@ export class BrowserViewService implements BrowserViewBackend {
     if (sessionId === undefined) {
       throw new Error('browser_close needs the calling session: with no session there is no tab this call may close')
     }
-    if (this.session === undefined) return []
-    const tabs = this.session.tabs
+    if (this.session === undefined) {
+      // Omitted tab_id stays a no-launch cleanup. An explicit real-browser id is
+      // an operation, so it must connect and discover before it can close.
+      if (tabId === undefined || tabId === '' || this.resolveConfig().mode !== 'cdp') return []
+      await this.requireSession()
+    }
+    const session = this.session
+    if (session === undefined) return []
+    const tabs = session.tabs
     if (tabId !== undefined && tabId !== '') {
       const found = tabs.list().find(tab => tab.id === tabId)
       if (found === undefined) throw new Error(`unknown tab "${tabId}"; call browser_tabs to see the open tabs`)
-      if (found.sessionId !== sessionId) {
+      if (session.mode !== 'cdp' && found.sessionId !== sessionId) {
         throw new Error(`tab "${tabId}" was not opened by this session, so it is not this session's to close`)
       }
       await this.closeTab(found.id)
@@ -666,11 +746,14 @@ export class BrowserViewService implements BrowserViewBackend {
   /** Open tabs, for `browser_tabs`. */
   async listTabs(): Promise<{ tabs: BrowserTabView[]; activeTabId: string | null }> {
     if (this.session === undefined) {
-      // Listing tabs is also the cheap "is anything running" probe, so it must
-      // answer without starting a browser.
-      return { tabs: [], activeTabId: null }
+      // Isolated listing stays a cheap no-launch probe. Real-browser listing is
+      // the explicit discovery entry point for tabs that already exist.
+      if (this.resolveConfig().mode !== 'cdp') return { tabs: [], activeTabId: null }
+      await this.requireSession()
     }
-    return { tabs: this.session.tabs.list(), activeTabId: this.displayedOrDefault() }
+    const session = this.session
+    if (session === undefined) return { tabs: [], activeTabId: null }
+    return { tabs: session.tabs.list(), activeTabId: this.displayedOrDefault() }
   }
 
   /** Push one event to every attached panel, dropping sockets that fail. */
@@ -684,6 +767,23 @@ export class BrowserViewService implements BrowserViewBackend {
     }
   }
 
+  /** Apply a settings edit: detach the old source and restart an attached panel's stream. */
+  async reconfigure(): Promise<void> {
+    if (this.disposed) return
+    this.generation += 1
+    const session = this.session
+    this.session = undefined
+    this.opening = undefined
+    this.bindings.clear()
+    this.authTopUpSpent.clear()
+    this.displayedTabId = null
+    this.selectionPinned = false
+    this.lastError = undefined
+    if (session !== undefined) await session.dispose()
+    this.broadcast({ v: 1, kind: 'state', state: this.state() })
+    if (this.sinks.size > 0) await this.startStreaming().catch(() => undefined)
+  }
+
   /**
    * Tear everything down: stop pushing, stop streaming, close the socket, kill
    * the browser.
@@ -692,6 +792,8 @@ export class BrowserViewService implements BrowserViewBackend {
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
+    this.generation += 1
+    this.opening = undefined
     // Stop broadcasting first: a panel must not receive a frame from a browser
     // that is already being killed.
     const sinks = [...this.sinks]
@@ -732,26 +834,45 @@ export class BrowserViewService implements BrowserViewBackend {
   private async requireSession(): Promise<BrowserSession> {
     if (this.disposed) throw new Error('the browser view service is disposed')
     if (this.session !== undefined) return this.session
-    this.opening ??= this.startSession().finally(() => { this.opening = undefined })
-    return await this.opening
+    if (this.opening === undefined) this.opening = this.startSession()
+    const opening = this.opening
+    try {
+      return await opening
+    } finally {
+      if (this.opening === opening) this.opening = undefined
+    }
   }
 
   /** Start the browser once, recording failures for the panel. */
   private async startSession(): Promise<BrowserSession> {
+    const generation = this.generation
+    const config = this.resolveConfig()
     try {
       const session = await this.openSession({
+        ...config,
         jpegQuality: this.jpegQuality,
         viewport: this.viewport,
         onFrame: frame => { this.broadcast({ v: 1, kind: 'frame', ...frame }) },
         onTabsChanged: () => { this.broadcast({ v: 1, kind: 'state', state: this.state() }) },
       })
+      if (generation !== this.generation || this.disposed) {
+        await session.dispose()
+        throw new Error('the browser configuration changed while the session was opening')
+      }
       this.session = session
       this.lastError = undefined
       this.broadcast({ v: 1, kind: 'state', state: this.state() })
       return session
     } catch (error) {
-      this.lastError = error instanceof Error ? error.message : String(error)
-      this.broadcast({ v: 1, kind: 'error', code: 'browser-launch-failed', message: this.lastError })
+      if (generation === this.generation && !this.disposed) {
+        this.lastError = error instanceof Error ? error.message : String(error)
+        this.broadcast({
+          v: 1,
+          kind: 'error',
+          code: config.mode === 'cdp' ? 'browser-connect-failed' : 'browser-launch-failed',
+          message: this.lastError,
+        })
+      }
       throw error
     }
   }
@@ -759,6 +880,7 @@ export class BrowserViewService implements BrowserViewBackend {
   /** Start the screencast for the tab the panel watches. */
   private async startStreaming(): Promise<void> {
     const session = this.session
+      ?? (this.resolveConfig().mode === 'cdp' && this.sinks.size > 0 ? await this.requireSession() : undefined)
     if (session === undefined || this.sinks.size === 0) return
     const tabId = this.displayedOrDefault()
     if (tabId === null) return

@@ -26,6 +26,17 @@ import type {} from '@deepseek-ai/dsh-tools'
 import { BrowserViewService } from './host/service.ts'
 import { makeRoutes } from './host/routes.ts'
 import { createBrowserTools, type DurableImageRef } from './host/tools.ts'
+import { effectiveConfig, type Config as RuntimeConfig } from './host/config.ts'
+
+export { Config } from './host/config.ts'
+export type { ConfigInput, ResolvedConfig } from './host/config.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Volatile settings committed without remounting this plugin row. */
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void
+  }
+}
 
 /** Stable cordis plugin name. */
 export const name = 'browser-view'
@@ -57,8 +68,14 @@ interface ConnectionLike {
  * Mount the routes, the tools, and the browser lifetime.
  * @param ctx - host plugin context carrying webServer and tools.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config?: RuntimeConfig): void {
   const service = new BrowserViewService({
+    resolveConfig: () => {
+      const value = effectiveConfig(config)
+      return value.realBrowserEnabled
+        ? { mode: 'cdp', cdpEndpoint: value.cdpEndpoint }
+        : { mode: 'isolated' }
+    },
     // Resolved per navigation, not at mount: the connection service owns the
     // process launch token, may mount after this plugin, and answers with a
     // URL that is only good for this process. A host that mounts none simply
@@ -103,7 +120,18 @@ export function apply(ctx: Context): void {
     }
   }, 'browser-view: tools')
 
+  // Volatile settings update in place. Dispose only the old browser attachment;
+  // the next tool or panel action lazily uses the new source.
+  ctx.effect(() => {
+    const dispose = ctx.on('loader/volatile-update', paths => {
+      if (paths.some(path => path[0] === 'realBrowserEnabled' || path[0] === 'cdpEndpoint')) {
+        void service.reconfigure().catch(() => undefined)
+      }
+    })
+    return () => { dispose() }
+  }, 'browser-view: settings')
+
   // One disposer for the whole browser: it stops the broadcast, the stream, the
-  // protocol socket, and the process, in that order.
+  // protocol socket, and any process this plugin owns, in that order.
   ctx.effect(() => () => { void service.dispose() }, 'browser-view: browser')
 }

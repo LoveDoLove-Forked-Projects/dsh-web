@@ -269,6 +269,46 @@ describe('browser view tab body', () => {
     expect(dot()).toBe('ongoing')
   })
 
+  it('user sees the real-browser mode and its CDP endpoint', () => {
+    // Given a mounted body and a host attached to an external browser
+    // When the state carries the real mode and endpoint
+    // Then the toolbar names both, and switching back restores the isolated label
+    const mounted = mountPanel()
+    actOn(() => {
+      sockets.latest().pushState({ ...stateWithTab, mode: 'cdp', cdpEndpoint: 'http://127.0.0.1:9222' })
+    })
+    const status = mounted.container.querySelector('[data-dsh-part="status"]')
+    expect(status?.textContent).toContain(zh['panel.mode.real'])
+    expect(status?.textContent).toContain('http://127.0.0.1:9222')
+    expect(status?.getAttribute('title')).toBe('http://127.0.0.1:9222')
+
+    actOn(() => { sockets.latest().pushState({ ...stateWithTab, mode: 'isolated' }) })
+    expect(status?.textContent).toContain(zh['panel.mode.isolated'])
+    expect(status?.textContent).not.toContain('http://127.0.0.1:9222')
+  })
+
+  it('user sees the old frame cleared when the browser source changes', () => {
+    // Given a painted frame from the isolated browser
+    // When the host switches to a real-browser endpoint
+    // Then the old image disappears before the first new frame arrives
+    const mounted = mountPanel()
+    actOn(() => {
+      sockets.latest().pushState({ ...stateWithTab, mode: 'isolated' })
+      sockets.latest().pushFrame({ tabId: 'tab-1', seq: 1, width: 1280, height: 800, data: 'OLD-FRAME' })
+    })
+    expect(mounted.container.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,OLD-FRAME')
+
+    actOn(() => {
+      sockets.latest().pushState({ ...stateWithTab, mode: 'cdp', cdpEndpoint: 'http://127.0.0.1:9222' })
+    })
+    expect(mounted.container.querySelector('img')).toBeNull()
+
+    actOn(() => {
+      sockets.latest().pushFrame({ tabId: 'tab-1', seq: 2, width: 1440, height: 900, data: 'NEW-FRAME' })
+    })
+    expect(mounted.container.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,NEW-FRAME')
+  })
+
   it('user switches language and every string of the tab follows', () => {
     // Given a body mounted with the Chinese dictionary
     // When it re-renders with the English dictionary

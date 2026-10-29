@@ -58,6 +58,10 @@ export interface TabManagerOptions {
   onFrame?: (frame: ScreencastFrame) => void
   /** Notifies that a tab's url, title, loading state, or membership changed. */
   onTabsChanged?: () => void
+  /** Discover and adopt existing/future page targets instead of only DSH-created ones. */
+  discoverTargets?: boolean
+  /** Pin new tabs to the fixed isolated viewport. @default true */
+  pinViewport?: boolean
 }
 
 /** One tab's host-side record. */
@@ -74,6 +78,7 @@ interface TabRecord {
    */
   loaderId: string | undefined
   ownerSessionId: string | undefined
+  origin: 'created' | 'adopted'
   console: BrowserConsoleEntry[]
   network: BrowserNetworkEntry[]
   /** Pending requests keyed by network request id, so response frames update in place. */
@@ -85,6 +90,13 @@ interface TabRecord {
 }
 
 /** Params of one `Page.screencastFrame` event. */
+interface TargetInfoParams {
+  targetId?: unknown
+  type?: unknown
+  url?: unknown
+  title?: unknown
+}
+
 interface ScreencastFrameParams {
   data?: unknown
   sessionId?: unknown
@@ -163,11 +175,14 @@ export class TabManager {
   private readonly viewport: { width: number; height: number }
   private readonly ringSize: number
   private readonly now: () => number
+  private readonly discoversTargets: boolean
+  private readonly pinViewports: boolean
   private onFrame: ((frame: ScreencastFrame) => void) | undefined
   private onTabsChanged: (() => void) | undefined
   private readonly tabs = new Map<string, TabRecord>()
   private readonly bySession = new Map<string, TabRecord>()
   private readonly unsubscribers: Array<() => void> = []
+  private readonly attaching = new Map<string, Promise<TabRecord>>()
   private active: string | null = null
   private disposed = false
 
@@ -180,6 +195,8 @@ export class TabManager {
     this.viewport = options.viewport ?? { width: DEFAULT_VIEWPORT.width, height: DEFAULT_VIEWPORT.height }
     this.ringSize = options.ringSize ?? EVENT_RING_SIZE
     this.now = options.now ?? Date.now
+    this.discoversTargets = options.discoverTargets ?? false
+    this.pinViewports = options.pinViewport ?? true
     this.onFrame = options.onFrame
     this.onTabsChanged = options.onTabsChanged
     this.subscribe()
@@ -237,17 +254,74 @@ export class TabManager {
     const created = await this.transport.send<{ targetId?: string }>('Target.createTarget', { url: 'about:blank' })
     const targetId = created.targetId
     if (typeof targetId !== 'string' || targetId === '') throw new Error('the browser did not return a target id for the new tab')
+    const record = await this.attachTarget({ targetId, type: 'page', url: 'about:blank', title: '' }, 'created')
+    record.ownerSessionId = options.sessionId
+    this.active = targetId
+    if (this.pinViewports) await this.pinViewport(record)
+    if (options.url !== undefined && options.url !== '') await this.navigate(targetId, options.url)
+    this.onTabsChanged?.()
+    return this.view(record)
+  }
+
+  /** Discover every existing page and keep following pages created later. */
+  async discoverExistingTabs(): Promise<void> {
+    if (!this.discoversTargets || this.disposed) return
+    await this.transport.send('Target.setDiscoverTargets', { discover: true })
+    const result = await this.transport.send<{ targetInfos?: TargetInfoParams[] }>('Target.getTargets')
+    for (const info of result.targetInfos ?? []) {
+      if (info.type !== 'page') continue
+      await this.attachTarget(info, 'adopted').catch(() => undefined)
+    }
+    this.onTabsChanged?.()
+  }
+
+  /** Adopt one target-created event without racing an explicit create/attach. */
+  private async adoptTarget(info: TargetInfoParams): Promise<void> {
+    if (this.disposed || info.type !== 'page') return
+    await this.attachTarget(info, 'adopted')
+    this.onTabsChanged?.()
+  }
+
+  /** Attach a page exactly once, coalescing discovery and Target.createTarget. */
+  private async attachTarget(info: TargetInfoParams, origin: 'created' | 'adopted'): Promise<TabRecord> {
+    const targetId = info.targetId
+    if (typeof targetId !== 'string' || targetId === '') throw new Error('the browser did not return a target id')
+    const existing = this.tabs.get(targetId)
+    if (existing !== undefined) {
+      if (origin === 'created') existing.origin = 'created'
+      return existing
+    }
+    const inFlight = this.attaching.get(targetId)
+    if (inFlight !== undefined) {
+      const record = await inFlight
+      if (origin === 'created') record.origin = 'created'
+      return record
+    }
+    const task = this.attachNewTarget(targetId, info, origin)
+    this.attaching.set(targetId, task)
+    try {
+      return await task
+    } finally {
+      this.attaching.delete(targetId)
+    }
+  }
+
+  /** Build and instrument one previously unseen page record. */
+  private async attachNewTarget(targetId: string, info: TargetInfoParams, origin: 'created' | 'adopted'): Promise<TabRecord> {
+    if (this.disposed) throw new Error('the tab manager is disposed')
     const attached = await this.transport.send<{ sessionId?: string }>('Target.attachToTarget', { targetId, flatten: true })
     const sessionId = attached.sessionId
     if (typeof sessionId !== 'string' || sessionId === '') throw new Error(`the browser did not return a session for tab ${targetId}`)
+    if (this.disposed) throw new Error('the tab manager is disposed')
     const record: TabRecord = {
       id: targetId,
       sessionId,
-      url: 'about:blank',
-      title: '',
+      url: typeof info.url === 'string' ? info.url : 'about:blank',
+      title: typeof info.title === 'string' ? info.title : '',
       loading: false,
       loaderId: undefined,
-      ownerSessionId: options.sessionId,
+      ownerSessionId: undefined,
+      origin,
       console: [],
       network: [],
       pendingRequests: new Map(),
@@ -257,12 +331,28 @@ export class TabManager {
     }
     this.tabs.set(targetId, record)
     this.bySession.set(sessionId, record)
-    this.active = targetId
-    await this.enableDomains(record)
-    await this.pinViewport(record)
-    if (options.url !== undefined && options.url !== '') await this.navigate(targetId, options.url)
+    if (this.active === null) this.active = targetId
+    try {
+      await this.enableDomains(record)
+      await this.refreshDocumentInfo(record)
+      return record
+    } catch (error) {
+      this.tabs.delete(targetId)
+      this.bySession.delete(sessionId)
+      if (this.active === targetId) this.active = [...this.tabs.keys()].at(-1) ?? null
+      await this.transport.send('Target.detachFromTarget', { sessionId }).catch(() => undefined)
+      throw error
+    }
+  }
+
+  /** Forget a target the real browser closed. */
+  private removeTarget(targetId: string): void {
+    const record = this.tabs.get(targetId)
+    if (record === undefined) return
+    this.tabs.delete(targetId)
+    this.bySession.delete(record.sessionId)
+    if (this.active === targetId) this.active = [...this.tabs.keys()].at(-1) ?? null
     this.onTabsChanged?.()
-    return this.view(record)
   }
 
   /**
@@ -328,7 +418,8 @@ export class TabManager {
   async closeTab(tabId: string): Promise<void> {
     const record = this.requireRecord(tabId)
     await this.stopScreencast(tabId).catch(() => undefined)
-    await this.transport.send('Target.closeTarget', { targetId: record.id }).catch(() => undefined)
+    const result = await this.transport.send<{ success?: boolean }>('Target.closeTarget', { targetId: record.id })
+    if (result.success === false) throw new Error(`the browser refused to close tab "${record.id}"`)
     this.tabs.delete(record.id)
     this.bySession.delete(record.sessionId)
     if (this.active === record.id) this.active = [...this.tabs.keys()].at(-1) ?? null
@@ -393,15 +484,36 @@ export class TabManager {
     const data = await this.captureScreenshot(tabId)
     const record = this.requireRecord(tabId)
     record.frameSeq += 1
+    const viewport = await this.frameViewport(record)
     const frame: ScreencastFrame = {
       tabId: record.id,
       seq: record.frameSeq,
-      width: this.viewport.width,
-      height: this.viewport.height,
+      width: viewport.width,
+      height: viewport.height,
       data,
     }
     this.onFrame?.(frame)
     return frame
+  }
+
+  /** Read the real CSS viewport without changing it in external-browser mode. */
+  private async frameViewport(record: TabRecord): Promise<{ width: number; height: number }> {
+    if (this.pinViewports) return this.viewport
+    try {
+      const metrics = await this.transport.send<{
+        cssLayoutViewport?: { clientWidth?: unknown; clientHeight?: unknown }
+        layoutViewport?: { clientWidth?: unknown; clientHeight?: unknown }
+      }>('Page.getLayoutMetrics', {}, record.sessionId)
+      const viewport = metrics.cssLayoutViewport ?? metrics.layoutViewport
+      if (typeof viewport?.clientWidth === 'number' && typeof viewport.clientHeight === 'number'
+        && viewport.clientWidth > 0 && viewport.clientHeight > 0) {
+        return { width: Math.round(viewport.clientWidth), height: Math.round(viewport.clientHeight) }
+      }
+    } catch {
+      // A page mid-navigation can reject metrics; the configured size is only a
+      // display fallback and is never written back through device emulation.
+    }
+    return this.viewport
   }
 
   /**
@@ -470,6 +582,7 @@ export class TabManager {
       url: record.url,
       title: record.title,
       loading: record.loading,
+      origin: record.origin,
     }
     if (record.ownerSessionId !== undefined) view.sessionId = record.ownerSessionId
     return view
@@ -520,6 +633,29 @@ export class TabManager {
   private subscribe(): void {
     const bySession = (sessionId: string | undefined): TabRecord | undefined => {
       return sessionId === undefined ? undefined : this.bySession.get(sessionId)
+    }
+
+    if (this.discoversTargets) {
+      this.unsubscribers.push(this.transport.on('Target.targetCreated', params => {
+        const info = (params as { targetInfo?: TargetInfoParams }).targetInfo
+        if (info !== undefined) void this.adoptTarget(info).catch(() => undefined)
+      }))
+      this.unsubscribers.push(this.transport.on('Target.targetInfoChanged', params => {
+        const info = (params as { targetInfo?: TargetInfoParams }).targetInfo
+        if (info === undefined || typeof info.targetId !== 'string') return
+        const record = this.tabs.get(info.targetId)
+        if (record === undefined) {
+          void this.adoptTarget(info).catch(() => undefined)
+          return
+        }
+        if (typeof info.url === 'string') record.url = info.url
+        if (typeof info.title === 'string') record.title = info.title
+        this.onTabsChanged?.()
+      }))
+      this.unsubscribers.push(this.transport.on('Target.targetDestroyed', params => {
+        const targetId = (params as { targetId?: unknown }).targetId
+        if (typeof targetId === 'string') this.removeTarget(targetId)
+      }))
     }
 
     this.unsubscribers.push(this.transport.on('Page.frameNavigated', (params, sessionId) => {

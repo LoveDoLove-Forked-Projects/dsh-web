@@ -34,6 +34,10 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the renderer's ctx.slots merge (the slot registry).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: merges the Plugins page's row-configuration seat contract.
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the sidebar service's Context merge (ctx.sidebarRightTabs) and
 // the two pane SlotMap declarations it owns.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -42,11 +46,19 @@ import { en, zh, type BrowserViewKey } from './locales.ts'
 import { BrowserViewPanel } from './panel.tsx'
 import { BROWSER_VIEW_TAB_ID, browserViewTabDefinition } from './tab-type.ts'
 import { BrowserViewTabTitle } from './tab-title.tsx'
+import { BROWSER_VIEW_CONFIG_KEYS, BrowserViewConfig } from './config.tsx'
+import { bindBrowserViewSettingsForm, BrowserViewSettingsCard, BrowserViewSettingsCardController } from './BrowserViewSettingsCard.tsx'
+import { installPluginCard } from './plugin-card-seat.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Browser-view surface copy. */
     'browser-view': BrowserViewKey
+  }
+
+  interface SlotMap {
+    /** The Web Extensions plugin card seat. */
+    'web-ui.plugin.item': { kind: 'list'; scope: 'root'; owner: { children?: never } }
   }
 }
 
@@ -54,7 +66,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'browser-view'
 
 /** Services required by this plugin. */
-export const inject = ['slots', 'locale', 'sidebarRightTabs']
+export const inject = ['slots', 'locale', 'sidebarRightTabs', 'configForms', 'remote']
 
 /**
  * Register the browser-view tab type and its surfaces.
@@ -128,6 +140,33 @@ export function apply(ctx: ClientContext): void {
       return () => {}
     }
   })
+
+  // The Host schema supplies values; this seat makes them reachable from the
+  // bundle row in the Plugins page for both standalone and aggregate mounts.
+  ctx.slots.inject('plugins.row.config', () => {
+    const disposers: Array<() => void> = []
+    for (const key of BROWSER_VIEW_CONFIG_KEYS) {
+      try {
+        disposers.push(ctx.slots.register({ name: 'plugins.row.config', key, locale: NS }, BrowserViewConfig))
+      } catch {
+        // A host without the row still keeps the browser-view surfaces.
+      }
+    }
+    return () => { for (const dispose of disposers) dispose() }
+  })
+
+  // The same volatile form also renders as a card in Web Extensions. The helper
+  // migrates it between the family list and the official bundle config seat.
+  const settingsCard = new BrowserViewSettingsCardController(bindBrowserViewSettingsForm(ctx))
+  installPluginCard(ctx, {
+    bundle: '@linxin666/dsh-client-ui-browser-view',
+    id: 'browser-view',
+    order: 95,
+    locale: NS,
+    inject: () => settingsCard.inject(),
+    component: BrowserViewSettingsCard,
+  })
+  ctx.effect(() => () => { settingsCard.dispose() }, 'browser-view: settings card')
 }
 
 export type { BrowserViewPanelFace, BrowserViewPanelProps, BrowserViewSocketFactory } from './panel.tsx'

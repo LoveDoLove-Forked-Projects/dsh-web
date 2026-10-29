@@ -141,7 +141,8 @@
    it in words. The dot brings its own component stylesheet, so nothing here
    paints it. */
 .status {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -152,11 +153,28 @@
 }
 
 .statusText {
+  flex: none;
   max-width: 72px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.mode {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.endpoint {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 420px) {
+  .endpoint {
+    display: none;
+  }
+}
 
 /* -- Controlled-browser chips --
 

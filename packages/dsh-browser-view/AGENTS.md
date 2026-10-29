@@ -30,9 +30,13 @@ DSH Web GUI 插件 dsh-browser-view（实时浏览器视图）。包级规则：
 ## 安全语义
 
 - 面板 socket 只允许 loopback；非本机请求在升级前即拒绝。
-- Chrome 用系统临时目录下的一次性 `--user-data-dir` 与随机调试端口启动；不得改为
-  接管用户已登录的浏览器配置目录。
-- 插件 dispose 时必须杀掉 Chromium 子进程并停掉投屏；修改进程生命周期要同步 README
+- 默认隔离模式的 Chrome 用系统临时目录下的一次性 `--user-data-dir` 与随机调试端口启动；
+  不得把默认模式改为接管用户已登录的浏览器配置目录。
+- `realBrowserEnabled` 是默认关闭的显式 opt-in：CDP HTTP 端点与发现返回的 WebSocket 都
+  必须重新校验 loopback；连接失败不得回退隔离模式。真实模式不改写真实页面视口，权限
+  与关闭规则以 README 的用户契约为准。
+- 插件 dispose 时必须停掉投屏：隔离模式杀掉自己启动的 Chromium 子进程；外部 CDP 只
+  分离，不关闭浏览器或其标签页。配置切换同样只分离外部会话。修改生命周期要同步 README
   的 `安全模型` 与本节。
 - 截图只经宿主附件服务（`ctx.get('attachments').saveImage`）落盘，因为 image part 的
   `attachment` ref 必须由该服务签发；除此之外不得把截图副本、页面文本或控制台内容

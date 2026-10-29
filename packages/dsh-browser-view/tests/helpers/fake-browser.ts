@@ -72,6 +72,7 @@ export function createFakeBrowser(options: { failLaunch?: () => Error | undefine
         onTabsChanged: opts.onTabsChanged,
       })
       return {
+        mode: 'isolated',
         transport,
         tabs,
         async dispose() { disposed = true },

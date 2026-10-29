@@ -47,6 +47,8 @@ export interface BrowserTabView {
   loading: boolean
   /** Session that last acted on the tab, when any. */
   sessionId?: string
+  /** Whether DSH created this target or adopted an existing real-browser tab. */
+  origin?: 'created' | 'adopted'
 }
 
 /** What the header of the panel shows. */
@@ -55,8 +57,12 @@ export interface BrowserPanelState {
   tabs: BrowserTabView[]
   /** Tab the panel is watching, null when none is open. */
   activeTabId: string | null
-  /** Whether the host half currently owns a live browser process. */
+  /** Whether the host half currently has a live browser process or CDP attachment. */
   running: boolean
+  /** Browser source selected for the current configuration; absent in older hosts. */
+  mode?: 'isolated' | 'cdp'
+  /** Normalized loopback CDP origin when real-browser mode is selected. */
+  cdpEndpoint?: string
   /** Last error text the host wants the panel to show instead of a frame. */
   message?: string
 }

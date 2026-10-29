@@ -78,6 +78,7 @@ function createAuthBrowser(options: AuthBrowserOptions): AuthBrowser {
     openSession: async (): Promise<BrowserSession> => {
       const tabs = new TabManager({ transport })
       return {
+        mode: 'isolated',
         transport,
         tabs,
         async dispose() { await tabs.dispose() },
