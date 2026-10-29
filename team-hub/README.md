@@ -147,7 +147,7 @@ needed something the document does not state, each kept additive and small.
    withdrawal as a Host operation while the section 11 matrix also grants it to
    admins, so the hub accepts the asking Host or an admin and refuses plain
    members.
-9. **Supplements A1 and A2.** `GET /api/v1/me`, the inbox, the team question
+9. **Supplements A1, A2 and A4.** `GET /api/v1/me`, the inbox, the team question
    list, the activity feed, `GET /api/v1/teams/:teamId/agents` and
    `comment_mentions` follow supplements A1 and A2 as frozen by the dispatcher:
    token responses carry `member`; `inbox`, `questions`, `activity`, `agents`
@@ -158,6 +158,42 @@ needed something the document does not state, each kept additive and small.
    their storage form; an answer needs a selection or a custom text. A revoked
    host reports `host_status: "offline"` because the wire shape has only two
    values.
+10. **Supplement A4 (Host contract hardening).**
+    - `POST /hosts/register` takes `{ hostname, client_version, agents: [{ name,
+      preset_id, model?, reasoning_effort? }] }` with a mandatory `preset_id`,
+      and answers `{ host_id, status, agents: [{ id, name }] }` so the Host can
+      map its members to hub agent ids. `model` and `reasoning_effort` are kept
+      on the agent row (`migrations/0003_a4_bindings.sql`) instead of dropped.
+    - The WebSocket handshake authenticates from `Authorization: Bearer` only;
+      a token in the query string is ignored and the connection is refused with
+      401. The web session cookie still authenticates REST calls. The protocol
+      version must arrive either as `protocol_version` or as
+      `X-Team-Hub-Protocol-Version`, otherwise the handshake answers 400.
+    - `expires_in` is seconds (7200 for the access token), in both the token
+      response and the refresh response.
+    - A claim is one conditional `UPDATE` guarded by
+      `status IN ('assigned','waiting_host')` and the agent's host binding, so a
+      race has exactly one winner; a reconnect is the second legal shape
+      (`status='running'` with matching attempt and lease). `todo`, `failed`,
+      `done`, `canceled` and `in_review` answer 422 `INVALID_STATE_TRANSITION`.
+    - Pending rework is `rework_instructions` being non-null while the card is
+      `assigned`; the hub never starts rework itself, and settlement clears the
+      instructions because the run that consumed them is over.
+    - `POST /auth/token` verifies the PKCE verifier against the stored
+      `code_challenge` itself (S256) before GitHub is called, which is why the
+      iOS callback records the authorization code on the pending authorization
+      row instead of deleting it. The web flow binds `state` to the HttpOnly
+      cookie `th_oauth_state` and writes `th_session` and `th_refresh` on the
+      callback and on every refresh.
+    - Submit-for-review and direct completion are limited to the assignee or an
+      admin.
+    - Host execution routes allow 120 requests per minute per host
+      (supplement A4.6), not the 30 the section 11 table still shows.
+11. **Specification text still to be synced.** Two places in PROTOCOL.md
+    contradict supplement A4 and are not edited here because the file is
+    maintained by the protocol owner: the WebSocket section still writes the URL
+    as `?token=<token>` (A4.2 forbids a token in the URL) and the section 11
+    quota table still lists 30 host requests per minute (A4.6 raises it to 120).
 10. **APNs environment routing.** Delivery picks the Apple host from the
     registered token's `environment` column rather than the `APNS_BUNDLE_ID`
     secret, and the `apns-topic` header always carries the registered
