@@ -28,7 +28,7 @@ import {
   type BoundAgent,
   type TeamAgentBinding,
 } from './host/bindings.ts'
-import { platformSocket, teamSocketUrl, type SocketHandlers, type SocketLike } from './host/channel.ts'
+import { platformSocket, teamSocketHeaders, teamSocketUrl, type SocketHandlers, type SocketLike } from './host/channel.ts'
 import { DEFAULT_TOKEN_REF, resolveHostToken } from './host/credentials.ts'
 import { createTeamExtension } from './host/extension.ts'
 import { HubClient } from './host/hub-client.ts'
@@ -305,7 +305,7 @@ function applyImpl(ctx: Context, config?: Config): void {
     if (current.hubUrl === '' || current.teamId === '') return undefined
     const token = await resolveHostToken(ctx, current.hostTokenRef)
     if (token === undefined) return undefined
-    return platformSocket(teamSocketUrl(current.hubUrl, current.teamId, token, sinceSeq), handlers)
+    return platformSocket(teamSocketUrl(current.hubUrl, current.teamId, sinceSeq), handlers, teamSocketHeaders(token))
   }
 
   /** Ask the board to run one card through its own action applier. */

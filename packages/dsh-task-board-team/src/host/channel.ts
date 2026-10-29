@@ -26,30 +26,41 @@ export interface SocketHandlers {
   closed(reason?: string): void
 }
 
-/** Open one socket at `url` and wire its handlers. */
-export type ConnectSocket = (url: string, handlers: SocketHandlers) => SocketLike
+/** Open one socket at `url`, presenting `headers` on the upgrade, and wire its handlers. */
+export type ConnectSocket = (url: string, handlers: SocketHandlers, headers: Record<string, string>) => SocketLike
 
 /**
- * Derive the team channel URL for one hub.
+ * Derive the team channel URL for one hub. The Host Token never travels in the
+ * URL; it rides the upgrade's Authorization header (see {@link teamSocketHeaders}).
  * @param hubUrl - configured hub base URL (http/https or ws/wss).
  * @param teamId - team the channel belongs to.
- * @param token - Host Token the handshake presents.
  * @param sinceSeq - last event sequence this Host saw; 0 asks for a full replay.
  * @returns the absolute WebSocket URL.
  */
-export function teamSocketUrl(hubUrl: string, teamId: string, token: string, sinceSeq: number): string {
+export function teamSocketUrl(hubUrl: string, teamId: string, sinceSeq: number): string {
   const base = hubUrl.trim().replace(/\/+$/, '')
   const socketBase = base.replace(/^http(s?):\/\//i, 'ws$1://')
   const path = '/api/v1/teams/' + encodeURIComponent(teamId) + '/ws'
-  const query = '?token=' + encodeURIComponent(token)
-    + '&since_seq=' + String(Math.max(0, Math.floor(sinceSeq)))
+  const query = '?since_seq=' + String(Math.max(0, Math.floor(sinceSeq)))
     + '&protocol_version=' + encodeURIComponent('1.0.0')
   return socketBase + path + query
 }
 
-/** The default socket factory: the platform WebSocket. */
-export const platformSocket: ConnectSocket = (url, handlers) => {
-  const socket = new WebSocket(url)
+/**
+ * The upgrade headers the hub authenticates a Host channel with.
+ * @param token - Host Token the handshake presents.
+ * @returns the Authorization and protocol version headers.
+ */
+export function teamSocketHeaders(token: string): Record<string, string> {
+  return { Authorization: 'Bearer ' + token, 'X-Team-Hub-Protocol-Version': '1.0.0' }
+}
+
+/** The platform constructor with the init form the Host runtime accepts (headers on the upgrade). */
+type HeaderedWebSocket = new (url: string, init: { headers: Record<string, string> }) => WebSocket
+
+/** The default socket factory: the platform WebSocket, with the headers on the upgrade. */
+export const platformSocket: ConnectSocket = (url, handlers, headers) => {
+  const socket = new (WebSocket as unknown as HeaderedWebSocket)(url, { headers })
   let closed = false
   socket.addEventListener('message', event => {
     const data = (event as { data?: unknown }).data
