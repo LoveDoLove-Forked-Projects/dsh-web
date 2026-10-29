@@ -8,9 +8,13 @@ import settleSample from '../contract/settle.json'
 import questionsSample from '../contract/questions.json'
 import withdrawSample from '../contract/withdraw.json'
 import commentsSample from '../contract/comments.json'
+import commentsListSample from '../contract/comments-list.json'
 import wsHandshake from '../contract/ws-handshake.json'
 import wsEvents from '../contract/ws-events.json'
-import { api, createEnv, externalTransport, one, seedHost, seedTeam, T0, tokenFor, upgrade, type GithubAccount } from './helpers'
+import { api, createEnv, externalTransport, seedHost, seedTeam, T0, tokenFor, upgrade, type GithubAccount } from './helpers'
+import { channelState } from '../src/channel'
+import { sweepAllTeams } from '../src/domain/sweep'
+import { QUESTION_TTL_MS } from '../src/constants'
 
 const OCTOCAT: GithubAccount = { id: 1001, login: 'octocat', name: 'Octo Cat', avatar_url: null }
 const HUBOT: GithubAccount = { id: 1002, login: 'hubot', name: 'Hub Ot', avatar_url: null }
@@ -26,16 +30,23 @@ interface Mismatch {
  * into another type shows up here, which is how both sides stay in step.
  */
 function compareShape(live: unknown, sample: unknown, path: string, out: Mismatch[]): void {
-  if (sample === null) {
-    if (live !== null) out.push({ path, problem: 'live value is not null' })
-    return
-  }
+  // A null in a sample marks a field whose value depends on the moment the
+  // event happened (a lease that did not exist yet, an answer still missing).
+  // The key set, the array lengths and the shape of every present value still
+  // carry the drift signal, in both directions.
+  if (sample === null || live === null) return
   if (Array.isArray(sample)) {
     if (!Array.isArray(live)) {
       out.push({ path, problem: 'expected an array' })
       return
     }
-    if (sample.length > 0 && live.length > 0) compareShape(live[0], sample[0], path + '[]', out)
+    if (live.length !== sample.length) {
+      out.push({ path, problem: live.length + ' element(s) but the sample has ' + sample.length })
+    }
+    const shared = Math.min(live.length, sample.length)
+    for (let index = 0; index < shared; index += 1) {
+      compareShape(live[index], sample[index], path + '[' + index + ']', out)
+    }
     return
   }
   if (typeof sample === 'object') {
@@ -185,6 +196,19 @@ describe('contract samples', () => {
     ])
   })
 
+  it('operator sees the comparator reject a drift in a later array element', () => {
+    // Given a sample with two entries and a live value whose second entry drifted
+    const sample = { items: [{ id: 'a', state: 'ok' }, { id: 'b', state: 'ok' }] }
+    const live = { items: [{ id: 'a', state: 'ok' }, { id: 'b', state: 'ok', extra: 'drift' }] }
+    const mismatches: Mismatch[] = []
+
+    // When the two are compared
+    compareShape(live, sample, 'probe', mismatches)
+
+    // Then the second element is reported, which comparing only the first would miss
+    expect(mismatches.map((entry) => entry.path)).toEqual(['probe.items[1]'])
+  })
+
   it('host heartbeat answers exactly the documented shape', async () => {
     // Given a registered host
     const context = await fixture()
@@ -224,6 +248,30 @@ describe('contract samples', () => {
       status: 'assigned',
       rework_instructions: 'Add the regression test before settling again',
     })
+  })
+
+  it('host comment thread answers exactly the documented shape', async () => {
+    // Given a card with one agent comment on it
+    const context = await fixture()
+    await api(context.env, 'POST', '/api/v1/teams/' + context.teamId + '/issues/' + context.issueId + '/comments', {
+      token: context.hostToken,
+      body: { content: 'Starting the run, will report back.', author_type: 'agent', author_agent_id: context.agentId },
+    })
+
+    // When the host reads the thread through the documented interface
+    const result = await api(
+      context.env,
+      'GET',
+      '/api/v1/teams/' + context.teamId + '/issues/' + context.issueId + '/comments',
+      { token: context.hostToken },
+    )
+
+    // Then the thread matches the sample entry for entry
+    const mismatches: Mismatch[] = []
+    expect(result.status).toBe(commentsListSample.response.status)
+    compareShape(result.body, commentsListSample.response.body, 'comments-list', mismatches)
+    expect(mismatches).toEqual([])
+    expect(result.body.comments).toHaveLength(1)
   })
 
   it('host claim, renewal and settlement answer exactly the documented shapes', async () => {
@@ -376,67 +424,95 @@ describe('contract samples', () => {
     )
   })
 
-  it('websocket event catalogue covers every event with the documented payload', async () => {
-    // Given the documented event catalogue
-    const documented = wsEvents.events.map((entry) => entry.event).sort()
-
-    // Then it lists exactly the events the protocol defines
-    expect(documented).toEqual(
-      [
-        'comment.created',
-        'comment.mentioned',
-        'host.status_changed',
-        'issue.claimed',
-        'issue.created',
-        'issue.rework',
-        'issue.status_changed',
-        'issue.updated',
-        'question.answered',
-        'question.created',
-        'question.expired',
-        'question.withdrawn',
-      ].sort(),
-    )
-
-    // When a rework signal and a question answer are actually delivered
+  it('every documented websocket event is delivered with the documented payload', async () => {
+    // Given a host socket caught up with the channel and the documented catalogue
     const context = await fixture()
-    const socket = await upgrade(context.env, '/api/v1/teams/' + context.teamId + '/ws', {
+    const checkpoint = (await channelState(context.env, context.teamId)).latest_seq
+    const opened = await upgrade(context.env, '/api/v1/teams/' + context.teamId + '/ws', {
       token: context.hostToken,
-      query: { protocol_version: '1.0.0', since_seq: String(0) },
+      query: { protocol_version: '1.0.0', since_seq: String(checkpoint) },
     })
-    const live = socket.webSocket
-    if (live === null) throw new Error('no socket')
-    live.accept()
-    const received: { event?: string; payload?: unknown }[] = []
-    live.addEventListener('message', (event) => {
-      received.push(JSON.parse(String(event.data)))
+    const socket = opened.webSocket
+    if (socket === null) throw new Error('no socket')
+    socket.accept()
+    const received = new Map<string, unknown>()
+    socket.addEventListener('message', (event) => {
+      const frame = JSON.parse(String(event.data)) as { event?: string; payload?: unknown }
+      if (frame.event !== undefined && !received.has(frame.event)) received.set(frame.event, frame.payload)
     })
+    const base = '/api/v1/teams/' + context.teamId
 
-    await api(context.env, 'POST', '/api/v1/teams/' + context.teamId + '/issues/' + context.issueId + '/claim', {
+    // When a card runs through creation, a claim, both kinds of comment, two
+    // questions with an answer and a withdrawal, settlement, rejection, and one
+    // question is left to expire while the host goes offline
+    const created = await api(context.env, 'POST', base + '/issues', {
+      token: context.adminToken,
+      body: { title: 'Contract lifecycle', assignee_type: 'agent', assignee_id: context.agentId },
+    })
+    const issueId = created.body.issue.id as string
+    const claim = await api(context.env, 'POST', base + '/issues/' + issueId + '/claim', {
       token: context.hostToken,
       body: {},
     })
-    const asked = await api(
-      context.env,
-      'POST',
-      '/api/v1/teams/' + context.teamId + '/issues/' + context.issueId + '/questions',
-      { token: context.hostToken, body: { question_text: 'Which endpoint should ship first?' } },
-    )
-    await api(
-      context.env,
-      'POST',
-      '/api/v1/teams/' + context.teamId + '/questions/' + asked.body.question.id + '/answer',
-      { token: context.adminToken, body: { selected: ['Plan A'], custom: 'Ship the v1 endpoint first' } },
-    )
+    await api(context.env, 'POST', base + '/issues/' + issueId + '/comments', {
+      token: context.adminToken,
+      body: { content: 'Please pick this up.' },
+    })
+    await api(context.env, 'POST', base + '/issues/' + issueId + '/comments', {
+      token: context.adminToken,
+      body: { content: '@qa-bot please pick this up' },
+    })
+    const answered = await api(context.env, 'POST', base + '/issues/' + issueId + '/questions', {
+      token: context.hostToken,
+      body: {
+        question_text: 'Which endpoint should ship first?',
+        options: [{ label: 'Plan A', description: 'Ship the v1 endpoint' }, { label: 'Plan B', description: 'Stage it behind a flag' }],
+        multi_select: false,
+      },
+    })
+    await api(context.env, 'POST', base + '/questions/' + answered.body.question.id + '/answer', {
+      token: context.adminToken,
+      body: { selected: ['Plan A'], custom: 'Ship the v1 endpoint first' },
+    })
+    const withdrawn = await api(context.env, 'POST', base + '/issues/' + issueId + '/questions', {
+      token: context.hostToken,
+      body: { question_text: 'Withdraw me' },
+    })
+    await api(context.env, 'POST', base + '/questions/' + withdrawn.body.question.id + '/withdraw', {
+      token: context.hostToken,
+    })
+    await api(context.env, 'POST', base + '/issues/' + issueId + '/questions', {
+      token: context.hostToken,
+      body: { question_text: 'This one is left to expire' },
+    })
+    await api(context.env, 'POST', base + '/issues/' + issueId + '/settle', {
+      token: context.hostToken,
+      body: { outcome: 'succeeded', execution_attempt_id: claim.body.execution_attempt_id },
+    })
+    await api(context.env, 'POST', base + '/issues/' + issueId + '/review/reject', {
+      token: context.adminToken,
+      body: { instructions: 'Add the regression test before settling again' },
+    })
     await vi.waitFor(() => {
-      expect(received.some((frame) => frame.event === 'question.answered')).toBe(true)
+      // Ten of the twelve events happen before the sweep; expiry and the host
+      // going offline arrive with it.
+      expect(received.size).toBeGreaterThanOrEqual(10)
+    })
+    await sweepAllTeams(context.env, T0 + QUESTION_TTL_MS + 1)
+    await vi.waitFor(() => {
+      expect(received.has('question.expired') && received.has('host.status_changed')).toBe(true)
     })
 
-    // Then the delivered payload matches the documented answer relay
-    const answerSample = wsEvents.events.find((entry) => entry.event === 'question.answered')
-    const delivered = received.find((frame) => frame.event === 'question.answered')
+    // Then every documented event arrived and its payload matches the catalogue
     const mismatches: Mismatch[] = []
-    compareShape(delivered?.payload, answerSample?.payload, 'question.answered', mismatches)
+    for (const documented of wsEvents.events) {
+      if (!received.has(documented.event)) {
+        mismatches.push({ path: documented.event, problem: 'event was never delivered' })
+        continue
+      }
+      compareShape(received.get(documented.event), documented.payload, documented.event, mismatches)
+    }
     expect(mismatches).toEqual([])
+    expect([...received.keys()].sort()).toEqual(wsEvents.events.map((entry) => entry.event).sort())
   })
 })
