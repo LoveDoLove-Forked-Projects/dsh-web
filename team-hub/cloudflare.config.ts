@@ -16,6 +16,13 @@ export default defineConfig({
 			"nodejs_compat",
 		],
 		entrypoint: "src/index.ts",
+		// A workers.dev hostname is not reachable from every network this team
+		// works from, so the hub answers on a subdomain of a zone this account
+		// already serves.
+		// The dsh-market.com zone answers *.dsh-market.com (any depth) from the
+		// market Worker, so no hostname on it can reach this one; the hub is served
+		// on its workers.dev hostname instead.
+		workersDev: true,
 		observability: {
 			enabled: true,
 			headSamplingRate: 1,
