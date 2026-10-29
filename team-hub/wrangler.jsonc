@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dsh-team-hub",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Local development and tests only. Nothing here is deployable before the
+  // placeholders below are replaced; see README.md for the values the operator
+  // must supply. No D1 database or Durable Object is created by this file.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dsh-team-hub",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ],
+  // One Durable Object per team: the WebSocket channel holding the monotonic
+  // event sequence, the replay buffer and the connected sockets (PROTOCOL.md
+  // section 9). This "migrations" key is Cloudflare's Durable Object class
+  // ledger, unrelated to the D1 migrations under migrations/.
+  "durable_objects": {
+    "bindings": [{ "name": "TEAM_CHANNEL", "class_name": "TeamChannelDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TeamChannelDO"] }],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

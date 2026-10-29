@@ -1,0 +1,14 @@
+# This directory is its own pnpm project: team-hub is a standalone Worker
+# that is not a member of the repository's pnpm workspace, so installing here
+# never touches the root lockfile or the plugin packages.
+#
+# workerd and esbuild ship platform binaries behind install scripts; the Worker
+# test suite cannot run without them. Same key as the repository root.
+allowBuilds:
+  workerd: true
+  esbuild: true
+# Recorded by pnpm when the resolved versions were newer than the global
+# minimumReleaseAge setting.
+minimumReleaseAgeExclude:
+  - miniflare@5.20261023.2-beta
+  - wrangler@4.155.0
