@@ -26,6 +26,7 @@ import type { RemoteBridgeMethodResult, RemoteBridgeRegistry } from './extension
 import { errorCodeOf, failureText, withServiceUnavailableRetry } from './gateway-errors.ts'
 import { scopeKey, type JobRoster, type JobsPayload } from './jobs.ts'
 import type { LiveActivityNotifier } from './liveactivity.ts'
+import type { ModelEffortPreferences } from './model-efforts.ts'
 import type { PairingService } from './pairing.ts'
 import type { PushNotifier } from './push.ts'
 import { pushEventOfTurnEnd } from './push.ts'
@@ -97,6 +98,7 @@ import {
   METHOD_SESSION_PIN,
   METHOD_SESSION_PROMPT,
   METHOD_SESSION_RENAME,
+  METHOD_SESSION_SET_EFFORT,
   METHOD_SESSION_SET_MODEL,
   METHOD_SESSION_SET_PERMISSION,
   METHOD_SESSION_SNAPSHOT,
@@ -207,6 +209,14 @@ export interface BridgeConnectionOptions {
   readonly usage: UsageService
   /** Host-process permission presets, read and switched through their real service objects. */
   readonly permissions: SessionPermissions
+  /**
+   * 每个模型自己的思考档偏好表（`core/model-efforts.ts`）。
+   *
+   * 一个宿主一份、所有连接与所有会话共享：它记的是这个模型在这台机器上被选过
+   * 哪一档，与哪条会话无关（契约 §4）。它与宿主自己的 `reasoning.defaultEffort`
+   * 是两件事，`session.models` 用另一个键名 `preferredEffort` 公布它。
+   */
+  readonly modelEfforts: ModelEffortPreferences
   /**
    * The in-process owner peer every gateway call speaks for, minted by the
    * bridge itself (`core/owner-peer.ts`). Dispatch refuses unpaired
@@ -609,6 +619,66 @@ export function modelSelectionOf(value: unknown): { readonly next?: ModelSelecti
   }
 }
 
+/**
+ * The effort ids one catalog row offers, for the model a preference names.
+ *
+ * Read out of the catalog's own `reasoning.efforts`, which is the only list this
+ * bridge may validate against: an effort no row advertises is not a level of
+ * that model, and answering `ok` for it would store a value the next
+ * `selectModel` has to refuse.
+ * @param groups - the catalog's `groups`, exactly as the harness published them.
+ * @param provider - provider id, matched against a group's own `id`.
+ * @param model - model id, matched against a row's own `id`.
+ * @returns the ids the model offers, or undefined when no such model exists —
+ * a host that never heard of a pair is a different answer from a model that
+ * offers no level at all, and the two refusals say so.
+ */
+function effortIdsOf(groups: unknown, provider: string, model: string): readonly string[] | undefined {
+  if (!Array.isArray(groups)) return undefined
+  for (const group of groups) {
+    if (!isRecord(group) || optionalText(group.id) !== provider || !Array.isArray(group.models)) continue
+    for (const row of group.models) {
+      if (!isRecord(row) || optionalText(row.id) !== model) continue
+      const reasoning = row.reasoning
+      if (!isRecord(reasoning) || !Array.isArray(reasoning.efforts)) return []
+      return reasoning.efforts
+        .map(effort => (isRecord(effort) ? optionalText(effort.id) : undefined))
+        .filter((id): id is string => id !== undefined)
+    }
+  }
+  return undefined
+}
+
+/**
+ * The catalog's groups with this host's remembered level beside every model.
+ *
+ * A row this table has nothing for crosses UNCHANGED — no `preferredEffort`, not
+ * even a null one: the key means "the host remembers a level for this model", and
+ * a client that showed a level for a model nobody ever chose would be showing the
+ * catalog's default under the wrong name. Every other key, and the order of the
+ * rows, stays exactly as the harness wrote it.
+ * @param groups - the catalog's `groups`, exactly as the harness published them.
+ * @param efforts - the host's preference table.
+ * @returns the rows to publish, with the remembered levels injected.
+ */
+function withPreferredEfforts(groups: unknown, efforts: ModelEffortPreferences): readonly unknown[] {
+  if (!Array.isArray(groups)) return []
+  return groups.map(group => {
+    if (!isRecord(group) || !Array.isArray(group.models)) return group
+    const provider = optionalText(group.id)
+    if (provider === undefined) return group
+    return {
+      ...group,
+      models: group.models.map(row => {
+        if (!isRecord(row)) return row
+        const model = optionalText(row.id)
+        const preferred = model === undefined ? undefined : efforts.effortOf(provider, model)
+        return preferred === undefined ? row : { ...row, preferredEffort: preferred }
+      }),
+    }
+  })
+}
+
 /** One prompt attachment, already projected to the harness's image content part. */
 type PromptAttachment = Readonly<Record<string, unknown>>
 
@@ -980,6 +1050,7 @@ export class BridgeConnection {
       case METHOD_SESSION_SET_PERMISSION: return this.#sessionSetPermission(frame.p)
       case METHOD_SESSION_MODELS: return await this.#sessionModels(frame.p)
       case METHOD_SESSION_SET_MODEL: return await this.#sessionSetModel(frame.p)
+      case METHOD_SESSION_SET_EFFORT: return await this.#sessionSetEffort(frame.p)
       case METHOD_APPROVAL_RESOLVE: return this.#approvalResolve(frame.p)
       case METHOD_QUESTION_ANSWER: return await this.#questionAnswer(frame.p)
       case METHOD_QUESTION_LIST: return this.#questionList(frame.p)
@@ -1726,7 +1797,10 @@ export class BridgeConnection {
    * `current` is the session's FOLD — next, else last used, else the catalog
    * default — and never the default on its own: a phone that showed the default
    * while another model was in force would name the wrong model for the next
-   * turn. The catalog's groups, failures and default cross unchanged.
+   * turn. The catalog's failures and default cross unchanged, and every row
+   * carries this host's remembered level as `preferredEffort` when it has one:
+   * that key is the table's, deliberately not the row's own
+   * `reasoning.defaultEffort`, which stays the catalog's property.
    * @param payload - `{sessionId}`.
    */
   async #sessionModels(payload: Readonly<Record<string, unknown>>): Promise<DispatchOutcome> {
@@ -1735,20 +1809,40 @@ export class BridgeConnection {
     const catalog = await this.#unary('session', 'modelCatalog')
     if (!catalog.ok) return catalog
     if (!isRecord(catalog.value)) return refusal(CODE_INTERNAL, 'session/modelCatalog returned no catalog')
-    const fallback = selectionOf(catalog.value.default)
+    const folded = await this.#sessionCurrent(sessionId, catalog.value)
+    if (!folded.ok) return folded
+    await this.#options.modelEfforts.load()
+    return {
+      ok: true,
+      r: {
+        current: folded.current,
+        default: folded.fallback,
+        groups: withPreferredEfforts(catalog.value.groups, this.#options.modelEfforts),
+        failures: catalog.value.failures ?? [],
+      },
+    }
+  }
+
+  /**
+   * The selection one session folds to: the pending next choice, else the last
+   * one used, else the catalog default.
+   *
+   * One fold shared by `session.models`, `session.setModel` and
+   * `session.setEffort`, so no two of them can name a different model for the
+   * same session.
+   * @param sessionId - the session whose projection is read.
+   * @param catalog - the catalog the fold falls back into.
+   */
+  async #sessionCurrent(
+    sessionId: string,
+    catalog: Readonly<Record<string, unknown>>,
+  ): Promise<{ readonly ok: true; readonly current: ModelSelection; readonly fallback: ModelSelection } | CallFailure> {
+    const fallback = selectionOf(catalog.default)
     if (fallback === undefined) return refusal(CODE_INTERNAL, 'session/modelCatalog returned no default model')
     const projections = await this.#unary('session', 'projections', { sessionId })
     if (!projections.ok) return projections
     const folded = modelSelectionOf(projections.value)
-    return {
-      ok: true,
-      r: {
-        current: folded.next ?? folded.lastUsed ?? fallback,
-        default: fallback,
-        groups: catalog.value.groups ?? [],
-        failures: catalog.value.failures ?? [],
-      },
-    }
+    return { ok: true, current: folded.next ?? folded.lastUsed ?? fallback, fallback }
   }
 
   /**
@@ -1757,6 +1851,12 @@ export class BridgeConnection {
    * The harness only records the choice for the NEXT request, so the answer
    * echoes the `selected` selection it accepted and nothing here claims the
    * running turn changed.
+   *
+   * A request with no effort of its own is answered with the level this host
+   * remembers for that model: a phone that picked "high" for a model once means
+   * it on the next switch too, and sending nothing would silently reset the
+   * model to the harness's own default. A model this table has nothing for is
+   * sent exactly as before — no `reasoningEffort` key at all.
    * @param payload - `{sessionId, provider, model, effort?}`.
    */
   async #sessionSetModel(payload: Readonly<Record<string, unknown>>): Promise<DispatchOutcome> {
@@ -1766,7 +1866,8 @@ export class BridgeConnection {
     if (sessionId === undefined || provider === undefined || model === undefined) {
       return refusal(CODE_INVALID_ARGS, 'session.setModel requires sessionId, provider and model')
     }
-    const effort = optionalText(payload.effort)
+    await this.#options.modelEfforts.load()
+    const effort = optionalText(payload.effort) ?? this.#options.modelEfforts.effortOf(provider, model)
     const call = await this.#unary('session', 'selectModel', {
       sessionId,
       provider,
@@ -1777,6 +1878,53 @@ export class BridgeConnection {
     const selected = isRecord(call.value) ? selectionOf(call.value.selected) : undefined
     if (selected === undefined) return refusal(CODE_INTERNAL, 'session/selectModel returned no selected model')
     return { ok: true, r: { ok: true, current: selected } }
+  }
+
+  /**
+   * Answer `session.setEffort`: remember one model's reasoning level.
+   *
+   * The table is the host's — keyed by provider and model, shared by every
+   * session — so this writes a PREFERENCE and switches no model. The harness is
+   * asked for a selection only when the pair is already this session's folded
+   * choice, where the new level has to reach the next turn; for any other model
+   * `session/selectModel` is never called and the answer echoes the fold
+   * unchanged. A model the catalog does not publish, and a level that model does
+   * not offer, are refused as `invalid-args` before anything is written.
+   * @param payload - `{sessionId, provider, model, effort}`.
+   */
+  async #sessionSetEffort(payload: Readonly<Record<string, unknown>>): Promise<DispatchOutcome> {
+    const sessionId = stringArg(payload, 'sessionId')
+    const provider = stringArg(payload, 'provider')
+    const model = stringArg(payload, 'model')
+    const effort = stringArg(payload, 'effort')
+    if (sessionId === undefined || provider === undefined || model === undefined || effort === undefined) {
+      return refusal(CODE_INVALID_ARGS, 'session.setEffort requires sessionId, provider, model and effort')
+    }
+    // Read before any write: the table is rewritten whole, so a save must never
+    // overwrite rows this process has not read yet.
+    await this.#options.modelEfforts.load()
+    const catalog = await this.#unary('session', 'modelCatalog')
+    if (!catalog.ok) return catalog
+    if (!isRecord(catalog.value)) return refusal(CODE_INTERNAL, 'session/modelCatalog returned no catalog')
+    const offered = effortIdsOf(catalog.value.groups, provider, model)
+    if (offered === undefined) {
+      return refusal(CODE_INVALID_ARGS, `session.setEffort: this host publishes no model ${provider}/${model}`)
+    }
+    if (!offered.includes(effort)) {
+      return refusal(CODE_INVALID_ARGS, `session.setEffort: ${effort} is not a reasoning effort of ${provider}/${model}`)
+    }
+    const folded = await this.#sessionCurrent(sessionId, catalog.value)
+    if (!folded.ok) return folded
+    await this.#options.modelEfforts.save(provider, model, effort)
+    const saved = { provider, model, effort }
+    if (folded.current.provider !== provider || folded.current.model !== model) {
+      return { ok: true, r: { ok: true, saved, current: folded.current } }
+    }
+    const call = await this.#unary('session', 'selectModel', { sessionId, provider, model, reasoningEffort: effort })
+    if (!call.ok) return call
+    const selected = isRecord(call.value) ? selectionOf(call.value.selected) : undefined
+    if (selected === undefined) return refusal(CODE_INTERNAL, 'session/selectModel returned no selected model')
+    return { ok: true, r: { ok: true, saved, current: selected } }
   }
 
   /**

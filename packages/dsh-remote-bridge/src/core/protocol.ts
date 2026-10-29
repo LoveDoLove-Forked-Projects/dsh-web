@@ -18,6 +18,8 @@ export const METHOD_SESSION_PERMISSIONS = 'session.permissions'
 export const METHOD_SESSION_SET_PERMISSION = 'session.setPermission'
 export const METHOD_SESSION_MODELS = 'session.models'
 export const METHOD_SESSION_SET_MODEL = 'session.setModel'
+/** Remember one model's reasoning level, without switching the session's model. */
+export const METHOD_SESSION_SET_EFFORT = 'session.setEffort'
 export const METHOD_SESSION_CREATE = 'session.create'
 export const METHOD_SESSION_FORK = 'session.fork'
 export const METHOD_SESSION_COMMANDS = 'session.commands'
@@ -455,6 +457,7 @@ export const KNOWN_METHODS: ReadonlySet<string> = new Set([
   METHOD_SESSION_SET_PERMISSION,
   METHOD_SESSION_MODELS,
   METHOD_SESSION_SET_MODEL,
+  METHOD_SESSION_SET_EFFORT,
   METHOD_PAIR_BEGIN,
   METHOD_PAIR_FINISH,
   METHOD_APPROVAL_RESOLVE,

@@ -50,6 +50,7 @@ import type { ConnectionAuth } from './core/connection.ts'
 import { DeviceRoster } from './core/devices.ts'
 import { createRemoteBridgeFace, RemoteBridgeRegistry, REMOTE_BRIDGE_SERVICE } from './core/extension.ts'
 import { JobRoster, type JobRegistryFace } from './core/jobs.ts'
+import { ModelEffortPreferences } from './core/model-efforts.ts'
 import { BridgeHub, OFFLINE_QUESTION_CLAIM_TTL_MS } from './core/hub.ts'
 import { createOwnerPeer } from './core/owner-peer.ts'
 import { PairingService } from './core/pairing.ts'
@@ -89,6 +90,14 @@ export const inject = ['typertGateway', 'webServer', 'tools']
 
 /** Where the paired-device roster lives inside the DSH home. */
 export const ROSTER_PATH = 'remote-bridge/devices.json'
+
+/**
+ * Where this host remembers one reasoning level per model.
+ *
+ * Beside the roster, and for the same reason: it belongs to this bridge rather
+ * than to any one session, and it outlives every process (core/model-efforts.ts).
+ */
+export const EFFORT_PATH = 'remote-bridge/model-efforts.json'
 
 /** The environment variable that moves the offline claim window (§32.2). */
 export const OFFLINE_CLAIM_TTL_ENV = 'DSH_REMOTE_BRIDGE_OFFLINE_CLAIM_TTL_MS'
@@ -366,6 +375,9 @@ function jobFaces(ctx: Context) {
 function applyImpl(ctx: Context): void {
   const log = (message: string): void => { console.log(`[remote-bridge] ${message}`) }
   const roster = new DeviceRoster({ file: join(dshHome(), ROSTER_PATH), log })
+  // 每个模型自己的思考档：一个宿主一份，所有连接共享（契约 §4）。读一次即用，
+  // 读坏了按空表处理并记一行日志，宿主照常提供模型目录。
+  const modelEfforts = new ModelEffortPreferences({ file: join(dshHome(), EFFORT_PATH), log })
   const pairing = new PairingService()
   const approvals = new ApprovalRegistry()
   // The owner peer is the full-control credential the gateway demands since
@@ -497,6 +509,7 @@ function applyImpl(ctx: Context): void {
     gateway: ctx.typertGateway,
     pairing,
     roster,
+    modelEfforts,
     approvals,
     questions,
     ui,

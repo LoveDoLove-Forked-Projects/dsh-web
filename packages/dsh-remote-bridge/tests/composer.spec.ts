@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MAX_FRAME_BYTES } from '../src/core/envelope.ts'
-import { METHOD_APPROVAL_RESOLVE, METHOD_SESSION_ATTACHMENT, METHOD_SESSION_MODELS, METHOD_SESSION_PERMISSIONS, METHOD_SESSION_SET_MODEL, METHOD_SESSION_SET_PERMISSION, KNOWN_METHODS } from '../src/core/protocol.ts'
+import { METHOD_APPROVAL_RESOLVE, METHOD_SESSION_ATTACHMENT, METHOD_SESSION_MODELS, METHOD_SESSION_PERMISSIONS, METHOD_SESSION_SET_EFFORT, METHOD_SESSION_SET_MODEL, METHOD_SESSION_SET_PERMISSION, KNOWN_METHODS } from '../src/core/protocol.ts'
+import { ModelEffortPreferences } from '../src/core/model-efforts.ts'
 import { PROMPT_ATTACHMENT_MAX_BYTES } from '../src/core/connection.ts'
 import { SessionPermissions, type PermissionFaces, type PresetOptionFace } from '../src/core/session-permissions.ts'
 import { ControllableStream, answerOf, makeConnection, requestFrame, settle, type ConnectionHarness } from './support/harness.ts'
@@ -569,6 +573,175 @@ describe('protocol v1 composer parity: models', () => {
   })
 })
 
+describe('protocol v1 composer parity: model efforts', () => {
+  /** One catalog whose models publish their own efforts, beside a default nobody has chosen. */
+  const EFFORT_CATALOG = {
+    default: { provider: 'p-1', model: 'default-model' },
+    routableProviders: ['p-1'],
+    groups: [{
+      id: 'p-1',
+      name: 'Provider One',
+      models: [
+        { id: 'default-model', name: 'Default', reasoning: { efforts: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'low' } },
+        { id: 'next-model', name: 'Next', reasoning: { efforts: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'low' } },
+      ],
+    }],
+    failures: [],
+  }
+
+  /** One session on the catalog default, so the fold is a fact each test can name. */
+  const ON_DEFAULT = { asOfSeq: 9, values: { modelSelection: { lastUsed: null, next: { provider: 'p-1', model: 'default-model' } } } }
+
+  let directory: string
+  let file: string
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'dsh-remote-bridge-efforts-'))
+    file = join(directory, 'model-efforts.json')
+  })
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true })
+  })
+
+  /** One connection over the catalog above, sharing the given preference table. */
+  function connectionOver(table: ModelEffortPreferences, onDefault = true): ConnectionHarness {
+    const harness = makeConnection({ paired: true, modelEfforts: table })
+    harness.gateway.handler = async call => {
+      if (call.method === 'modelCatalog') return EFFORT_CATALOG
+      if (call.method === 'projections') return onDefault ? ON_DEFAULT : { asOfSeq: 9, values: { modelSelection: { lastUsed: null, next: { provider: 'p-1', model: 'next-model', reasoningEffort: 'low' } } } }
+      return { selected: { provider: 'p-1', model: 'next-model', reasoningEffort: 'high' } }
+    }
+    return harness
+  }
+
+  it('user reads models and only the remembered model carries preferredEffort', async () => {
+    // Given a host that remembers "high" for one of the two models it publishes
+    const table = new ModelEffortPreferences({ file })
+    await table.save('p-1', 'next-model', 'high')
+    const harness = connectionOver(table)
+    // When the user reads the catalog
+    await harness.connection.handleText(requestFrame(70, 'session.models', { sessionId: 's-1' }))
+    // Then the remembered row names the level beside the catalog's own reasoning block, and the other row has no such key
+    const groups = (answerOf(harness, 70).r as { groups: { models: Record<string, unknown>[] }[] }).groups
+    expect(groups[0]?.models[0]).toEqual(EFFORT_CATALOG.groups[0]?.models[0])
+    expect(Object.hasOwn(groups[0]?.models[0] ?? {}, 'preferredEffort')).toBe(false)
+    expect(groups[0]?.models[1]).toEqual({ ...EFFORT_CATALOG.groups[0]?.models[1], preferredEffort: 'high' })
+  })
+
+  it('user sets the effort of a model the session is not on, and nothing is switched', async () => {
+    // Given a session on the catalog default and a host that remembers nothing yet
+    const table = new ModelEffortPreferences({ file })
+    const harness = connectionOver(table)
+    // When the user picks a level for the other model
+    await harness.connection.handleText(requestFrame(71, 'session.setEffort', {
+      sessionId: 's-1',
+      provider: 'p-1',
+      model: 'next-model',
+      effort: 'high',
+    }))
+    // Then the table holds it, the session's own selection is untouched, and the harness was never asked to switch
+    expect(answerOf(harness, 71).r).toEqual({
+      ok: true,
+      saved: { provider: 'p-1', model: 'next-model', effort: 'high' },
+      current: { provider: 'p-1', model: 'default-model' },
+    })
+    expect(harness.gateway.countOf('session', 'selectModel')).toBe(0)
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+      version: 1,
+      efforts: [{ provider: 'p-1', model: 'next-model', effort: 'high' }],
+    })
+    // And the next read of the catalog publishes it, with the fold still the default
+    await harness.connection.handleText(requestFrame(72, 'session.models', { sessionId: 's-1' }))
+    const answer = answerOf(harness, 72).r as { current: unknown; groups: { models: Record<string, unknown>[] }[] }
+    expect(answer.current).toEqual({ provider: 'p-1', model: 'default-model' })
+    expect(answer.groups[0]?.models[1]?.preferredEffort).toBe('high')
+  })
+
+  it('user sets the effort of the model the session is on, and the new level is what it runs next', async () => {
+    // Given a session already on the model whose level the user is changing
+    const table = new ModelEffortPreferences({ file })
+    const harness = connectionOver(table, false)
+    // When the user picks another level for that same model
+    await harness.connection.handleText(requestFrame(73, 'session.setEffort', {
+      sessionId: 's-1',
+      provider: 'p-1',
+      model: 'next-model',
+      effort: 'high',
+    }))
+    // Then the harness is asked to select the same model with the new level, and its answer is the current selection
+    expect(harness.gateway.lastArgs('session', 'selectModel')).toEqual({
+      request: { sessionId: 's-1', provider: 'p-1', model: 'next-model', reasoningEffort: 'high' },
+    })
+    expect(answerOf(harness, 73).r).toEqual({
+      ok: true,
+      saved: { provider: 'p-1', model: 'next-model', effort: 'high' },
+      current: { provider: 'p-1', model: 'next-model', reasoningEffort: 'high' },
+    })
+  })
+
+  it('user switches to a model with no effort of its own and the remembered level is what the harness is given', async () => {
+    // Given a host that remembers "high" for the model the user is about to pick
+    const table = new ModelEffortPreferences({ file })
+    await table.save('p-1', 'next-model', 'high')
+    const harness = connectionOver(table)
+    // When the user switches to it without naming a level
+    await harness.connection.handleText(requestFrame(74, 'session.setModel', { sessionId: 's-1', provider: 'p-1', model: 'next-model' }))
+    // Then the request carries the remembered level
+    expect(harness.gateway.lastArgs('session', 'selectModel')).toEqual({
+      request: { sessionId: 's-1', provider: 'p-1', model: 'next-model', reasoningEffort: 'high' },
+    })
+    // When the user switches to a model this host remembers nothing for
+    await harness.connection.handleText(requestFrame(75, 'session.setModel', { sessionId: 's-1', provider: 'p-1', model: 'default-model' }))
+    // Then no effort key is invented
+    expect(harness.gateway.lastArgs('session', 'selectModel')).toEqual({
+      request: { sessionId: 's-1', provider: 'p-1', model: 'default-model' },
+    })
+  })
+
+  it('user names a model or a level this host does not publish and the table is not written', async () => {
+    // Given a host that remembers nothing
+    const table = new ModelEffortPreferences({ file })
+    const harness = connectionOver(table)
+    // When the user names a model the catalog does not carry, then a level that model does not offer
+    await harness.connection.handleText(requestFrame(76, 'session.setEffort', { sessionId: 's-1', provider: 'p-1', model: 'ghost-model', effort: 'high' }))
+    await harness.connection.handleText(requestFrame(77, 'session.setEffort', { sessionId: 's-1', provider: 'p-1', model: 'default-model', effort: 'medium' }))
+    // Then both are argument refusals, nothing was selected, and no table exists
+    expect(answerOf(harness, 76).e?.code).toBe('invalid-args')
+    expect(answerOf(harness, 77).e?.code).toBe('invalid-args')
+    expect(table.effortOf('p-1', 'ghost-model')).toBeUndefined()
+    expect(table.effortOf('p-1', 'default-model')).toBeUndefined()
+    expect(harness.gateway.countOf('session', 'selectModel')).toBe(0)
+    expect(await readFile(file, 'utf8').catch(() => undefined)).toBeUndefined()
+  })
+
+  it('operator restarts the bridge over the same data directory and the remembered levels are still there', async () => {
+    // Given one process that remembered a level and wrote it to this host's file
+    const first = new ModelEffortPreferences({ file })
+    await first.load()
+    await first.save('p-1', 'next-model', 'high')
+    // When a second process reads the same file
+    const second = new ModelEffortPreferences({ file })
+    await second.load()
+    // Then it answers the level the first one stored
+    expect(second.effortOf('p-1', 'next-model')).toBe('high')
+    expect(second.effortOf('p-1', 'default-model')).toBeUndefined()
+  })
+
+  it('operator leaves a corrupt effort file behind and the host reads it as an empty table without failing', async () => {
+    // Given a file that is not the table
+    await writeFile(file, 'not a table', 'utf8')
+    const logs: string[] = []
+    const table = new ModelEffortPreferences({ file, log: message => { logs.push(message) } })
+    // When the host reads it
+    await table.load()
+    // Then the table is empty and the damage was reported once
+    expect(table.effortOf('p-1', 'next-model')).toBeUndefined()
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toContain('continuing with an empty table')
+  })
+})
+
 describe('protocol v1 composer parity: method set', () => {
   it('operator reads the method set and finds every composer method in it', () => {
     // Given the frozen method set of this protocol version
@@ -578,6 +751,7 @@ describe('protocol v1 composer parity: method set', () => {
       METHOD_SESSION_SET_PERMISSION,
       METHOD_SESSION_MODELS,
       METHOD_SESSION_SET_MODEL,
+      METHOD_SESSION_SET_EFFORT,
     ]
     // When the composer methods are looked up
     const missing = composer.filter(method => !KNOWN_METHODS.has(method))
@@ -589,13 +763,15 @@ describe('protocol v1 composer parity: method set', () => {
       'session.setPermission',
       'session.models',
       'session.setModel',
+      'session.setEffort',
     ])
     expect(KNOWN_METHODS.has(METHOD_APPROVAL_RESOLVE)).toBe(true)
     // The question channel, the job channel, the deep-history channel and the
     // question list each added exactly one more method to the frozen set, the
     // agent channel two, the usage channel two, the session-admin channel six, the
-    // usage stats channel one, and the interactive-reply channel two (ui.event and
-    // ui.list); none renamed or removed one.
-    expect(KNOWN_METHODS.size).toBe(41)
+    // usage stats channel one, the interactive-reply channel two (ui.event and
+    // ui.list), and the effort preference one (session.setEffort); none renamed or
+    // removed one.
+    expect(KNOWN_METHODS.size).toBe(42)
   })
 })

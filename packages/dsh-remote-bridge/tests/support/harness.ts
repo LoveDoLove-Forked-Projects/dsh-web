@@ -13,6 +13,7 @@ import { ApprovalRegistry } from '../../src/core/approvals.ts'
 import { DeviceRoster } from '../../src/core/devices.ts'
 import { RemoteBridgeRegistry } from '../../src/core/extension.ts'
 import { inScope, JobRoster, type JobEventLike, type JobEventFilterLike, type JobRegistryFace, type JobViewLike } from '../../src/core/jobs.ts'
+import { ModelEffortPreferences } from '../../src/core/model-efforts.ts'
 import { BridgeHub } from '../../src/core/hub.ts'
 import { createOwnerPeer } from '../../src/core/owner-peer.ts'
 import { PairingService } from '../../src/core/pairing.ts'
@@ -269,6 +270,8 @@ export interface HarnessOptions {
   readonly rosterFile?: string
   /** Roster stand-in, for the failure paths a real file cannot be made to take. */
   readonly roster?: DeviceRoster
+  /** The host's remembered effort table; a suite that asserts persistence passes its own file. */
+  readonly modelEfforts?: ModelEffortPreferences
   /** Session metadata source; the default models a host with no such service mounted. */
   readonly sessionMeta?: SessionMeta
   /** Permission presets source; the default models a host with no such service mounted. */
@@ -300,6 +303,19 @@ export interface HarnessOptions {
   readonly turnEndQuiet?: TurnEndQuietGate
   /** The roster-change hook the standing watchers are armed from. */
   readonly onPushRegistered?: () => void
+}
+
+/**
+ * A preference table a suite gets when it says nothing.
+ *
+ * Pointed at a path no suite writes: `load()` then reads nothing and the table
+ * answers no level, which is the state every pre-existing test was written
+ * against. A suite that asserts what this host remembers builds its own over its
+ * own temp file.
+ * @returns an empty table over a file nobody writes.
+ */
+function effortTableOf(): ModelEffortPreferences {
+  return new ModelEffortPreferences({ file: '/tmp/dsh-remote-bridge-test/not-loaded-efforts.json' })
 }
 
 /** Session metadata for a host whose session services are all present. */
@@ -380,6 +396,7 @@ export function makeConnection(options: HarnessOptions = {}): ConnectionHarness 
   const gateway = new FakeGateway()
   const pairing = new PairingService()
   const roster = options.roster ?? new DeviceRoster({ file: options.rosterFile ?? '/tmp/dsh-remote-bridge-test/not-loaded.json' })
+  const modelEfforts = options.modelEfforts ?? effortTableOf()
   const approvals = new ApprovalRegistry()
   const logs: string[] = []
   const ownerPeer = createOwnerPeer(new Context())
@@ -396,6 +413,7 @@ export function makeConnection(options: HarnessOptions = {}): ConnectionHarness 
     gateway,
     pairing,
     roster,
+    modelEfforts,
     approvals,
     questions,
     ui: uiOf(options),
@@ -509,6 +527,7 @@ export function makeBareHub(options: HarnessOptions = {}): BareHubHarness {
     gateway,
     pairing: new PairingService(),
     roster: options.roster ?? new DeviceRoster({ file: options.rosterFile ?? '/tmp/dsh-remote-bridge-test/not-loaded.json' }),
+    modelEfforts: options.modelEfforts ?? effortTableOf(),
     approvals,
     questions,
     ui,
