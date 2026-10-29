@@ -13,6 +13,8 @@ interface Env {
   GITHUB_CLIENT_SECRET: string
   /** HMAC key for signed OAuth state and access tokens. */
   TEAM_HUB_SIGNING_SECRET: string
+  /** One-shot token that authorises creating the first team and its admin. */
+  BOOTSTRAP_TOKEN: string
   /** APNs provider key id. */
   APNS_KEY_ID: string
   /** APNs team id. */
@@ -28,6 +30,7 @@ declare namespace Cloudflare {
     GITHUB_CLIENT_ID: string
     GITHUB_CLIENT_SECRET: string
     TEAM_HUB_SIGNING_SECRET: string
+    BOOTSTRAP_TOKEN: string
     APNS_KEY_ID: string
     APNS_TEAM_ID: string
     APNS_BUNDLE_ID: string

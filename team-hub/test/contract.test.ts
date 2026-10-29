@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import bootstrapSample from '../contract/bootstrap.json'
 import registerSample from '../contract/register.json'
 import heartbeatSample from '../contract/heartbeat.json'
 import issuesListSample from '../contract/issues-list.json'
@@ -167,6 +168,33 @@ describe('contract samples', () => {
   })
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('bootstrap answers exactly the documented shape', async () => {
+    // Given a freshly deployed hub whose bootstrap secret is configured and
+    // which has no team yet
+    const env = {
+      ...createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport),
+      BOOTSTRAP_TOKEN: 'contract-bootstrap-token',
+    }
+
+    // When the operator makes the documented first call
+    const result = await api(env, 'POST', bootstrapSample.path, {
+      headers: { 'x-bootstrap-token': env.BOOTSTRAP_TOKEN },
+      body: bootstrapSample.request.body,
+    })
+
+    // Then the response matches the sample field for field, and the values it
+    // echoes are the ones the request asked for
+    const mismatches: Mismatch[] = []
+    expect(result.status).toBe(bootstrapSample.response.status)
+    compareShape(result.body, bootstrapSample.response.body, 'bootstrap', mismatches)
+    expect(mismatches).toEqual([])
+    expect(result.body.team).toMatchObject({
+      name: bootstrapSample.request.body.team_name,
+      slug: bootstrapSample.request.body.team_slug,
+    })
+    expect(result.body.member.github_username).toBe(bootstrapSample.request.body.github_username)
   })
 
   it('host registration answers exactly the documented shape', async () => {

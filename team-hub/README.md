@@ -99,13 +99,63 @@ cf workers secrets update APNS_KEY_ID --worker dsh-team-hub --text <value>
 cf workers secrets update APNS_TEAM_ID --worker dsh-team-hub --text <value>
 cf workers secrets update APNS_BUNDLE_ID --worker dsh-team-hub --text <value>
 cf workers secrets update APNS_PRIVATE_KEY_P8 --worker dsh-team-hub --text <value>
+cf workers secrets update BOOTSTRAP_TOKEN --worker dsh-team-hub --text <value>
 ```
+
+`BOOTSTRAP_TOKEN` is consumed by the first-team call described under
+[Deployment](#deployment); generate it with the rest, for example
+`openssl rand -hex 32`.
 
 ## Deployment
 
 ```sh
 cf deploy
 ```
+
+### First team and first admin
+
+A hub with no team cannot be entered: the GitHub callback only resolves members
+that already exist, and inviting one needs an admin. `POST /api/v1/bootstrap`
+is the one call that creates both, authorised by the `BOOTSTRAP_TOKEN` secret
+from the list above. Store the secret, deploy, then call it once with the GitHub
+login of the person who will own the hub:
+
+```sh
+export BOOTSTRAP_TOKEN=<the value stored as the secret>
+
+curl -sS -X POST https://dsh-team-hub.<your-subdomain>.workers.dev/api/v1/bootstrap \
+  -H 'Content-Type: application/json' \
+  -H 'X-Team-Hub-Protocol-Version: 1.0.0' \
+  -H "X-Bootstrap-Token: $BOOTSTRAP_TOKEN" \
+  -d '{"team_name": "DSH Team", "team_slug": "team-dsh", "github_username": "octocat"}'
+```
+
+The hub resolves the GitHub login to the numeric id the schema needs, writes the
+team and one active admin in a single D1 batch, and answers `201`:
+
+```json
+{
+  "team": { "id": "team_01j7b5w8m4f9q2e3r6t1y8u4i7", "name": "DSH Team", "slug": "team-dsh" },
+  "member": { "id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i8", "github_username": "octocat", "role": "admin" }
+}
+```
+
+That admin can log in immediately and reach every admin endpoint: invite the
+rest of the team through `POST /api/v1/teams/:teamId/members/invite`.
+
+The call is a one-shot by construction, so there is no switch to turn off: the
+endpoint only accepts a request while the teams table is empty, and every later
+call answers `409 CONFLICT` with the id of the team that already exists.
+Deleting the secret afterwards is optional; it turns the answer into
+`503 NOT_CONFIGURED`.
+
+| Answer | Meaning |
+| --- | --- |
+| `503 NOT_CONFIGURED` | `BOOTSTRAP_TOKEN` is not stored as a secret on this Worker |
+| `401 UNAUTHORIZED` | the `X-Bootstrap-Token` header is missing or does not match |
+| `404 USER_NOT_FOUND` | GitHub has no user with that login |
+| `409 CONFLICT` | the hub already has a team; bootstrap has already run |
+| `201` | the team and its first admin were created |
 
 ## Deviations from PROTOCOL.md
 
@@ -201,7 +251,15 @@ needed something the document does not state, each kept additive and small.
     `404` and `409`. The hub follows the error-code table, which is also what
     supplement A4.7 fixes. PROTOCOL.md is maintained by the protocol owner and is
     not edited here.
-10. **APNs environment routing.** Delivery picks the Apple host from the
+12. **The first team and its first admin have an endpoint of their own.**
+    `POST /api/v1/bootstrap` is not in the section 9 table because a team that
+    already exists never needs it: it exists so the deployment that has no team
+    can be entered at all, since the callback only resolves members that already
+    exist and the invite route needs an admin. It is gated by the
+    `BOOTSTRAP_TOKEN` secret instead of a session, refuses with `409 CONFLICT`
+    as soon as one team exists, and answers `503 NOT_CONFIGURED` while the
+    secret is unset.
+13. **APNs environment routing.** Delivery picks the Apple host from the
     registered token's `environment` column rather than the `APNS_BUNDLE_ID`
     secret, and the `apns-topic` header always carries the registered
     `bundle_id`, so a device registered for a different bundle is still

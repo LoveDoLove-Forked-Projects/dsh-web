@@ -33,7 +33,9 @@ import {
 } from './auth/session'
 import { GITHUB_CALLBACK_PATH } from './outbound'
 import { beginAuthorize, completeAuthorizationCode, handleCallback, sessionCookies } from './auth/github'
+import { requireBootstrapToken } from './auth/bootstrap'
 import { consumeQuota } from './rate-limit'
+import { bootstrapTeam } from './domain/bootstrap'
 import {
   heartbeat,
   issueHostToken,
@@ -157,6 +159,25 @@ const ROUTES: Route[] = [
     if (presented === null || presented === '') fail('UNAUTHORIZED', 'refresh_token is required.')
     await revokeSession(env, presented, now)
     return ok()
+  }),
+
+  route('POST', '/api/v1/bootstrap', 'public', async ({ request, env, now }) => {
+    // The one route with no session to check: it runs on a hub where no member
+    // exists yet. The Worker secret is its gate, and the domain step refuses
+    // once a team is there, so the call that creates the team is also the last
+    // one that can succeed.
+    await requireBootstrapToken(env, request)
+    const body = await readJsonBody(request)
+    const result = await bootstrapTeam(
+      env,
+      {
+        team_name: requireString(body, 'team_name'),
+        team_slug: requireString(body, 'team_slug'),
+        github_username: requireString(body, 'github_username'),
+      },
+      now,
+    )
+    return json(result, 201)
   }),
 
   route('GET', '/api/v1/me', 'member', async ({ env, principal }) => {

@@ -10,6 +10,7 @@ sides read these files instead of restating the shapes:
 
 | File | Interface |
 | --- | --- |
+| `bootstrap.json` | `POST /api/v1/bootstrap` |
 | `register.json` | `POST /api/v1/teams/:teamId/hosts/register` |
 | `heartbeat.json` | `POST /api/v1/teams/:teamId/hosts/:hostId/heartbeat` |
 | `issues-list.json` | `GET /api/v1/teams/:teamId/issues` |

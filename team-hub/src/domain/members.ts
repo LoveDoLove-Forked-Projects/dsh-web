@@ -32,14 +32,15 @@ export async function describeMe(
   return { member: toMemberView(principal.member), teams }
 }
 
-interface GithubProfile {
+export interface GithubProfile {
   id: number
   login: string
   name: string | null
   avatar_url: string | null
 }
 
-async function fetchGithubProfile(env: Env, username: string): Promise<GithubProfile | null> {
+/** Resolve a GitHub login to the numeric id, canonical login and display name. */
+export async function fetchGithubProfile(env: Env, username: string): Promise<GithubProfile | null> {
   const response = await transportOf(env)(GITHUB_API_BASE + '/users/' + encodeURIComponent(username), {
     method: 'GET',
     headers: { accept: 'application/vnd.github+json', 'user-agent': 'dsh-team-hub' },

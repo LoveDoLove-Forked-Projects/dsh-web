@@ -1,0 +1,41 @@
+{
+  "interface": "hub.bootstrap",
+  "description": "The one-shot call that creates the first team and its first admin on a freshly deployed hub, before any member is able to log in.",
+  "method": "POST",
+  "path": "/api/v1/bootstrap",
+  "auth": "The X-Bootstrap-Token header must equal the Worker secret BOOTSTRAP_TOKEN",
+  "request": {
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Bootstrap-Token": "<the value stored as the BOOTSTRAP_TOKEN secret>",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    },
+    "body": {
+      "team_name": "DSH Team",
+      "team_slug": "team-dsh",
+      "github_username": "octocat"
+    }
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "team": {
+        "id": "team_01j7b5w8m4f9q2e3r6t1y8u4i7",
+        "name": "DSH Team",
+        "slug": "team-dsh"
+      },
+      "member": {
+        "id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i8",
+        "github_username": "octocat",
+        "role": "admin"
+      }
+    }
+  },
+  "notes": [
+    "The endpoint only accepts a call while the teams table is empty; a second call answers 409 CONFLICT with the existing team id, so the first success is what retires it and no separate switch exists.",
+    "github_username is resolved through the GitHub API into the numeric github_user_id and display name the members table requires, so the admin can log in immediately; a login GitHub does not know answers 404 USER_NOT_FOUND.",
+    "The member is written as role admin with status active, which is what lets it reach every admin endpoint without an invite.",
+    "A hub without the BOOTSTRAP_TOKEN secret answers 503 NOT_CONFIGURED; a missing or different header answers 401 UNAUTHORIZED.",
+    "The team and its member are written in one D1 batch, so a hub never holds a team whose admin row is missing."
+  ]
+}
