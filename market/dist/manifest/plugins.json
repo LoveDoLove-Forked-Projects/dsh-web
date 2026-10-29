@@ -1794,33 +1794,9 @@
       "subcategory": "stats"
     },
     {
-      "id": "dsh-skill-install",
-      "name": "技能安装",
-      "rank": 141,
-      "nameEn": "Skill Install",
-      "author": "Joey-K-tsubame",
-      "description": "从 GitHub 仓库搜索并安装 SKILL.md 技能：装到全局 / 当前项目 / 自定义目录，与内置 skill-filesystem 联动，装完即时生效；安装会把第三方仓库的 SKILL.md 原样写入技能根目录，只装信任的仓库。",
-      "descriptionEn": "Search GitHub repositories and install their SKILL.md skills into the global, project, or a custom directory; hot-loads through the built-in skill-filesystem; installation copies a third-party repository's SKILL.md verbatim into a skills root — only install repositories you trust.",
-      "repo": "https://github.com/Joey-K-tsubame/dsh-skill-install",
-      "category": "tools",
-      "subcategory": "dev"
-    },
-    {
-      "id": "dsh-delete-archived",
-      "name": "删除已归档对话",
-      "rank": 142,
-      "nameEn": "Delete Archived Conversations",
-      "author": "Joey-K-tsubame",
-      "description": "为已归档会话在侧边栏增加「删除对话」入口，并提供模型可调用的 delete_archived_conversation 工具：该工具无二次确认即可执行、删除不可恢复。清单与删除能力与 dsh-archived-chats 重叠，增量就是这两个入口；与 dsh-delete-session 的区别是本插件只处理已归档会话，侧边栏走两步确认，而工具调用没有确认。",
-      "descriptionEn": "Adds a sidebar delete entry for archived conversations plus the model-callable delete_archived_conversation tool, which runs without a second confirmation and is irreversible. Listing and removal overlap dsh-archived-chats - the increment is those two entry points; unlike dsh-delete-session it only touches archived sessions, with a two-step confirm in the sidebar and no confirmation for the tool call.",
-      "repo": "https://github.com/Joey-K-tsubame/dsh-delete-archived",
-      "category": "utility",
-      "subcategory": "cleanup"
-    },
-    {
       "id": "dsh-vitals",
       "name": "硬件监视",
-      "rank": 143,
+      "rank": 141,
       "nameEn": "Vitals",
       "author": "JoblessJoe",
       "description": "btop 风格的实时硬件监视：会话标题栏中的 CPU / GPU 迷你小组件（点击打开完整视图），以及 Chat / Trajectory 旁边的 Hardware 标签页：CPU 总负载、60 秒走势和每核负载、内存、CPU 温度，以及每块 NVIDIA GPU 的温度、负载、功耗和显存（通过 nvidia-smi）。已在 Linux 上实测；macOS 和 Windows 的读取逻辑目前仅用样例输出测试过。每项信号使用系统提供的免特权数据源，没有时自动隐藏。零运行时依赖，无需配置。",
@@ -1833,7 +1809,7 @@
     {
       "id": "dsh-streamfold",
       "name": "流式折叠",
-      "rank": 144,
+      "rank": 142,
       "nameEn": "Stream Fold",
       "author": "rezon-aki",
       "description": "在官方对话流上做展示增强：运行中自动展开最新的思考小窗、旧过程行折成一条摘要；一轮跑完把思考与工具调用折起，穿插正文保留。折叠按 3 行一组错峰、逐帧推进，不依赖历史是否加载完；折叠内容保持可搜索（hidden=until-found），Ctrl+F 仍能命中；跑完平滑回到你那一问。启用「折叠」档会接管官方「对话显示」设置：把官方 transcriptView 写成 verbose 并隐藏官方那一行；从本插件切回官方档会写回所选档，卸载后官方档停在「完全展开」，需要时到官方设置里改回。",
@@ -1846,7 +1822,7 @@
     {
       "id": "dsh-loglens",
       "name": "日志查询",
-      "rank": 145,
+      "rank": 143,
       "nameEn": "Log Query",
       "author": "hyzyn",
       "description": "Elasticsearch / OpenSearch 的日志查询卡片：一个查询面——按来源方言给查询串与可点例子、字段名补全、筛选芯片、可点柱缩放时间窗的时间分布、把分组的桶点成筛选、带级别染色与堆栈续行标记的结果列表（可选列、可翻页）；Docker 容器日志作为采集来源复用 docker 插件。agent 侧五个只读 loglens_* 工具（sources / search / fields / facets / context）与面板共用同一执行层。出站只打到已配置的来源，按解析后的 IP 判定，不跟随重定向，并有体积与超时上限。",
@@ -1855,44 +1831,6 @@
       "npm": "@hyzyn/dsh-loglens",
       "category": "tools",
       "subcategory": "dev"
-    },
-    {
-      "id": "client-resume-button",
-      "name": "断点续跑按钮",
-      "rank": 146,
-      "nameEn": "Resume Button",
-      "author": "ddy-007",
-      "description": "在输入框加一个「继续」按钮：上一轮被用户中止、崩溃或报错结束后，输入框为空时按钮出现，点一下就发出一条续跑提示，让模型接着把那一轮做完。按钮位于模型选择器左侧，开始输入或添加附件时收窄隐藏，清空后展开回来。不恢复中断时的半截输出——那部分内容从未落盘，插件是新开一轮 turn 重做。",
-      "descriptionEn": "Adds a Continue button to the composer: after a turn ends aborted (user pressed stop), interrupted (crash) or errored, the button appears while the composer is empty, and one click sends a continuation notice so the model picks that turn back up. It sits left of the model selector and collapses while you type or attach a file. It does not restore the interrupted output - that partial content was never persisted, so the plugin starts a new turn instead.",
-      "repo": "https://github.com/ddy-007/dsh-client-resume-button",
-      "npm": "client-resume-button",
-      "category": "ui",
-      "subcategory": "chat"
-    },
-    {
-      "id": "dsh-version-guard",
-      "name": "DSH 版本守卫",
-      "rank": 147,
-      "nameEn": "DSH Version Guard",
-      "author": "skyjjgw",
-      "description": "记录插件版本与 profile 配置快照；插件冲突导致 DSH 无法启动时，通过独立恢复页回退到已知可用配置。支持单插件停用、恢复启用、版本锁定和显式依赖同步，不回退 DSH 应用本身。",
-      "descriptionEn": "Snapshots plugin versions and profile configuration. An independent recovery page restores a known-good configuration when plugin conflicts prevent DSH from starting. Supports disabling and re-enabling plugins, version pinning, and explicit dependency synchronization; it does not roll back the DSH application.",
-      "repo": "https://github.com/skyjjgw/dsh-version-guard",
-      "category": "tools",
-      "subcategory": "dev"
-    },
-    {
-      "id": "dsh-connect-minimaxcode",
-      "name": "MiniMax Code 模型接入",
-      "rank": 148,
-      "nameEn": "MiniMax Code Model Connect",
-      "author": "JeffTsuiCUG",
-      "description": "把本机 MiniMax Code 桌面 App（国内版）的模型接入 DSH，零配置、无需 API Key。前置：本机已安装并登录 MiniMax Code 桌面 App（国内版）——否则模型列表只回落为两个内置占位条目、实际调不通；也可不装桌面 App，在插件页面发起 OAuth 设备码登录，在浏览器里用自己的 MiniMax 账号确认。上游是标准 Anthropic Messages 协议，直接复用 DSH 自带的 provider，工具调用、推理块与上下文压缩由 DSH 托管；模型目录从上游实时拉取，模型增减不需要更新插件。界面在输入框工具行（模型选择器旁）显示一枚余额胶囊，仅在选中本插件的模型时出现（切到其他反代插件的模型即隐藏）；插件页面另有余额卡片、本机消耗折算的等效金额、7 天内/30 天内到期的积分批次与每日签到。凭据写入：为续期已过期的桌面 App 登录态，插件会按该 App 自己的格式原子写回其 auth 文件（不改 generation）；用插件自己登录的，凭据只写插件自己的 ~/.dsh/.minimaxcode-auth.json，不碰 App 目录。非官方插件，与 MiniMax、DeepSeek 均无关联；依赖 MiniMax 客户端的非公开接口，客户端更新后接口可能变更导致失效；仅供学习与研究使用。",
-      "descriptionEn": "Brings the models of the MiniMax Code desktop app (China region) into DSH, zero configuration, no API key. Prerequisite: the MiniMax Code desktop app (China region) installed and signed in on this machine — without a sign-in the model list falls back to two built-in placeholders that cannot actually be called; or skip the app entirely, since the plugin page offers an OAuth device-code sign-in you confirm with your own MiniMax account in a browser. The upstream speaks the standard Anthropic Messages protocol, so DSH's own provider is reused and tool calls, reasoning blocks and context compaction stay Harness-owned; the model catalog is pulled live, so upstream model changes need no plugin update. The interface shows a balance pill in the composer tool row beside the model picker, drawn only while this plugin's models are selected (it hides when another connector's model is selected); the plugin page adds a balance card, this machine's consumption converted to an equivalent cost, the credit batches expiring within 7 and 30 days, and the daily check-in. Credential writes: to renew an expired desktop-app sign-in the plugin writes the app's auth file back atomically, in the app's own format, without changing its generation counter; when signed in through the plugin itself the credential is stored only in the plugin's own ~/.dsh/.minimaxcode-auth.json, never in the app's directory. Unofficial plugin, not affiliated with MiniMax or DeepSeek; it depends on the MiniMax client's non-public interfaces, which a client update may change and break. For learning and research only.",
-      "repo": "https://github.com/JeffTsuiCUG/dsh-connect-minimaxcode",
-      "npm": "dsh-connect-minimaxcode",
-      "category": "integration",
-      "subcategory": "external-ai"
     }
   ]
 }
