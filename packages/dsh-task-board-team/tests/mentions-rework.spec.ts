@@ -124,6 +124,48 @@ describe('rework', () => {
     expect(rerun.rework?.instructions).toBe('add the missing test')
   })
 
+  it('operator sees a pending rework applied when a sweep claims the card instead of the event', async () => {
+    // Given an issue whose review was rejected while this Host was offline, and a
+    // card that already executed once
+    harness = makeHarness()
+    const taskId = await claimedCard(harness)
+    await settleOnce(harness, taskId)
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    issue.status = 'assigned'
+    issue.reworkInstructions = 'add the missing test'
+
+    // When the sweep claims the card again (no issue.rework event at all)
+    await harness.service().sweep()
+    await flush()
+
+    // Then the rework ran on the existing card, from the instructions the issue carried
+    const executions = harness.tasks()[0].executions
+    expect(executions).toHaveLength(2)
+    expect(executions[executions.length - 1].rework?.instructions).toBe('add the missing test')
+  })
+
+  it('operator sees an event and a sweep for the same issue apply the rework only once', async () => {
+    // Given an issue whose review was rejected, with a card that already executed
+    harness = makeHarness()
+    const taskId = await claimedCard(harness)
+    await settleOnce(harness, taskId)
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    issue.status = 'assigned'
+    issue.reworkInstructions = 'try again'
+
+    // When the rejection event and the sweep arrive together
+    harness.hub.push('issue.rework', { issue_id: 'issue_1', instructions: 'try again', reviewer_member_id: 'mem_reviewer' })
+    const swept = harness.service().sweep()
+    await swept
+    await vi.advanceTimersByTimeAsync(5_000)
+    await flush()
+
+    // Then one claim at a time kept the card to a single extra execution
+    expect(harness.tasks()[0].executions).toHaveLength(2)
+  })
+
   it('operator sees a rejected claim start no execution at all', async () => {
     // Given a claimed issue whose card executed once
     harness = makeHarness()

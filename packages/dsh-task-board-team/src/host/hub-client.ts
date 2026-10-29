@@ -15,6 +15,7 @@ import {
   HUB_PROTOCOL_VERSION,
   type HubActivity,
   type HubAgentDefinition,
+  type HubAgentRecord,
   type HubClaim,
   type HubComment,
   type HubIssue,
@@ -93,11 +94,22 @@ export class HubClient {
 
   /**
    * Register this Host and synchronize its agent definitions.
+   *
+   * The body is snake_case end to end (protocol amendment A4 point 1): the hub
+   * stores exactly these keys, so a camelCase member is a field it never sees.
    * @param body - hostname, client version and the local agent definitions.
-   * @returns the registered host id and status.
+   * @returns the registered host id, status and the agent records the hub now holds.
    */
-  async register(body: { hostname: string; client_version: string; agents: readonly HubAgentDefinition[] }): Promise<{ host_id: string; status: string }> {
-    return await this.#call('POST', '/hosts/register', body) as { host_id: string; status: string }
+  async register(body: {
+    hostname: string
+    client_version: string
+    agents: readonly HubAgentDefinition[]
+  }): Promise<{ host_id: string; status: string; agents?: readonly HubAgentRecord[] }> {
+    return await this.#call('POST', '/hosts/register', body) as {
+      host_id: string
+      status: string
+      agents?: readonly HubAgentRecord[]
+    }
   }
 
   /**
@@ -209,8 +221,10 @@ export class HubClient {
       authorization: 'Bearer ' + token,
       [HUB_PROTOCOL_HEADER]: HUB_PROTOCOL_VERSION,
       accept: 'application/json',
+      // The frozen samples declare it on every Host call, body or not
+      // (protocol amendment A4 point 9), so it is never conditional here.
+      'content-type': 'application/json',
     }
-    if (body !== undefined) headers['content-type'] = 'application/json'
     const response = await this.#fetch()(
       base.url + path,
       { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) },

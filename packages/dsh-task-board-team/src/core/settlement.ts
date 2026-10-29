@@ -27,6 +27,11 @@ export interface SettleRequestBody {
    * long execution report its own result instead of having it refused as stale.
    */
   execution_attempt_id?: string
+  /**
+   * What the Host itself verified, in the shape the frozen settlement sample
+   * shows. It is the local evidence a reviewer reads next to the outcome.
+   */
+  verification_evidence?: Record<string, unknown>
 }
 
 /**
@@ -74,5 +79,6 @@ export function buildSettleRequest(input: {
   const body: SettleRequestBody = { outcome, summary: clipSummary(lines.join('\n')) }
   if (input.error !== undefined && input.error.trim() !== '') body.error = clipSummary(input.error.trim())
   if (input.attemptId !== undefined) body.execution_attempt_id = input.attemptId
+  body.verification_evidence = { execution_id: input.executionId, outcome }
   return body
 }

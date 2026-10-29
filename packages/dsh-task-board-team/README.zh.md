@@ -40,7 +40,7 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board-team
 打开任务看板设置，找到「团队协作」区块：hub 地址与团队 id 存在本插件自己的 volatile 设置里，粘贴的 Host Token 只向宿主发送一次。
 
 - Host Token 保存在 harness 凭据库的 `hostTokenRef` 名下（默认 `DSH_TEAM_HUB_TOKEN`），没有凭据库时读同名环境变量；快照、摘要与工具结果都不携带它的值。
-- 成员绑定是 dsh-agents 成员 id（区块内用逗号分隔）。绑定的成员已不在 dsh-agents 账本里时，区块会报出来并跳过它。
+- 成员绑定是 dsh-agents 成员 id（区块内用逗号分隔）。绑定的成员已不在 dsh-agents 账本里时，区块会报出来并跳过它；成员定义没有钉住 Agent 预设时同样跳过——hub 要求 `preset_id` 非空，而跑这样的成员会静默退回部署默认预设。
 
 ```yaml
 # 对应的 profile patch 写法

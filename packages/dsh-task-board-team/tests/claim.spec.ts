@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TEAM_EXTENSION_ID, readTaskIssueLink } from '../src/core/identity.ts'
-import { flush, makeHarness, type Harness } from './support/harness.ts'
+import { boundAgent, flush, makeHarness, type Harness } from './support/harness.ts'
 
 let harness: Harness | undefined
 
@@ -151,6 +151,86 @@ describe('claiming team issues', () => {
     expect(readTaskIssueLink(task)?.lastError).toContain('cannot pin an agent preset')
     expect(harness.service().summary().presetPin).toBe('missing')
     expect(harness.service().summary().problems.join(' ')).toContain('cannot pin an agent preset')
+  })
+
+  it('operator sees the registration body in snake_case with the agent records mapped back', async () => {
+    // Given a Host binding one member that pins a preset, model and effort
+    harness = makeHarness({
+      agents: [boundAgent({ preset: 'liangshen', model: 'deepseek-chat', reasoningEffort: 'high' })],
+    })
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+
+    // When it registers and claims
+    await harness.service().whenStarted()
+    await harness.service().sweep()
+    await flush()
+
+    // Then the request body is snake_case end to end, and the response's agent
+    // records are what mapped the member to its hub agent id
+    const register = harness.hub.calls.find(call => call.path.endsWith('/hosts/register'))
+    expect(register?.body).toEqual({
+      hostname: 'test-host',
+      client_version: '0.4.12',
+      agents: [{ name: 'builder', preset_id: 'liangshen', model: 'deepseek-chat', reasoning_effort: 'high' }],
+    })
+    expect(harness.hub.registered).toEqual([{ id: 'agent_1', name: 'builder', preset_id: 'liangshen' }])
+    expect(harness.service().summary().agents[0]?.hubAgentId).toBe('agent_1')
+    expect(harness.tasks()).toHaveLength(1)
+  })
+
+  it('operator sees a member without a preset skipped instead of run under the default', async () => {
+    // Given one member with a preset and one whose definition pins none
+    harness = makeHarness({
+      agents: [boundAgent(), boundAgent({ memberId: 'mem_bare', name: 'bare', preset: undefined })],
+    })
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+
+    // When it registers
+    await harness.service().whenStarted()
+
+    // Then only the preset-bearing member was reported, and the skip is visible
+    const register = harness.hub.calls.find(call => call.path.endsWith('/hosts/register'))
+    expect((register?.body as { agents: unknown[] }).agents).toEqual([{ name: 'builder', preset_id: 'liangshen' }])
+    expect(harness.service().summary().problems.join(' ')).toContain('bare is not registered')
+  })
+
+  it('operator sees claim credentials survive an attempt the hub reports as null', async () => {
+    // Given a card whose attempt the hub no longer holds, reported as null
+    harness = makeHarness()
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+    await harness.service().sweep()
+    await flush()
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    issue.attemptId = undefined
+    issue.status = 'waiting_host'
+
+    // When the claim sweep runs again
+    await harness.service().sweep()
+
+    // Then the previous attempt was presented instead of being read as a mismatch
+    const claimCall = harness.hub.calls.filter(call => call.path.endsWith('/claim')).pop()
+    expect((claimCall?.body as { execution_attempt_id?: string }).execution_attempt_id).toBe('attempt_1')
+  })
+
+  it('operator sees a burst of channel events collapse into one claim sweep per cadence', async () => {
+    // Given a registered Host whose channel is open
+    harness = makeHarness()
+    await harness.service().whenStarted()
+    const before = harness.hub.calls.filter(call => call.method === 'GET' && call.path.endsWith('/issues')).length
+
+    // When three issue events arrive inside one cadence window
+    harness.hub.push('issue.created', { issue: { id: 'issue_x' } })
+    harness.hub.push('issue.updated', { issue: { id: 'issue_x' }, changed_fields: ['title'] })
+    harness.hub.push('issue.status_changed', { issue_id: 'issue_x', old_status: 'todo', new_status: 'assigned' })
+    await flush()
+    const duringWindow = harness.hub.calls.filter(call => call.method === 'GET' && call.path.endsWith('/issues')).length
+
+    // Then nothing ran yet, and exactly one pass runs at the boundary
+    expect(duringWindow).toBe(before)
+    await vi.advanceTimersByTimeAsync(5_000)
+    await flush()
+    expect(harness.hub.calls.filter(call => call.method === 'GET' && call.path.endsWith('/issues')).length).toBe(before + 1)
   })
 
   it('operator sees a Host that binds no member claim nothing at all', async () => {

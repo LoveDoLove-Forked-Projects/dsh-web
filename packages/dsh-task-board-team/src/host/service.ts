@@ -27,6 +27,7 @@ import {
   HEARTBEAT_INTERVAL_MS,
   RECONNECT_BASE_MS,
   RECONNECT_MAX_MS,
+  SWEEP_INTERVAL_MS,
   readServerFrame,
   type HubServerFrame,
 } from '../core/hub-protocol.ts'
@@ -82,6 +83,10 @@ export interface TeamCardView {
   hubStatus?: HubIssueStatus
   assignee?: string
   reviewer?: string
+  /** Member id behind `assignee`, when the hub named one. */
+  assigneeMemberId?: string
+  /** Member id behind `reviewer`, when the hub named one. */
+  reviewerMemberId?: string
   agentName?: string
   comments: TeamCommentView[]
   activity: TeamActivityView[]
@@ -186,6 +191,12 @@ export class TeamSyncService {
   #reconnectAttempt = 0
   #starting: Promise<void> | undefined
   #presetPin: 'unknown' | 'supported' | 'missing' = 'unknown'
+  /** Instant of the last sweep, so a burst of events coalesces into one pass. */
+  #lastSweepAt: number | undefined
+  /** A sweep scheduled for the next cadence boundary, while one is pending. */
+  #pendingSweep: (() => void) | undefined
+  /** Issues with a claim in flight: one claim per issue at a time. */
+  readonly #claiming = new Set<string>()
 
   constructor(options: TeamSyncServiceOptions) {
     this.#options = options
@@ -243,6 +254,8 @@ export class TeamSyncService {
     this.#stopHeartbeat = undefined
     this.#stopReconnect?.()
     this.#stopReconnect = undefined
+    this.#pendingSweep?.()
+    this.#pendingSweep = undefined
     this.#socket?.close()
     this.#socket = undefined
     for (const cancel of this.#leases.values()) cancel()
@@ -339,11 +352,35 @@ export class TeamSyncService {
   }
 
   /**
+   * Ask for a sweep, coalesced to at most one pass per cadence window.
+   *
+   * A burst of channel events (a reviewer rejecting, a status moving, an issue
+   * appearing) asks for the same work, and the hub counts Host requests per
+   * minute (protocol amendment A4 point 6), so the asks collapse into one pass:
+   * the current window's pass or the single pass scheduled at its boundary.
+   */
+  requestSweep(): void {
+    if (!this.#started) return
+    if (this.#pendingSweep !== undefined) return
+    const now = this.#options.now()
+    const last = this.#lastSweepAt
+    if (last === undefined || now - last >= SWEEP_INTERVAL_MS) {
+      void this.#runSweep()
+      return
+    }
+    this.#pendingSweep = this.#options.timers.timeout(() => {
+      this.#pendingSweep = undefined
+      void this.#runSweep()
+    }, SWEEP_INTERVAL_MS - (now - last))
+  }
+
+  /**
    * One claim sweep over what the hub currently offers this Host.
    * @returns how many issues this pass turned into a new card.
    */
   async #runSweep(): Promise<number> {
     if (this.#hostId === undefined) return 0
+    this.#lastSweepAt = this.#options.now()
     let issues: readonly HubIssue[]
     try {
       issues = await this.#options.hub.listClaimableIssues(this.#hostId)
@@ -377,8 +414,16 @@ export class TeamSyncService {
 
   async #bootstrap(): Promise<void> {
     const resolved = await this.#options.resolveAgents()
-    this.#agents = [...resolved.agents]
-    this.#problems = [...resolved.problems]
+    // A member whose definition pins no preset is not registered (protocol
+    // amendment A4 point 1): running it would silently fall back to the
+    // deployment default, which is exactly what this provider must not do.
+    const runnable = resolved.agents.filter(agent => agent.preset !== undefined && agent.preset !== '')
+    const skipped = resolved.agents
+      .filter(agent => agent.preset === undefined || agent.preset === '')
+      .map(agent => agent.name + ' is not registered: its dsh-agents definition pins no agent preset, so this Host '
+        + 'would have to run it under the deployment default')
+    this.#agents = runnable
+    this.#problems = [...resolved.problems, ...skipped]
     if (this.#agents.length === 0) {
       this.#problems = [...this.#problems, 'no dsh-agents member is bound to this Host, so no issue is claimed']
       this.#publish()
@@ -397,9 +442,10 @@ export class TeamSyncService {
   async #register(): Promise<void> {
     this.#connection = 'connecting'
     const definitions: HubAgentDefinition[] = this.#agents.map(agent => ({
-      memberId: agent.memberId,
       name: agent.name,
-      presetId: agent.preset ?? '',
+      preset_id: agent.preset ?? '',
+      ...(agent.model === undefined ? {} : { model: agent.model }),
+      ...(agent.reasoningEffort === undefined ? {} : { reasoning_effort: agent.reasoningEffort }),
     }))
     try {
       const registered = await this.#options.hub.register({
@@ -511,7 +557,7 @@ export class TeamSyncService {
       // recovery is a fresh claim sweep: it re-establishes every issue the hub
       // still offers and leaves the rest on the hub.
       this.#seq = 0
-      void this.sweep()
+      this.requestSweep()
       return
     }
     this.#onEvent(frame)
@@ -547,7 +593,7 @@ export class TeamSyncService {
         return
       case 'issue.created':
       case 'issue.updated':
-        void this.sweep()
+        this.requestSweep()
         return
       default:
         return
@@ -559,20 +605,38 @@ export class TeamSyncService {
    * @returns whether this call created a card.
    */
   async #claimIssue(issue: HubIssue, agent: BoundAgent): Promise<boolean> {
+    // One claim per issue at a time (protocol amendment A4 point 5): a sweep and
+    // an event for the same issue would otherwise race two attempts.
+    if (this.#claiming.has(issue.id)) return false
+    this.#claiming.add(issue.id)
+    try {
+      return await this.#claimIssueExclusively(issue, agent)
+    } finally {
+      this.#claiming.delete(issue.id)
+    }
+  }
+
+  async #claimIssueExclusively(issue: HubIssue, agent: BoundAgent): Promise<boolean> {
     const existing = findLinkedTask(this.#linked(), issue.id)
     const previous = existing === undefined ? undefined : readTaskIssueLink(existing)
     const credentials: { execution_attempt_id?: string; lease_token?: string } = {}
+    // A hub answers `null` for an attempt it does not hold, and `undefined` is
+    // what an older response body omits: both mean "no attempt yet".
+    const heldAttempt = issue.execution_attempt_id ?? undefined
     if (previous?.attemptId !== undefined && previous.leaseToken !== undefined
-      && (issue.execution_attempt_id === undefined || issue.execution_attempt_id === previous.attemptId)) {
+      && (heldAttempt === undefined || heldAttempt === previous.attemptId)) {
       credentials.execution_attempt_id = previous.attemptId
       credentials.lease_token = previous.leaseToken
     }
     const claim = await this.#options.hub.claim(issue.id, credentials)
+    const rework = typeof issue.rework_instructions === 'string' ? issue.rework_instructions.trim() : ''
 
     if (existing !== undefined) {
       // A hub that recognizes the attempt re-establishes the same lease. This
-      // Host mirrors the credentials and starts NOTHING: a second execution for
-      // one attempt is exactly the duplicate this path exists to prevent.
+      // Host mirrors the credentials and starts NOTHING on its own: a second
+      // execution for one attempt is exactly the duplicate this path prevents.
+      // A pending rework IS the one thing that has to run, and only after the
+      // claim above succeeded.
       this.#writeLink(existing.id, {
         attemptId: claim.execution_attempt_id,
         leaseToken: claim.lease_token,
@@ -580,6 +644,7 @@ export class TeamSyncService {
         hubStatus: 'running',
       })
       this.#ensureLease(existing, issue.id, claim.lease_token)
+      if (rework !== '') this.#applyRework(existing.id, rework)
       return false
     }
 
@@ -752,15 +817,15 @@ export class TeamSyncService {
 
   async #rework(payload: Record<string, unknown>): Promise<void> {
     const issueId = typeof payload.issue_id === 'string' ? payload.issue_id : undefined
-    const instructions = typeof payload.instructions === 'string' ? payload.instructions : ''
     if (issueId === undefined) return
+    const instructions = typeof payload.instructions === 'string' ? payload.instructions.trim() : ''
     const task = findLinkedTask(this.#linked(), issueId)
     if (task === undefined) {
       this.#options.log?.('rework requested for an issue this Host does not mirror: ' + issueId)
       return
     }
-    // A rework is a NEW attempt, so it needs a NEW attempt id: presenting the old
-    // one would ask the hub to re-establish a finished attempt.
+    // A rework is a NEW attempt and needs a new attempt id: presenting the old one
+    // would ask the hub to re-establish a finished attempt.
     const attemptId = this.#options.uuid()
     try {
       const claim = await this.#options.hub.claim(issueId, { execution_attempt_id: attemptId })
@@ -778,17 +843,31 @@ export class TeamSyncService {
       this.#recordError(task.id, error)
       return
     }
+    if (instructions === '') {
+      this.#recordError(task.id, new Error('the rework request carried no instructions, so nothing was re-run'))
+      return
+    }
+    this.#applyRework(task.id, instructions)
+    this.#publish()
+  }
+
+  /**
+   * Apply review instructions to one already-mirrored card through the board's
+   * rework capability, or report the gap.
+   * @param taskId - the card the reviewer sent back.
+   * @param instructions - what the reviewer asked for.
+   */
+  #applyRework(taskId: string, instructions: string): void {
     const rework = this.#options.host.tasks.rework
     if (rework === undefined) {
-      this.#recordError(task.id, new Error('this board revision serves no rework, so the review instructions could not be applied'))
+      this.#recordError(taskId, new Error('this board revision serves no rework, so the review instructions could not be applied'))
       return
     }
     try {
-      rework.call(this.#options.host.tasks, task.id, instructions, 'team-hub')
+      rework.call(this.#options.host.tasks, taskId, instructions, 'team-hub')
     } catch (error) {
-      this.#recordError(task.id, error)
+      this.#recordError(taskId, error)
     }
-    this.#publish()
   }
 
   #recordComment(payload: Record<string, unknown>): void {
@@ -799,9 +878,7 @@ export class TeamSyncService {
     const task = findLinkedTask(this.#linked(), row.issue_id)
     if (task === undefined) return
     const view = this.#view(task.id, row.issue_id)
-    const author = typeof row.author_member_id === 'string'
-      ? row.author_member_id
-      : (typeof row.author_agent_id === 'string' ? row.author_agent_id : 'team')
+    const author = this.#authorLabel(row)
     const entry: TeamCommentView = {
       id: typeof row.id === 'string' ? row.id : this.#options.uuid(),
       author,
@@ -811,6 +888,33 @@ export class TeamSyncService {
     view.comments = [...view.comments, entry].slice(-VIEW_ENTRY_LIMIT)
     this.#pushActivity(task.id, row.issue_id, 'comment.created', entry.content)
     this.#publish()
+  }
+
+  /**
+   * Render one comment author the way a reader recognizes them.
+   *
+   * An agent author resolves to the member name this Host registered, and a human
+   * author to the display name the card already knows; a name this Host cannot
+   * resolve reads as "team member" rather than as a raw `mem_...` identifier,
+   * which tells a reader nothing about who is speaking.
+   * @param comment - the comment row the hub served.
+   * @returns the label the detail section renders.
+   */
+  #authorLabel(comment: HubComment): string {
+    const agentId = typeof comment.author_agent_id === 'string' ? comment.author_agent_id : undefined
+    if (agentId !== undefined) {
+      const agent = this.#hubAgents.get(agentId)
+      if (agent !== undefined) return agent.name
+      return 'team agent'
+    }
+    const memberId = typeof comment.author_member_id === 'string' ? comment.author_member_id : undefined
+    if (memberId !== undefined) {
+      for (const view of this.#cards.values()) {
+        if (view.reviewerMemberId === memberId && view.reviewer !== undefined) return view.reviewer
+        if (view.assigneeMemberId === memberId && view.assignee !== undefined) return view.assignee
+      }
+    }
+    return 'team member'
   }
 
   #recordStatus(payload: Record<string, unknown>): void {
@@ -826,7 +930,7 @@ export class TeamSyncService {
     // A lease that lapsed puts the issue back in the pool the hub offers this
     // Host; the sweep turns that into a renewed claim, never a second card. A
     // terminal status releases the lease on this side.
-    if (status === 'assigned' || status === 'waiting_host') void this.sweep()
+    if (status === 'assigned' || status === 'waiting_host') this.requestSweep()
     if (status === 'done' || status === 'canceled' || status === 'failed') this.#releaseLease(task.id)
     this.#publish()
   }

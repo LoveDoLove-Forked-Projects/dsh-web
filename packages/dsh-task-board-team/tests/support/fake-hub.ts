@@ -12,6 +12,14 @@
  *
  * @module dsh-task-board-team/tests/support/fake-hub
  */
+import {
+  compareRequest,
+  compareResponse,
+  loadContractSamples,
+  sampleForCall,
+  type ContractSample,
+  type ContractSet,
+} from './contract.ts'
 import type { HubFetch, HubResponse } from '../../src/host/hub-client.ts'
 import type { SocketHandlers, SocketLike } from '../../src/host/channel.ts'
 import type { BoundAgent } from '../../src/host/bindings.ts'
@@ -28,6 +36,7 @@ interface FakeIssue {
   attemptId?: string
   leaseToken?: string
   leaseExpiresAt?: number
+  reworkInstructions?: string
 }
 
 /** One question the fake stored, in the amendment-A2 wire shape. */
@@ -61,6 +70,10 @@ function failure(status: number, code: string, message: string): HubResponse {
   return respond(status, { error: { code, message, details: {} } })
 }
 
+function isRecord(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /** The team hub one test drives. */
 export class FakeHub {
   readonly calls: HubCall[] = []
@@ -74,6 +87,10 @@ export class FakeHub {
   failNextClaim: string | undefined
   /** When true the next question report is refused, as a hub outage would. */
   failNextQuestion = false
+  /** The frozen wire samples this checkout carries, when it carries them. */
+  readonly contract: ContractSet = loadContractSamples()
+  /** Sample-name mismatches found while answering, asserted by the suite. */
+  readonly contractProblems: string[] = []
   /** The channel this Host opened, when it did. */
   handlers: SocketHandlers | undefined
   sockets = 0
@@ -81,6 +98,14 @@ export class FakeHub {
   private attempt = 0
   private lease = 0
   private question = 0
+
+  /** Answer through the sample check: the response shape is part of the contract. */
+  private answerChecked(sample: ContractSample | undefined, status: number, body: Record<string, unknown>): HubResponse {
+    if (sample !== undefined) {
+      for (const problem of compareResponse(sample, body)) this.contractProblems.push(problem)
+    }
+    return respond(status, body)
+  }
 
   /** The transport the Host's client uses. */
   readonly fetch: HubFetch = async (url, init) => {
@@ -96,24 +121,45 @@ export class FakeHub {
     })
     if (version === undefined) return failure(400, 'UNSUPPORTED_PROTOCOL_VERSION', 'missing protocol version header')
     const body = init.body === undefined ? {} : JSON.parse(init.body) as Record<string, unknown>
+    // The hub side's frozen sample is the authority for the request shape: a
+    // renamed or dropped field fails here instead of in production.
+    const sample = sampleForCall(this.contract, init.method, path)
+    if (sample !== undefined) {
+      for (const problem of compareRequest(sample, {
+        headers: init.headers,
+        query: Object.fromEntries(parsed.searchParams.entries()),
+        body,
+        method: init.method,
+        path,
+      })) {
+        this.contractProblems.push(sample.file + ': ' + problem)
+      }
+    }
     const segments = path.split('/').filter(segment => segment !== '')
     // /api/v1/teams/<team>/...
     const tail = segments.slice(4)
     if (init.method === 'POST' && tail[0] === 'hosts' && tail[1] === 'register') {
       const agents = Array.isArray(body.agents) ? body.agents as Array<Record<string, unknown>> : []
+      // A member without a preset is never registered (protocol amendment A4
+      // point 1), so a definition that arrives without one is a drift this fake
+      // reports instead of silently storing.
+      for (const agent of agents) {
+        const presetId = String(agent.preset_id ?? '')
+        if (presetId === '') this.contractProblems.push('register: agent "' + String(agent.name) + '" has an empty preset_id')
+      }
       this.registered = agents.map((agent, index) => ({
         id: 'agent_' + String(index + 1),
         name: String(agent.name ?? ''),
-        preset_id: String(agent.presetId ?? ''),
+        preset_id: String(agent.preset_id ?? ''),
       }))
-      return respond(200, {
+      return this.answerChecked(sample, 200, {
         host_id: this.hostId,
         status: 'online',
-        agents: this.registered.map(agent => ({ id: agent.id, name: agent.name, preset_id: agent.preset_id })),
+        agents: this.registered.map(agent => ({ id: agent.id, name: agent.name })),
       })
     }
     if (init.method === 'POST' && tail[0] === 'hosts' && tail[2] === 'heartbeat') {
-      return respond(200, { ok: true, server_time: Date.now() })
+      return this.answerChecked(sample, 200, { ok: true, server_time: Date.now() })
     }
     if (init.method === 'GET' && tail[0] === 'issues') {
       const status = parsed.searchParams.get('status') ?? ''
@@ -121,7 +167,7 @@ export class FakeHub {
       const issues = [...this.issues.values()]
         .filter(issue => wanted.size === 0 || wanted.has(issue.status))
         .map(issue => this.project(issue))
-      return respond(200, { issues })
+      return this.answerChecked(sample, 200, { issues })
     }
     if (init.method === 'POST' && tail[0] === 'issues' && tail[2] === 'claim') {
       const issue = this.issues.get(String(tail[1]))
@@ -137,7 +183,7 @@ export class FakeHub {
         // create no new execution.
         issue.status = 'running'
         issue.leaseExpiresAt = Date.now() + 60_000
-        return respond(200, {
+        return this.answerChecked(sample, 200, {
           lease_token: issue.leaseToken,
           lease_expires_at: issue.leaseExpiresAt,
           execution_attempt_id: issue.attemptId,
@@ -152,7 +198,7 @@ export class FakeHub {
       issue.attemptId = presentedAttempt ?? 'attempt_' + String(this.attempt)
       issue.leaseToken = 'lease_' + String(this.lease)
       issue.leaseExpiresAt = Date.now() + 60_000
-      return respond(200, {
+      return this.answerChecked(sample, 200, {
         lease_token: issue.leaseToken,
         lease_expires_at: issue.leaseExpiresAt,
         execution_attempt_id: issue.attemptId,
@@ -165,7 +211,7 @@ export class FakeHub {
         return failure(412, 'LEASE_EXPIRED', 'the lease is no longer held by this attempt')
       }
       issue.leaseExpiresAt = Date.now() + 60_000
-      return respond(200, { lease_expires_at: issue.leaseExpiresAt })
+      return this.answerChecked(sample, 200, { lease_expires_at: issue.leaseExpiresAt })
     }
     if (init.method === 'POST' && tail[0] === 'issues' && tail[2] === 'settle') {
       const issue = this.issues.get(String(tail[1]))
@@ -178,8 +224,11 @@ export class FakeHub {
         return failure(412, 'LEASE_EXPIRED', 'this attempt no longer holds the lease')
       }
       issue.leaseToken = undefined
+      // The hub clears the pending rework once the reworked run settles
+      // (protocol amendment A4 point 5).
+      if (body.outcome === 'succeeded' || body.outcome === 'failed') issue.reworkInstructions = undefined
       issue.status = body.outcome === 'succeeded' ? 'in_review' : 'failed'
-      return respond(200, { ok: true, status: issue.status })
+      return this.answerChecked(sample, 200, { ok: true, status: issue.status })
     }
     if (init.method === 'POST' && tail[0] === 'issues' && tail[2] === 'questions') {
       if (this.failNextQuestion) {
@@ -202,14 +251,14 @@ export class FakeHub {
         answer: null,
       }
       this.questions.set(stored.id, stored)
-      return respond(201, { question: this.projectQuestion(stored) })
+      return this.answerChecked(sample, 201, { question: this.projectQuestion(stored) })
     }
     if (init.method === 'POST' && tail[0] === 'questions' && tail[2] === 'withdraw') {
       const question = this.questions.get(String(tail[1]))
       if (question === undefined) return failure(404, 'NOT_FOUND', 'question not found')
       if (question.status !== 'pending') return failure(409, 'QUESTION_NOT_PENDING', 'the question is no longer pending')
       question.status = 'dismissed'
-      return respond(200, { ok: true, status: 'dismissed' })
+      return this.answerChecked(sample, 200, { ok: true, status: 'dismissed' })
     }
     if (init.method === 'GET' && tail[0] === 'issues' && tail[2] === 'comments') {
       const issueId = String(tail[1])
@@ -223,14 +272,17 @@ export class FakeHub {
         author_agent_id: String(body.author_agent_id ?? ''),
       }
       this.comments.push(comment)
-      return respond(201, {
+      return this.answerChecked(sample, 201, {
         comment: {
           id: comment.id,
+          team_id: 'team_1',
           issue_id: comment.issue_id,
           author_type: 'agent',
+          author_member_id: null,
           author_agent_id: comment.author_agent_id,
           content: comment.content,
           created_at: Date.now(),
+          updated_at: Date.now(),
         },
       })
     }
@@ -325,15 +377,25 @@ export class FakeHub {
   private project(issue: FakeIssue): Record<string, unknown> {
     return {
       id: issue.id,
+      team_id: 'team_1',
       issue_number: issue.issueNumber,
       title: issue.title,
       description: issue.description,
       status: issue.status,
+      creator_member_id: 'mem_creator',
       assignee_type: 'agent',
+      assignee_member_id: null,
       assignee_agent_id: issue.assigneeAgentId,
-      ...(issue.reviewer === undefined ? {} : { reviewer_member_id: issue.reviewer }),
-      ...(issue.attemptId === undefined ? {} : { execution_attempt_id: issue.attemptId }),
-      ...(issue.leaseExpiresAt === undefined ? {} : { lease_expires_at: issue.leaseExpiresAt }),
+      reviewer_member_id: issue.reviewer ?? null,
+      executing_host_id: issue.leaseToken === undefined ? null : this.hostId,
+      lease_expires_at: issue.leaseExpiresAt ?? null,
+      has_lease: issue.leaseToken !== undefined,
+      execution_attempt_id: issue.attemptId ?? null,
+      execution_summary: null,
+      rework_instructions: issue.reworkInstructions ?? null,
+      failure_error: null,
+      created_at: 1_700_000_000_000,
+      updated_at: 1_700_000_000_000,
     }
   }
 }

@@ -40,7 +40,7 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-task-board-team
 Open the task board settings and find the **Team collaboration** block; it stores the hub URL and team id as this plugin's own volatile settings and sends a pasted Host Token to the host once.
 
 - The Host Token is held in the harness credential store under `hostTokenRef` (default `DSH_TEAM_HUB_TOKEN`) or, failing that, in the environment variable of that name; no snapshot, summary or tool result carries its value.
-- The member bindings are dsh-agents member ids (comma separated in the block). A binding that names a member the dsh-agents ledger no longer defines is reported in the block and skipped.
+- The member bindings are dsh-agents member ids (comma separated in the block). A binding that names a member the dsh-agents ledger no longer defines is reported in the block and skipped, and so is a member whose definition pins no agent preset: the hub requires a non-empty `preset_id`, and running such a member would silently fall back to the deployment default.
 
 ```yaml
 # profile patch equivalent

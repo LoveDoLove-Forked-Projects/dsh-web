@@ -80,6 +80,7 @@ export function scriptedGateway() {
       return { sessionId }
     }
     if (request.method === 'rename') return { title: 'x', seq: 1 }
+    if (request.method === 'selectModel') return {}
     if (request.method === 'projections') return { values: {} }
     if (request.method === 'prompt') {
       const content = body.content as Array<{ text: string }>
@@ -203,7 +204,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
       }
     })(),
     onService: live => { service = live },
-    log: () => {},
+    log: (message, detail) => { console.error('[harness]', message, detail instanceof Error ? detail.stack : (detail ?? '')) },
   })
 
   /**

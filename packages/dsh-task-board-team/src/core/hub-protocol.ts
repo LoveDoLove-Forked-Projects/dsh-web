@@ -38,6 +38,9 @@ export const EXECUTION_SUMMARY_LIMIT = 4_000
 /** Comment text byte cap (section 11). */
 export const COMMENT_LIMIT_BYTES = 32_768
 
+/** Cadence the claim sweep is coalesced to (protocol amendment A4 point 6). */
+export const SWEEP_INTERVAL_MS = 5_000
+
 /** Backoff the reconnect loop starts at after a dropped WebSocket. */
 export const RECONNECT_BASE_MS = 1_000
 
@@ -58,16 +61,29 @@ export type HubIssueStatus =
   | 'canceled'
   | 'failed'
 
-/** One Agent definition this Host registers with the hub. */
+/**
+ * One Agent definition this Host registers with the hub.
+ *
+ * Protocol amendment A4 fixes the registration body as snake_case and requires a
+ * non-empty `preset_id`: a member whose definition pins no preset is not
+ * reported at all, because the hub would otherwise store an agent this Host can
+ * only run under the deployment's default preset.
+ */
 export interface HubAgentDefinition {
-  /** dsh-agents member id the binding points at. */
-  memberId: string
   /** Name the hub resolves `@` mentions by. */
   name: string
-  /** Agent preset id the member definition pins. */
-  presetId: string
-  /** Free text shown on the hub's agent list. */
-  description?: string
+  /** Agent preset id the member definition pins; never empty. */
+  preset_id: string
+  /** Pinned model of that member, when it pins one. */
+  model?: string
+  /** Reasoning effort bound to that model, when the member pins one. */
+  reasoning_effort?: string
+}
+
+/** One Agent record the hub answered registration with. */
+export interface HubAgentRecord {
+  id: string
+  name: string
 }
 
 /** One issue, as the hub serves it. */
@@ -83,8 +99,17 @@ export interface HubIssue {
   reviewer_member_id?: string
   executing_host_id?: string
   lease_expires_at?: number
-  execution_attempt_id?: string
+  /** Attempt the hub currently holds for this issue; null when it holds none. */
+  execution_attempt_id?: string | null
   execution_summary?: string
+  /**
+   * Rework instructions waiting to be applied (protocol amendment A4 point 5).
+   *
+   * Non-empty instructions on the issue mean "a review sent this back": whichever
+   * path claims the card next must apply them to the existing mirror card.
+   */
+  rework_instructions?: string | null
+  failure_error?: string | null
   updated_at?: number
 }
 
