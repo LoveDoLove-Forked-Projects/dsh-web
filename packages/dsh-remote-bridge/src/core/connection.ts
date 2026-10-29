@@ -1904,8 +1904,15 @@ export class BridgeConnection {
     // stored value crosses exactly as it did before this check existed.
     if (!catalog.ok || !isRecord(catalog.value)) return remembered
     const offered = effortIdsOf(catalog.value.groups, provider, model)
-    if (offered !== undefined && offered.includes(remembered)) return remembered
-    await this.#options.modelEfforts.forget(provider, model, `the catalog no longer offers it: ${offered === undefined ? 'no such model' : offered.join(', ') || 'no levels'}`)
+    // A model this answer leaves out is NOT evidence its level went stale: a
+    // provider that failed to enumerate this time is reported under the catalog's
+    // own `failures`, and one transient absence must never erase a level the user
+    // set. The level is withheld for this switch and the row is kept. Only a model
+    // that IS published, with a ladder that does not contain this level, is a
+    // level no selection can ever accept.
+    if (offered === undefined) return undefined
+    if (offered.includes(remembered)) return remembered
+    await this.#options.modelEfforts.forget(provider, model, remembered, `the catalog no longer offers it: ${offered.join(', ') || 'no levels'}`)
       .catch((error: unknown) => {
         this.#options.log(`could not drop the stale remembered effort for ${provider}/${model}: ${failureText(error)}`)
       })

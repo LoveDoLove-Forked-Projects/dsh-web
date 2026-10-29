@@ -796,6 +796,58 @@ describe('protocol v1 composer parity: model efforts', () => {
     expect(JSON.parse(await readFile(file, 'utf8')).efforts).toEqual([])
     expect(logs.filter(line => line.includes('dropped p-1/next-model = high'))).toHaveLength(1)
   })
+
+  it('user picks a new level for a model while a switch for it is reading the catalog, and the newer level survives', async () => {
+    // Given a host that remembers "high" for a model whose ladder has since dropped it
+    const logs: string[] = []
+    const table = new ModelEffortPreferences({ file, log: message => { logs.push(message) } })
+    await table.save('p-1', 'next-model', 'high')
+    const harness = makeConnection({ paired: true, modelEfforts: table })
+    harness.gateway.handler = async call => {
+      if (call.method === 'modelCatalog') {
+        // The user drags the slider for the very model this switch is deciding about
+        await table.save('p-1', 'next-model', 'medium')
+        return {
+          ...EFFORT_CATALOG,
+          groups: [{ id: 'p-1', name: 'Provider One', models: [{ id: 'next-model', name: 'Next', reasoning: { efforts: [{ id: 'low' }], defaultEffort: 'low' } }] }],
+        }
+      }
+      return { selected: { provider: 'p-1', model: 'next-model' } }
+    }
+    // When the switch that read that catalog settles
+    await harness.connection.handleText(requestFrame(79, 'session.setModel', { sessionId: 's-1', provider: 'p-1', model: 'next-model' }))
+    // Then the level the user just wrote is still the table's — the stale one that was judged is not the one that got dropped
+    expect(table.effortOf('p-1', 'next-model')).toBe('medium')
+    expect(JSON.parse(await readFile(file, 'utf8')).efforts).toEqual([{ provider: 'p-1', model: 'next-model', effort: 'medium' }])
+    expect(logs.filter(line => line.includes('dropped p-1/next-model'))).toHaveLength(0)
+    // And this switch carried no level, because the one it read had gone stale
+    expect(harness.gateway.lastArgs('session', 'selectModel')).toEqual({
+      request: { sessionId: 's-1', provider: 'p-1', model: 'next-model' },
+    })
+  })
+
+  it('user switches to a model the catalog does not list this time, and the remembered level is kept', async () => {
+    // Given a host that remembers a level for a model this catalog answer leaves out
+    const logs: string[] = []
+    const table = new ModelEffortPreferences({ file, log: message => { logs.push(message) } })
+    await table.save('p-1', 'next-model', 'high')
+    const harness = makeConnection({ paired: true, modelEfforts: table })
+    harness.gateway.handler = async call => (call.method === 'modelCatalog'
+      ? {
+        ...EFFORT_CATALOG,
+        groups: [{ id: 'p-1', name: 'Provider One', models: [{ id: 'default-model', name: 'Default', reasoning: { efforts: [{ id: 'low' }], defaultEffort: 'low' } }] }],
+      }
+      : { selected: { provider: 'p-1', model: 'next-model' } })
+    // When the user switches to that model
+    await harness.connection.handleText(requestFrame(80, 'session.setModel', { sessionId: 's-1', provider: 'p-1', model: 'next-model' }))
+    // Then the level is withheld for this switch only, and the row survives for the answer that lists the model again
+    expect(harness.gateway.lastArgs('session', 'selectModel')).toEqual({
+      request: { sessionId: 's-1', provider: 'p-1', model: 'next-model' },
+    })
+    expect(table.effortOf('p-1', 'next-model')).toBe('high')
+    expect(JSON.parse(await readFile(file, 'utf8')).efforts).toEqual([{ provider: 'p-1', model: 'next-model', effort: 'high' }])
+    expect(logs.filter(line => line.includes('dropped'))).toHaveLength(0)
+  })
 })
 
 describe('protocol v1 composer parity: method set', () => {
