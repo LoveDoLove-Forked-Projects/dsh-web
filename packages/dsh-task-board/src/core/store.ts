@@ -10,7 +10,7 @@
  * localStorage backend.
  */
 import { isValidCron, isValidTimeZone } from './schedule.ts'
-import { SCHEDULE_STOP_REASONS, isTaskPermission, isTaskStatus, normalizeTags, normalizeTargetId, type ScheduleRule, type ScheduleStopReason, type TaskFreeze, type TaskRecord, type TaskPermission, type TaskStatus } from './tasks.ts'
+import { SCHEDULE_STOP_REASONS, isTaskPermission, isTaskStatus, normalizeExecutionRework, normalizeTags, normalizeTargetId, type ScheduleRule, type ScheduleStopReason, type TaskFreeze, type TaskRecord, type TaskPermission, type TaskStatus } from './tasks.ts'
 import { isExecutionOutcome } from './subtask.ts'
 import { normalizeExecutionSummary } from './execution-summary.ts'
 import type { TaskHandover } from './handover.ts'
@@ -263,6 +263,9 @@ export function parseLedger(raw: string | null): TaskRecord[] {
       // A malformed acceptance block is dropped rather than dropping the
       // execution record: the board then treats that run as unverified.
       verification: normalizeVerification(execution.verification),
+      // A malformed rework block is dropped on the same terms: the run itself
+      // is what the history is for, and only its instructions are unrecoverable.
+      rework: normalizeExecutionRework(execution.rework),
       external: execution.external === true ? true : undefined,
     }))
     // Execution targets are normalized like the schedule: blank strings

@@ -5,7 +5,7 @@ import { parseLedger } from './core/store.ts'
 import { isValidTimeZone } from './core/schedule.ts'
 import { sanitizeFreezeSnapshot, type FreezeSnapshot } from './core/freeze-snapshot.ts'
 import { sanitizeHandover, type TaskHandoverInput } from './core/handover.ts'
-import { isTaskBoardExtensionPayload, normalizeTaskIntegrations, type TaskBoardExtensionPayload } from './core/extension.ts'
+import { TASK_BOARD_MESSAGE_MAX_LENGTH, isTaskBoardExtensionPayload, normalizeTaskIntegrations, type TaskBoardExtensionPayload } from './core/extension.ts'
 import { normalizeVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 
 /** Freeze payload carried by create/update actions after the gate (redacted in place). */
@@ -181,6 +181,12 @@ export type TaskBoardAction =
   | { kind: 'set-schedule'; taskId: string; patch: SetSchedulePatch }
   | { kind: 'run'; taskId: string }
   | { kind: 'rerun'; taskId: string }
+  /**
+   * Re-run an executed card in its own session, carrying rework instructions as
+   * this run's additional input. Every run gate applies exactly as it does to
+   * `rerun`, and the card's frozen content is never rewritten.
+   */
+  | { kind: 'rework'; taskId: string; instructions: string }
   | { kind: 'confirm-permission'; taskId: string }
   | { kind: 'set-parent'; taskId: string; parentId: string | null }
   /** Ledger-wide label management; see core/use-cases/task-tag.ts. */
@@ -591,6 +597,13 @@ function parseEnvelopeAction(value: unknown): TaskBoardActionEnvelope | undefine
           ...(summary === '' ? {} : { summary }),
         },
       }
+    }
+    case 'rework': {
+      if (!exactKeys(action, ['kind', 'taskId', 'instructions'])) return undefined
+      if (taskId === undefined || typeof action.instructions !== 'string') return undefined
+      const instructions = action.instructions.trim()
+      if (instructions === '' || instructions.length > TASK_BOARD_MESSAGE_MAX_LENGTH) return undefined
+      return { requestId: envelope.requestId, action: { kind: 'rework', taskId, instructions } }
     }
     case 'confirm-permission':
     case 'delete':

@@ -47,6 +47,14 @@ export const TASK_BOARD_EXTENSION_SEATS: readonly string[] = [
  */
 export const TASK_BOARD_PAYLOAD_LIMIT_BYTES = 64 * 1024
 
+/**
+ * Largest accepted free text a provider pushes into an execution, in
+ * characters: one follow-up message, or one set of rework instructions. Both
+ * reach a model as user input, so the bound keeps a single provider call from
+ * becoming an unbounded context injection.
+ */
+export const TASK_BOARD_MESSAGE_MAX_LENGTH = 4_000
+
 /** Depth beyond which a payload is refused instead of walked. */
 const PAYLOAD_DEPTH_LIMIT = 64
 
@@ -201,6 +209,42 @@ export interface TaskBoardTasksFace {
   setStatus(taskId: string, status: TaskStatus, initiator?: string): void
   /** Every task carrying this extension's payload. */
   linked(): readonly TaskBoardLinkedTask[]
+  /**
+   * Run a card that already executed again — in its ORIGINAL session — with
+   * `instructions` carried as this run's additional input, which is how a
+   * reviewer sends work back rather than asking for a fresh attempt. The
+   * instructions are recorded on the execution the request opens, so the run
+   * history says why that run exists.
+   *
+   * The request passes through every run gate the board already has — the
+   * running lock, the permission confirmation, the acceptance contract and the
+   * spend cap — and it never rewrites the card: an executed card's frozen
+   * title, description and prompt stay exactly what ran (see
+   * {@link TaskBoardTasksFace.patchContent}). A card that never executed, or
+   * whose session cannot be continued, is refused instead of quietly starting a
+   * conversation the caller never saw.
+   *
+   * Optional, like {@link TaskBoardExtensionHost.sessions}: the contract
+   * version stays 1, so a provider checks the face before using it.
+   */
+  rework?(taskId: string, instructions: string, initiator?: string): void
+}
+
+/**
+ * Execution-session face: what a provider delivers INTO a run the board
+ * already executed or is executing now.
+ */
+export interface TaskBoardSessionsFace {
+  /**
+   * Queue one follow-up user message into the session of the card's current
+   * execution, or of its most recent one when no execution is open.
+   *
+   * The message is an ordinary user turn queued behind whatever that session is
+   * doing; it re-asserts nothing, so the execution's permission, model and
+   * preset stay the ones the run froze. A card that never executed, an archived
+   * card, and a session the host no longer reaches are refused.
+   */
+  followUp(taskId: string, text: string): Promise<void>
 }
 
 /** Storage face for one extension's own payload on a task. */
@@ -254,6 +298,12 @@ export interface TaskBoardEventFace {
  */
 export interface TaskBoardExtensionHost {
   tasks: TaskBoardTasksFace
+  /**
+   * Delivery into a card's execution session. Optional in the contract on
+   * purpose: the API version stays 1, so a provider built against this revision
+   * probes the face and keeps working against a board that serves none.
+   */
+  sessions?: TaskBoardSessionsFace
   integration: TaskBoardIntegrationFace
   events: TaskBoardEventFace
   /**

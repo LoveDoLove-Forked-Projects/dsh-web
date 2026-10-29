@@ -39,6 +39,27 @@ export interface ExecutionSummary {
 export const EXECUTION_SUMMARY_LIMIT = 4000
 
 /**
+ * Rework input recorded on the execution it opened: the reviewer's instructions
+ * for redoing work in the card's own session.
+ */
+export interface ExecutionRework {
+  /** The rework instructions this run was given, as the reviewer wrote them. */
+  instructions: string
+}
+
+/**
+ * Repair a persisted rework block: only a non-blank instruction string
+ * survives, so a hand-edited ledger loses the block instead of the execution.
+ */
+export function normalizeExecutionRework(value: unknown): ExecutionRework | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const instructions = (value as { instructions?: unknown }).instructions
+  if (typeof instructions !== 'string') return undefined
+  const trimmed = instructions.trim()
+  return trimmed === '' ? undefined : { instructions: trimmed }
+}
+
+/**
  * One real execution attempt: the run's own id, the dsh session that ran it
  * (filled once the session is created), and the settled outcome once the
  * session's turn ended.
@@ -77,6 +98,13 @@ export interface ExecutionRecord {
    * `sessionId` and never claims a verdict the Host observed.
    */
   external?: boolean
+  /**
+   * Rework instructions this execution carries as extra input: a reviewer sent
+   * the previous run back, so the card re-ran in the same session with these
+   * instructions instead of having its frozen content rewritten. Absent on
+   * every ordinary run.
+   */
+  rework?: ExecutionRework
   /** Freeze instant captured from the card snapshot when the run opened. */
   frozenAt?: number
   /** Freeze source session captured from the card snapshot when the run opened. */
@@ -811,6 +839,8 @@ export function withSchedule(
  * running execution record. Returns the new task and the new execution.
  * @param runGroupId - cascade run group, when this run also opened executions
  *   for the task's subtasks (see `core/subtask.ts`).
+ * @param rework - the reviewer's instructions, when this run is a rework of the
+ *   card's previous work; recorded on the execution it opens.
  */
 export function startExecution(
   task: TaskRecord,
@@ -818,6 +848,7 @@ export function startExecution(
   executionId: string,
   initiatedBy?: string,
   runGroupId?: string,
+  rework?: ExecutionRework,
 ): { task: TaskRecord; execution: ExecutionRecord } {
   const execution: ExecutionRecord = {
     id: executionId,
@@ -826,6 +857,7 @@ export function startExecution(
     endedAt: undefined,
     result: undefined,
     error: undefined,
+    ...(rework === undefined ? {} : { rework }),
     ...(runGroupId === undefined || runGroupId === '' ? {} : { runGroupId }),
     ...(initiatedBy === undefined || initiatedBy === '' ? {} : { initiatedBy }),
     // Capture the card's freeze provenance on the execution record so the

@@ -227,6 +227,13 @@ export interface PromptContext {
    * run's own terms instead of guessing from the Host clock (issue #1722).
    */
   schedule?: { triggeredAt: number; timeZone: string; mode: 'cron' | 'once'; cron?: string }
+  /**
+   * Rework provenance: the instructions a reviewer sent the previous run back
+   * with. Present exactly when this execution continues the card's own session
+   * to redo work, so the agent reads why it is being asked again instead of
+   * seeing the card body a second time with no explanation.
+   */
+  rework?: { instructions: string }
 }
 
 /**
@@ -263,6 +270,19 @@ function schedulePromptPreamble(context: PromptContext): string | undefined {
 }
 
 /**
+ * The rework section: this execution continues the card's own conversation
+ * because a reviewer sent the previous attempt back. It states both halves the
+ * agent must not guess — that the earlier work is the starting point, and what
+ * the reviewer actually wants changed — and marks the instruction block with a
+ * delimiter pair, so reviewer text cannot pass for board text.
+ */
+function reworkPromptPreamble(context: PromptContext): string | undefined {
+  const rework = context.rework
+  if (rework === undefined) return undefined
+  return `本次执行是同一会话上的返工：上一轮的结果被人工审阅打回，请在已完成的工作上继续修改，不要从头重做。返工意见 开始\n${escapeProvenanceDelimiter(rework.instructions)}\n返工意见 结束`
+}
+
+/**
  * Build the execution prompt for one task.
  * @param task - the task being launched.
  * @param context - the run's other members, for the execution-shape section.
@@ -281,7 +301,10 @@ export function promptText(task: TaskRecord, context: PromptContext = {}): strin
   const handoverSection = handoverPreamble
   const schedulePreamble = schedulePromptPreamble(context)
   const runPreamble = dispatchPromptPreamble(context)
-  const preambles = [tagPreamble, handoverSection, schedulePreamble, runPreamble]
+  // The rework section sits last: it is the most specific instruction of this
+  // run and therefore the one read immediately before the card body.
+  const reworkSection = reworkPromptPreamble(context)
+  const preambles = [tagPreamble, handoverSection, schedulePreamble, runPreamble, reworkSection]
     .filter((part): part is string => part !== undefined)
   const preamble = preambles.length === 0 ? undefined : preambles.join('\n\n')
   const freeze = task.freeze
@@ -541,6 +564,26 @@ export class HostExecutionRunner {
       throw new SessionLaunchError(sessionId, error)
     }
     return sessionId
+  }
+
+  /**
+   * Queue one follow-up user message into an existing execution session.
+   *
+   * This is the same `session/prompt` call a launch makes, with none of the
+   * launch pins: a follow-up continues a conversation the board already
+   * composed, so it must not re-assert the permission, rename the session, or
+   * switch the model. The message is queued behind whatever that session is
+   * doing, which is what lets a caller reach a run that is still working.
+   * @param sessionId - the session the card's execution recorded.
+   * @param text - the message to deliver, already validated by the caller.
+   */
+  async followUp(sessionId: string, text: string): Promise<void> {
+    await this.invoke('session', 'prompt', {
+      sessionId,
+      requestId: 'task-board-follow-up-' + crypto.randomUUID(),
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text }],
+    })
   }
 
   /**
