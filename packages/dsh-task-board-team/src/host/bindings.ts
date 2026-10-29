@@ -64,6 +64,10 @@ export interface BoundAgent {
   name: string
   /** Agent preset the member definition pins. */
   preset?: string
+  /** Model the member definition pins. */
+  model?: string
+  /** Reasoning effort the member definition pins for that model. */
+  reasoningEffort?: string
   /** Workspace the member's team pins, so the mirror card runs where the member does. */
   workspaceId?: string
 }
@@ -149,6 +153,7 @@ export async function readAgentsLedger(
         ...(typeof member.preset === 'string' && member.preset !== '' ? { preset: member.preset } : {}),
         ...(typeof member.brief === 'string' && member.brief !== '' ? { brief: member.brief } : {}),
         ...(typeof member.model === 'string' && member.model !== '' ? { model: member.model } : {}),
+        ...(typeof member.reasoningEffort === 'string' && member.reasoningEffort !== '' ? { reasoningEffort: member.reasoningEffort } : {}),
       })
     }
     teams.push({
@@ -197,6 +202,8 @@ export function resolveBindings(
       teamName: team.name,
       name,
       ...(member.preset === undefined ? {} : { preset: member.preset }),
+      ...(member.model === undefined ? {} : { model: member.model }),
+      ...(member.reasoningEffort === undefined ? {} : { reasoningEffort: member.reasoningEffort }),
       ...(team.workspaceId === undefined ? {} : { workspaceId: team.workspaceId }),
     })
   }

@@ -55,6 +55,8 @@ export interface TeamRuntimeSettings {
   hostname: string
   /** Configured member bindings. */
   bindings: readonly TeamAgentBinding[]
+  /** Optional local fallback wait for a claimed question, in minutes; 0 means none. */
+  questionWaitMinutes?: number
 }
 
 /** One comment, as the browser renders it. */
@@ -101,6 +103,15 @@ export interface TeamExtensionSummary {
   capabilities: TaskBoardCapabilities
   agents: Array<{ memberId: string; name: string; preset?: string; hubAgentId?: string }>
   problems: string[]
+  /**
+   * Whether this board pins a draft preset, model and effort when it creates a
+   * card.
+   *
+   * `unknown` until the first mirror card proves it either way: the verdict comes
+   * from reading the created card back, because a board revision without the
+   * draft targets drops them silently.
+   */
+  presetPin: 'unknown' | 'supported' | 'missing'
   cards: Record<string, TeamCardView>
   pendingQuestions: PendingQuestionView[]
   /**
@@ -113,8 +124,13 @@ export interface TeamExtensionSummary {
     teamId?: string
     hostname?: string
     tokenConfigured?: boolean
+    /** Optional local fallback wait for a claimed question, in minutes; 0 means none. */
+    questionWaitMinutes?: number
   }
 }
+
+/** The problem line published when the board serves no draft preset. */
+export const DRAFT_PIN_PROBLEM = 'this board revision cannot pin an agent preset, model or reasoning effort on a new card, so a claimed issue becomes a mirror card that is left for a human to start'
 
 /** Longest comment or activity text one summary carries. */
 const VIEW_TEXT_LIMIT = 2_000
@@ -169,6 +185,7 @@ export class TeamSyncService {
   #reconnects = 0
   #reconnectAttempt = 0
   #starting: Promise<void> | undefined
+  #presetPin: 'unknown' | 'supported' | 'missing' = 'unknown'
 
   constructor(options: TeamSyncServiceOptions) {
     this.#options = options
@@ -180,6 +197,10 @@ export class TeamSyncService {
       now: options.now,
       uuid: options.uuid,
       onChange: () => { this.#publish() },
+      fallbackWaitMs: () => {
+        const minutes = options.settings().questionWaitMinutes ?? 0
+        return minutes > 0 ? minutes * 60_000 : undefined
+      },
       ...(options.log === undefined ? {} : { log: options.log }),
     })
   }
@@ -270,6 +291,7 @@ export class TeamSyncService {
       capabilities: this.#options.capabilities,
       agents,
       problems: [...this.#problems],
+      presetPin: this.#presetPin,
       cards,
       pendingQuestions: [...this.#questions.pending()],
     }
@@ -566,6 +588,8 @@ export class TeamSyncService {
       memberId: agent.memberId,
       name: agent.name,
       ...(agent.preset === undefined ? {} : { preset: agent.preset }),
+      ...(agent.model === undefined ? {} : { model: agent.model }),
+      ...(agent.reasoningEffort === undefined ? {} : { reasoningEffort: agent.reasoningEffort }),
       ...(agent.workspaceId === undefined ? {} : { workspaceId: agent.workspaceId }),
     }
     const draft = buildMirrorDraft(issue, mirror)
@@ -597,8 +621,40 @@ export class TeamSyncService {
       activity: [],
     })
     this.#ensureLease(task, issue.id, claim.lease_token)
+    // The card is read back before anything runs: a board revision that cannot
+    // pin the draft targets drops them silently, and a card that fell back to the
+    // deployment's default preset must NOT be started as if it were the member's
+    // own run. Such a card is left for a human, visibly.
+    if (!this.#verifyDraftPin(task.id, agent)) {
+      this.#recordError(task.id, new Error(
+        'this board revision cannot pin an agent preset on a new card, so the mirror card was created without '
+        + agent.name + "'s own preset and was not started; start it by hand once the board supports draft targets",
+      ))
+      return true
+    }
     this.#requestRun(task.id)
     return true
+  }
+
+  /**
+   * Check that the created card really carries the member's execution targets.
+   * @param taskId - the card just created.
+   * @param agent - the member it was created for.
+   * @returns whether the board kept the pinned preset (no preset means nothing to check).
+   */
+  #verifyDraftPin(taskId: string, agent: BoundAgent): boolean {
+    if (agent.preset === undefined || agent.preset === '') {
+      this.#presetPin = 'supported'
+      return true
+    }
+    const created = this.#options.host.tasks.get(taskId)
+    if (created !== undefined && created.mode === agent.preset) {
+      this.#presetPin = 'supported'
+      return true
+    }
+    this.#presetPin = 'missing'
+    if (!this.#problems.includes(DRAFT_PIN_PROBLEM)) this.#problems = [...this.#problems, DRAFT_PIN_PROBLEM]
+    return false
   }
 
   /**

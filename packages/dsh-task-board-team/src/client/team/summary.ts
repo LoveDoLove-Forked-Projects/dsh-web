@@ -104,6 +104,7 @@ export function readSummary(raw: unknown): TeamExtensionSummary | undefined {
         : [])
       : [],
     problems: Array.isArray(value.problems) ? value.problems.filter((line): line is string => typeof line === 'string') : [],
+    presetPin: value.presetPin === 'supported' || value.presetPin === 'missing' ? value.presetPin : 'unknown',
     cards: typeof value.cards === 'object' && value.cards !== null ? value.cards : {},
     ...(readConfigurationField(value.configuration) === undefined
       ? {}
@@ -136,6 +137,7 @@ function readConfigurationField(raw: unknown): TeamExtensionSummary['configurati
     ...(typeof value.teamId === 'string' ? { teamId: value.teamId } : {}),
     ...(typeof value.hostname === 'string' ? { hostname: value.hostname } : {}),
     ...(typeof value.tokenConfigured === 'boolean' ? { tokenConfigured: value.tokenConfigured } : {}),
+    ...(typeof value.questionWaitMinutes === 'number' ? { questionWaitMinutes: value.questionWaitMinutes } : {}),
   }
   return Object.keys(configuration).length === 0 ? undefined : configuration
 }

@@ -29,6 +29,7 @@ interface PublishedConfiguration {
   teamId?: string
   hostname?: string
   tokenConfigured?: boolean
+  questionWaitMinutes?: number
 }
 
 /**
@@ -44,6 +45,7 @@ export function readConfiguration(summary: TeamExtensionSummary | undefined): Pu
     ...(configuration.teamId === undefined ? {} : { teamId: configuration.teamId }),
     ...(configuration.hostname === undefined ? {} : { hostname: configuration.hostname }),
     ...(configuration.tokenConfigured === undefined ? {} : { tokenConfigured: configuration.tokenConfigured }),
+    ...(configuration.questionWaitMinutes === undefined ? {} : { questionWaitMinutes: configuration.questionWaitMinutes }),
   }
 }
 
@@ -93,6 +95,7 @@ export function TeamSettingsSection({ dispatch }: TaskBoardSettingsSectionProps)
   const [hubUrl, setHubUrl] = useState<string | undefined>(undefined)
   const [teamId, setTeamId] = useState<string | undefined>(undefined)
   const [members, setMembers] = useState<string | undefined>(undefined)
+  const [waitMinutes, setWaitMinutes] = useState<string | undefined>(undefined)
   const [token, setToken] = useState('')
   const [saved, setSaved] = useState(false)
 
@@ -110,6 +113,7 @@ export function TeamSettingsSection({ dispatch }: TaskBoardSettingsSectionProps)
       ...(hubUrl === undefined ? {} : { hubUrl }),
       ...(teamId === undefined ? {} : { teamId }),
       agents: bindings,
+      questionWaitMinutes: Number.parseInt(waitMinutes ?? String(configuration.questionWaitMinutes ?? 0), 10) || 0,
     })
     setSaved(ok)
   }
@@ -168,6 +172,16 @@ export function TeamSettingsSection({ dispatch }: TaskBoardSettingsSectionProps)
         />
       </label>
       <p className={styles.meta}>{t('section.agents.hint')}</p>
+      <label className={styles.row}>
+        <span className={styles.label}>{t('section.questionWait')}</span>
+        <input
+          className={styles.input}
+          inputMode="numeric"
+          value={waitMinutes ?? String(configuration.questionWaitMinutes ?? 0)}
+          onChange={event => { setWaitMinutes(event.target.value) }}
+        />
+      </label>
+      <p className={styles.meta}>{t('section.questionWait.hint')}</p>
       {(summary?.agents ?? []).length === 0 ? <p className={styles.empty}>{t('section.agents.empty')}</p> : null}
       <div className={styles.actions}>
         <button className={styles.button} type="button" onClick={() => { void saveSettings() }}>{t('section.save')}</button>
@@ -203,6 +217,11 @@ export function TeamSettingsSection({ dispatch }: TaskBoardSettingsSectionProps)
           label={t('section.capability.run')}
           available={summary?.capabilities.run === true}
           missing={t('section.capability.runMissing')}
+        />
+        <Capability
+          label={t('section.capability.presetPin')}
+          available={summary?.presetPin === 'supported'}
+          missing={t('section.capability.presetPinMissing')}
         />
       </div>
       {(summary?.problems ?? []).length === 0 ? null : (

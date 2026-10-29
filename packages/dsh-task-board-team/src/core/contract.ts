@@ -63,6 +63,19 @@ export interface TaskBoardTaskDraft {
   parentId?: string
   /** Workspace the execution must run in; absent leaves the board's own rules. */
   workspaceId?: string
+  /**
+   * Agent preset the created card's execution must be composed from.
+   *
+   * Optional in the contract like the two capability members, so a provider
+   * passes it and then CHECKS it survived: a board revision that serves no draft
+   * preset drops the field silently, and a card that fell back to the deployment
+   * default must not be started as if the member's own preset had been pinned.
+   */
+  mode?: string
+  /** Pinned model for the created card's execution. */
+  model?: string
+  /** Reasoning effort for that model route. */
+  reasoningEffort?: string
 }
 
 /** Options of {@link TaskBoardTasksFace.create}. */

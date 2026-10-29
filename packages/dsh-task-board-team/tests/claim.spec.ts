@@ -119,6 +119,40 @@ describe('claiming team issues', () => {
     expect(reclaims.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('operator sees the member preset pinned on the mirror card and the card started', async () => {
+    // Given a board revision that keeps the draft execution targets
+    harness = makeHarness()
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+
+    // When the issue is claimed
+    await harness.service().sweep()
+    await flush()
+
+    // Then the created card carries the member's own preset, and it ran
+    const task = harness.tasks()[0]
+    expect(task.mode).toBe('liangshen')
+    expect(harness.creates).toHaveLength(1)
+    expect(harness.service().summary().presetPin).toBe('supported')
+  })
+
+  it('operator sees a claimed card left unstarted and flagged when the board cannot pin a preset', async () => {
+    // Given a board revision whose create drops the draft execution targets
+    harness = makeHarness({ withDraftPreset: false })
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+
+    // When the issue is claimed
+    await harness.service().sweep()
+    await flush()
+
+    // Then nothing ran, the card records why, and the settings summary says it
+    const task = harness.tasks()[0]
+    expect(task.mode).toBeUndefined()
+    expect(harness.creates).toHaveLength(0)
+    expect(readTaskIssueLink(task)?.lastError).toContain('cannot pin an agent preset')
+    expect(harness.service().summary().presetPin).toBe('missing')
+    expect(harness.service().summary().problems.join(' ')).toContain('cannot pin an agent preset')
+  })
+
   it('operator sees a Host that binds no member claim nothing at all', async () => {
     // Given a Host whose bindings resolve to no dsh-agents member
     harness = makeHarness({ agents: [] })

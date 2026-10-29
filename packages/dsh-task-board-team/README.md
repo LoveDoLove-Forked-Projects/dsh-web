@@ -14,6 +14,7 @@ An external provider extension for the DeepSeek Harness (DSH) task board (`@linx
 - **Question routing**: a decision question asked through `ask_user_question` in a mirror card's session is reported to the hub and answered by the issue's reviewer; the answer, an expiry or a local cancellation ends the ask, and every other session on the machine keeps its own answerer.
 - **Comments both ways**: the `team_comment` tool posts an agent comment on the issue behind a card, and a comment that mentions a bound agent is delivered into that card's session as a follow-up message.
 - **Review rework**: a rejected review claims a fresh attempt first and only then re-runs the card in its existing session with the reviewer's instructions; a refused claim starts nothing and records the refusal locally.
+- **The run starts through the board's host face**: the provider contract has no "run" member, so a claimed card is started through the `taskBoard` host service's `apply` — the same in-process action seat the remote bridge drives the board with, and every run gate still applies.
 - **Visible degradation**: follow-up delivery, rework and the execution trigger are probed at mount; a board revision that serves none of them loses that delivery, says so on the card and in the settings block, and keeps everything else working.
 - **Three browser seats**: a task-detail section (issue, hub status including `in_review`, assignee, reviewer, comment thread, activity stream and open questions), a hub-status badge on the card, and a configuration block inside the board's own settings card that stays reachable while the extension is switched off.
 - **One switch gates both halves**: turning the extension off stops the claim loop, the lease timers, the channel and the tool registration, drops the published summary and releases the rendering seats, without deleting a single card.
@@ -52,9 +53,9 @@ agents:
 
 ## Known limitations
 
-- **The agent preset is recorded, not pinned**: the provider contract's `tasks.create` draft carries no agent preset, so a mirror card stores the member's preset in its payload and the settings block shows it, while the run uses the deployment's own defaults.
+- **A board that cannot pin the draft targets is refused, not guessed at**: the member's preset, model and reasoning effort travel with the `tasks.create` draft, and the created card is read back to confirm they survived. A board revision that drops them produces a mirror card that is left UNSTARTED with a visible note in the settings block, because running it under the deployment's default preset would not be the member's run.
 - **Starting an execution needs the board's action seat**: the contract has no "run" capability, so the mount probes the board's in-process action applier and, when a deployment serves none, the claimed card is created for the operator to start instead.
-- **The activity stream is what this Host observed**: the protocol exposes no activity endpoint, so the detail section renders the events this Host received over the channel since it started.
+- **The activity stream is what this Host observed**: `GET /issues/:id/activity` exists but only a member session may read it, and this Host authenticates with a Host Token, so the detail section renders the events this Host received over the channel since it started; the complete stream is in the Whale App.
 - **Questions are reported one at a time**: a batch with several questions reports the first one and keeps the rest on this machine, because the hub's question schema stores a single question.
 - **A claimed question holds the ask for two minutes**: after that window the ask returns to the local answerer and the hub question is withdrawn, so a team that never answers cannot stall a session for the hub's 24-hour TTL.
 

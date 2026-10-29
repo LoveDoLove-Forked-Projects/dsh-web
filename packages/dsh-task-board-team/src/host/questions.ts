@@ -32,15 +32,15 @@ import type { TaskBoardExtensionHost, TaskBoardLinkedTask } from '../core/contra
 import type { HostTimerFace } from '../core/timers.ts'
 
 /**
- * How long a claimed question holds the local ask before it goes back to the
- * next answerer.
+ * Default local fallback wait, in milliseconds.
  *
- * The hub's own TTL is a day, which is the right lifetime for a collaboration
- * record and the wrong one for a blocked agent: the desktop answerer is still
- * there, so a question nobody in the team answers within this window returns to
- * the machine instead of stalling the session for a day.
+ * Zero means "no local cap": the claim holds the ask until the hub settles it
+ * (answered, expired or withdrawn), which is what the acceptance loop needs — a
+ * member answering from a lock-screen push may take far longer than any fixed
+ * window. A deployment that wants the local surface back sooner turns the
+ * fallback on and names its own number of minutes.
  */
-export const QUESTION_WAIT_MS = 120_000
+export const DEFAULT_QUESTION_WAIT_MS = 0
 
 /** One question this Host reported and is still waiting on. */
 export interface PendingQuestionView {
@@ -74,6 +74,14 @@ export interface QuestionRouterOptions {
   uuid: () => string
   /** Called whenever the pending set changes, so the summary can republish. */
   onChange?: () => void
+  /**
+   * Local fallback wait for one claim, read per question.
+   *
+   * Absent or zero means the claim waits for the hub's own terminal state; a
+   * positive number withdraws the question after that long and hands the ask back
+   * to the next answerer.
+   */
+  fallbackWaitMs?: () => number | undefined
   log?: (message: string, detail?: unknown) => void
 }
 
@@ -146,7 +154,10 @@ export class QuestionRouter {
     this.#pending.set(id, entry)
     this.#options.onChange?.()
 
-    const cancelWait = this.#options.timers.timeout(() => { void this.#expireLocally(id) }, QUESTION_WAIT_MS)
+    const waitMs = this.#options.fallbackWaitMs?.()
+    const cancelWait = waitMs === undefined || waitMs <= 0
+      ? (): void => {}
+      : this.#options.timers.timeout(() => { void this.#expireLocally(id) }, waitMs)
     const abort = (): void => { void this.#withdraw(id) }
     request.signal?.addEventListener('abort', abort, { once: true })
 

@@ -26,8 +26,12 @@ export interface MirrorAgent {
   memberId: string
   /** Member name the hub resolves mentions by. */
   name: string
-  /** Agent preset the member definition pins; recorded, see the README's known limits. */
+  /** Agent preset the member definition pins. */
   preset?: string
+  /** Model the member definition pins, when it pins one. */
+  model?: string
+  /** Reasoning effort the member definition pins for that model. */
+  reasoningEffort?: string
   /** Workspace the member's team is pinned to, when it pins one. */
   workspaceId?: string
 }
@@ -38,6 +42,9 @@ export interface MirrorDraft {
   description: string
   prompt: string
   workspaceId?: string
+  mode?: string
+  model?: string
+  reasoningEffort?: string
 }
 
 function clip(text: string, limit: number): string {
@@ -70,6 +77,11 @@ export function buildMirrorDraft(issue: HubIssue, agent: MirrorAgent): MirrorDra
     title,
     description: body === '' ? `Team issue #${String(issue.issue_number)} mirror card.` : body,
     prompt: lines.join('\n'),
+    // The member's own execution targets travel with the draft: the run has to be
+    // the member's preset, model and effort, never the deployment's defaults.
     ...(agent.workspaceId === undefined ? {} : { workspaceId: agent.workspaceId }),
+    ...(agent.preset === undefined ? {} : { mode: agent.preset }),
+    ...(agent.model === undefined ? {} : { model: agent.model }),
+    ...(agent.reasoningEffort === undefined ? {} : { reasoningEffort: agent.reasoningEffort }),
   }
 }

@@ -74,6 +74,15 @@ export interface Config {
   agents?: Volatile<TeamAgentBindingInput[]>
   /** Hostname this Host registers under; empty means the platform hostname. */
   hostname?: Volatile<string>
+  /**
+   * Optional local fallback wait for a claimed question, in minutes.
+   *
+   * Zero (the default) waits for the hub's own terminal state — answered,
+   * expired or withdrawn — which is what lets a member answer from a lock-screen
+   * push hours later. A positive value withdraws the question after that long and
+   * hands the ask back to the local answerer.
+   */
+  questionWaitMinutes?: Volatile<number>
 }
 
 /** Profile-patch shape of {@link Config}. */
@@ -85,6 +94,7 @@ export interface ConfigInput {
   hostTokenRef?: string
   agents?: TeamAgentBindingInput[]
   hostname?: string
+  questionWaitMinutes?: number
 }
 
 /** Schema default of the announcement switch. */
@@ -106,6 +116,7 @@ export const Config: z<ConfigInput, Config> = z.object({
   hostTokenRef: z.string().default(DEFAULT_TOKEN_REF).volatile(),
   agents: z.array(AgentBindingSchema).default([]).volatile(),
   hostname: z.string().default('').volatile(),
+  questionWaitMinutes: z.number().default(0).volatile(),
 })
 /**
  * Read one config field's live value.
@@ -130,6 +141,7 @@ export interface TeamProviderSettings {
   hostTokenRef: string
   agents: readonly TeamAgentBinding[]
   hostname: string
+  questionWaitMinutes: number
 }
 
 /**
@@ -152,6 +164,7 @@ export function resolveProviderSettings(config?: Config, hostname = ''): TeamPro
     hostTokenRef: readConfigField(config?.hostTokenRef, DEFAULT_TOKEN_REF).trim(),
     agents: normalizeBindings(bindings),
     hostname: configured === '' ? hostname : configured,
+    questionWaitMinutes: Math.max(0, Math.trunc(readConfigField(config?.questionWaitMinutes, 0))),
   }
 }
 
@@ -279,6 +292,7 @@ function applyImpl(ctx: Context, config?: Config): void {
         agents: current.agents,
         hostname: current.hostname,
         tokenRef: current.hostTokenRef,
+        questionWaitMinutes: current.questionWaitMinutes,
       }
     },
     provider,
@@ -364,6 +378,7 @@ function applyImpl(ctx: Context, config?: Config): void {
             enabled: settings().enabled,
             hostname: settings().hostname,
             bindings: settings().agents,
+            questionWaitMinutes: settings().questionWaitMinutes,
           }),
           resolveAgents: async () => await resolveBoundAgents(settings()),
           connect,
@@ -374,6 +389,7 @@ function applyImpl(ctx: Context, config?: Config): void {
             teamId: settings().teamId,
             hostname: settings().hostname,
             tokenConfigured: setup.tokenConfigured(),
+            questionWaitMinutes: settings().questionWaitMinutes,
           }),
           timers: processTimers,
           enabled: () => settings().enabled,

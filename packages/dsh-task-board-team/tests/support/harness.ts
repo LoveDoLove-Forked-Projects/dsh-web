@@ -62,7 +62,11 @@ export function scriptedGateway() {
   let created = 0
   async function invoke(request: GatewayRequest): Promise<unknown> {
     const body = (request.args.request ?? {}) as Record<string, unknown>
-    if (request.namespace === 'agentPresets' && request.method === 'list') return { presets: [] }
+    // The board's runner fails closed on a preset it cannot resolve, so the
+    // deployment this harness speaks for really serves the member's preset.
+    if (request.namespace === 'agentPresets' && request.method === 'list') {
+      return { presets: [{ id: 'liangshen' }, { id: 'review' }] }
+    }
     if (request.namespace !== 'session') throw new Error('unexpected namespace: ' + request.namespace)
     if (request.method === 'modelCatalog') return {}
     // The roster reports every session this gateway opened, idle: a card whose
@@ -115,6 +119,19 @@ export interface HarnessOptions {
   followUpError?: Error
   /** Errors the rework seam raises, to prove a refused rework is visible. */
   reworkError?: Error
+  /**
+   * Whether the board pins a draft's preset, model and effort when creating a
+   * card.
+   *
+   * Defaults to on, because that is the board this provider is written for. The
+   * board's create action already carries those fields; the registry revision in
+   * this checkout drops them, which is exactly the older board the provider has to
+   * degrade for, so `false` routes the create through the plain capability face
+   * and exercises the downgrade.
+   */
+  withDraftPreset?: boolean
+  /** Local fallback wait for a claimed question, in minutes; absent means none. */
+  questionWaitMinutes?: number
 }
 
 /** One bound agent a test can reuse. */
@@ -158,7 +175,12 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
       token: async () => options.token ?? 'th_host_token',
       fetch: hub.fetch,
     }),
-    settings: () => ({ enabled: true, hostname: 'test-host', bindings: [] }),
+    settings: () => ({
+      enabled: true,
+      hostname: 'test-host',
+      bindings: [],
+      ...(options.questionWaitMinutes === undefined ? {} : { questionWaitMinutes: options.questionWaitMinutes }),
+    }),
     resolveAgents: async () => ({
       agents,
       problems: (options.missingMembers ?? []).map(memberId => 'the bound member ' + memberId + ' is not defined'),
@@ -206,6 +228,19 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
             },
         tasks: {
           ...host.tasks,
+          ...(options.withDraftPreset === false
+            ? {
+                // A board revision whose create drops the three execution
+                // targets: the provider has to notice and leave the card alone.
+                create: (draft: Parameters<typeof host.tasks.create>[0], createOptions?: Parameters<typeof host.tasks.create>[1]) => {
+                  const { mode, model, reasoningEffort, ...rest } = draft
+                  void mode
+                  void model
+                  void reasoningEffort
+                  return host.tasks.create(rest, createOptions)
+                },
+              }
+            : {}),
           rework: options.withRework === false
             ? undefined
             : (taskId: string, instructions: string, initiator?: string) => {

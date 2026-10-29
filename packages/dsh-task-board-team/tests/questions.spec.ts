@@ -105,6 +105,48 @@ describe('question routing', () => {
     expect(answerer.calls()).toBe(1)
   })
 
+  it('member sees a question nobody answers kept open by default, however long it takes', async () => {
+    // Given a question reported to the hub with no local cap configured
+    harness = makeHarness()
+    const { sessionId } = await claimedSession(harness)
+    const router = harness.service().questions
+    const answerer = nextAnswerer()
+    const pending = router.request(ask(sessionId), answerer.next)
+    await flush()
+    const questionId = [...harness.hub.questions.keys()][0]
+
+    // When ten minutes pass without an answer
+    await vi.advanceTimersByTimeAsync(600_000)
+
+    // Then the claim is still holding the ask and nothing was withdrawn
+    expect(harness.hub.questions.get(questionId)?.status).toBe('pending')
+    expect(answerer.calls()).toBe(0)
+
+    // And a late answer still settles the session
+    harness.hub.answer(questionId, { selected: ['yes'] })
+    expect(await pending).toEqual({ answers: [{ id: 'q1', selected: ['yes'] }] })
+  })
+
+  it('member sees the optional local fallback withdraw a question after its wait', async () => {
+    // Given a deployment that turned the local fallback on for one minute
+    harness = makeHarness({ questionWaitMinutes: 1 })
+    const { sessionId } = await claimedSession(harness)
+    const router = harness.service().questions
+    const answerer = nextAnswerer()
+    const pending = router.request(ask(sessionId), answerer.next)
+    await flush()
+    const questionId = [...harness.hub.questions.keys()][0]
+
+    // When that minute passes with no answer
+    await vi.advanceTimersByTimeAsync(60_000)
+    const answer = await pending
+
+    // Then the question is withdrawn from the hub and the local answerer decides
+    expect(harness.hub.questions.get(questionId)?.status).toBe('dismissed')
+    expect(answer).toEqual({ answers: [{ id: 'local', selected: ['local'] }] })
+    expect(answerer.calls()).toBe(1)
+  })
+
   it('member sees an expired question end the ask as unanswered', async () => {
     // Given a question waiting on the hub
     harness = makeHarness()

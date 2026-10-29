@@ -87,6 +87,8 @@ export interface TeamSetupStatus {
   agents: readonly TeamAgentBinding[]
   /** Hostname this Host registers under. */
   hostname: string
+  /** Optional local fallback wait for a claimed question, in minutes; 0 means none. */
+  questionWaitMinutes: number
   /** The live connection and capability summary, when the provider is mounted. */
   provider?: TeamExtensionSummary
   /** Whether this deployment exposes a settings form for this extension. */
@@ -99,12 +101,20 @@ export interface TeamSetupPatch {
   teamId?: string
   agents?: readonly TeamAgentBinding[]
   hostname?: string
+  questionWaitMinutes?: number
 }
 
 export interface TeamSetupOptions {
   ctx: Context
   /** Current configured values, read live from the plugin config. */
-  current: () => { hubUrl: string; teamId: string; agents: readonly TeamAgentBinding[]; hostname: string; tokenRef: string }
+  current: () => {
+    hubUrl: string
+    teamId: string
+    agents: readonly TeamAgentBinding[]
+    hostname: string
+    tokenRef: string
+    questionWaitMinutes?: number
+  }
   /** The live provider summary, when the extension is mounted. */
   provider: () => TeamExtensionSummary | undefined
   /** Called after a successful write so the mount can follow it immediately. */
@@ -169,6 +179,7 @@ export class TeamSetup {
       teamId: current.teamId,
       agents: current.agents.map(binding => ({ ...binding })),
       hostname: current.hostname,
+      questionWaitMinutes: current.questionWaitMinutes ?? 0,
       token,
       writable: resolveSettingsFace(this.#options.ctx)?.writable !== false,
       ...(this.#options.provider() === undefined ? {} : { provider: this.#options.provider() as TeamExtensionSummary }),
@@ -191,6 +202,9 @@ export class TeamSetup {
     if (patch.teamId !== undefined) operations.push({ op: 'set', path: ['teamId'], value: patch.teamId.trim() })
     if (patch.hostname !== undefined) operations.push({ op: 'set', path: ['hostname'], value: patch.hostname.trim() })
     if (patch.agents !== undefined) operations.push({ op: 'set', path: ['agents'], value: normalizeBindings(patch.agents) })
+    if (patch.questionWaitMinutes !== undefined) {
+      operations.push({ op: 'set', path: ['questionWaitMinutes'], value: Math.max(0, Math.trunc(patch.questionWaitMinutes)) })
+    }
     if (operations.length > 0) {
       const face = resolveSettingsFace(this.#options.ctx)
       if (face === undefined) throw new Error('this deployment serves no settings surface, so the team settings cannot be written')

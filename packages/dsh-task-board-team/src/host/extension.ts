@@ -166,6 +166,9 @@ export function createTeamExtension(options: TeamExtensionOptions): TaskBoardExt
           if (typeof payload.hubUrl === 'string') patch.hubUrl = payload.hubUrl
           if (typeof payload.teamId === 'string') patch.teamId = payload.teamId
           if (typeof payload.hostname === 'string') patch.hostname = payload.hostname
+          if (typeof payload.questionWaitMinutes === 'number' && Number.isFinite(payload.questionWaitMinutes)) {
+            patch.questionWaitMinutes = payload.questionWaitMinutes
+          }
           if (Array.isArray(payload.agents)) {
             patch.agents = payload.agents.flatMap(entry => {
               if (typeof entry !== 'object' || entry === null) return []
