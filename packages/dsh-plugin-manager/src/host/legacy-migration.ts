@@ -3,8 +3,8 @@
  *
  * The runtime identifiers (web-ui-* rows, settings section, API paths,
  * storage keys) stay frozen; only the npm aggregate package name changes.
- * This module is the single migration map shared by the plugin-manager
- * update job and the Doctor preflight launcher so they never drift.
+ * This module is the single migration map for the plugin-manager update job,
+ * the one official writer that rewrites a user profile.
  */
 
 /** The previously published aggregate package name. */
