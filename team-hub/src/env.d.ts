@@ -1,7 +1,7 @@
 /**
  * Bindings the Worker reads but wrangler.jsonc does not declare, because they
  * are Worker secrets or because they identify the deployment (see README.md).
- * The generated worker-configuration.d.ts covers DB and TEAM_CHANNEL.
+ * The generated types under .cloudflare/types cover DB and TEAM_CHANNEL.
  *
  * Both the global Env interface and Cloudflare.Env are augmented: Worker code
  * receives Env, while the cloudflare:workers env export is Cloudflare.Env.

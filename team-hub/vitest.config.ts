@@ -30,10 +30,15 @@ const key = await providerKey()
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      wrangler: { configPath: './wrangler.jsonc' },
+      // The test runtime declares its own bindings rather than reading the deploy
+      // configuration: it needs a database id and a Durable Object namespace that
+      // exist only in workerd, never the real deployment's.
+      main: './src/index.ts',
       miniflare: {
         compatibilityDate: '2026-08-01',
         compatibilityFlags: ['nodejs_compat'],
+        d1Databases: { DB: 'test-database' },
+        durableObjects: { TEAM_CHANNEL: { className: 'TeamChannelDO', useSQLite: true } },
         bindings: {
           TEST_MIGRATIONS: migrations,
           GITHUB_CLIENT_ID: 'test-github-client-id',

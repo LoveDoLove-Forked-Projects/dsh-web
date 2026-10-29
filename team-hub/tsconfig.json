@@ -26,7 +26,7 @@
     "test/**/*.ts",
     "test/**/*.d.ts",
     "vitest.config.ts",
-    "worker-configuration.d.ts",
+    ".cloudflare/types/index.d.ts",
     "node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts"
   ]
 }
