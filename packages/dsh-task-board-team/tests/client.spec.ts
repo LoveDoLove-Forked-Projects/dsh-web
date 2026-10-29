@@ -19,6 +19,7 @@ import {
 import { issueLabel, statusLabel } from '../src/client/team/sections.tsx'
 import { readConfiguration } from '../src/client/team/settings.tsx'
 import { installTeamClientHalf } from '../src/client/team/extension.ts'
+import { apply } from '../src/client/index.ts'
 import type { TaskRecord } from '../src/core/task-record.ts'
 
 /** The one card these specs render. */
@@ -188,16 +189,21 @@ describe('seat registration', () => {
         return callback()
       },
     }
+    const resolve = (name: string): unknown => {
+      if (name === 'taskBoard') return face
+      if (name === 'slots') return slots
+      return undefined
+    }
     const scope = {
       slots,
-      get: (name: string) => (name === 'taskBoard' ? face : undefined),
+      get: resolve,
       effect(fn: () => (() => void) | void) {
         return fn() ?? (() => {})
       },
     }
     const ctx = {
       slots,
-      get: (name: string) => (name === 'taskBoard' ? face : undefined),
+      get: resolve,
       inject: (_deps: string[], callback: (value: typeof scope) => void) => {
         callback(scope)
         return { dispose: async () => {} }
@@ -260,5 +266,57 @@ describe('seat registration', () => {
     // Then the rendering seats are released and the summary is dropped
     expect(client.registered).toEqual(['task-board.settings.section'])
     expect(getSummary()).toBeUndefined()
+  })
+})
+
+describe('boot tolerance', () => {
+  /**
+   * A shell context with the inject contract the Web UI enforces: a service read
+   * the plugin never declared throws, and `ctx.get` is the only way to probe it.
+   * @returns the context and the seat names it registered.
+   */
+  function makeInjectStrictClient(): { ctx: unknown; registered: string[] } {
+    const registered: string[] = []
+    const slots = {
+      register(options: { name: string }) {
+        registered.push(options.name)
+        return () => {}
+      },
+      inject(_key: string, callback: () => () => void) {
+        return callback()
+      },
+    }
+    const services: Record<string, unknown> = { slots }
+    const ctx = {
+      effect(fn: () => (() => void) | void) {
+        return fn() ?? (() => {})
+      },
+      get: (name: string) => services[name],
+      inject: (_deps: string[], callback: (scope: unknown) => void) => {
+        callback(ctx)
+        return { dispose: async () => {} }
+      },
+    }
+    const guarded = new Proxy(ctx, {
+      get(target, prop, receiver) {
+        if (typeof prop === 'symbol' || prop.startsWith('_') || prop in target) {
+          return Reflect.get(target, prop, receiver)
+        }
+        throw new Error(`cannot get property "${prop}" without inject`)
+      },
+    })
+    return { ctx: guarded, registered }
+  }
+
+  it('member sees the browser half mount without throwing on a shell that gates undeclared services', () => {
+    // Given a page whose shell throws on every undeclared service read
+    const client = makeInjectStrictClient()
+
+    // When the entry applies and the board never publishes its service
+    // Then applying does not throw, so the web shell can finish its boot
+    expect(() => apply(client.ctx as never)).not.toThrow()
+    // And the one seat that needs no board service is registered through the
+    // probed registry instead of a property read the shell would reject
+    expect(client.registered).toEqual(['task-board.settings.section'])
   })
 })

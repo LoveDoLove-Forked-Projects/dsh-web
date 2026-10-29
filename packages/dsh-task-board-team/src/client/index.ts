@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { installTeamClientHalf, type ExtensionEnabledSource } from './team/extension.ts'
+import { optionalService } from './optional-service.ts'
 import { en, setRuntimeTranslate, t, zh, type TeamKey } from './locales.ts'
 
 /** Locale namespace this half owns. */
@@ -84,9 +85,12 @@ function unavailableForm(): ConfigForm<TeamSettingsValue> {
  * @returns the form, or an inert one when the page serves no such namespace.
  */
 function bindSettingsForm(ctx: ClientContext): ConfigForm<TeamSettingsValue> {
-  const forms = (ctx as { configForms?: { describe?: unknown } }).configForms
+  // Read through the optional accessor: the shell throws on an undeclared
+  // service property, and one external plugin must not fail the whole boot.
+  const forms = optionalService(ctx, 'configForms') as { describe?: unknown } | undefined
   if (forms === undefined) return unavailableForm()
-  const binder = (ctx as { webUiSettings?: { bind?: <T>(spec: { namespace: string }) => ConfigForm<T> } }).webUiSettings
+  const binder = optionalService(ctx, 'webUiSettings') as
+    { bind?: <T>(spec: { namespace: string }) => ConfigForm<T> } | undefined
   if (binder !== undefined && typeof binder.bind === 'function') {
     try {
       return binder.bind<TeamSettingsValue>({ namespace: SETTINGS_NAMESPACE })
@@ -97,14 +101,23 @@ function bindSettingsForm(ctx: ClientContext): ConfigForm<TeamSettingsValue> {
   return unavailableForm()
 }
 
+/** Runtime face of the locale service this half registers its copy into. */
+interface LocaleSeat {
+  register(namespace: string, dictionaries: { zh: unknown; en: unknown }): () => void
+  bind(namespace: string): unknown
+}
+
 /**
  * Mount the extension's browser half.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
+  const locale = optionalService(ctx, 'locale') as LocaleSeat | undefined
+
   ctx.effect(() => {
+    if (locale === undefined) return () => {}
     try {
-      return ctx.locale.register(NS, { zh, en })
+      return locale.register(NS, { zh, en })
     } catch {
       return () => {}
     }
@@ -112,7 +125,9 @@ export function apply(ctx: ClientContext): void {
 
   // Wire the SDK translate seat into the module-level t the seats use, so a
   // runtime language switch reaches them without a reload.
-  try { setRuntimeTranslate(ctx.locale.bind(NS) as (key: TeamKey) => string) } catch { void t }
+  if (locale !== undefined) {
+    try { setRuntimeTranslate(locale.bind(NS) as (key: TeamKey) => string) } catch { void t }
+  }
 
   const scope = bindSettingsForm(ctx)
   const enabledSource: ExtensionEnabledSource = {

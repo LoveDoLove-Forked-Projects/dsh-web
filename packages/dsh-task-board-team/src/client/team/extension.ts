@@ -23,6 +23,7 @@ import {
 } from '../../core/contract.ts'
 import { TeamCardDecoration, TeamDetailSection } from './sections.tsx'
 import { TeamSettingsSection } from './settings.tsx'
+import { optionalService } from '../optional-service.ts'
 import { acceptPublishedSummaries, clearSummary } from './summary.ts'
 
 /** Locale namespace the seats bind to. */
@@ -90,7 +91,11 @@ function registerSeat(
 export function installTeamClientHalf(ctx: ClientContext, source: ExtensionEnabledSource): () => void {
   let rendering: ReturnType<ClientContext['inject']> | undefined
   let configuration: ReturnType<ClientContext['inject']> | undefined
-  const slots = ctx.slots as unknown as SlotRegistry
+  // The shell throws on an undeclared service property, so the registry is
+  // probed instead of read: a page that serves no slot registry loses only this
+  // provider's contributions, never the whole boot.
+  const slots = optionalService(ctx, 'slots') as SlotRegistry | undefined
+  if (slots === undefined) return () => {}
 
   const install = (): void => {
     if (rendering !== undefined) return
