@@ -117,7 +117,7 @@ describe('member bindings', () => {
     const path = agentsLedgerPath({ DSH_HOME: '/tmp/dsh-home' }, '/home/operator')
 
     // Then it points at the agents plugin directory
-    expect(path).toBe('/tmp/dsh-home/dsh-agents/ledger.json')
+    expect(path).toBe(join('/tmp/dsh-home', 'dsh-agents', 'ledger.json'))
   })
 
   it('operator sees duplicate and blank bindings collapsed before they reach the hub', async () => {
