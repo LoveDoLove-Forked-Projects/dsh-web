@@ -346,7 +346,9 @@ describe('contract samples', () => {
     if (socket === null) throw new Error('no socket')
     socket.accept()
     const frames: unknown[] = []
-    socket.addEventListener('message', (event) => frames.push(JSON.parse(String(event.data))))
+    socket.addEventListener('message', (event) => {
+      frames.push(JSON.parse(String(event.data)))
+    })
     socket.send(JSON.stringify(wsHandshake.frames.client[0]))
     const frameMismatches: Mismatch[] = []
     await vi.waitFor(() => {
@@ -398,7 +400,9 @@ describe('contract samples', () => {
     if (live === null) throw new Error('no socket')
     live.accept()
     const received: { event?: string; payload?: unknown }[] = []
-    live.addEventListener('message', (event) => received.push(JSON.parse(String(event.data))))
+    live.addEventListener('message', (event) => {
+      received.push(JSON.parse(String(event.data)))
+    })
 
     await api(context.env, 'POST', '/api/v1/teams/' + context.teamId + '/issues/' + context.issueId + '/claim', {
       token: context.hostToken,

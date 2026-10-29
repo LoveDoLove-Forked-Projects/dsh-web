@@ -189,11 +189,12 @@ needed something the document does not state, each kept additive and small.
       admin.
     - Host execution routes allow 120 requests per minute per host
       (supplement A4.6), not the 30 the section 11 table still shows.
-11. **Specification text still to be synced.** Two places in PROTOCOL.md
-    contradict supplement A4 and are not edited here because the file is
-    maintained by the protocol owner: the WebSocket section still writes the URL
-    as `?token=<token>` (A4.2 forbids a token in the URL) and the section 11
-    quota table still lists 30 host requests per minute (A4.6 raises it to 120).
+11. **One contradiction left in the specification text.** The endpoint table's
+    invite row still lists `400` among its status codes while its error codes are
+    `USER_NOT_FOUND` and `ALREADY_MEMBER`, which the error-code table defines as
+    `404` and `409`. The hub follows the error-code table, which is also what
+    supplement A4.7 fixes. PROTOCOL.md is maintained by the protocol owner and is
+    not edited here.
 10. **APNs environment routing.** Delivery picks the Apple host from the
     registered token's `environment` column rather than the `APNS_BUNDLE_ID`
     secret, and the `apns-topic` header always carries the registered
