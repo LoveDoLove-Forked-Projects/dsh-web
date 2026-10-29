@@ -33,7 +33,7 @@ export default defineConfig({
 		env: {
 			DB: bindings.d1({
 				name: "dsh-team-hub",
-				id: "REPLACE_WITH_D1_DATABASE_ID",
+				id: "add4f9cc-163a-4eac-90d7-91663d1b6d10",
 			}),
 			TEAM_CHANNEL: bindings.durableObject({
 				worker: "dsh-team-hub",
