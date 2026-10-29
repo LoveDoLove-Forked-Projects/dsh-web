@@ -180,3 +180,30 @@ export async function hostsOfTeam(env: Env, teamId: string): Promise<HostRow[]> 
   const { results } = await env.DB.prepare('SELECT * FROM hosts WHERE team_id = ?').bind(teamId).all<HostRow>()
   return results
 }
+export interface AgentBinding {
+  id: string
+  name: string
+  host_id: string
+  owner_member_id: string
+  host_status: 'online' | 'offline'
+}
+
+/**
+ * Supplement A2.1: the roster of agents with the liveness of the host each one
+ * is bound to. A revoked host counts as offline, because the wire shape only
+ * distinguishes online from offline.
+ */
+export async function listAgentBindings(env: Env, teamId: string): Promise<AgentBinding[]> {
+  const { results } = await env.DB.prepare(
+    'SELECT a.id, a.name, a.host_id, a.owner_member_id, h.status AS host_status FROM agents a JOIN hosts h ON h.id = a.host_id WHERE a.team_id = ? ORDER BY a.name',
+  )
+    .bind(teamId)
+    .all<{ id: string; name: string; host_id: string; owner_member_id: string; host_status: string }>()
+  return results.map((row) => ({
+    id: row.id,
+    name: row.name,
+    host_id: row.host_id,
+    owner_member_id: row.owner_member_id,
+    host_status: row.host_status === 'online' ? 'online' : 'offline',
+  }))
+}

@@ -168,7 +168,7 @@ describe('oauth callback and token exchange', () => {
     expect(result.status).toBe(302)
     expect(result.headers.get('location')).toBe('https://hub.example/app?state=' + state())
     const cookie = result.headers.get('set-cookie') as string
-    expect(cookie).toContain('th_session=th_at_')
+    expect(cookie).toContain('th_session=th_usr_')
     expect(cookie).toContain('HttpOnly')
     const member = await one<{ status: string }>(env, 'SELECT status FROM members WHERE github_username = ?', 'octocat')
     expect(member?.status).toBe('active')
@@ -203,8 +203,8 @@ describe('oauth callback and token exchange', () => {
     expect(result.status).toBe(200)
     expect(result.body.token_type).toBe('Bearer')
     expect(result.body.expires_in).toBe(7200)
-    expect(result.body.access_token).toMatch(/^th_at_/)
-    expect(result.body.refresh_token).toMatch(/^th_rt_/)
+    expect(result.body.access_token).toMatch(/^th_usr_/)
+    expect(result.body.refresh_token).toMatch(/^th_ref_/)
     expect(result.body.member.github_username).toBe('hubot')
   })
 

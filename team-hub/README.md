@@ -141,15 +141,23 @@ needed something the document does not state, each kept additive and small.
    connection and frame size, and the section 9 frame table has no error frame,
    so a violation closes the socket: `1008 RATE_LIMITED` or
    `1009 PAYLOAD_TOO_LARGE`.
-8. **Review decisions are reviewer-scoped.** Section 11 grants the review
-   endpoints to any admin or member; the hub additionally requires the caller to
-   be the issue's reviewer or an admin.
-9. **Supplement A1.** `GET /api/v1/me`, the inbox, the team question list, the
-   activity feed and `comment_mentions` follow supplement A1 as frozen by the
-   dispatcher; `POST /auth/token` and `POST /auth/refresh` responses carry
-   `member`, and `inbox`, `questions`, `activity` and `me` reject Host tokens.
-   The activity feed returns newest first with an activity id as the keyset
-   cursor.
+8. **Two role rules resolve a clash inside the specification.** Section 11
+   grants the review endpoints to any admin or member, so the hub additionally
+   requires the reviewer or an admin; and the endpoint table lists question
+   withdrawal as a Host operation while the section 11 matrix also grants it to
+   admins, so the hub accepts the asking Host or an admin and refuses plain
+   members.
+9. **Supplements A1 and A2.** `GET /api/v1/me`, the inbox, the team question
+   list, the activity feed, `GET /api/v1/teams/:teamId/agents` and
+   `comment_mentions` follow supplements A1 and A2 as frozen by the dispatcher:
+   token responses carry `member`; `inbox`, `questions`, `activity`, `agents`
+   and `me` reject Host tokens; the activity feed returns newest first with an
+   activity id as the keyset cursor. Question and activity bodies are objects on
+   the wire (`text`, `options[].label`, `answer.selected`/`answer.custom`,
+   `actor_id`) while `options_json`, `answer_json` and `payload_json` remain
+   their storage form; an answer needs a selection or a custom text. A revoked
+   host reports `host_status: "offline"` because the wire shape has only two
+   values.
 10. **APNs environment routing.** Delivery picks the Apple host from the
     registered token's `environment` column rather than the `APNS_BUNDLE_ID`
     secret, and the `apns-topic` header always carries the registered

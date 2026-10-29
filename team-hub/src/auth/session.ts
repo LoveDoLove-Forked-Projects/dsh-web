@@ -8,8 +8,8 @@ import { HubError, fail } from '../errors'
 import { newId, randomHex, sha256Hex } from '../ids'
 import type { HostRow, MemberRow } from '../types'
 
-const ACCESS_TOKEN_PREFIX = 'th_at_'
-const REFRESH_TOKEN_PREFIX = 'th_rt_'
+const ACCESS_TOKEN_PREFIX = 'th_usr_'
+const REFRESH_TOKEN_PREFIX = 'th_ref_'
 /** Cookie the Web GUI carries its session in (PROTOCOL.md section 2). */
 export const SESSION_COOKIE = 'th_session'
 export const REFRESH_COOKIE = 'th_refresh'

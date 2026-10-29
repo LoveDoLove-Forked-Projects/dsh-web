@@ -31,7 +31,14 @@ import {
 import { GITHUB_CALLBACK_PATH } from './outbound'
 import { beginAuthorize, completeAuthorizationCode, handleCallback } from './auth/github'
 import { consumeQuota } from './rate-limit'
-import { issueHostToken, registerHost, heartbeat, revokeHostToken, type AgentDefinition } from './domain/hosts'
+import {
+  heartbeat,
+  issueHostToken,
+  listAgentBindings,
+  registerHost,
+  revokeHostToken,
+  type AgentDefinition,
+} from './domain/hosts'
 import { describeMe, inviteMember, listMembers, removeMember } from './domain/members'
 import {
   approveReview,
@@ -149,6 +156,9 @@ const ROUTES: Route[] = [
     return json(await describeMe(env, member))
   }),
 
+  route('GET', '/api/v1/teams/:teamId/agents', 'member', async ({ env, params }) => {
+    return json({ agents: await listAgentBindings(env, params.teamId as string) })
+  }),
   route('GET', '/api/v1/teams/:teamId/members', 'member', async ({ env, params }) => {
     return json({ members: await listMembers(env, params.teamId as string) })
   }),
@@ -372,7 +382,7 @@ const ROUTES: Route[] = [
       params.teamId as string,
       actor,
       params.questionId as string,
-      { selected_options: optionalArray(body, 'selected_options'), custom_text: optionalString(body, 'custom_text') },
+      { selected: optionalArray(body, 'selected'), custom: optionalString(body, 'custom') },
       now,
     )
     return ok()

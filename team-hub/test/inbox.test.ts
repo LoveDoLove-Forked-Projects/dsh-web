@@ -104,7 +104,7 @@ describe('inbox', () => {
     expect(inbox.status).toBe(200)
     expect(inbox.body.assigned.map((issue: { title: string }) => issue.title)).toEqual(['assigned to member'])
     expect(inbox.body.review.map((issue: { title: string }) => issue.title)).toEqual(['review me'])
-    expect(inbox.body.questions.map((question: { question_text: string }) => question.question_text)).toEqual([
+    expect(inbox.body.questions.map((question: { text: string }) => question.text)).toEqual([
       'which endpoint?',
     ])
     expect(inbox.body.mentions).toHaveLength(1)

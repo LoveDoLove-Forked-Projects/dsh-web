@@ -281,7 +281,7 @@ describe('channel events', () => {
 
     await api(context.env, 'POST', base + '/questions/' + question.body.question.id + '/answer', {
       token: context.adminToken,
-      body: { custom_text: 'the v1 one' },
+      body: { custom: 'the v1 one' },
     })
     expect((await member.queue.untilEvent('question.answered')).payload.responder_member_id).toBe(context.team.admin.id)
 

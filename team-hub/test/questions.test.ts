@@ -92,14 +92,23 @@ describe('question creation', () => {
     // When the host submits the agent question
     const created = await api(fixture.env, 'POST', questionsPath(fixture.teamId, fixture.issueId), {
       token: fixture.hostToken,
-      body: { question_text: 'Confirm the API endpoint', options: ['yes', 'no'], multi_select: false },
+      body: {
+        question_text: 'Confirm the API endpoint',
+        options: [{ label: 'yes' }, { label: 'no', description: 'ship as is' }],
+        multi_select: false,
+      },
     })
 
     // Then the question is pending for one day and a push went to the reviewer
     expect(created.status).toBe(201)
     expect(created.body.question.status).toBe('pending')
-    expect(created.body.question.expires_at).toBe(T0 + QUESTION_TTL_MS)
-    expect(created.body.question.options).toEqual(['yes', 'no'])
+    const window = await one<{ expires_at: number }>(
+      fixture.env,
+      'SELECT expires_at FROM questions WHERE id = ?',
+      created.body.question.id,
+    )
+    expect(window?.expires_at).toBe(T0 + QUESTION_TTL_MS)
+    expect(created.body.question.options).toEqual([{ label: 'yes' }, { label: 'no', description: 'ship as is' }])
     const outbound = await all<{ activity_type: string }>(
       fixture.env,
       'SELECT activity_type FROM activity WHERE issue_id = ?',
@@ -171,7 +180,7 @@ describe('answering a question', () => {
     const fixture = await runningIssue()
     const created = await api(fixture.env, 'POST', questionsPath(fixture.teamId, fixture.issueId), {
       token: fixture.hostToken,
-      body: { question_text: 'Confirm the endpoint', options: ['yes', 'no'] },
+      body: { question_text: 'Confirm the endpoint', options: [{ label: 'yes' }, { label: 'no' }] },
     })
 
     // When the reviewer answers it
@@ -179,7 +188,7 @@ describe('answering a question', () => {
       fixture.env,
       'POST',
       '/api/v1/teams/' + fixture.teamId + '/questions/' + created.body.question.id + '/answer',
-      { token: fixture.reviewerToken, body: { selected_options: ['yes'] } },
+      { token: fixture.reviewerToken, body: { selected: ['yes'] } },
     )
 
     // Then the answer is stored with the responder and the timestamp
@@ -197,7 +206,7 @@ describe('answering a question', () => {
     expect(stored?.status).toBe('answered')
     expect(stored?.first_responder_member_id).toBe(fixture.memberId)
     expect(stored?.answered_at).toBe(T0)
-    expect(JSON.parse(stored?.answer_json ?? '{}')).toEqual({ selected_options: ['yes'] })
+    expect(JSON.parse(stored?.answer_json ?? '{}')).toEqual({ selected: ['yes'] })
   })
 
   it('second responder is refused because the first answer wins', async () => {
@@ -211,13 +220,13 @@ describe('answering a question', () => {
     // When two members answer, the second one after the first
     await api(fixture.env, 'POST', '/api/v1/teams/' + fixture.teamId + '/questions/' + created.body.question.id + '/answer', {
       token: fixture.adminToken,
-      body: { custom_text: 'first' },
+      body: { custom: 'first' },
     })
     const second = await api(
       fixture.env,
       'POST',
       '/api/v1/teams/' + fixture.teamId + '/questions/' + created.body.question.id + '/answer',
-      { token: fixture.reviewerToken, body: { custom_text: 'second' } },
+      { token: fixture.reviewerToken, body: { custom: 'second' } },
     )
 
     // Then the competing answer is a conflict and the first answer stands
@@ -228,7 +237,7 @@ describe('answering a question', () => {
       'SELECT first_responder_member_id, answer_json FROM questions WHERE id = ?',
       created.body.question.id,
     )
-    expect(JSON.parse(stored?.answer_json ?? '{}')).toEqual({ custom_text: 'first' })
+    expect(JSON.parse(stored?.answer_json ?? '{}')).toEqual({ selected: [], custom: 'first' })
   })
 
   it('member is refused an answer to a question that expired', async () => {
@@ -248,7 +257,7 @@ describe('answering a question', () => {
       fixture.env,
       'POST',
       '/api/v1/teams/' + fixture.teamId + '/questions/' + created.body.question.id + '/answer',
-      { token: freshToken, body: { custom_text: 'late' } },
+      { token: freshToken, body: { custom: 'late' } },
     )
 
     // Then the question is no longer answerable
@@ -404,7 +413,7 @@ describe('question listing', () => {
     // Then only that issue's question comes back
     expect(listed.status).toBe(200)
     expect(listed.body.questions).toHaveLength(1)
-    expect(listed.body.questions[0].question_text).toBe('first question')
+    expect(listed.body.questions[0].text).toBe('first question')
   })
 
   it('host is refused the team question list', async () => {

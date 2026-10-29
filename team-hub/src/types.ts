@@ -146,31 +146,37 @@ export interface IssueView extends Omit<IssueRow, 'lease_token' | 'lease_expires
   has_lease: boolean
 }
 
-export interface QuestionView {
-  id: string
-  team_id: string
-  issue_id: string
-  host_id: string
-  agent_id: string
-  question_text: string
-  options: unknown[] | null
-  multi_select: boolean
-  status: QuestionRow['status']
-  first_responder_member_id: string | null
-  answer: unknown
-  answered_at: number | null
-  created_at: number
-  expires_at: number
+/** Supplement A2.2: one selectable option as the wire exposes it. */
+export interface QuestionOptionView {
+  label: string
+  description?: string
 }
 
+/** Supplement A2.2: the answer as the wire exposes it. */
+export interface QuestionAnswerView {
+  selected: string[]
+  custom?: string
+}
+
+export interface QuestionView {
+  id: string
+  issue_id: string
+  text: string
+  options: QuestionOptionView[]
+  multi_select: boolean
+  status: QuestionRow['status']
+  answer: QuestionAnswerView | null
+  first_responder_member_id: string | null
+  created_at: number
+  answered_at: number | null
+}
+
+/** Supplement A2.3: one audit entry as the wire exposes it. */
 export interface ActivityView {
   id: string
-  team_id: string
   issue_id: string
   actor_type: ActivityRow['actor_type']
-  actor_member_id: string | null
-  actor_agent_id: string | null
-  actor_host_id: string | null
+  actor_id: string | null
   activity_type: string
   payload: Record<string, unknown>
   created_at: number
@@ -225,22 +231,47 @@ export function toIssueView(row: IssueRow): IssueView {
   }
 }
 
+/** Options are stored as JSON; on the wire they are always objects with a label. */
+export function normalizeQuestionOptions(raw: unknown): QuestionOptionView[] {
+  if (!Array.isArray(raw)) return []
+  const options: QuestionOptionView[] = []
+  for (const entry of raw) {
+    if (typeof entry === 'string') {
+      options.push({ label: entry })
+      continue
+    }
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    if (typeof record.label !== 'string') continue
+    const option: QuestionOptionView = { label: record.label }
+    if (typeof record.description === 'string') option.description = record.description
+    options.push(option)
+  }
+  return options
+}
+
+/** Answers are stored as JSON and exposed as an object, never as a raw string. */
+export function normalizeQuestionAnswer(raw: unknown): QuestionAnswerView | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  const selected = Array.isArray(record.selected) ? record.selected.filter((value) => typeof value === 'string') : []
+  const answer: QuestionAnswerView = { selected: selected as string[] }
+  if (typeof record.custom === 'string') answer.custom = record.custom
+  return answer
+}
+
 export function toQuestionView(row: QuestionRow): QuestionView {
   return {
     id: row.id,
-    team_id: row.team_id,
     issue_id: row.issue_id,
-    host_id: row.host_id,
-    agent_id: row.agent_id,
-    question_text: row.question_text,
-    options: parseJsonColumn(row.options_json) as unknown[] | null,
+    text: row.question_text,
+    options: normalizeQuestionOptions(parseJsonColumn(row.options_json)),
     multi_select: row.multi_select === 1,
     status: row.status,
+    answer: normalizeQuestionAnswer(parseJsonColumn(row.answer_json)),
     first_responder_member_id: row.first_responder_member_id,
-    answer: parseJsonColumn(row.answer_json),
-    answered_at: row.answered_at,
     created_at: row.created_at,
-    expires_at: row.expires_at,
+    answered_at: row.answered_at,
   }
 }
 
@@ -248,14 +279,11 @@ export function toActivityView(row: ActivityRow): ActivityView {
   const parsed = parseJsonColumn(row.payload_json)
   return {
     id: row.id,
-    team_id: row.team_id,
     issue_id: row.issue_id,
     actor_type: row.actor_type,
-    actor_member_id: row.actor_member_id,
-    actor_agent_id: row.actor_agent_id,
-    actor_host_id: row.actor_host_id,
+    actor_id: row.actor_member_id ?? row.actor_agent_id ?? row.actor_host_id,
     activity_type: row.activity_type,
-    payload: typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {},
+    payload: typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {},
     created_at: row.created_at,
   }
 }

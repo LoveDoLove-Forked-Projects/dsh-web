@@ -12,15 +12,42 @@ import { questionAskedAlert, sendPush } from '../push/apns'
 
 const QUESTION_STATUSES = new Set(['pending', 'answered', 'dismissed', 'expired'])
 
+export interface QuestionOptionInput {
+  label: string
+  description?: string
+}
+
 export interface CreateQuestionBody {
   question_text: string
   options?: unknown[]
   multi_select?: boolean
 }
 
+/** Supplement A2.2: the answer body is one object, never two sibling fields. */
 export interface AnswerBody {
-  selected_options?: unknown[]
-  custom_text?: string
+  selected?: unknown[]
+  custom?: string
+}
+
+function validateOptions(raw: unknown[] | undefined): QuestionOptionInput[] | null {
+  if (raw === undefined) return null
+  const options: QuestionOptionInput[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      fail('VALIDATION_FAILED', 'Every option must be an object with a label.', { field: 'options' })
+    }
+    const record = entry as Record<string, unknown>
+    if (typeof record.label !== 'string' || record.label === '') {
+      fail('VALIDATION_FAILED', 'Every option needs a non-empty label.', { field: 'options' })
+    }
+    if (record.description !== undefined && typeof record.description !== 'string') {
+      fail('VALIDATION_FAILED', 'An option description must be a string.', { field: 'options' })
+    }
+    const option: QuestionOptionInput = { label: record.label }
+    if (typeof record.description === 'string') option.description = record.description
+    options.push(option)
+  }
+  return options
 }
 
 export async function findQuestion(env: Env, teamId: string, questionId: string): Promise<QuestionRow> {
@@ -66,6 +93,7 @@ export async function createQuestion(
       limit_bytes: QUESTION_TEXT_LIMIT_BYTES,
     })
   }
+  const options = validateOptions(body.options)
   const row: QuestionRow = {
     id: newId('ques', now),
     team_id: teamId,
@@ -73,7 +101,7 @@ export async function createQuestion(
     host_id: host.host.id,
     agent_id: agent.id,
     question_text: text,
-    options_json: body.options === undefined ? null : JSON.stringify(body.options),
+    options_json: options === null ? null : JSON.stringify(options),
     multi_select: body.multi_select === true ? 1 : 0,
     status: 'pending',
     first_responder_member_id: null,
@@ -147,9 +175,24 @@ export async function answerQuestion(
   if (question.status !== 'pending') {
     fail('QUESTION_NOT_PENDING', 'The question is ' + question.status + '.', { status: question.status })
   }
-  const answer: Record<string, unknown> = {}
-  if (body.selected_options !== undefined) answer.selected_options = body.selected_options
-  if (body.custom_text !== undefined) answer.custom_text = body.custom_text
+  const selected: string[] = []
+  for (const value of body.selected ?? []) {
+    if (typeof value !== 'string') {
+      fail('VALIDATION_FAILED', 'selected must be an array of strings.', { field: 'selected' })
+    }
+    selected.push(value)
+  }
+  const custom = body.custom
+  if (custom !== undefined && typeof custom !== 'string') {
+    fail('VALIDATION_FAILED', 'custom must be a string.', { field: 'custom' })
+  }
+  if (selected.length === 0 && (custom === undefined || custom.trim() === '')) {
+    fail('VALIDATION_FAILED', 'An answer needs at least one selected option or a custom text.', {
+      fields: ['selected', 'custom'],
+    })
+  }
+  const answer: Record<string, unknown> = { selected }
+  if (custom !== undefined && custom.trim() !== '') answer.custom = custom
   const result = await env.DB.prepare(
     "UPDATE questions SET status = 'answered', first_responder_member_id = ?, answer_json = ?, answered_at = ? WHERE id = ? AND status = 'pending'",
   )
