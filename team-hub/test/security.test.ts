@@ -265,7 +265,7 @@ describe('quotas and payload caps', () => {
     expect(throttled.body.error.code).toBe('RATE_LIMITED')
   })
 
-  it('host is throttled after the host quota of 30 requests per minute', async () => {
+  it('host is throttled after the host quota of 120 requests per minute', async () => {
     // Given a registered Host
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
     const team = await seedTeam(env)

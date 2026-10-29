@@ -669,7 +669,7 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `GET` | `/api/v1/teams/:teamId/inbox` | Member | None | `{ assigned: Issue[], review: Issue[], questions: Question[], mentions: [{ comment: Comment, issue_id }] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/inbox/mentions/:commentId/read` | Member | None | `{ ok: true }` | 200, 401, 403, 404 | `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND` |
 | `GET` | `/api/v1/teams/:teamId/members` | Member | None | `{ members: Member[] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
-| `POST` | `/api/v1/teams/:teamId/members/invite` | Admin | `{ github_username, role }` | `{ member: Member }` | 201, 400, 403 | `USER_NOT_FOUND`, `ALREADY_MEMBER` |
+| `POST` | `/api/v1/teams/:teamId/members/invite` | Admin | `{ github_username, role }` | `{ member: Member }` | 201, 400, 403, 404, 409 | `VALIDATION_FAILED`, `FORBIDDEN`, `USER_NOT_FOUND`, `ALREADY_MEMBER` |
 | `DELETE` | `/api/v1/teams/:teamId/members/:memberId` | Admin | None | `{ ok: true }` | 200, 403, 404 | `MEMBER_NOT_FOUND` |
 | `GET` | `/api/v1/teams/:teamId/agents` | Member | None | `{ agents: [{ id, name, host_id, owner_member_id, host_status }] }` (revoked hosts report `host_status: "offline"`) | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/hosts/tokens` | Admin | `{ hostname }` | `{ host_id, host_token }` | 201, 403 | `FORBIDDEN` |
