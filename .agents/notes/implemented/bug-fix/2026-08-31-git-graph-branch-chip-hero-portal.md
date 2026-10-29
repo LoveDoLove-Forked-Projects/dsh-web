@@ -25,7 +25,7 @@ Instead of computing coordinate math with `getBoundingClientRect`, animation fra
 ## Consequences
 
 - The Git branch chip is aligned inline with the workspace chip and agent preset chip with exact native spacing and alignment in blank sessions.
-- The chip is re-ordered before the trailing options group on every row child mutation: React appends portal children last, so an appended chip would otherwise land above the composer card's top-right corner on shells whose options group is pinned right.
+- The chip is re-ordered before the trailing options group after every commit: React appends portal children last, so an appended chip would otherwise land above the composer card's top-right corner on shells whose options group is pinned right. The observer that watched the row for such mutations was removed by [the hero chip placement fix](./2026-10-29-git-graph-hero-chip-placement-feedback-loop.md).
 - Eliminates animation frames, `ResizeObserver` loops, and coordinate math.
 - The client bundle was rebuilt for `@linxin666/dsh-client-ui-git-graph`.
 

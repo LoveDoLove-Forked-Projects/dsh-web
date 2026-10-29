@@ -314,6 +314,77 @@ describe('BranchChip', () => {
     }
   })
 
+  it('user does not see the hero chip move when the hero row changes (#1972)', async () => {
+    const stack = document.createElement('div')
+    const heroRow = document.createElement('div')
+    heroRow.className = 'heroWorkspaceRow'
+    const preset = document.createElement('span')
+    preset.className = 'presetSeat'
+    const options = document.createElement('div')
+    options.className = 'heroOptions'
+    heroRow.append(preset, options)
+    const outlet = document.createElement('div')
+    stack.append(heroRow, outlet)
+    document.body.append(stack)
+    try {
+      // Given a blank session whose branch chip sits before the row's trailing
+      // options group
+      bench({ blank: true, openState: 'open', container: outlet })
+      const chip = await screen.findByRole('button', { name: '分支' })
+      const anchor = anchorOf(chip)
+      await waitFor(() => { expect(anchor.nextElementSibling).toBe(options) })
+
+      // When the hero row appends the chip to its end, the way React's portal
+      // placement does, and the mutation settles
+      heroRow.append(anchor)
+      await act(async () => { await Promise.resolve() })
+
+      // Then the chip stays where the row put it: the placement must not write
+      // back into the row it watches, because that write re-queues the
+      // observer's own callback and starves the renderer (#1972)
+      expect(anchor.parentElement).toBe(heroRow)
+      expect(anchor.nextElementSibling).toBeNull()
+    } finally {
+      stack.remove()
+    }
+  })
+
+  it('user sees the hero chip back in its seat on the next commit (#1972)', async () => {
+    const stack = document.createElement('div')
+    const heroRow = document.createElement('div')
+    heroRow.className = 'heroWorkspaceRow'
+    const preset = document.createElement('span')
+    preset.className = 'presetSeat'
+    const options = document.createElement('div')
+    options.className = 'heroOptions'
+    heroRow.append(preset, options)
+    const outlet = document.createElement('div')
+    stack.append(heroRow, outlet)
+    document.body.append(stack)
+    try {
+      // Given a blank session whose branch chip was pushed out of its seat
+      const { view, props } = bench({ blank: true, openState: 'open', container: outlet })
+      const chip = await screen.findByRole('button', { name: '分支' })
+      const anchor = anchorOf(chip)
+      await waitFor(() => { expect(anchor.nextElementSibling).toBe(options) })
+      heroRow.append(anchor)
+
+      // When the chip commits again
+      await act(async () => {
+        view.rerender(<BranchChip {...props} />)
+        await Promise.resolve()
+      })
+
+      // Then the seat is asserted again without an observer: the chip sits
+      // before the options group, directly after the agent-preset seat
+      expect(anchor.parentElement).toBe(heroRow)
+      expect(preset.nextElementSibling).toBe(anchor)
+      expect(anchor.nextElementSibling).toBe(options)
+    } finally {
+      stack.remove()
+    }
+  })
+
   it('hides the branch chip when the workspace is not a git repository', async () => {
     bench({ repoStatus: null })
     await new Promise(resolve => setTimeout(resolve, 50))

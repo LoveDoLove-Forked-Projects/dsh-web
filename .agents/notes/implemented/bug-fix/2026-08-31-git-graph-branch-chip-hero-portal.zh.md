@@ -25,7 +25,7 @@ Status: implemented
 ## Consequences
 
 - Git 分支 chip 在空白会话中与工作区 chip 和智能体预设 chip 完全对齐，具备精确的原生间距与排版。
-- chip 在该行子节点每次变更时重新排到行尾 options 组之前：React 会把 portal 子节点追加到最后，否则在行尾 options 组被顶到右侧的 shell 上，chip 会落在输入卡片右上角。
+- chip 在每次 commit 后重新排到行尾 options 组之前：React 会把 portal 子节点追加到最后，否则在行尾 options 组被顶到右侧的 shell 上，chip 会落在输入卡片右上角。观察该行子节点变更的观察者已由 [hero chip 摆放修复](./2026-10-29-git-graph-hero-chip-placement-feedback-loop.zh.md) 移除。
 - 消除了动画帧调度、`ResizeObserver` 循环与像素坐标计算。
 - `@linxin666/dsh-client-ui-git-graph` 客户端 bundle 已更新。
 
