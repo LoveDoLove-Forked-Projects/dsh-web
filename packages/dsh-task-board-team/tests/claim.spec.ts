@@ -246,4 +246,87 @@ describe('claiming team issues', () => {
     expect(harness.hub.calls.filter(call => call.path.endsWith('/claim')).length).toBe(0)
     expect(harness.service().summary().problems).toContain('no dsh-agents member is bound to this Host, so no issue is claimed')
   })
+
+  it('operator sees a human retry of a mirrored card started again by the next sweep', async () => {
+    // Given a card whose run failed and whose outcome the hub accepted
+    harness = makeHarness()
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+    await harness.service().sweep()
+    await flush()
+    const task = harness.tasks()[0]
+    const execution = task.executions[task.executions.length - 1]
+    harness.ledger.settle(task.id, execution.id, 'failed', 'the acceptance command exited 1')
+    harness.board.extensions.emitExecutionSettled({
+      taskId: task.id,
+      executionId: execution.id,
+      outcome: 'failed',
+      error: 'the acceptance command exited 1',
+    })
+    await flush()
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    expect(issue.status).toBe('failed')
+
+    // When a human retries the card on the hub, moving the issue back to assigned
+    issue.status = 'assigned'
+
+    // When the sweep claims it again
+    await harness.service().sweep()
+    await flush()
+
+    // Then the same card ran again in a new session, under the attempt the hub
+    // minted for that run, and no second card appeared
+    expect(harness.tasks()).toHaveLength(1)
+    expect(harness.tasks()[0].executions).toHaveLength(2)
+    expect(harness.creates).toHaveLength(2)
+    expect(readTaskIssueLink(harness.tasks()[0])?.attemptId).toBe('attempt_2')
+  })
+
+  it('operator sees a reconnect whose lease moved away leave no error behind', async () => {
+    // Given a running card whose lease on the hub now belongs to another attempt
+    harness = makeHarness()
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+    await harness.service().sweep()
+    await flush()
+    const taskId = harness.tasks()[0].id
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    issue.leaseToken = 'lease_elsewhere'
+    issue.status = 'waiting_host'
+
+    // When the sweep reconnects with the attempt and lease this Host still holds
+    await harness.service().sweep()
+    await flush()
+
+    // Then the reconnect presented its own attempt, the hub refused it, and this
+    // Host recorded no failure for a race it lost
+    const claims = harness.hub.calls.filter(call => call.path.endsWith('/claim'))
+    const presented = claims[claims.length - 1]?.body as { execution_attempt_id?: string } | undefined
+    expect(presented?.execution_attempt_id).toBe('attempt_1')
+    expect(harness.tasks()).toHaveLength(1)
+    expect(harness.tasks()[0].executions).toHaveLength(1)
+    expect(harness.service().summary().connection.lastError).toBeUndefined()
+    expect(harness.service().summary().cards[taskId]?.lastError).toBeUndefined()
+    expect(readTaskIssueLink(harness.tasks()[0])?.lastError).toBeUndefined()
+  })
+
+  it('operator sees a member name another Host owns reported instead of run here', async () => {
+    // Given a hub that already owns one of this Host's agent names
+    harness = makeHarness()
+    harness.hub.nameConflicts.set('builder', 'agent name already belongs to another host')
+    harness.hub.addIssue({ assigneeAgentId: 'builder' })
+
+    // When this Host registers and sweeps
+    await harness.service().whenStarted()
+    await harness.service().sweep()
+    await flush()
+
+    // Then the clash is visible in the summary, the member was not registered,
+    // and nothing was claimed for it
+    expect(harness.service().summary().problems.join(' '))
+      .toContain('builder is not registered: agent name already belongs to another host')
+    expect(harness.hub.registered).toEqual([])
+    expect(harness.tasks()).toHaveLength(0)
+    expect(harness.hub.calls.filter(call => call.path.endsWith('/claim'))).toHaveLength(0)
+  })
 })

@@ -19,6 +19,7 @@
  */
 import {
   type HubAgentDefinition,
+  type HubClaim,
   type HubComment,
   type HubIssue,
   type HubIssueStatus,
@@ -36,11 +37,12 @@ import {
   TEAM_EXTENSION_ID,
   findLinkedTask,
   readTaskIssueLink,
+  readTeamIssueLink,
   toPayload,
   type TeamIssueLink,
 } from '../core/identity.ts'
 import { buildMirrorDraft, type MirrorAgent } from '../core/mirror.ts'
-import { buildSettleRequest } from '../core/settlement.ts'
+import { buildSettleRequest, type SettleRequestBody } from '../core/settlement.ts'
 import type { TaskRecord } from '../core/task-record.ts'
 import type { HostTimerFace } from '../core/timers.ts'
 import type { BoundAgent, TeamAgentBinding } from './bindings.ts'
@@ -195,8 +197,10 @@ export class TeamSyncService {
   #lastSweepAt: number | undefined
   /** A sweep scheduled for the next cadence boundary, while one is pending. */
   #pendingSweep: (() => void) | undefined
-  /** Issues with a claim in flight: one claim per issue at a time. */
+  /** Issues with a claim in flight: one claim per issue at a time, whoever asks. */
   readonly #claiming = new Set<string>()
+  /** Agent names the hub reported another Host already owns, by name. */
+  readonly #agentConflicts = new Map<string, string>()
 
   constructor(options: TeamSyncServiceOptions) {
     this.#options = options
@@ -303,7 +307,7 @@ export class TeamSyncService {
       },
       capabilities: this.#options.capabilities,
       agents,
-      problems: [...this.#problems],
+      problems: [...this.#problems, ...this.#conflictProblems()],
       presetPin: this.#presetPin,
       cards,
       pendingQuestions: [...this.#questions.pending()],
@@ -332,13 +336,56 @@ export class TeamSyncService {
       ...(event.error === undefined ? {} : { error: event.error }),
       ...(link.attemptId === undefined ? {} : { attemptId: link.attemptId }),
     })
-    try {
-      const settled = await this.#options.hub.settle(link.issueId, body)
-      this.#writeLink(task.id, { hubStatus: readStatus(settled.status) })
-    } catch (error) {
-      this.#recordError(task.id, error)
-    }
+    // The write-back is recorded on the card BEFORE it is sent: a hub that
+    // refuses it (a lapsed attempt answers 412) must not lose what the run
+    // produced, so the card carries it until a sweep or a reconnect places it.
+    this.#writeLink(task.id, { pendingSettle: body })
+    await this.#writeSettlement(task.id, link.issueId, body)
     this.#publish()
+  }
+
+  /**
+   * Send one recorded settlement and, once the hub takes it, release everything
+   * the hub now owns.
+   *
+   * The attempt and its lease belong to a finished run: settling is the last
+   * thing this Host does with them, so a later claim of the same issue is fresh
+   * instead of a reconnect that would ask the hub to re-establish a dead attempt.
+   * @param taskId - the card the settlement belongs to.
+   * @param issueId - the issue it settles.
+   * @param body - the settlement body, as the card recorded it.
+   */
+  async #writeSettlement(taskId: string, issueId: string, body: SettleRequestBody): Promise<void> {
+    try {
+      const settled = await this.#options.hub.settle(issueId, body)
+      this.#writeLink(taskId, {
+        pendingSettle: undefined,
+        attemptId: undefined,
+        leaseToken: undefined,
+        hubStatus: readStatus(settled.status),
+      })
+    } catch (error) {
+      // The refusal stays visible on the card and the pending settlement stays in
+      // its payload: the next sweep or reconnect retries the same body against
+      // the same hub gates, and nothing here writes the status itself.
+      this.#recordError(taskId, error)
+    }
+  }
+
+  /**
+   * Retry every settlement the hub has not accepted yet.
+   *
+   * A refusal is not permission to decide the outcome locally: a lapsed attempt
+   * still answers 412 and a conflicting one 409, so the pending record stays on
+   * the card until the hub takes it.
+   */
+  async #retryPendingSettlements(): Promise<void> {
+    for (const entry of this.#linked()) {
+      const link = readTeamIssueLink(entry.payload)
+      const pending = link?.pendingSettle
+      if (link === undefined || pending === undefined) continue
+      await this.#writeSettlement(entry.task.id, link.issueId, pending)
+    }
   }
 
   /**
@@ -381,6 +428,9 @@ export class TeamSyncService {
   async #runSweep(): Promise<number> {
     if (this.#hostId === undefined) return 0
     this.#lastSweepAt = this.#options.now()
+    // A pass first finishes what the last one could not hand over: a settlement
+    // the hub refused is retried before any new work is claimed.
+    await this.#retryPendingSettlements()
     let issues: readonly HubIssue[]
     try {
       issues = await this.#options.hub.listClaimableIssues(this.#hostId)
@@ -460,6 +510,14 @@ export class TeamSyncService {
       for (const record of readAgentRecords(registered)) {
         const local = this.#agents.find(agent => agent.name === record.name)
         if (local !== undefined) this.#hubAgents.set(record.id, local)
+      }
+      // A name another Host already owns is skipped by the hub and reported back
+      // (section 5): the member stays unregistered here, claims nothing, and the
+      // operator reads why in the summary instead of meeting a card that never
+      // runs.
+      this.#agentConflicts.clear()
+      for (const conflict of readAgentConflicts(registered)) {
+        this.#agentConflicts.set(conflict.name, conflict.reason)
       }
     } catch (error) {
       this.#hostId = undefined
@@ -601,53 +659,100 @@ export class TeamSyncService {
   }
 
   /**
-   * Claim one issue for one bound agent.
+   * Claim one issue for one bound agent out of a sweep.
    * @returns whether this call created a card.
    */
   async #claimIssue(issue: HubIssue, agent: BoundAgent): Promise<boolean> {
-    // One claim per issue at a time (protocol amendment A4 point 5): a sweep and
-    // an event for the same issue would otherwise race two attempts.
-    if (this.#claiming.has(issue.id)) return false
-    this.#claiming.add(issue.id)
+    return await this.#claimExclusively(issue.id, () => this.#claimOnce({ issueId: issue.id, issue, agent }))
+  }
+
+  /**
+   * Run one claim while no other claim for the same issue is in flight.
+   *
+   * Protocol amendment A4 point 5 makes claims on one issue strictly single
+   * flight, and both paths that claim — a sweep and an `issue.rework` event, which
+   * the hub sends back to back with `issue.updated` — enter here: the second
+   * caller finds the issue already being claimed and has nothing to do, instead of
+   * racing a claim the hub would refuse and recording that refusal as a failure.
+   * @param issueId - the issue being claimed.
+   * @param claim - the claim to run while the issue is held.
+   * @returns whatever the claim answered; false when one is already in flight.
+   */
+  async #claimExclusively(issueId: string, claim: () => Promise<boolean>): Promise<boolean> {
+    if (this.#claiming.has(issueId)) return false
+    this.#claiming.add(issueId)
     try {
-      return await this.#claimIssueExclusively(issue, agent)
+      return await claim()
     } finally {
-      this.#claiming.delete(issue.id)
+      this.#claiming.delete(issueId)
     }
   }
 
-  async #claimIssueExclusively(issue: HubIssue, agent: BoundAgent): Promise<boolean> {
-    const existing = findLinkedTask(this.#linked(), issue.id)
+  /**
+   * Claim one issue and act on what the claim grants.
+   *
+   * The card is the one this Host already mirrors, when it mirrors one: a claim
+   * never creates a second card for one issue. What runs afterwards follows from
+   * the claim itself — a pending rework is the one thing that always runs, a
+   * reconnect runs nothing, and a card with nothing running here and nothing
+   * waiting to be written back is started again (a human retry moved the issue
+   * back to `assigned`, and nothing else would ever start that card).
+   * @param input - the issue, the agent it belongs to, and any rework the caller knows.
+   * @returns whether this call created a card.
+   */
+  async #claimOnce(input: {
+    issueId: string
+    /** The issue a sweep listed; absent when the caller only knows it by id. */
+    issue?: HubIssue
+    /** The agent to claim for; needed only when the issue has no card here yet. */
+    agent?: BoundAgent
+    /** Rework instructions the caller already knows; a sweep reads them off the issue. */
+    rework?: string
+  }): Promise<boolean> {
+    const existing = findLinkedTask(this.#linked(), input.issueId)
     const previous = existing === undefined ? undefined : readTaskIssueLink(existing)
-    const credentials: { execution_attempt_id?: string; lease_token?: string } = {}
-    // A hub answers `null` for an attempt it does not hold, and `undefined` is
-    // what an older response body omits: both mean "no attempt yet".
-    const heldAttempt = issue.execution_attempt_id ?? undefined
-    if (previous?.attemptId !== undefined && previous.leaseToken !== undefined
-      && (heldAttempt === undefined || heldAttempt === previous.attemptId)) {
-      credentials.execution_attempt_id = previous.attemptId
-      credentials.lease_token = previous.leaseToken
-    }
-    const claim = await this.#options.hub.claim(issue.id, credentials)
-    const rework = typeof issue.rework_instructions === 'string' ? issue.rework_instructions.trim() : ''
+    const agent = input.agent
+    const issue = input.issue
+    // A caller that knows neither a mirrored card nor the issue behind one has
+    // nothing the claim could act on, so nothing is asked of the hub.
+    if (existing === undefined && (agent === undefined || issue === undefined)) return false
+    const claim = await this.#claimFromHub(input.issueId, existing, previous)
+    if (claim === undefined) return false
+    const instructions = input.rework
+      ?? (typeof issue?.rework_instructions === 'string' ? issue.rework_instructions.trim() : '')
 
     if (existing !== undefined) {
-      // A hub that recognizes the attempt re-establishes the same lease. This
-      // Host mirrors the credentials and starts NOTHING on its own: a second
-      // execution for one attempt is exactly the duplicate this path prevents.
-      // A pending rework IS the one thing that has to run, and only after the
-      // claim above succeeded.
+      // A hub that recognizes the attempt re-establishes the same lease, and this
+      // Host mirrors the credentials without starting anything of its own: a
+      // second execution for one attempt is exactly the duplicate this path
+      // prevents, and a rework the issue still carries belongs to the run that is
+      // already consuming it.
       this.#writeLink(existing.id, {
         attemptId: claim.execution_attempt_id,
         leaseToken: claim.lease_token,
         leaseExpiresAt: claim.lease_expires_at,
         hubStatus: 'running',
       })
-      this.#ensureLease(existing, issue.id, claim.lease_token)
-      if (rework !== '') this.#applyRework(existing.id, rework)
+      this.#ensureLease(existing, input.issueId, claim.lease_token)
+      if (this.#localExecutionRunning(existing)) return false
+      // A pending rework IS the one thing that has to run, and only after the
+      // claim above succeeded.
+      if (instructions !== '') {
+        this.#applyRework(existing.id, instructions)
+        return false
+      }
+      // A card whose run already finished and whose outcome the hub has not
+      // accepted is retried by the sweep, not re-run here.
+      if (previous?.pendingSettle !== undefined) return false
+      // Nothing runs here and nothing waits to be written back: a human retry
+      // moved the issue back to `assigned` while this card sat finished, and
+      // this is the one entry that starts it again.
+      this.#requestRun(existing.id)
       return false
     }
 
+    // The guard above keeps these two defined on this path.
+    if (agent === undefined || issue === undefined) return false
     const mirror: MirrorAgent = {
       agentId: this.#hubAgentIdOf(agent.memberId) ?? agent.memberId,
       memberId: agent.memberId,
@@ -699,6 +804,65 @@ export class TeamSyncService {
     }
     this.#requestRun(task.id)
     return true
+  }
+
+  /**
+   * Ask the hub for one issue, presenting this Host's previous attempt only on a
+   * reconnect.
+   *
+   * A reconnect is the one moment the old credentials are still true: the run is
+   * executing here and this Host still holds the lease, so the hub re-establishes
+   * that attempt instead of minting a new one (protocol section 5). Every other
+   * claim is fresh and the hub mints the attempt id itself, so presenting one it
+   * never granted would only ask it to adopt this Host's guess.
+   * @param issueId - the issue to claim.
+   * @param task - the card that mirrors it, when it has one.
+   * @param link - that card's stored linkage.
+   * @returns the lease the hub granted, or undefined when another attempt holds the issue.
+   */
+  async #claimFromHub(
+    issueId: string,
+    task: TaskRecord | undefined,
+    link: TeamIssueLink | undefined,
+  ): Promise<HubClaim | undefined> {
+    try {
+      return await this.#options.hub.claim(issueId, this.#reconnectCredentials(task, link))
+    } catch (error) {
+      // The loser of a claim race is not a failure: the hub already granted this
+      // issue to an attempt that is executing it, so this caller has nothing to
+      // do and must not put a false error on the operator's screen.
+      if (isClaimHeldElsewhere(error)) return undefined
+      throw error
+    }
+  }
+
+  /**
+   * The credentials one claim presents, which is non-empty only on a reconnect.
+   * @param task - the card that mirrors the issue, when it has one.
+   * @param link - that card's stored linkage.
+   * @returns the attempt and lease to present, or nothing for a fresh claim.
+   */
+  #reconnectCredentials(task: TaskRecord | undefined, link: TeamIssueLink | undefined): {
+    execution_attempt_id?: string
+    lease_token?: string
+  } {
+    if (task === undefined || link === undefined) return {}
+    if (link.attemptId === undefined || link.leaseToken === undefined) return {}
+    if (!this.#localExecutionRunning(task)) return {}
+    return { execution_attempt_id: link.attemptId, lease_token: link.leaseToken }
+  }
+
+  /**
+   * Whether this Host still runs one of the card's executions.
+   *
+   * The board closes an execution by stamping its end instant, so an execution
+   * with no end is what "running here" means: the card's column can read
+   * `running` for a declaration a human made, and that starts nothing.
+   * @param task - the card to read.
+   * @returns whether one of its executions is still open.
+   */
+  #localExecutionRunning(task: TaskRecord): boolean {
+    return task.executions.some(execution => execution.endedAt === undefined)
   }
 
   /**
@@ -824,18 +988,20 @@ export class TeamSyncService {
       this.#options.log?.('rework requested for an issue this Host does not mirror: ' + issueId)
       return
     }
-    // A rework is a NEW attempt and needs a new attempt id: presenting the old one
-    // would ask the hub to re-establish a finished attempt.
-    const attemptId = this.#options.uuid()
+    if (instructions === '') {
+      // A rejection without instructions is a malformed signal: claiming the
+      // issue for it would take work this Host cannot redo.
+      this.#recordError(task.id, new Error('the rework request carried no instructions, so nothing was re-run'))
+      return
+    }
+    // The claim goes through the SAME per-issue lock a sweep uses (protocol
+    // amendment A4 point 5). The hub sends `issue.updated` and `issue.rework` back
+    // to back, so the sweep and this event otherwise claim one issue twice: the
+    // hub grants it to one of them and the loser records a race the operator
+    // would read as a failure. A rework claim is fresh, so the hub mints the new
+    // attempt id itself and nothing here presents a dead one.
     try {
-      const claim = await this.#options.hub.claim(issueId, { execution_attempt_id: attemptId })
-      this.#writeLink(task.id, {
-        attemptId: claim.execution_attempt_id,
-        leaseToken: claim.lease_token,
-        leaseExpiresAt: claim.lease_expires_at,
-        hubStatus: 'running',
-      })
-      this.#ensureLease(task, issueId, claim.lease_token)
+      await this.#claimExclusively(issueId, () => this.#claimOnce({ issueId, rework: instructions }))
     } catch (error) {
       // Claim failed: nothing runs. The instructions are not applied and the
       // card is untouched, because a rework the hub did not authorize must not
@@ -843,11 +1009,6 @@ export class TeamSyncService {
       this.#recordError(task.id, error)
       return
     }
-    if (instructions === '') {
-      this.#recordError(task.id, new Error('the rework request carried no instructions, so nothing was re-run'))
-      return
-    }
-    this.#applyRework(task.id, instructions)
     this.#publish()
   }
 
@@ -972,8 +1133,16 @@ export class TeamSyncService {
     const current = readTaskIssueLink(task)
     if (current === undefined) return
     const merged: TeamIssueLink = { ...current, ...patch }
+    const payload = toPayload(merged)
+    // A member this patch sets to undefined is one the card has to FORGET (the
+    // attempt of a settled run, a settlement the hub has taken). `toPayload`
+    // drops absent members to keep a merge from storing them, so the deletions
+    // are put back here: the board's own merge removes an explicit undefined.
+    for (const key of Object.keys(patch) as Array<keyof TeamIssueLink>) {
+      if (patch[key] === undefined) payload[key] = undefined
+    }
     try {
-      this.#options.host.integration.write(taskId, toPayload(merged))
+      this.#options.host.integration.write(taskId, payload)
     } catch (error) {
       this.#options.log?.('integration write failed for ' + taskId, error)
       return
@@ -993,12 +1162,10 @@ export class TeamSyncService {
   #agentFor(issue: HubIssue): BoundAgent | undefined {
     const hubAgentId = issue.assignee_agent_id
     if (hubAgentId === undefined) return undefined
-    const known = this.#hubAgents.get(hubAgentId)
-    if (known !== undefined) return known
-    // A hub that answers registration without agent records still filters by
-    // assignee_host_id, so an issue reaching this point is offered to this Host;
-    // the agent is then resolved by the name it registered under.
-    return this.#agents.find(agent => agent.name === hubAgentId)
+    // Only a hub agent record this Host learned at registration may be executed
+    // here: an id it cannot resolve is either another machine's agent or one the
+    // hub refused in `conflicts`, and neither may run on this machine.
+    return this.#hubAgents.get(hubAgentId)
   }
 
   #hubAgentIdOf(memberId: string): string | undefined {
@@ -1006,6 +1173,14 @@ export class TeamSyncService {
       if (agent.memberId === memberId) return hubId
     }
     return undefined
+  }
+
+  /**
+   * The problems the hub's registration answer leaves behind, one per clash.
+   * @returns the visible lines the settings section renders.
+   */
+  #conflictProblems(): string[] {
+    return [...this.#agentConflicts].map(([name, reason]) => name + ' is not registered: ' + reason)
   }
 
   #publish(): void {
@@ -1048,6 +1223,35 @@ function readAgentRecords(registered: unknown): Array<{ id: string; name: string
     }
   }
   return records
+}
+
+/** Read the agent names one registration answer reported as already owned elsewhere. */
+function readAgentConflicts(answer: unknown): Array<{ name: string; reason: string }> {
+  if (typeof answer !== 'object' || answer === null) return []
+  const conflicts = (answer as { conflicts?: unknown }).conflicts
+  if (!Array.isArray(conflicts)) return []
+  const rows: Array<{ name: string; reason: string }> = []
+  for (const entry of conflicts) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const row = entry as Record<string, unknown>
+    if (typeof row.name !== 'string' || row.name === '') continue
+    rows.push({ name: row.name, reason: typeof row.reason === 'string' ? row.reason : 'the hub reported a conflict' })
+  }
+  return rows
+}
+
+/**
+ * Whether one claim refusal means another attempt is already executing the issue.
+ *
+ * Two callers claiming the same issue is a race the hub resolves, not a fault:
+ * the loser is told the lease belongs to another attempt (409 `LEASE_HELD_BY_OTHER`,
+ * or the bare 409 of a claim that just lost). Recording that as a failure would
+ * put a false error on a card that is running exactly as it should.
+ * @param error - the refusal the claim answered with.
+ * @returns whether this refusal is a lost race.
+ */
+function isClaimHeldElsewhere(error: unknown): boolean {
+  return error instanceof HubError && (error.status === 409 || error.code === 'LEASE_HELD_BY_OTHER')
 }
 
 /** One error as the summary and the log carry it. */

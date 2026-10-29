@@ -3,23 +3,30 @@
  *
  * Protocol amendment A4 point 9 freezes one request and one response example per
  * Host endpoint in the hub's own repository (`team-hub/contract/<interface>.json`),
- * and both sides test against the same files so a drift on either side fails a
- * test. This module is the fake hub's reading half: it loads the samples, matches
- * one outgoing call to its sample by method and path template, and compares what
- * the provider actually sent with what the sample shows.
+ * plus the WebSocket handshake and the event catalogue, and both sides test
+ * against the same files so a drift on either side fails a test. This module is
+ * the fake hub's reading half: it loads the samples, matches one outgoing call to
+ * its sample by method and path template, and compares what the provider actually
+ * sent with what the sample shows.
  *
- * The samples are EXAMPLES, not schemas: they carry optional fields only where the
- * example needed one, so the comparison is deliberately two-sided with a small,
- * named allowlist of protocol-optional members an example does not need to show
- * (a reconnect's attempt credentials, a failed settlement's error). Everything the
- * provider invents — a renamed field such as `presetId` — is reported.
+ * The samples are EXAMPLES, not schemas, so the comparison is deliberately
+ * two-sided with three named allowances: a member the specification makes optional
+ * may be absent (`OPTIONAL_BODY_KEYS`), a member whose interior is the Host's own
+ * document is compared only as an object (`OPEN_MEMBERS`), and a member the
+ * example shows as `null` is nullable, so any value is accepted there.
+ *
+ * The comparison is recursive. An object is compared member by member at every
+ * depth, and an array element by element: an element may only carry the members
+ * the example used somewhere in that array, and MUST carry the ones every example
+ * element showed. That is what catches a renamed field inside `agents[]` or an
+ * issue object that lost a member, instead of only checking the outermost keys.
  *
  * `Authorization` values in the samples are placeholders, so only the header's
  * presence and its `Bearer ` prefix are compared.
  *
  * @module dsh-task-board-team/tests/support/contract
  */
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -66,18 +73,30 @@ export interface ContractSet {
  * Protocol-optional members one example does not need to show.
  *
  * Each entry names keys the wire specification explicitly makes optional for that
- * endpoint, so their absence from the example says nothing about their legality.
+ * endpoint, by their path inside the body: `error` is a member of the body, while
+ * `options[].description` is a member of every element of `options`.
  */
 export const OPTIONAL_BODY_KEYS: Readonly<Record<string, readonly string[]>> = {
   'issues.claim': ['execution_attempt_id', 'lease_token'],
   'issues.settle': ['error'],
   'hosts.register': [],
+  'questions.create': ['options[].description'],
+}
+
+/**
+ * Members whose interior is the Host's own document rather than the hub's shape.
+ *
+ * `verification_evidence` is whatever this Host verified and the hub stores
+ * opaquely, so the example fixes only that the member is an object.
+ */
+export const OPEN_MEMBERS: Readonly<Record<string, readonly string[]>> = {
+  'issues.settle': ['verification_evidence'],
 }
 
 /**
  * Read every sample the hub side published.
  * @param dir - directory to read; defaults to {@link CONTRACT_DIR}.
- * @returns the samples, or an empty set with `present: false` when none exist.
+ * @returns the samples, and `present: false` when the directory holds none.
  */
 export function loadContractSamples(dir: string = CONTRACT_DIR): ContractSet {
   let names: string[]
@@ -122,7 +141,90 @@ export function loadContractSamples(dir: string = CONTRACT_DIR): ContractSet {
   return { present: samples.length > 0, samples }
 }
 
-function isRecord(value: unknown): boolean {
+/** One handshake the hub refuses, as `ws-handshake.json` lists it. */
+export interface RejectedHandshake {
+  case: string
+  example: string
+  status: number
+  error: string
+}
+
+/** The frozen team-channel handshake sample. */
+export interface HandshakeSample {
+  /** URL template the hub serves the channel on. */
+  url: string
+  /** Upgrade headers a Host handshake has to present. */
+  headers: Record<string, string>
+  /** The handshakes the hub answers with a refusal. */
+  rejected: RejectedHandshake[]
+}
+
+/** One event of the server catalogue, with the payload the hub really sends. */
+export interface EventSample {
+  event: string
+  recipient: string
+  payload: Record<string, unknown>
+}
+
+function readJson(file: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+}
+
+/**
+ * Read the handshake sample.
+ *
+ * A checkout without the sample fails here rather than skipping: the channel
+ * headers are an interface the hub and the Host share, so "no sample" must not
+ * read as "nothing to check" (protocol amendment A4 point 9).
+ * @param dir - directory holding the samples; defaults to {@link CONTRACT_DIR}.
+ * @returns the URL template, the headers and the refused variants.
+ */
+export function loadHandshakeSample(dir: string = CONTRACT_DIR): HandshakeSample {
+  const record = readJson(join(dir, 'ws-handshake.json'))
+  const headers: Record<string, string> = {}
+  if (isRecord(record.headers)) {
+    for (const [name, value] of Object.entries(record.headers)) headers[name] = String(value)
+  }
+  const rejected: RejectedHandshake[] = []
+  if (Array.isArray(record.rejected)) {
+    for (const entry of record.rejected) {
+      if (!isRecord(entry)) continue
+      rejected.push({
+        case: String(entry.case ?? ''),
+        example: String(entry.example ?? ''),
+        status: typeof entry.status === 'number' ? entry.status : 0,
+        error: String(entry.error ?? ''),
+      })
+    }
+  }
+  return { url: String(record.url ?? ''), headers, rejected }
+}
+
+/**
+ * Read the server event catalogue.
+ *
+ * The fake hub pushes events out of this catalogue instead of out of payloads
+ * written by hand, so an event or a payload shape the hub does not send cannot
+ * pass here.
+ * @param dir - directory holding the samples; defaults to {@link CONTRACT_DIR}.
+ * @returns every event by its name.
+ */
+export function loadEventCatalogue(dir: string = CONTRACT_DIR): Map<string, EventSample> {
+  const record = readJson(join(dir, 'ws-events.json'))
+  const events = new Map<string, EventSample>()
+  if (!Array.isArray(record.events)) return events
+  for (const entry of record.events) {
+    if (!isRecord(entry) || typeof entry.event !== 'string') continue
+    events.set(entry.event, {
+      event: entry.event,
+      recipient: String(entry.recipient ?? ''),
+      payload: isRecord(entry.payload) ? entry.payload : {},
+    })
+  }
+  return events
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
@@ -159,6 +261,21 @@ export interface ActualCall {
   path: string
 }
 
+/** How one member's absence or addition is judged while the comparison recurses. */
+interface CompareContext {
+  /** Body paths the specification makes optional. */
+  optional: readonly string[]
+  /** Body paths whose interior is not the hub's shape. */
+  open: readonly string[]
+  /** Whether an undeclared member is reported (a request) or tolerated (a response). */
+  closed: boolean
+}
+
+/** The path of one member, relative to its body or array element. */
+function memberPath(path: string, key: string): string {
+  return path === '' ? key : path + '.' + key
+}
+
 /**
  * Compare one real call with its sample.
  * @param sample - the frozen sample.
@@ -167,20 +284,23 @@ export interface ActualCall {
  */
 export function compareRequest(sample: ContractSample, actual: ActualCall): string[] {
   const problems: string[] = []
-  const optional = OPTIONAL_BODY_KEYS[sample.interface] ?? []
+  const context: CompareContext = {
+    optional: OPTIONAL_BODY_KEYS[sample.interface] ?? [],
+    open: OPEN_MEMBERS[sample.interface] ?? [],
+    closed: true,
+  }
   compareHeaders(sample, actual, problems)
-  compareKeys(sample.request.query ?? {}, actual.query, sample.interface + ' query', optional, problems)
+  compareObject(sample.request.query ?? {}, actual.query, sample.interface + ' query', '', context, problems)
   const declaredBody = sample.request.body ?? {}
   if (isEmptyBodyExample(sample)) {
     // An example that shows `{}` for a POST still fixes which optional members the
     // specification allows there, and nothing else.
     for (const key of Object.keys(actual.body)) {
-      if (!optional.includes(key)) problems.push(sample.interface + ' body.' + key + ' is not part of this interface')
+      if (!context.optional.includes(key)) problems.push(sample.interface + ' body.' + key + ' is not part of this interface')
     }
     return problems
   }
-  compareKeys(declaredBody, actual.body, sample.interface + ' body', optional, problems)
-  compareShape(declaredBody, actual.body, sample.interface + ' body', problems)
+  compareObject(declaredBody, actual.body, sample.interface + ' body', '', context, problems)
   return problems
 }
 
@@ -206,54 +326,168 @@ function compareHeaders(sample: ContractSample, actual: ActualCall, problems: st
   }
 }
 
-function compareKeys(
+/**
+ * Compare one object with the object its sample shows, member by member.
+ * @param declared - the example.
+ * @param actual - the value really sent or answered.
+ * @param where - human-readable position, for the message.
+ * @param path - the same position as a body path, so allowances can match it.
+ * @param context - which allowances this interface declares.
+ * @param problems - collected differences.
+ */
+function compareObject(
   declared: Record<string, unknown>,
   actual: Record<string, unknown>,
   where: string,
-  optional: readonly string[],
+  path: string,
+  context: CompareContext,
   problems: string[],
 ): void {
-  for (const key of Object.keys(actual)) {
-    if (key in declared) continue
-    if (optional.includes(key)) continue
-    problems.push(where + '.' + key + ' is not part of this interface')
+  if (context.closed) {
+    for (const key of Object.keys(actual)) {
+      if (key in declared) continue
+      if (context.optional.includes(memberPath(path, key))) continue
+      problems.push(where + '.' + key + ' is not part of this interface')
+    }
   }
-  for (const key of Object.keys(declared)) {
-    if (key in actual) continue
-    if (optional.includes(key)) continue
-    problems.push(where + '.' + key + ' is missing')
+  for (const [key, value] of Object.entries(declared)) {
+    const mine = actual[key]
+    if (mine === undefined) {
+      if (!context.optional.includes(memberPath(path, key))) problems.push(where + '.' + key + ' is missing')
+      continue
+    }
+    compareValue(value, mine, where + '.' + key, memberPath(path, key), context, problems)
   }
 }
 
-function compareShape(declared: Record<string, unknown>, actual: Record<string, unknown>, where: string, problems: string[]): void {
-  for (const [key, value] of Object.entries(declared)) {
-    const mine = actual[key]
-    if (mine === undefined) continue
-    const wanted = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value
-    const got = Array.isArray(mine) ? 'array' : mine === null ? 'null' : typeof mine
-    if (wanted !== got) problems.push(where + '.' + key + ' is ' + got + ', the sample shows ' + wanted)
+/** The JSON kind of one value, as the messages name it. */
+function kindOf(value: unknown): string {
+  if (Array.isArray(value)) return 'array'
+  if (value === null) return 'null'
+  return typeof value
+}
+
+/**
+ * Compare one value with the value its sample shows, recursing into objects and
+ * into every element of an array.
+ * @param declared - the example value.
+ * @param actual - the value really sent or answered.
+ * @param where - human-readable position, for the message.
+ * @param path - the same position as a body path, so allowances can match it.
+ * @param context - which allowances this interface declares.
+ * @param problems - collected differences.
+ */
+function compareValue(
+  declared: unknown,
+  actual: unknown,
+  where: string,
+  path: string,
+  context: CompareContext,
+  problems: string[],
+): void {
+  // A member whose interior is the Host's own document: the example fixes that it
+  // is an object and nothing about what it holds.
+  if (context.open.includes(path)) return
+  if (Array.isArray(declared)) {
+    if (!Array.isArray(actual)) {
+      problems.push(where + ' is ' + kindOf(actual) + ', the sample shows array')
+      return
+    }
+    compareArray(declared, actual, where, path, context, problems)
+    return
+  }
+  if (isRecord(declared)) {
+    if (!isRecord(actual)) {
+      problems.push(where + ' is ' + kindOf(actual) + ', the sample shows object')
+      return
+    }
+    compareObject(declared, actual, where, path, context, problems)
+    return
+  }
+  // A member the example shows as null is nullable: the sample fixes its name and
+  // its presence, while what fills it belongs to the live value.
+  if (declared === null || actual === null) return
+  if (typeof declared !== typeof actual) {
+    problems.push(where + ' is ' + kindOf(actual) + ', the sample shows ' + kindOf(declared))
+  }
+}
+
+/**
+ * Compare every element of an array with the elements its sample shows.
+ *
+ * A member is allowed at an element when the example used it anywhere in that
+ * array, and required when every example element carried it: that is the only
+ * reading of an example list that covers both a member the protocol makes
+ * optional and a rename the hub or the Host would otherwise ship unnoticed.
+ * @param declared - the example array.
+ * @param actual - the array really sent or answered.
+ * @param where - human-readable position, for the message.
+ * @param path - the same position as a body path, so allowances can match it.
+ * @param context - which allowances this interface declares.
+ * @param problems - collected differences.
+ */
+function compareArray(
+  declared: readonly unknown[],
+  actual: readonly unknown[],
+  where: string,
+  path: string,
+  context: CompareContext,
+  problems: string[],
+): void {
+  if (declared.length === 0) return
+  const examples = declared.filter(isRecord)
+  const allowed = new Set(examples.flatMap(example => Object.keys(example)))
+  const required = examples.length === 0
+    ? []
+    : Object.keys(examples[0]).filter(key => examples.every(example => key in example))
+  const elementPath = path + '[]'
+  for (const [index, mine] of actual.entries()) {
+    const at = where + '[' + String(index) + ']'
+    const example = declared[index] ?? declared[declared.length - 1]
+    if (!isRecord(example)) {
+      compareValue(example, mine, at, elementPath, context, problems)
+      continue
+    }
+    if (!isRecord(mine)) {
+      problems.push(at + ' is ' + kindOf(mine) + ', the sample shows object')
+      continue
+    }
+    const row = mine as Record<string, unknown>
+    for (const key of Object.keys(row)) {
+      if (allowed.has(key) || context.optional.includes(memberPath(elementPath, key))) continue
+      problems.push(at + '.' + key + ' is not part of this interface')
+    }
+    for (const key of required) {
+      if (key in row || context.optional.includes(memberPath(elementPath, key))) continue
+      problems.push(at + '.' + key + ' is missing')
+    }
+    for (const [key, value] of Object.entries(row)) {
+      const owner = examples.find(entry => key in entry)
+      if (owner === undefined) continue
+      compareValue(owner[key], value, at + '.' + key, memberPath(elementPath, key), context, problems)
+    }
   }
 }
 
 /**
  * Compare one response body with the sample that describes it.
+ *
+ * A response is compared one-sided: every member the example shows has to be
+ * there, with the example's kind, while a member the hub added after the example
+ * was frozen is not a drift in the Host.
  * @param sample - the frozen sample.
  * @param body - the body the fake hub is about to answer with.
- * @returns one message per declared member that is missing.
+ * @returns one message per declared member that is missing or of another kind.
  */
 export function compareResponse(sample: ContractSample, body: Record<string, unknown> | undefined): string[] {
   const declared = sample.response.body
   if (declared === undefined || body === undefined) return []
   const problems: string[] = []
-  for (const [key, value] of Object.entries(declared)) {
-    if (!(key in body)) {
-      problems.push(sample.interface + ' response.' + key + ' is missing')
-      continue
-    }
-    const wanted = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value
-    const mine = body[key]
-    const got = Array.isArray(mine) ? 'array' : mine === null ? 'null' : typeof mine
-    if (wanted !== got) problems.push(sample.interface + ' response.' + key + ' is ' + got + ', the sample shows ' + wanted)
+  const context: CompareContext = {
+    optional: [],
+    open: OPEN_MEMBERS[sample.interface] ?? [],
+    closed: false,
   }
+  compareObject(declared, body, sample.interface + ' response', '', context, problems)
   return problems
 }

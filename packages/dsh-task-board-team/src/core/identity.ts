@@ -12,6 +12,7 @@
  */
 import type { HubIssueStatus } from './hub-protocol.ts'
 import type { TaskBoardExtensionPayload } from './contract.ts'
+import type { SettleRequestBody } from './settlement.ts'
 import type { TaskRecord } from './task-record.ts'
 
 /** Extension id: also the key of this provider's integration payload. */
@@ -43,6 +44,14 @@ export interface TeamIssueLink {
   reviewer?: string
   /** Last provider-side failure worth keeping on the card. */
   lastError?: string
+  /**
+   * A settlement the hub has not accepted yet.
+   *
+   * Recorded before the write-back is sent: a hub that refuses it (a lapsed
+   * attempt answers 412) must not lose what the run produced, so the next sweep
+   * or reconnect retries this same body and the hub's own gates still decide.
+   */
+  pendingSettle?: SettleRequestBody
 }
 
 function text(value: unknown): string | undefined {
@@ -85,7 +94,32 @@ export function readTeamIssueLink(payload: TaskBoardExtensionPayload | undefined
   if (reviewer !== undefined) link.reviewer = reviewer
   const lastError = text(payload.lastError)
   if (lastError !== undefined) link.lastError = lastError
+  const pendingSettle = readPendingSettle(payload.pendingSettle)
+  if (pendingSettle !== undefined) link.pendingSettle = pendingSettle
   return link
+}
+
+/**
+ * Read one recorded settlement out of an opaque payload.
+ * @param value - the stored member, or undefined.
+ * @returns the body to retry, or undefined when it carries no usable outcome.
+ */
+function readPendingSettle(value: unknown): SettleRequestBody | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const row = value as Record<string, unknown>
+  const outcome = row.outcome === 'succeeded' || row.outcome === 'failed' ? row.outcome : undefined
+  const summary = text(row.summary)
+  if (outcome === undefined || summary === undefined) return undefined
+  const pending: SettleRequestBody = { outcome, summary }
+  const error = text(row.error)
+  if (error !== undefined) pending.error = error
+  const attemptId = text(row.execution_attempt_id)
+  if (attemptId !== undefined) pending.execution_attempt_id = attemptId
+  const evidence = row.verification_evidence
+  if (typeof evidence === 'object' && evidence !== null && !Array.isArray(evidence)) {
+    pending.verification_evidence = evidence as Record<string, unknown>
+  }
+  return pending
 }
 
 /**
@@ -116,6 +150,7 @@ export function toPayload(link: TeamIssueLink): TaskBoardExtensionPayload {
   if (link.assignee !== undefined) payload.assignee = link.assignee
   if (link.reviewer !== undefined) payload.reviewer = link.reviewer
   if (link.lastError !== undefined) payload.lastError = link.lastError
+  if (link.pendingSettle !== undefined) payload.pendingSettle = { ...link.pendingSettle }
   return payload
 }
 

@@ -3,12 +3,13 @@
  *
  * Two things are checked here. First, comment authors read as names instead of
  * ids (S5). Second, the frozen samples under `team-hub/contract/` are the
- * authority for the request shapes this provider sends: when a checkout carries
- * them the fake hub validates every Host call against them, so a renamed field on
- * either side fails this suite instead of failing in production.
+ * authority for the request and response shapes this provider speaks: the fake
+ * hub validates every Host call against them in both directions and at every
+ * depth, and the assertions below name what the samples have to contain, so a
+ * checkout that lost them fails the suite instead of validating nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { compareRequest, loadContractSamples } from './support/contract.ts'
+import { compareRequest, compareResponse, loadContractSamples } from './support/contract.ts'
 import { flush, makeHarness, type Harness } from './support/harness.ts'
 
 let harness: Harness | undefined
@@ -81,10 +82,10 @@ describe('comment authors', () => {
 
 describe('frozen wire samples', () => {
   it('operator sees every Host call match the samples this checkout carries', async () => {
-    // Given a checkout whose hub side may or may not publish the samples
+    // Given a checkout that publishes the hub's frozen samples
     const contracts = loadContractSamples()
 
-    // When a full claim, question, comment and settlement flow runs
+    // When a full claim, comment and settlement flow runs
     harness = makeHarness()
     const taskId = await claimedCard(harness)
     harness.hub.push('comment.created', {
@@ -94,10 +95,29 @@ describe('frozen wire samples', () => {
     harness.board.extensions.emitExecutionSettled({ taskId, executionId: harness.tasks()[0].executions[0].id, outcome: 'succeeded' })
     await flush()
 
-    // Then no call drifted from its sample (an absent directory validates nothing
-    // and says so, which is why the assertion also names the sample count)
+    // Then the samples are really there, and no call drifted from its sample
+    expect(contracts.present).toBe(true)
     expect(harness.hub.contractProblems).toEqual([])
-    expect(harness.hub.contract.present).toBe(contracts.present)
+  })
+
+  it('operator sees the comment thread answer the comments-list sample', async () => {
+    // Given a claimed issue the bound agent commented on
+    harness = makeHarness()
+    const taskId = await claimedCard(harness)
+    await harness.service().postComment({ taskId, text: 'Starting the run, will report back.' })
+
+    // When this Host reads the thread back through the client it also posts with
+    const thread = await harness.hubClient.comments('issue_1')
+
+    // Then the hub served the frozen comments-list shape, unchanged
+    expect(thread).toHaveLength(1)
+    expect(thread[0]).toMatchObject({
+      issue_id: 'issue_1',
+      author_type: 'agent',
+      author_agent_id: 'agent_1',
+      content: 'Starting the run, will report back.',
+    })
+    expect(harness.hub.contractProblems).toEqual([])
   })
 
   it('operator sees a renamed field caught by the sample comparison', () => {
@@ -120,10 +140,29 @@ describe('frozen wire samples', () => {
       body: { hostname: 'host', clientVersion: '0.4.12', agents: [{ name: 'builder', presetId: 'liangshen' }] },
     })
 
-    // Then both renamed fields are named, and nothing else is
+    // Then both renamed fields are named at the depth they were renamed at
     expect(problems).toEqual([
       'hosts.register body.clientVersion is not part of this interface',
       'hosts.register body.client_version is missing',
+      'hosts.register body.agents[0].presetId is not part of this interface',
+      'hosts.register body.agents[0].preset_id is missing',
     ])
+  })
+
+  it('operator sees a response element that lost a field caught by the sample comparison', () => {
+    // Given the frozen issue list sample and the element it shows
+    const sample = loadContractSamples().samples.find(entry => entry.interface === 'issues.list')
+    if (sample === undefined) throw new Error('this checkout publishes no issues.list sample')
+    const issues = sample.response.body?.issues
+    if (!Array.isArray(issues) || issues.length === 0) throw new Error('the issues.list sample shows no issue')
+    const shown = issues[0] as Record<string, unknown>
+    const dropped: Record<string, unknown> = { ...shown }
+    delete dropped.has_lease
+
+    // When the hub answers two issues, the second of which lost that member
+    const problems = compareResponse(sample, { issues: [shown, dropped] })
+
+    // Then the loss is named on the element that lost it, and only there
+    expect(problems).toEqual(['issues.list response.issues[1].has_lease is missing'])
   })
 })

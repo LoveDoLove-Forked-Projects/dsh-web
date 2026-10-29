@@ -36,12 +36,22 @@ async function claimedCard(current: Harness): Promise<string> {
  * the ledger AND the board's own fanout tells the provider, which is what clears
  * the hub's lease and lets a rework claim succeed.
  */
-async function settleOnce(current: Harness, taskId: string): Promise<void> {
+async function settleOnce(
+  current: Harness,
+  taskId: string,
+  outcome: 'succeeded' | 'failed' = 'succeeded',
+  error?: string,
+): Promise<void> {
   const task = current.tasks().find(candidate => candidate.id === taskId)
   const execution = task?.executions[task.executions.length - 1]
   if (task === undefined || execution === undefined) throw new Error('the card has no execution to settle')
-  current.ledger.settle(taskId, execution.id, 'succeeded')
-  current.board.extensions.emitExecutionSettled({ taskId, executionId: execution.id, outcome: 'succeeded' })
+  current.ledger.settle(taskId, execution.id, outcome, error)
+  current.board.extensions.emitExecutionSettled({
+    taskId,
+    executionId: execution.id,
+    outcome,
+    ...(error === undefined ? {} : { error }),
+  })
   await flush()
 }
 
@@ -104,24 +114,93 @@ describe('mention delivery', () => {
 })
 
 describe('rework', () => {
-  it('operator sees a review rejection re-run the same session after the hub granted an attempt', async () => {
+  it('operator sees a review rejection re-run the same session under a freshly minted attempt', async () => {
     // Given a claimed issue whose card executed once
     harness = makeHarness()
     const taskId = await claimedCard(harness)
+    const first = readTaskIssueLink(harness.tasks()[0])?.attemptId
+    expect(first).toBe('attempt_1')
     await settleOnce(harness, taskId)
-    const before = readTaskIssueLink(harness.tasks()[0])?.attemptId
 
     // When the reviewer rejects with instructions
     harness.hub.push('issue.rework', { issue_id: 'issue_1', instructions: 'add the missing test', reviewer_member_id: 'mem_reviewer' })
     await flush()
 
-    // Then a fresh attempt was claimed and the card re-ran with those instructions
-    const claim = harness.hub.calls.filter(call => call.path.endsWith('/claim')).pop()
-    const presented = claim?.body as { execution_attempt_id?: string } | undefined
-    expect(typeof presented?.execution_attempt_id).toBe('string')
-    expect(presented?.execution_attempt_id).not.toBe(before)
-    const rerun = harness.tasks()[0].executions[harness.tasks()[0].executions.length - 1]
-    expect(rerun.rework?.instructions).toBe('add the missing test')
+    // Then the claim was fresh, because a rework is a new attempt and the hub
+    // mints its id (protocol amendment A4 point 5): the finished attempt's
+    // credentials are not presented again
+    const claims = harness.hub.calls.filter(call => call.path.endsWith('/claim'))
+    const presented = claims[claims.length - 1]?.body as { execution_attempt_id?: string } | undefined
+    expect(presented?.execution_attempt_id).toBeUndefined()
+    // And the card carried the attempt the hub minted for it: the write-back of
+    // the reworked run names that attempt, never the finished one
+    const settles = harness.hub.calls.filter(call => call.path.endsWith('/settle'))
+    const settled = settles[settles.length - 1]?.body as { execution_attempt_id?: string } | undefined
+    expect(settled?.execution_attempt_id).toBe('attempt_2')
+    // And the card re-ran in its own session with the reviewer's instructions
+    const executions = harness.tasks()[0].executions
+    expect(executions).toHaveLength(2)
+    expect(executions[executions.length - 1].rework?.instructions).toBe('add the missing test')
+  })
+
+  it('operator sees the rejection event and a sweep race one claim and record no error', async () => {
+    // Given a mirrored card that already ran, and an issue the reviewer sent back
+    harness = makeHarness()
+    const taskId = await claimedCard(harness)
+    await settleOnce(harness, taskId)
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    issue.status = 'assigned'
+    issue.reworkInstructions = 'add the missing test'
+
+    const claimsBefore = harness.hub.calls.filter(call => call.path.endsWith('/claim')).length
+
+    // When the sweep's own claim is still in flight and the rejection event asks
+    // for the same issue (the two signals the hub sends back to back)
+    harness.hub.holdNextClaim()
+    const swept = harness.service().sweep()
+    await flush()
+    harness.hub.push('issue.updated', { issue: { id: 'issue_1' }, changed_fields: ['status', 'rework_instructions'] })
+    harness.hub.push('issue.rework', { issue_id: 'issue_1', instructions: 'add the missing test', reviewer_member_id: 'mem_reviewer' })
+    await flush()
+    harness.hub.releaseClaim()
+    await swept
+    await vi.advanceTimersByTimeAsync(5_000)
+    await flush()
+
+    // Then the in-flight claim was the only one, and the path that found it is
+    // not reported as a failure anywhere the operator can see
+    expect(harness.hub.calls.filter(call => call.path.endsWith('/claim'))).toHaveLength(claimsBefore + 1)
+    expect(harness.tasks()).toHaveLength(1)
+    expect(harness.tasks()[0].executions).toHaveLength(2)
+    expect(harness.service().summary().connection.lastError).toBeUndefined()
+    expect(harness.service().summary().cards[taskId]?.lastError).toBeUndefined()
+    expect(readTaskIssueLink(harness.tasks()[0])?.lastError).toBeUndefined()
+  })
+
+  it('operator sees a rejection on an issue the hub closed recorded instead of run', async () => {
+    // Given a card whose run failed and whose outcome the hub accepted
+    harness = makeHarness()
+    const taskId = await claimedCard(harness)
+    await settleOnce(harness, taskId, 'failed', 'the acceptance command exited 1')
+    const issue = harness.hub.issues.get('issue_1')
+    if (issue === undefined) throw new Error('the fake hub lost the issue')
+    expect(issue.status).toBe('failed')
+
+    // When a rejection arrives for that closed issue
+    harness.hub.push('issue.rework', { issue_id: 'issue_1', instructions: 'add the missing test', reviewer_member_id: 'mem_reviewer' })
+    await flush()
+
+    // Then the hub refused the impossible transition and nothing ran here
+    expect(harness.tasks()[0].executions).toHaveLength(1)
+    expect(String(harness.service().summary().cards[taskId]?.lastError)).toContain('INVALID_STATE_TRANSITION')
+
+    // And the same gate holds for an issue the hub parked in todo
+    issue.status = 'todo'
+    harness.hub.push('issue.rework', { issue_id: 'issue_1', instructions: 'add the missing test', reviewer_member_id: 'mem_reviewer' })
+    await flush()
+    expect(issue.status).toBe('todo')
+    expect(harness.tasks()[0].executions).toHaveLength(1)
   })
 
   it('operator sees a pending rework applied when a sweep claims the card instead of the event', async () => {

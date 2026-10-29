@@ -95,6 +95,8 @@ export function scriptedGateway() {
 /** The provider-side state one harness exposes. */
 export interface Harness {
   hub: FakeHub
+  /** The REST client the provider itself speaks the hub through. */
+  hubClient: HubClient
   board: TaskBoardHostService
   ledger: HostTaskLedger
   agents: BoundAgent[]
@@ -169,13 +171,15 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
   let service: TeamSyncService | undefined
   let runCounter = 0
 
+  const hubClient = new HubClient({
+    hubUrl: () => 'https://hub.example.com',
+    teamId: () => 'team_1',
+    token: async () => options.token ?? 'th_host_token',
+    fetch: hub.fetch,
+  })
+
   const extension = createTeamExtension({
-    hub: new HubClient({
-      hubUrl: () => 'https://hub.example.com',
-      teamId: () => 'team_1',
-      token: async () => options.token ?? 'th_host_token',
-      fetch: hub.fetch,
-    }),
+    hub: hubClient,
     settings: () => ({
       enabled: true,
       hostname: 'test-host',
@@ -259,6 +263,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
 
   return {
     hub,
+    hubClient,
     board,
     ledger,
     agents,
