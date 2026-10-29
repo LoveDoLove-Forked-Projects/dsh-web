@@ -2,6 +2,7 @@
   "name": "@linxin666/dsh-client-ui-task-board-team",
   "description": "External provider extension for the dsh Web GUI task board that binds local dsh-agents members as team Agents and mirrors cloud team-hub issues onto the board; shipped as a dsh profile bundle with no DSH source changes.",
   "version": "0.4.12",
+  "icon": "icon.svg",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -18,6 +19,8 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -75,7 +78,9 @@
     "lib/**/*.js",
     "lib/**/*.d.ts",
     "src",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale"
   ],
   "license": "BSD-3-Clause"
 }

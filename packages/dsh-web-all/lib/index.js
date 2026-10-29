@@ -927,13 +927,7 @@ function listDegraded() {
 }
 /** Every retired package name, sorted: what the shell skips without importing. Derived from
 *  RETIRED_FAMILIES so the two can never disagree. */
-const RETIRED_PLUGINS$1 = Object.freeze(Object.values({
-	"describe-image": "@linxin666/dsh-tool-describe-image",
-	"desktop-launcher": "@linxin666/dsh-desktop-launcher",
-	"doctor": "@linxin666/dsh-doctor",
-	"dsh-perf": "@linxin666/dsh-perf",
-	"model-capabilities": "@linxin666/dsh-client-ui-model-capabilities"
-}).sort());
+const RETIRED_PLUGINS$1 = Object.freeze(Object.values({}).sort());
 Schema.any().volatile();
 /**
 * Loopback-fenced degraded-state route (installed once per shell context).

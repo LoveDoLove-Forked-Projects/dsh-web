@@ -20,6 +20,8 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -30,6 +32,7 @@
     "src",
     "cordis.patch.yml",
     "icon.svg",
+    "locale",
     "README.md",
     "README.zh.md",
     "README.i18n.yaml"

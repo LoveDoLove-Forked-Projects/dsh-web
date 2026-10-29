@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "web-all/ssh",
+    "title": "SSH terminal",
     "description": "Выполнение команд и передача файлов на удалённых хостах."
   }
 }

@@ -13,11 +13,6 @@
 
 /** Retired family subpath -> real package name of the plugin that used to mount there. */
 export const RETIRED_FAMILIES: Readonly<Record<string, string>> = {
-  'describe-image': '@linxin666/dsh-tool-describe-image',
-  'desktop-launcher': '@linxin666/dsh-desktop-launcher',
-  'doctor': '@linxin666/dsh-doctor',
-  'dsh-perf': '@linxin666/dsh-perf',
-  'model-capabilities': '@linxin666/dsh-client-ui-model-capabilities',
 }
 
 /** Every retired package name, sorted: what the shell skips without importing. Derived from

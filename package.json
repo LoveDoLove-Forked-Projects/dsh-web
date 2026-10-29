@@ -10,7 +10,8 @@
   },
   "files": [
     "package.json",
-    "packages/dsh-web-all/cordis.patch.yml"
+    "packages/dsh-web-all/cordis.patch.yml",
+    "locale"
   ],
   "dependencies": {
     "@linxin666/dsh-web-all": "^0.4.12"

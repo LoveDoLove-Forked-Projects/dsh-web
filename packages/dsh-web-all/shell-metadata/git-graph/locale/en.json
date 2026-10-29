@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "web-all/git-graph",
+    "title": "Git graph",
     "description": "Browse the Git commit graph and branch history."
   }
 }

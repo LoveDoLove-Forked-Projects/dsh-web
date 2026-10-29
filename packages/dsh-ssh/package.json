@@ -20,6 +20,8 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -96,7 +98,8 @@
     "src",
     "cordis.patch.yml",
     "README.md",
-    "icon.svg"
+    "icon.svg",
+    "locale"
   ],
   "license": "Apache-2.0",
   "repository": {

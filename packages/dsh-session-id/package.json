@@ -16,6 +16,8 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -74,7 +76,8 @@
     "README.md",
     "README.zh.md",
     "README.i18n.yaml",
-    "icon.svg"
+    "icon.svg",
+    "locale"
   ],
   "license": "Apache-2.0"
 }

@@ -1,5 +1,5 @@
 # Bilingual-pair consistency record (docs/i18n.md): the git blob hash of each
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with git hash-object.
-2026-09-02-aggregate-family-row-display-names.md: a540987329de2ae8945ca09998d48dcfe3ddf421
-2026-09-02-aggregate-family-row-display-names.zh.md: dd8530be8c8a289e38406f0663ae25290336b39d
+2026-09-02-aggregate-family-row-display-names.md: a41402aefb1d9e4f939b2615a310f9e2aef772ba
+2026-09-02-aggregate-family-row-display-names.zh.md: 20deaa33473b85501b958498c8486ada4cc7bccd

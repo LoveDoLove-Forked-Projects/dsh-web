@@ -17,7 +17,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { _resetDegradedForTest, listDegraded } from '../src/degraded.ts'
 import { RETIRED_FAMILIES, RETIRED_PLUGINS as GENERATED_RETIRED_PLUGINS } from '../src/retired-plugins.generated.ts'
 import { apply, _resetDegradedRouteForTest } from '../src/shell.ts'
@@ -144,13 +144,15 @@ describe('shell-metadata families map onto dependencies or the retirement regist
     expect([...familySubpaths()].sort(), 'the family subpath exports must cover exactly the carried and retired families').toEqual(expected)
   })
 
-  it('operator upgrading the aggregate finds a startup-safe tombstone for every retired family', () => {
-    // Given the retired families the shell skips at mount time,
+  it('operator upgrading the aggregate finds a startup-safe tombstone for every family subpath it still exports', () => {
+    // Given the family subpaths the package still publishes (the retirement
+    // registry is empty, so every kept family is a compatibility shell for a
+    // row that moved to a real package name),
     const pkg = manifest()
-    const retiredFamilies = Object.keys(RETIRED_FAMILIES).sort()
-    expect(retiredFamilies.length).toBeGreaterThan(0)
+    const families = [...familySubpaths()].sort()
+    expect(families.length).toBeGreaterThan(0)
     // When an older profile still mounts `@linxin666/dsh-web-all/<family>`,
-    for (const family of retiredFamilies) {
+    for (const family of families) {
       // Then the subpath export resolves to the shell re-export instead of
       // failing module resolution, and the display resources the host reads
       // beside it all point at files that exist.
@@ -167,21 +169,57 @@ describe('shell-metadata families map onto dependencies or the retirement regist
   })
 })
 
-describe('a stale profile row for a retired plugin mounts as a silent no-op', () => {
+describe('the retirement skip is driven by the registry, never by a blanket catch', () => {
   beforeEach(resetAll)
   afterEach(resetAll)
 
-  it('operator upgrading from a profile that still names a retired plugin gets no degraded record', async () => {
-    // Given a live host and the retired plugin package names a stale profile row
-    // can still carry (the packages no longer resolve anywhere in the workspace)
+  it('operator upgrading from a profile that names an uninstalled package gets a degraded import record', async () => {
+    // Given a live host and an empty registry: every family it carried has been
+    // removed outright, so nothing is skipped by name any more
     const root = fakeHost()
-    expect(GENERATED_RETIRED_PLUGINS.length).toBeGreaterThan(0)
-    // When the shell applies each such row
-    for (const spec of GENERATED_RETIRED_PLUGINS) {
-      await root.plugin(apply as never, { plugin: spec } as never)
-      // Then nothing is imported or started, so the ledger stays empty: the
-      // retired row is skipped BEFORE the import that used to fail.
-      expect(listDegraded(), 'retired plugin ' + spec + ' must not be recorded as degraded').toEqual([])
+    expect(GENERATED_RETIRED_PLUGINS).toEqual([])
+    // When the shell applies a row naming a package the workspace does not have
+    await root.plugin(apply as never, { plugin: '@linxin666/dsh-not-installed' } as never)
+    // Then the import IS attempted and its failure recorded: the no-op branch
+    // answers to the registry, so an unregistered specifier cannot ride it.
+    expect(listDegraded().map((record) => record.stage)).toEqual(['import'])
+    expect(listDegraded().map((record) => record.plugin)).toEqual(['@linxin666/dsh-not-installed'])
+  })
+
+  it('operator upgrading from a profile that names a registered retired plugin gets a silent skip before any import', async () => {
+    // Given a retirement registry that names one plugin. The live aggregate
+    // carries none any more, so the skip branch has no sample of its own; the
+    // registry is injected for this test alone and the shell is re-imported
+    // against it.
+    expect(GENERATED_RETIRED_PLUGINS).toEqual([])
+    vi.resetModules()
+    vi.doMock('../src/retired-plugins.generated.ts', () => ({ // test-standards-allow: the retirement registry is generator-owned and currently empty, so the shell's skip branch has exactly one production seam — the generated module; a manifest fixture would invent a retired family together with its tombstone subpath and display metadata, which distorts the tree more than mocking the seam does.
+      RETIRED_FAMILIES: { 'fake-family': '@linxin666/dsh-not-installed' },
+      RETIRED_PLUGINS: ['@linxin666/dsh-not-installed'],
+    }))
+    try {
+      const shell = await import('../src/shell.ts')
+      const degraded = await import('../src/degraded.ts')
+      shell._resetDegradedRouteForTest()
+      degraded._resetDegradedForTest()
+      const spec = '@linxin666/dsh-not-installed'
+      // The shell's own registrations (its row plus the health-route inject
+      // fiber) are the mount baseline: a row with no plugin key mounts nothing.
+      const control = fakeHost()
+      await control.plugin(shell.apply as never, {} as never)
+      const baseline = control.registry.size
+      // When the shell applies a row naming that registered specifier,
+      const root = fakeHost()
+      await root.plugin(shell.apply as never, { plugin: spec } as never)
+      // Then the row mounts nothing and records nothing: the skip happens
+      // before the import, so the package this profile names is never resolved
+      // and its absent workspace entry can never surface as a degraded row.
+      expect(root.registry.size, 'a skipped row must mount nothing beyond the shell itself').toBe(baseline)
+      expect(degraded.listDegraded()).toEqual([])
+    } finally {
+      vi.doUnmock('../src/retired-plugins.generated.ts')
+      vi.resetModules()
+      resetAll()
     }
   })
 })
@@ -216,18 +254,22 @@ describe('the retirement registry only names plugins that really left the family
     expect(liveRows).toEqual([])
   })
 
-  it('operator finds the issue-named removals registered instead of hand-listed', () => {
-    // Given issue #1889: the 2026-09-23 removal of the doctor and image
-    // description plugins never reached the shell's hand-written list
-    // When the generated registry is read
-    const retired = [...GENERATED_RETIRED_PLUGINS]
-    // Then both package names are in it, and the two families are keyed to them
-    expect(retired).toContain('@linxin666/dsh-tool-describe-image')
-    expect(retired).toContain('@linxin666/dsh-doctor')
-    expect(RETIRED_FAMILIES['describe-image']).toBe('@linxin666/dsh-tool-describe-image')
-    expect(RETIRED_FAMILIES['doctor']).toBe('@linxin666/dsh-doctor')
-    expect(retired).toEqual([...retired].sort())
-    expect(new Set(retired).size).toBe(retired.length)
-    expect(retired).toEqual(Object.values(RETIRED_FAMILIES).sort())
+  it('operator finds the registry empty once every family it carried was removed outright', () => {
+    // Given the last family the registry carried was removed outright, so its
+    // tombstones subpath, display resources and exports key are gone too
+    // When the manifest section and the generated module are both read
+    const yml = readFileSync(join(PACKAGE_DIR, 'aggregate.yml'), 'utf8')
+    const generated = readFileSync(join(PACKAGE_DIR, 'src', 'retired-plugins.generated.ts'), 'utf8')
+    // Then the section header survives (the mechanism stays) while it declares
+    // no entry...
+    expect(yml).toMatch(/^retiredPlugins:$/m)
+    const declared = (yml.split(/^retiredPlugins:$/m)[1] ?? '').split(/\r?\n/).filter((line) => line.trim().startsWith('- '))
+    expect(declared).toEqual([])
+    // ...and the generated module says exactly the same thing in both shapes:
+    // pinning emptiness on both sides is what a bare empty loop cannot do.
+    expect(RETIRED_FAMILIES).toEqual({})
+    expect(GENERATED_RETIRED_PLUGINS).toEqual([])
+    expect([...generated.matchAll(/^ {2}'[^']+': '[^']+',$/gm)]).toHaveLength(0)
+    expect(generated).toContain('export const RETIRED_FAMILIES: Readonly<Record<string, string>> = {')
   })
 })

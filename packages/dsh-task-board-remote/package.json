@@ -2,6 +2,7 @@
   "name": "@linxin666/dsh-task-board-remote",
   "description": "Puts the dsh Web GUI task board on the remote surface: the host half binds the board's capability face to the dsh-remote-bridge extension seam, so a paired phone reads the same ledger (snapshot, acceptance options, idempotent actions, revision events) through the host's own gates.",
   "version": "0.4.12",
+  "icon": "icon.svg",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -14,6 +15,8 @@
       "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -47,7 +50,9 @@
     "cordis.patch.yml",
     "README.md",
     "README.zh.md",
-    "README.i18n.yaml"
+    "README.i18n.yaml",
+    "icon.svg",
+    "locale"
   ],
   "license": "Apache-2.0",
   "repository": {

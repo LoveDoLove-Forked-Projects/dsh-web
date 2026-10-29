@@ -19,6 +19,8 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json",
     "./presets/*": "./presets/*"
   },
@@ -92,7 +94,8 @@
     "README.md",
     "README.zh.md",
     "LICENSE",
-    "icon.svg"
+    "icon.svg",
+    "locale"
   ],
   "license": "Apache-2.0",
   "repository": {

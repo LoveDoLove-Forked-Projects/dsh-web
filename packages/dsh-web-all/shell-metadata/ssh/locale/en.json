@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "web-all/ssh",
+    "title": "SSH terminal",
     "description": "Run commands and copy files on remote hosts."
   }
 }

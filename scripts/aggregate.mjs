@@ -67,14 +67,19 @@
  *     this aggregate's own rows (that is what inactive is for); a user-layer
  *     "disabled: false" override still wins.
  *   - shellNotes entries (single-line JSON flow mappings) carry each family
- *     row's one-line purpose text, the gray line the official plugin inventory
- *     renders under the row title: {"id": "<family subpath>", "zh", "en", "ru"}.
+ *     row's display text, the two strings the official plugin inventory renders:
+ *     the row title and the gray purpose line under it.
+ *     {"id": "<family subpath>", "title": {"zh", "en"}, "zh", "en", "ru"}
  *     They are written into shell-metadata/<sub>/locale/<lang>.json as
- *     meta.description, the same channel that carries the row title. The
- *     section is the only source for that text: every family subpath the
- *     aggregate exports (tombstones included) needs an entry, and a missing,
- *     unknown, or duplicate id fails the run instead of shipping a row with no
- *     visible purpose.
+ *     meta.title and meta.description, the display channel the host reads for
+ *     a family subpath. The row title has no Russian copy of its own, so ru
+ *     reuses the en title while keeping its own description. The section is the
+ *     only source for that text: every family subpath the aggregate exports
+ *     (tombstones included) needs an entry with a title object and all three
+ *     descriptions. A missing title, an unknown id, or a duplicate id fails the
+ *     run instead of shipping a row with no visible purpose; so does a zh note
+ *     that carries no Han character, exceeds the single-line Han cap, or is the
+ *     en note verbatim.
  *   - retiredPlugins entries (single-line JSON flow mappings) are the shell's
  *     retirement registry: {"family": "<tombstone subpath>", "plugin": "<real
  *     package name>"} for every family plugin that was removed while its row
@@ -183,6 +188,13 @@ const SHELL_METADATA_DIR = 'shell-metadata'
  */
 const SHELL_METADATA_LOCALES = ['en', 'ru', 'zh']
 
+/**
+ * Locales a family row title carries. The row label has no Russian copy of its
+ * own, so ru reuses the en title while the description below it keeps its own ru
+ * text (see {@link shellMetadataFiles}).
+ */
+const SHELL_TITLE_LOCALES = ['en', 'zh']
+
 /** Longest Chinese note the inventory can render on one line under a row title. */
 const SHELL_NOTE_MAX_HAN = 20
 
@@ -191,12 +203,14 @@ const SHELL_NOTE_MAX_HAN = 20
  * DSH 0.2.1 no longer reads a subpath's nearest package.json: display text
  * comes from `<specifier>/locale/<lang>.json`, and the icon from
  * `<specifier>/icon`. The generator owns this tree so removed families do not
- * leave stale display resources behind. The title is the row label; the
- * description is the gray purpose line rendered right under it.
+ * leave stale display resources behind. The title is the row label the manifest
+ * carries for that locale, falling back to its en title where the label has no
+ * copy of its own (ru); the description is the gray purpose line rendered right
+ * under it.
  */
 function shellMetadataFiles(pkgDir, shellSubpaths, notes) {
   return shellSubpaths.flatMap((sub) => SHELL_METADATA_LOCALES.map((locale) => {
-    const meta = { title: `web-all/${sub}` }
+    const meta = { title: notes.get(sub)?.title?.[locale] ?? notes.get(sub)?.title?.en }
     const description = notes.get(sub)?.[locale]
     if (description !== undefined) meta.description = description
     return {
@@ -255,13 +269,19 @@ function strayShellMetadata(pkgDir, shellSubpaths) {
 }
 
 /**
- * Resolve the manifest's shellNotes section into one description per family
- * subpath, failing closed on anything that would ship a row without its
- * purpose line. The official reader renders whatever the locale JSON carries,
- * so an unknown id (a note for a family no row mounts) is as wrong as a missing
- * one; the Chinese note is capped because the inventory renders it on a single
- * line under the title.
- * @returns id -> { en, ru, zh } description map.
+ * Resolve the manifest's shellNotes section into one title plus one description
+ * per family subpath, failing closed on anything that would ship a row without
+ * its display text. The official reader renders whatever the locale JSON
+ * carries, so an unknown id (a note for a family no row mounts) is as wrong as a
+ * missing one. The zh title must differ from the en title: the title is the row
+ * label, and a label copied verbatim from en is the placeholder this section
+ * replaced. The comparison stays exact, because a product name may differ only in
+ * capitalization (win-bash: "Windows Bash" / "Windows bash"). The Chinese
+ * description is capped because the inventory renders it on a single line under
+ * the title, and it must carry at least one Han character: the file beside it
+ * already holds the English copy, so a Latin-only zh note ships the same line
+ * to Chinese and English users.
+ * @returns id -> { en, ru, zh, title: { en, zh } } map.
  */
 function resolveShellNotes(entries, shellSubpaths, rel, errors) {
   const notes = new Map()
@@ -282,8 +302,22 @@ function resolveShellNotes(entries, shellSubpaths, rel, errors) {
       continue
     }
     declared.add(id)
-    const note = {}
     let complete = true
+    if (entry.title === null || typeof entry.title !== 'object' || Array.isArray(entry.title)) {
+      errors.push(`${rel}: shellNotes "${id}" needs a "title" object with "zh" and "en" titles`)
+      continue
+    }
+    const label = {}
+    for (const locale of SHELL_TITLE_LOCALES) {
+      const value = typeof entry.title[locale] === 'string' ? entry.title[locale].trim() : ''
+      if (value === '') {
+        errors.push(`${rel}: shellNotes "${id}" needs a non-empty "title.${locale}" title`)
+        complete = false
+        continue
+      }
+      label[locale] = value
+    }
+    const note = {}
     for (const locale of SHELL_METADATA_LOCALES) {
       const value = typeof entry[locale] === 'string' ? entry[locale].trim() : ''
       if (value === '') {
@@ -294,7 +328,16 @@ function resolveShellNotes(entries, shellSubpaths, rel, errors) {
       note[locale] = value
     }
     if (!complete) continue
+    if (label.zh === label.en) {
+      errors.push(`${rel}: shellNotes "${id}" zh and en titles are the same text`)
+      continue
+    }
+    note.title = label
     const han = [...note.zh].filter((char) => /\p{Script=Han}/u.test(char)).length
+    if (han === 0) {
+      errors.push(`${rel}: shellNotes "${id}" zh note has no Han character (the inventory renders it as the Chinese description; put the Chinese copy here, the "en" note is its own file)`)
+      continue
+    }
     if (han > SHELL_NOTE_MAX_HAN) {
       errors.push(`${rel}: shellNotes "${id}" zh note has ${han} Han characters (max ${SHELL_NOTE_MAX_HAN}: the inventory renders it on one line)`)
       continue

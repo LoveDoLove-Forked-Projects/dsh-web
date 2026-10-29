@@ -113,19 +113,30 @@ test('web-ui-all does not mount the dsh-client-runtime-dependent @mlgbnb/dsh-arc
   assert.doesNotMatch(patch, /^ {4}- id: web-ui-archive-manager$/m, '@mlgbnb/dsh-archive-manager must not be mounted on the alpha.2 cohort')
 })
 
-test('web-ui-all keeps the removed doctor/describe-image plugins out but their tombstone exports alive', () => {
+test('web-ui-all leaves the removed describe-image/desktop-launcher/doctor/dsh-perf/model-capabilities families on no surface at all', () => {
   // 2026-09-23 product decision: dsh-doctor and dsh-tool-describe-image were
-  // removed from the family. No patch row or workspace dependency may name
-  // them again without an explicit re-adoption decision; their shell subpath
-  // exports stay as tombstones so a stale profile row fails soft instead of
-  // aborting the boot with ERR_PACKAGE_PATH_NOT_EXPORTED.
+  // removed from the family. They later lost their shells too: no tombstone
+  // subpath, no retirement-registry entry, no shell-metadata display resources
+  // and no exports key (subpath, icon, locale) is kept for them. The accepted
+  // cost is a stale profile row naming one of these specifiers failing at
+  // import time instead of soft-failing through the shell, so any of these
+  // surfaces coming back has to be a re-adoption decision, not an accident.
+  const yml = 'packages/dsh-web-all/aggregate.yml'
   const patch = readFileSync(join(ROOT, 'packages/dsh-web-all/cordis.patch.yml'), 'utf8')
-  assert.doesNotMatch(patch, /web-ui-(doctor|describe-image)/, 'removed plugins must not reappear as patch rows')
   const pkg = JSON.parse(readFileSync(join(ROOT, 'packages/dsh-web-all/package.json'), 'utf8'))
+  const tombstones = scalarEntriesOf(yml, 'tombstones')
+  const retired = flowEntriesOf(yml, 'retiredPlugins')
+  const notes = shellNotesOf(yml)
+  for (const family of ['describe-image', 'desktop-launcher', 'doctor', 'dsh-perf', 'model-capabilities']) {
+    assert.doesNotMatch(patch, new RegExp('web-ui-' + family), 'removed plugin must not reappear as a patch row: ' + family)
+    assert.ok(!tombstones.includes(family), 'removed family must not keep a tombstone subpath: ' + family)
+    assert.ok(!retired.some((entry) => entry.family === family), 'removed family must not be registered as retired: ' + family)
+    assert.ok(!notes.has(family), 'removed family must not keep shell display metadata: ' + family)
+    const keys = ['./' + family, './' + family + '/icon', ...SHELL_METADATA_LOCALES.map((locale) => './' + family + '/locale/' + locale + '.json')]
+    for (const key of keys) assert.ok(!(key in pkg.exports), 'removed family must not keep an exports key: ' + key)
+  }
   assert.ok(!('@linxin666/dsh-doctor' in pkg.dependencies), 'dsh-doctor must not be a workspace dependency')
   assert.ok(!('@linxin666/dsh-tool-describe-image' in pkg.dependencies), 'dsh-tool-describe-image must not be a workspace dependency')
-  assert.equal(pkg.exports['./doctor'], './lib/shells/shell.js', 'doctor tombstone export must survive')
-  assert.equal(pkg.exports['./describe-image'], './lib/shells/shell.js', 'describe-image tombstone export must survive')
 })
 
 const SHELL_METADATA_LOCALES = ['en', 'ru', 'zh']
@@ -172,13 +183,22 @@ test('web-ui-all shell metadata covers exactly the exported family subpaths', ()
     .sort()
   assert.deepEqual(dirs, shellSubs, 'stale or missing shell metadata directories')
   const pkg = JSON.parse(readFileSync(join(ROOT, 'packages/dsh-web-all/package.json'), 'utf8'))
+  const notes = shellNotesOf('packages/dsh-web-all/aggregate.yml')
   for (const sub of shellSubs) {
     assert.equal(pkg.exports['./' + sub + '/icon'], './icon.svg', sub + ' must export the family icon')
+    const title = notes.get(sub)?.title
+    assert.ok(title, sub + ' shellNotes entry must carry a title object')
+    assert.notEqual(title.zh, title.en, sub + ' zh and en titles must not be the same text')
     for (const locale of SHELL_METADATA_LOCALES) {
       const exportKey = './' + sub + '/locale/' + locale + '.json'
       const target = './shell-metadata/' + sub + '/locale/' + locale + '.json'
       assert.equal(pkg.exports[exportKey], target, sub + ' must export its ' + locale + ' metadata')
-      assert.equal(shellMetadataOf(sub, locale).meta?.title, 'web-all/' + sub)
+      // The row label is the family's own localized title from shellNotes; ru
+      // has no title of its own and reuses en. `web-all/<family>` is the
+      // specifier shape, never display copy.
+      const rendered = shellMetadataOf(sub, locale).meta?.title
+      assert.equal(rendered, locale === 'ru' ? title.en : title[locale], sub + ' ' + locale + ' title must come from shellNotes')
+      assert.doesNotMatch(String(rendered), /^web-all\//, sub + ' ' + locale + ' title must not be the web-all/<family> placeholder')
     }
   }
 })
@@ -424,7 +444,9 @@ test('web-ui-all retired plugins are tombstones, not dependencies, and match the
   // exactly what the manifest says.
   const yml = 'packages/dsh-web-all/aggregate.yml'
   const retired = flowEntriesOf(yml, 'retiredPlugins')
-  assert.ok(retired.length > 0, 'aggregate.yml should declare the retired plugin registry')
+  // The section header stays even though it currently declares no entry: the
+  // mechanism is what a future retirement registers into.
+  assert.match(readFileSync(join(ROOT, yml), 'utf8'), /^retiredPlugins:$/m, 'aggregate.yml must keep the retiredPlugins section header')
   const tombstones = new Set(scalarEntriesOf(yml, 'tombstones'))
   const pkg = JSON.parse(readFileSync(join(ROOT, 'packages/dsh-web-all/package.json'), 'utf8'))
   const families = new Set()
@@ -444,8 +466,13 @@ test('web-ui-all retired plugins are tombstones, not dependencies, and match the
   }
   const generatedPluginCount = [...generated.matchAll(/^  '[^']+': '[^']+',$/gm)].length
   assert.equal(generatedPluginCount, retired.length, 'generated registry must carry exactly the manifest entries')
-  // Issue #1889 regression: the 2026-09-23 removal never reached the shell's
-  // hand-written list, so both package names are pinned by name here.
-  assert.ok(plugins.has('@linxin666/dsh-tool-describe-image'), 'dsh-tool-describe-image must be registered as retired')
-  assert.ok(plugins.has('@linxin666/dsh-doctor'), 'dsh-doctor must be registered as retired')
+  // Every family this registry ever carried has since been removed outright
+  // (no tombstone, no display resources, no exports key), so the manifest
+  // declares no entry and the loop above is 0 === 0. The emptiness is pinned
+  // in BOTH directions here, because an empty loop on its own accepts any
+  // drift: the manifest must declare none, and the generated module must
+  // carry none. Re-adopting a retired family is a decision that updates this
+  // test, not something that slips in behind an empty set.
+  assert.equal(retired.length, 0, 'the retirement registry must stay empty while every family it carried is removed outright')
+  assert.equal(generatedPluginCount, 0, 'the generated registry must carry no entry while the manifest declares none')
 })

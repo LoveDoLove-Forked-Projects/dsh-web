@@ -8,16 +8,16 @@ Status: implemented
 
 ## Decision
 
-家族全部包——聚合包 `@linxin666/dsh-web-all` 以及 18 个子插件与 Skin Center 包——都在包根放 `icon.svg`，并在 `package.json` 顶层声明 `icon`；该文件同时加入各包的 npm `files` 白名单，保证发布 tarball 带上它。`dsh-app-boot` 的 `readPluginMeta` 把该值按 manifest 相对路径解析，接受 SVG/PNG/JPEG/WebP 且上限 256 KiB，将字节 base64 成 `data:` URL，官方插件管理器在 bundle 卡片与详情页渲染该 URL。
+`packages/` 下共 23 个包（22 个子包加聚合包 `dsh-web-all`）。家族各包都在包根放 `icon.svg`，并在 `package.json` 顶层声明 `icon`；该文件同时加入各包的 npm `files` 白名单，保证发布 tarball 带上它。此前缺图标的四个包（`dsh-browser-view`、`dsh-task-board-remote`、`dsh-task-board-team` 与 `dsh-win-bash`）补齐了与 `packages/dsh-web-all/icon.svg` 字节完全相同的标准家族 `icon.svg`。`packages/` 下与聚合 `icon.svg` 字节相同的共 18 个包（加上聚合包自身共 19 个），另有 `dsh-agents`、`dsh-message-edit`、`dsh-task-board-github` 与 `dsh-update` 使用各自不同的图标。Skin Center 已不在 `packages/` 里。`dsh-app-boot` 的 `readPluginMeta` 把该值按 manifest 相对路径解析，接受 SVG/PNG/JPEG/WebP 且上限 256 KiB，将字节 base64 成 `data:` URL，官方插件管理器在 bundle 卡片与详情页渲染该 URL。
 
 ## Scope and resolution
 
 读取方通过包的 exports map 解析 `<specifier>/package.json`，因此 specifier 决定条目有没有图标：
 
 - 家族每个包都导出了 `"./package.json"` 且可解析，所以它自己的卡片——聚合的，或独立安装的——都显示鲸鱼。
-- 聚合内部的家族行以 `@linxin666/dsh-web-all/<family>` 挂载；`./<family>/package.json` 不是导出项，`readPluginMeta` 对这些 specifier 返回 undefined，因此这些行保留默认插画，标题继续来自子路径派生的 `web-all/<family>`（[Aggregate family rows display real plugin names via subpath exports](../architecture/2026-09-02-aggregate-family-row-display-names.md)）。
+- 聚合内部的家族行以各自的模块说明符挂载；DSH 0.2.1 起，聚合为每个活跃家族子路径导出 `./<family>/icon` 与 `./<family>/locale/<lang>.json`（[插件页展示元数据经由 locale 文件与聚合家族本地化标题](2026-10-29-plugin-display-metadata-locale.zh.md)），在本地化标题旁渲染家族图标。五个已退役家族（`describe-image`、`desktop-launcher`、`doctor`、`dsh-perf`、`model-capabilities`）已随其子路径与元数据从聚合包彻底移除，因此“子路径行保持默认插画”的说法在当前活跃代码中已无实例。
 
-把 `./<family>/package.json` 别名到某个包根会把那份 manifest 交给每一行，其 `name` 会在客户端标题解析中压过子路径标签、抹平各不相同的行标题——这正是家族行不带图标的原因。
+把 `./<family>/package.json` 别名到某个包根曾被否决，因为把那份 manifest 交给每一行会让其 `name` 在客户端标题解析中抹平各不相同的行标题；聚合生成器改为通过维护专门的 `./<family>/icon` 导出直接指向家族标记。
 
 ## Artwork
 
@@ -31,9 +31,9 @@ Status: implemented
 
 手写 SVG 路径：先后产出并渲染过三版手绘稿，在卡片尺寸下都显得粗糙，因此交付几何改由描摹生成的参考图而来，而不是手搓坐标。
 
-每个插件各画一枚图标而非共用家族标记：为 18 个插件设计互异字形是一份本次改动无法验证也无法维护的设计清单，而卡片要传达的正是家族身份。
+每个插件各画一枚图标而非共用家族标记：为全部插件设计互异字形是一份本次改动无法验证也无法维护的设计清单，卡片主要传达的是家族身份（而 `dsh-agents`、`dsh-message-edit`、`dsh-task-board-github` 与 `dsh-update` 使用各自不同的图标，Skin Center 已不在 `packages/` 里）。
 
-只给聚合包配图标：独立安装 `@linxin666/dsh-ssh` 之类的包时仍是通用插画，且聚合详情页里每个家族行本来就渲染同一张默认插画——逐包一份素材的代价只是一个文件加一个 manifest 键。
+只给聚合包配图标：独立安装 `@linxin666/dsh-ssh` 之类的包时仍是通用插画，且聚合详情页里每个家族行本来就渲染同一张默认插画——逐包一份素材的代价只是一个文件加一个 manifest键。
 
 按家族各配一枚图标（各自 manifest）：每个 `lib/shells/<family>/package.json` 都需要一份图标副本，还需要一个能复现当前标签的 `name`，并且要动生成器维护的 exports map 与扫描器标记走查，只为了一处装饰。判定不成比例而否掉。
 
@@ -47,10 +47,10 @@ PNG 或 WebP 素材：两者都被接受，但位图无法在卡片与详情页�
 
 ## Consequences
 
-聚合包与每个独立安装的家族包，其已安装卡片与详情页在两种主题下都显示鲸鱼；聚合内部的家族行与无关 bundle 保持默认插画。该值在每次 inventory 调用时从已安装包目录读取，因此浏览器刷新即可生效、无需重启 `dsh web`；只有发布 npm tarball 依赖新增的 `files` 条目来携带该资源，所以 npm 用户要等家族下一次发布才看到图标。该图标只是展示资源：没有任何运行时代码、契约或 profile patch 依赖它。这 19 份副本是对一个惰性文件的刻意复制，而不是需要程序化同步的事实源——构建期没有任何东西消费它们。
+聚合包与每个独立安装的家族包，其已安装卡片与详情页在两种主题下都显示鲸鱼，导出 `./<family>/icon` 的聚合家族子路径行也显示该图标。该值在每次 inventory 调用时从已安装包目录读取，因此浏览器刷新即可生效、无需重启 `dsh web`；只有发布 npm tarball 依赖新增的 `files` 条目来携带该资源，所以 npm 用户要等家族下一次发布才看到图标。该图标只是展示资源：没有任何运行时代码、契约或 profile patch 依赖它。`packages/` 下共 23 个包；与聚合 `icon.svg` 字节相同的 18 个包（`packages/` 下共 19 个包带该文件，`dsh-agents`、`dsh-message-edit`、`dsh-task-board-github` 与 `dsh-update` 用各自不同的图标，Skin Center 已不在 `packages/` 里）是对一个惰性文件的刻意复制，而不是需要程序化同步的事实源——构建期没有任何东西消费它们。
 
 ## Testing
 
-在声明图标的情况下 `node scripts/aggregate.mjs --check`、`node scripts/lib-artifact-check.mjs`、`node scripts/verify-docs.mjs`、`pnpm i18n:check`、`pnpm emoji:check`、`pnpm skin-center:check`、`pnpm market:check` 与 `pnpm community:check` 全部通过，说明生成器维护的 exports map、已提交的 `lib/` 指纹以及生成出来的 market 与目录产物都未被触动。
+`node scripts/aggregate.mjs --check`、`node scripts/lib-artifact-check.mjs`、`node scripts/verify-docs.mjs`、`pnpm i18n:check`、`pnpm emoji:check`、`pnpm skin-center:check`、`pnpm market:check`、`pnpm community:check` 与 `scripts/plugin-display-metadata.test.mjs` 全部通过，确认 `packages/` 下所有包均在 `files` 白名单中随包携带小于 256 KiB 的图标，说明生成器维护的 exports map、已提交的 `lib/` 指纹以及生成出来的 market 与目录产物都未被触动。
 
-用运行中宿主自己的 `readPluginMeta`（从运行中的 `@deepseek-ai/dsh-app-boot` 导入），在一个 profile 形态的夹具上调用——一份 `package.json`，其 `node_modules` 链接全部 19 个包，正是 profile 安装的解析形态——19 个 specifier 全部返回 `data:image/svg+xml;base64,...`，解码字节与该包 `icon.svg` 的 sha256 完全一致。以真实 `web` profile 根调用时 `@linxin666/dsh-web-all` 同样解析成功，而 `@linxin666/dsh-web-all/usage` 正确地不返回图标。素材以真实 `<img src="data:image/svg+xml;base64,...">` 在 16/24/32/48/96 px 以及浅色与深色卡片上渲染验证，并查看 16 px 与 96 px 渲染，确认尾鳍在最小尺寸下仍可辨认、在最大尺寸下轮廓干净。未重启宿主。全仓 `pnpm -r test` 只在 `packages/dsh-task-board` 报失败（jsdom 下 `window.localStorage.setItem is not a function`）；把该包的 `package.json` 还原到 HEAD 后同样两个 spec 文件失败完全一致，说明这些失败先于本次改动、与之无关。
+用运行中宿主自己的 `readPluginMeta`（从运行中的 `@deepseek-ai/dsh-app-boot` 导入），在一个 profile 形态的夹具上调用——一份 `package.json`，其 `node_modules` 链接全部家族包，正是 profile 安装的解析形态——全部 specifier 返回 `data:image/svg+xml;base64,...`，解码字节与该包 `icon.svg` 的 sha256 完全一致。以真实 `web` profile 根调用时 `@linxin666/dsh-web-all` 同样解析成功，而 `@linxin666/dsh-web-all/usage` 正确地不从其直接 manifest 返回图标。素材以真实 `<img src="data:image/svg+xml;base64,...">` 在 16/24/32/48/96 px 以及浅色与深色卡片上渲染验证，并查看 16 px 与 96 px 渲染，确认尾鳍在最小尺寸下仍可辨认、在最大尺寸下轮廓干净。未重启宿主。全仓 `pnpm -r test` 只在 `packages/dsh-task-board` 报失败（jsdom 下 `window.localStorage.setItem is not a function`）；把该包的 `package.json` 还原到 HEAD 后同样两个 spec 文件失败完全一致，说明这些失败先于本次改动、与之无关。

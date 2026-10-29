@@ -112,6 +112,14 @@
   [dsh-i18n](dsh-i18n/AGENTS.md) 集中承载：各包新增/修改 zh 键后必须同步补
   ru 并通过 `pnpm i18n:check`（缺键、占位符不一致即红），包内不自带 ru 字典。
 
+- **插件页展示元数据**：包根 `locale/en.json` 与 `locale/zh.json` 承载官方插件列表的行标题与
+  灰色描述（`meta.title` / `meta.description`），两者必须在 `exports` 里各有一条
+  `./locale/<lang>.json` 键并进 `files` 白名单：宿主按 `en` 起步解析、再枚举该目录逐个文件
+  走 exports，盘上的文件集合与 exports 键必须一一对应，多一个或少一个都会让整条元数据报错。
+  中文标题写产品名、中文描述不超过 20 个汉字；包级此通道只随 `zh` + `en`（缺 ru 时宿主回落
+  `en`），聚合家族行的 ru 文案由 dsh-web-all 单独维护。`icon.svg` + 顶层 `icon` 是同一页的
+  卡片图标，与本组元数据同批落齐。
+
 ## 安全语义
 
 - 涉及密钥 / 凭据 / 远程执行 / 令牌撤销的包（如 `dsh-ssh`、`dsh-remote-web-ui`）

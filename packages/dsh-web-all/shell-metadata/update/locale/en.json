@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "web-all/update",
+    "title": "Version upgrade",
     "description": "Check for and install newer releases of the bundle."
   }
 }

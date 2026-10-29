@@ -15,6 +15,7 @@
  * governing the value it validates on mount.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { _resetDegradedForTest, listDegraded } from '../src/degraded.ts'
 import { apply, _resetDegradedRouteForTest, Config } from '../src/shell.ts'
 import { HOST_BOOT, dshIt, runBootScript } from './boot-harness.ts'
 
@@ -135,16 +136,22 @@ describe('shell config sync', () => {
     expect(mounts[0].disposed()).toBe(false)
   })
 
-  it('operator gets no mount at all for a retired plugin row', async () => {
-    // Given a stale row from a profile older than the retirement
+  it('operator gets no mount and a degraded import record for a row naming an uninstalled plugin', async () => {
+    // Given a profile row whose package is neither installed nor registered as
+    // retired (the registry is empty: every family it carried was removed
+    // outright, so the silent no-op has nothing left to answer for)
+    _resetDegradedForTest()
     const { ctx, mounts } = mockCtx()
 
     // When the shell applies
-    await apply(ctx as never, { plugin: '@linxin666/dsh-perf' })
-    await apply(ctx as never, { plugin: '@linxin666/dsh-client-ui-model-capabilities' })
+    await apply(ctx as never, { plugin: '@linxin666/dsh-not-installed' })
 
-    // Then nothing mounts and the boot stays healthy
+    // Then nothing mounts, and the failure is recorded rather than skipped:
+    // an unregistered specifier is imported, fails, and says so.
     expect(mounts).toHaveLength(0)
+    expect(listDegraded().map((record) => record.stage)).toEqual(['import'])
+    expect(listDegraded().map((record) => record.plugin)).toEqual(['@linxin666/dsh-not-installed'])
+    _resetDegradedForTest()
   })
 })
 
