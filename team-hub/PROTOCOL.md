@@ -375,7 +375,7 @@ When an agent needs human guidance or user confirmation during execution, it rou
 1. Host intercepts an agent's question event (such as `ask_user_question` or stuck input signal) in-process from the execution session.
 2. Host sends `POST /api/v1/teams/:teamId/issues/:issueId/questions` with the question text, options, and multi-select flag.
 3. Hub saves the question with status `pending`, emits WebSocket event `question.created`, and sends APNs push notifications to the issue reviewer, plus the human assignee (if `assignee_type='member'`). By the default reviewer rule (Section 13), every agent-executed issue always has an active human reviewer (defaulting to the issue creator).
-4. An authorized team member responds via Whale iOS App or Web GUI by calling `POST /api/v1/teams/:teamId/questions/:questionId/answer`.
+4. An authorized team member responds via Whale iOS App or Web GUI by calling `POST /api/v1/teams/:teamId/questions/:questionId/answer` with request body `{ selected: string[], custom?: string }`. Both `selected` and `custom` MUST NOT be simultaneously empty; if both are omitted or empty, the request is rejected with `400 Bad Request` (`VALIDATION_FAILED`).
 5. Resolution rule: First response wins.
 - The first answer sets status to `answered`, recording `first_responder_member_id` and timestamp. - Any competing responses submitted after the first receive `409 Conflict` (`QUESTION_ALREADY_ANSWERED`).
 6. Hub broadcasts WebSocket event `question.answered` containing the selected answer.
@@ -401,24 +401,79 @@ Response (`200 OK`):
   "questions": [
     {
       "id": "ques_01j7b5w8m4f9q2e3r6t1y8u4ic",
-      "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
       "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
-      "host_id": "host_01j7b5w8m4f9q2e3r6t1y8u4i7",
-      "agent_id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8",
-      "question_text": "Should we proceed with migration plan A or B?",
-      "options_json": "[\"Plan A\", \"Plan B\"]",
-      "multi_select": 0,
+      "text": "Should we proceed with migration plan A or B?",
+      "options": [
+        {
+          "label": "Plan A",
+          "description": "Proceed with immediate database migration"
+        },
+        {
+          "label": "Plan B",
+          "description": "Stage migration behind feature flag"
+        }
+      ],
+      "multi_select": false,
       "status": "pending",
+      "answer": null,
       "first_responder_member_id": null,
-      "answer_json": null,
-      "answered_at": null,
       "created_at": 1700000000000,
-      "expires_at": 1700086400000
+      "answered_at": null
     }
   ]
 }
 ```
 Only members and administrators can query questions. Host Tokens cannot call this endpoint.
+
+### Wire Shapes: Question
+While SQLite/D1 persists `options_json` and `answer_json` as serialized strings, all over-the-wire REST endpoints and WebSocket payloads expose parsed JSON objects and arrays. `options_json` and `answer_json` in D1 are internal storage representations only; over the wire, objects and arrays are always used directly.
+
+#### Question Wire Shape
+```json
+{
+  "id": "ques_01j7b5w8m4f9q2e3r6t1y8u4ic",
+  "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+  "text": "Should we proceed with migration plan A or B?",
+  "options": [
+    {
+      "label": "Plan A",
+      "description": "Proceed with immediate database migration"
+    },
+    {
+      "label": "Plan B",
+      "description": "Stage migration behind feature flag"
+    }
+  ],
+  "multi_select": false,
+  "status": "pending",
+  "answer": null,
+  "first_responder_member_id": null,
+  "created_at": 1700000000000,
+  "answered_at": null
+}
+```
+
+Field specifications:
+- `id`: String (`ques_...`).
+- `issue_id`: String (`issue_...`).
+- `text`: String (question prompt text).
+- `options`: Array of `{ label: string, description?: string }` (parsed from `options_json`).
+- `multi_select`: Boolean (`true` or `false`).
+- `status`: `'pending'` | `'answered'` | `'expired'` | `'dismissed'`.
+- `answer`: `{ selected: string[], custom?: string } | null` (parsed from `answer_json`, or `null` when pending or unanswered).
+- `first_responder_member_id`: String (`mem_...`) | `null`.
+- `created_at`: Number (UTC milliseconds timestamp).
+- `answered_at`: Number (UTC milliseconds timestamp) | `null`.
+
+#### Answering Questions (`POST /api/v1/teams/:teamId/questions/:questionId/answer`)
+Request Body:
+```json
+{
+  "selected": ["Plan A"],
+  "custom": "Optional free-text explanation"
+}
+```
+Validation: `selected` and `custom` cannot both be empty; if both are empty or omitted, returns HTTP `400 Bad Request` (`VALIDATION_FAILED`).
 
 ### Invariant: Tool Permission Approvals Never Enter Hub
 Tool execution permission approvals (such as `approval/request`, terminal command execution, filesystem write grants outside sandbox, or `danger-full-access` permissions) belong exclusively to the local Host machine security domain. Tool permission approvals MUST NEVER enter `team-hub`. The Hub exposes NO endpoints, NO database schema, and NO WebSocket events for tool permissions. Tool permission requests are resolved strictly on the local machine by the Host owner (via local Web GUI or direct peer-to-peer bridge connection over Tailscale/LAN).
@@ -525,6 +580,7 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `GET` | `/api/v1/teams/:teamId/members` | Member | None | `{ members: Member[] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/members/invite` | Admin | `{ github_username, role }` | `{ member: Member }` | 201, 400, 403 | `USER_NOT_FOUND`, `ALREADY_MEMBER` |
 | `DELETE` | `/api/v1/teams/:teamId/members/:memberId` | Admin | None | `{ ok: true }` | 200, 403, 404 | `MEMBER_NOT_FOUND` |
+| `GET` | `/api/v1/teams/:teamId/agents` | Member | None | `{ agents: [{ id, name, host_id, owner_member_id, host_status }] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/hosts/tokens` | Admin | `{ hostname }` | `{ host_id, host_token }` | 201, 403 | `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/hosts/:hostId/revoke-token` | Admin | None | `{ ok: true }` | 200, 403, 404 | `HOST_NOT_FOUND` |
 | `POST` | `/api/v1/teams/:teamId/hosts/register` | Host | `{ hostname, client_version, agents: AgentDef[] }` | `{ host_id, status }` | 200, 401 | `UNAUTHORIZED` |
@@ -543,10 +599,72 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `GET` | `/api/v1/teams/:teamId/issues/:issueId/activity` | Member | None (query params `before`, `limit`) | `{ activity: Activity[], next_cursor: string | null }` | 200, 400, 401, 403, 404 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `ISSUE_NOT_FOUND` |
 | `GET` | `/api/v1/teams/:teamId/questions` | Member | None (query filters `status`, `issue_id`) | `{ questions: Question[] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/questions` | Host | `{ question_text, options?, multi_select? }` | `{ question: Question }` | 201, 400, 401 | `VALIDATION_FAILED` |
-| `POST` | `/api/v1/teams/:teamId/questions/:questionId/answer` | Member | `{ selected_options?, custom_text? }` | `{ ok: true }` | 200, 401, 409 | `QUESTION_ALREADY_ANSWERED` |
+| `POST` | `/api/v1/teams/:teamId/questions/:questionId/answer` | Member | `{ selected: string[], custom?: string }` | `{ ok: true }` | 200, 400, 401, 409 | `VALIDATION_FAILED`, `QUESTION_ALREADY_ANSWERED` |
 | `POST` | `/api/v1/teams/:teamId/questions/:questionId/withdraw` | Host | None | `{ ok: true, status: "dismissed" }` | 200, 401, 404, 409 | `QUESTION_NOT_PENDING`, `HOST_MISMATCH` |
 | `POST` | `/api/v1/push-tokens` | Member | `{ platform, device_token, bundle_id, environment }` | `{ ok: true }` | 200, 400, 401 | `VALIDATION_FAILED` |
 | `DELETE` | `/api/v1/push-tokens/:token` | Member | None | `{ ok: true }` | 200, 401 | `UNAUTHORIZED` |
+
+### Wire Shapes: Question and Activity
+Internal D1 database columns ending in `*_json` (`options_json`, `answer_json`, and `payload_json`) are strictly storage details for SQLite serialization. All over-the-wire REST responses and WebSocket event frames expose deserialized JSON objects and arrays.
+
+#### Question Wire Shape
+```json
+{
+  "id": "ques_01j7b5w8m4f9q2e3r6t1y8u4ic",
+  "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+  "text": "Should we proceed with migration plan A or B?",
+  "options": [
+    {
+      "label": "Plan A",
+      "description": "Proceed with immediate database migration"
+    }
+  ],
+  "multi_select": false,
+  "status": "pending",
+  "answer": null,
+  "first_responder_member_id": null,
+  "created_at": 1700000000000,
+  "answered_at": null
+}
+```
+
+- `id`: String (`ques_...`).
+- `issue_id`: String (`issue_...`).
+- `text`: String.
+- `options`: Array of `{ label: string, description?: string }` (parsed from `options_json`).
+- `multi_select`: Boolean.
+- `status`: `'pending'` | `'answered'` | `'expired'` | `'dismissed'`.
+- `answer`: `{ selected: string[], custom?: string } | null` (parsed from `answer_json`).
+- `first_responder_member_id`: String | `null`.
+- `created_at`: Number (UTC milliseconds timestamp).
+- `answered_at`: Number | `null` (UTC milliseconds timestamp).
+
+Question answer submission request body (`POST /api/v1/teams/:teamId/questions/:questionId/answer`):
+`{ selected: string[], custom?: string }`. Validation constraint: `selected` and `custom` cannot both be empty; if both are empty or omitted, returns HTTP `400 Bad Request` (`VALIDATION_FAILED`).
+
+#### Activity Wire Shape
+```json
+{
+  "id": "act_01j7b5w8m4f9q2e3r6t1y8u4ia",
+  "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+  "actor_type": "member",
+  "actor_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
+  "activity_type": "issue.assigned",
+  "payload": {
+    "assignee_type": "member",
+    "assignee_id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6"
+  },
+  "created_at": 1700000000000
+}
+```
+
+- `id`: String (`act_...`).
+- `issue_id`: String (`issue_...`).
+- `actor_type`: `'member'` | `'agent'` | `'host'` | `'system'`.
+- `actor_id`: String | `null` (resolved identifier of the actor).
+- `activity_type`: String.
+- `payload`: Object (parsed from `payload_json`; `payload_json` in D1 is strictly a storage form, over the wire it is always exposed as a JSON object).
+- `created_at`: Number (UTC milliseconds timestamp).
 
 ### Durable Object WebSocket Protocol
 Each team is backed by one Durable Object (`TeamChannelDO`). Clients connect to: `wss://<hub-domain>/api/v1/teams/:teamId/ws?token=<token>&since_seq=<seq>`.
@@ -668,6 +786,7 @@ The Hub communicates directly with Apple Push Notification service (APNs) over H
 | Member identity (`/api/v1/me`) | Yes | Yes | No | No |
 | Inbox and unread mentions (`/api/v1/teams/:teamId/inbox*`) | Yes | Yes | No | No |
 | Team and Member management | Yes | Read-only | No | No |
+| Agent queries (`/api/v1/teams/:teamId/agents`) | Yes | Yes | No | No |
 | Host Token minting and revocation | Yes | No | No | No |
 | Host registration and heartbeats | No | No | Yes | No |
 | Issue creation and editing | Yes | Yes | No | No |
