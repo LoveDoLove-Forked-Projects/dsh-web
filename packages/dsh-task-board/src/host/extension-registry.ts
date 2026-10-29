@@ -29,6 +29,7 @@ import {
   type TaskBoardLinkedTask,
   type TaskBoardSessionsFace,
   type TaskBoardStatusChangedEvent,
+  type TaskBoardTaskDraft,
   type TaskBoardTaskDeletedEvent,
   type TaskBoardTasksFace,
 } from '../core/extension.ts'
@@ -472,7 +473,7 @@ export class TaskBoardExtensionRegistry {
     }
   }
 
-  private createTask(entry: RegistryEntry, draft: { title: string; description: string; prompt: string; status?: TaskStatus; parentId?: string; workspaceId?: string }, options?: TaskBoardCreateOptions): TaskRecord {
+  private createTask(entry: RegistryEntry, draft: TaskBoardTaskDraft, options?: TaskBoardCreateOptions): TaskRecord {
     this.assertActive(entry, 'create a task')
     if (this.applyAction === undefined) throw new TaskBoardExtensionError('unavailable', 'this deployment serves no action applier')
     if (draft.status !== undefined && !isTaskStatus(draft.status)) throw new TaskBoardExtensionError('invalid-status', 'unknown task status')
@@ -491,6 +492,14 @@ export class TaskBoardExtensionRegistry {
         ...(draft.status === undefined ? {} : { status: draft.status }),
         ...(draft.parentId === undefined ? {} : { parentId: draft.parentId }),
         ...(draft.workspaceId === undefined ? {} : { workspaceId: draft.workspaceId }),
+        // Execution targets travel to the board's own creation path verbatim:
+        // what the caller sent wins there, the parent's pins fill the rest, and
+        // the board's new-card defaults stay out of it (this face never opts
+        // into them). Validating preset or route existence is the RUN's job, so
+        // an unknown value fails closed at launch instead of being judged here.
+        ...(draft.mode === undefined ? {} : { mode: draft.mode }),
+        ...(draft.model === undefined ? {} : { model: draft.model }),
+        ...(draft.reasoningEffort === undefined ? {} : { reasoningEffort: draft.reasoningEffort }),
         ...(payload === undefined ? {} : { integrations: { [entry.extension.id]: payload } }),
         ...(options?.hidden === true ? { hidden: true } : {}),
       },

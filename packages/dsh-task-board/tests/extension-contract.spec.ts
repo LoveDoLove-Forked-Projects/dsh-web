@@ -19,6 +19,7 @@ import {
   type TaskBoardExtension,
   type TaskBoardExtensionHost,
 } from '../src/core/extension.ts'
+import { fixtureWorkspaces } from './workspace-fixture.ts'
 
 let scratchHome: string | undefined
 let previousHome: string | undefined
@@ -82,6 +83,15 @@ function admit(host: TaskBoardHostService, extension: TaskBoardExtension): { fac
 
 function makeTaskInput(title: string): { title: string, description: string, prompt: string } {
   return { title, description: '', prompt: 'p' }
+}
+
+/**
+ * Drain the fire-and-forget launch chain. The chain is gateway promises and the
+ * admission queue only, so flushing the microtask queue is deterministic and
+ * needs no timer.
+ */
+async function flushLaunchChain(): Promise<void> {
+  for (let turn = 0; turn < 80; turn += 1) await Promise.resolve()
 }
 
 describe('extension registry contract', () => {
@@ -332,6 +342,83 @@ describe('extension registry contract', () => {
     expect(second.tasks).toEqual([])
     expect(String(unknownError)).toContain('no extension "missing" is registered')
     expect(seen).toEqual({ extensionId: 'router', action: 'other' })
+    host.dispose()
+  })
+
+  it('operator creating a card with execution targets reads them back from the board', () => {
+    // Given a provider creating a card for an agent that runs at its own
+    // composition
+    const host = makeBoard()
+    const { face } = admit(host, { id: 'mirror', apiVersion: TASK_BOARD_API_VERSION })
+
+    // When the draft names the preset, the model and the reasoning level
+    const created = face().tasks.create({
+      ...makeTaskInput('Pinned'),
+      mode: 'reviewer',
+      model: 'provider/model-a',
+      reasoningEffort: 'high',
+    })
+
+    // Then the stored card carries exactly those targets, readable through the
+    // same face and present in the board snapshot
+    const stored = face().tasks.get(created.id)
+    expect([stored?.mode, stored?.model, stored?.reasoningEffort]).toEqual(['reviewer', 'provider/model-a', 'high'])
+    expect(host.snapshot().tasks.find(task => task.id === created.id)?.mode).toBe('reviewer')
+    host.dispose()
+  })
+
+  it('operator creating a card with no execution targets gets the card the board always minted', () => {
+    // Given a provider that names nothing but the content
+    const host = makeBoard()
+    const { face } = admit(host, { id: 'mirror', apiVersion: TASK_BOARD_API_VERSION })
+
+    // When it creates the card
+    const created = face().tasks.create(makeTaskInput('Plain'))
+
+    // Then no target is pinned and the rest of the card is what it always was
+    const stored = face().tasks.get(created.id)
+    expect([stored?.mode, stored?.model, stored?.reasoningEffort]).toEqual([undefined, undefined, undefined])
+    expect([stored?.status, stored?.title, stored?.integrations]).toEqual(['todo', 'Plain', undefined])
+    host.dispose()
+  })
+
+  it('operator creating a card with blank execution targets gets no pin at all', () => {
+    // Given a provider whose draft carries whitespace where a target would go
+    const host = makeBoard()
+    const { face } = admit(host, { id: 'mirror', apiVersion: TASK_BOARD_API_VERSION })
+
+    // When it creates the card
+    const created = face().tasks.create({
+      ...makeTaskInput('Blank'),
+      mode: '   ',
+      model: '',
+      reasoningEffort: ' ',
+    })
+
+    // Then the board's own target normalization drops all three instead of
+    // storing empty strings
+    const stored = face().tasks.get(created.id)
+    expect([stored?.mode, stored?.model, stored?.reasoningEffort]).toEqual([undefined, undefined, undefined])
+    host.dispose()
+  })
+
+  it('operator creating a card with an unknown preset sees the run refused, not the create', async () => {
+    // Given a provider pinning a preset this deployment does not register, on a
+    // board that serves a workspace
+    const host = new TaskBoardHostService(fakeGateway(), { workspaceRegistry: fixtureWorkspaces() })
+    const { face } = admit(host, { id: 'mirror', apiVersion: TASK_BOARD_API_VERSION })
+    const created = face().tasks.create({ ...makeTaskInput('Pinned'), mode: 'not-a-preset' })
+
+    // When the board runs it
+    host.apply('run-1', { kind: 'run', taskId: created.id })
+    await flushLaunchChain()
+
+    // Then the create stored the pin as given and the board's own launch gate
+    // failed the run closed with its own reason
+    const task = host.ledger.getTask(created.id)
+    expect(task?.mode).toBe('not-a-preset')
+    expect(task?.status).toBe('failed')
+    expect(task?.executions.at(-1)?.error).toContain('agent preset not found: not-a-preset')
     host.dispose()
   })
 })

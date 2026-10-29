@@ -169,6 +169,26 @@ export interface TaskBoardTaskDraft {
    * no reason to know better pins nothing.
    */
   workspaceId?: string
+  /**
+   * Agent preset the created card pins as its execution composition. Absent
+   * pins nothing and leaves the board's own resolution in charge. The value is
+   * forwarded to the board's creation path unchanged, so a preset this
+   * deployment does not register fails the RUN closed, exactly as it does for a
+   * card created anywhere else.
+   */
+  mode?: string
+  /**
+   * Model the created card pins, in `provider/model` form — the same field
+   * `task_board_create` takes. Resolved against the host catalog at launch, so
+   * an unknown route is a run-time answer, not a creation-time one.
+   */
+  model?: string
+  /**
+   * Reasoning level for the pinned {@link model}. It travels with the model it
+   * was chosen for: the board never applies a level to a route that does not
+   * declare it.
+   */
+  reasoningEffort?: string
 }
 
 /** Options of {@link TaskBoardTasksFace.create}. */
