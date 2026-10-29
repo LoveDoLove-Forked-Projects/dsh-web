@@ -101,6 +101,10 @@ describe('frozen wire samples', () => {
   })
 
   it('operator sees the comment thread answer the comments-list sample', async () => {
+    // Given the frozen comment-thread sample this comparison is owed to
+    const sample = loadContractSamples().samples.find(entry => entry.interface === 'comments.list')
+    expect(sample?.file).toBe('comments-list.json')
+
     // Given a claimed issue the bound agent commented on
     harness = makeHarness()
     const taskId = await claimedCard(harness)
