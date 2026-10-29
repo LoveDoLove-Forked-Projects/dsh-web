@@ -18,6 +18,8 @@ export interface RegistrationResult {
   host_id: string
   status: string
   agents: { id: string; name: string }[]
+  /** Review S4: names another Host already owns, skipped instead of failing the registration. */
+  conflicts: { name: string; reason: string }[]
 }
 
 export interface RegistrationBody {
@@ -120,17 +122,18 @@ export async function registerHost(
 
   const names: string[] = []
   const reported: { id: string; name: string }[] = []
+  const conflicts: { name: string; reason: string }[] = []
   for (const definition of body.agents) {
-    names.push(definition.name)
     const existing = await env.DB.prepare('SELECT * FROM agents WHERE team_id = ? AND name = ?')
       .bind(host.team_id, definition.name)
       .first<AgentRow>()
+    // Review S4: one clashing name must not take the whole Host offline, so the
+    // definition is skipped and the Host is told which name it lost.
     if (existing && existing.host_id !== host.id) {
-      fail('VALIDATION_FAILED', 'Agent name ' + definition.name + ' already belongs to another host.', {
-        field: 'agents',
-        name: definition.name,
-      })
+      conflicts.push({ name: definition.name, reason: 'agent name already belongs to another host' })
+      continue
     }
+    names.push(definition.name)
     if (existing) {
       await env.DB.prepare(
         "UPDATE agents SET preset_id = ?, model = ?, reasoning_effort = ?, owner_member_id = ?, status = 'idle', updated_at = ? WHERE id = ?",
@@ -175,7 +178,7 @@ export async function registerHost(
   } else {
     await env.DB.prepare("UPDATE agents SET status = 'offline', updated_at = ? WHERE host_id = ?").bind(now, host.id).run()
   }
-  return { host_id: host.id, status: 'online', agents: reported }
+  return { host_id: host.id, status: 'online', agents: reported, conflicts }
 }
 
 /** Section 5 heartbeat: liveness of one Host, and the anchor of offline detection. */

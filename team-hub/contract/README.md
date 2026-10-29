@@ -19,6 +19,7 @@ sides read these files instead of restating the shapes:
 | `questions.json` | `POST /api/v1/teams/:teamId/issues/:issueId/questions` |
 | `withdraw.json` | `POST /api/v1/teams/:teamId/questions/:questionId/withdraw` |
 | `comments.json` | `POST /api/v1/teams/:teamId/issues/:issueId/comments` |
+| `comments-list.json` | `GET /api/v1/teams/:teamId/issues/:issueId/comments` |
 | `ws-handshake.json` | WebSocket handshake headers, the rejected variants (token in the query string, missing protocol version) and the frames |
 | `ws-events.json` | Every WebSocket event with its payload, including the `question.answered` answer relay |
 

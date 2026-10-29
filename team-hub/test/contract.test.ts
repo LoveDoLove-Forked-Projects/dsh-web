@@ -159,8 +159,13 @@ describe('contract samples', () => {
   })
 
   it('host registration answers exactly the documented shape', async () => {
-    // Given a registered host and the documented registration body
+    // Given another host that already owns one of the names the sample reports,
+    // and the documented registration body
     const context = await fixture()
+    await seedHost(context.env, context.teamId, context.adminToken, {
+      hostname: 'host-other',
+      agents: [{ name: 'shared-bot', preset_id: 'reviewer' }],
+    })
     const body = materialize(registerSample.request.body, context.ids, null, null) as Record<string, unknown>
 
     // When the host registers through the documented interface
@@ -175,6 +180,9 @@ describe('contract samples', () => {
     compareShape(result.body, registerSample.response.body, 'register', mismatches)
     expect(mismatches).toEqual([])
     expect(result.body.agents.map((agent: { name: string }) => agent.name)).toEqual(['qa-bot', 'review-bot'])
+    expect(result.body.conflicts).toEqual([
+      { name: 'shared-bot', reason: 'agent name already belongs to another host' },
+    ])
   })
 
   it('host heartbeat answers exactly the documented shape', async () => {

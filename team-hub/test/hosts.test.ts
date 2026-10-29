@@ -73,6 +73,7 @@ describe('host registration', () => {
         { id: expect.any(String), name: 'qa-bot' },
         { id: expect.any(String), name: 'review-bot' },
       ],
+      conflicts: [],
     })
     const stored = await all<{ name: string; preset_id: string; model: string | null; reasoning_effort: string | null }>(
       env,
@@ -139,8 +140,8 @@ describe('host registration', () => {
     ])
   })
 
-  it('host is refused an agent name another host already owns', async () => {
-    // Given two hosts on the same team
+  it('host registration skips an agent name another host owns and reports the conflict', async () => {
+    // Given host A owning qa-bot
     const env = createEnv(externalTransport({ github: { accounts: [OCTOCAT, HUBOT] } }).transport)
     const team = await seedTeam(env)
     const adminToken = await tokenFor(env, team.admin)
@@ -148,25 +149,42 @@ describe('host registration', () => {
       hostname: 'host-a',
       agents: [{ name: 'qa-bot', preset_id: 'liangshen' }],
     })
-
-    // When a second host registers the same agent name
-    const registered = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/hosts/register', {
-      token: hostA.hostToken,
-      body: { hostname: 'host-b', client_version: '1.0.0', agents: [{ name: 'qa-bot', preset_id: 'other' }] },
-    })
-
-    // Then the duplicate agent name is a validation failure
-    expect(registered.status).toBe(200)
     const minted = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/hosts/tokens', {
       token: adminToken,
       body: { hostname: 'host-b' },
     })
-    const other = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/hosts/register', {
+
+    // When host B registers with the clashing name plus a name of its own
+    const registered = await api(env, 'POST', '/api/v1/teams/' + team.teamId + '/hosts/register', {
       token: minted.body.host_token as string,
-      body: { hostname: 'host-b', client_version: '1.0.0', agents: [{ name: 'qa-bot', preset_id: 'other' }] },
+      body: {
+        hostname: 'host-b',
+        client_version: '1.0.0',
+        agents: [
+          { name: 'qa-bot', preset_id: 'other' },
+          { name: 'dev-bot', preset_id: 'liangshen' },
+        ],
+      },
     })
-    expect(other.status).toBe(400)
-    expect(other.body.error.code).toBe('VALIDATION_FAILED')
+
+    // Then the registration succeeds, the clash is reported and the other agent lands
+    expect(registered.status).toBe(200)
+    expect(registered.body.status).toBe('online')
+    expect(registered.body.agents).toEqual([{ id: expect.any(String), name: 'dev-bot' }])
+    expect(registered.body.conflicts).toEqual([
+      { name: 'qa-bot', reason: 'agent name already belongs to another host' },
+    ])
+    const stored = await all<{ name: string; host_id: string }>(
+      env,
+      'SELECT name, host_id FROM agents WHERE team_id = ? ORDER BY name',
+      team.teamId,
+    )
+    expect(stored).toEqual([
+      { name: 'dev-bot', host_id: minted.body.host_id },
+      { name: 'qa-bot', host_id: hostA.hostId },
+    ])
+    const online = await one<{ status: string }>(env, 'SELECT status FROM hosts WHERE id = ?', minted.body.host_id)
+    expect(online?.status).toBe('online')
   })
 
   it('host heartbeat reports server time and keeps the host online', async () => {

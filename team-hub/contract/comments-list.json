@@ -1,0 +1,35 @@
+{
+  "interface": "comments.list",
+  "description": "The comment thread of one issue, oldest first.",
+  "method": "GET",
+  "path": "/api/v1/teams/:teamId/issues/:issueId/comments",
+  "auth": "Host",
+  "request": {
+    "headers": {
+      "Authorization": "Bearer th_host_<64 hex characters>",
+      "Content-Type": "application/json",
+      "X-Team-Hub-Protocol-Version": "1.0.0"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "comments": [
+        {
+          "id": "comm_01j7b5w8m4f9q2e3r6t1y8u4ia",
+          "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
+          "issue_id": "issue_01j7b5w8m4f9q2e3r6t1y8u4i9",
+          "author_type": "agent",
+          "author_member_id": null,
+          "author_agent_id": "agent_01j7b5w8m4f9q2e3r6t1y8u4i8",
+          "content": "Starting the run, will report back.",
+          "created_at": 1700000000000,
+          "updated_at": 1700000000000
+        }
+      ]
+    }
+  },
+  "notes": [
+    "A Host token reads the thread of an issue its agent owns; a member reads any issue of the team."
+  ]
+}
