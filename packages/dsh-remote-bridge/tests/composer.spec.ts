@@ -740,6 +740,62 @@ describe('protocol v1 composer parity: model efforts', () => {
     expect(logs).toHaveLength(1)
     expect(logs[0]).toContain('continuing with an empty table')
   })
+
+  it('operator leaves one unreadable row in the effort file and the readable rows survive the next write', async () => {
+    // Given a file carrying one readable row and one row that names no model
+    await writeFile(file, JSON.stringify({
+      version: 1,
+      efforts: [
+        { provider: 'p-1', model: 'next-model', effort: 'high' },
+        { provider: 'p-1', model: '', effort: 'low' },
+      ],
+    }), 'utf8')
+    const logs: string[] = []
+    const table = new ModelEffortPreferences({ file, log: message => { logs.push(message) } })
+    // When this process reads it and remembers one more level
+    await table.load()
+    expect(table.effortOf('p-1', 'next-model')).toBe('high')
+    await table.save('p-1', 'default-model', 'low')
+    // Then the whole table was rewritten without losing the row it could read, and the bad row was counted once
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+      version: 1,
+      efforts: [
+        { provider: 'p-1', model: 'next-model', effort: 'high' },
+        { provider: 'p-1', model: 'default-model', effort: 'low' },
+      ],
+    })
+    expect(logs.filter(line => line.includes('dropped 1 unreadable row'))).toHaveLength(1)
+  })
+
+  it('user switches to a model whose remembered level the catalog no longer offers and no level is sent', async () => {
+    // Given a host that remembers "high" for a model which has since stopped publishing it
+    const logs: string[] = []
+    const table = new ModelEffortPreferences({ file, log: message => { logs.push(message) } })
+    await table.save('p-1', 'next-model', 'high')
+    const harness = makeConnection({ paired: true, modelEfforts: table })
+    harness.gateway.handler = async call => (call.method === 'modelCatalog'
+      ? {
+        ...EFFORT_CATALOG,
+        groups: [{
+          id: 'p-1',
+          name: 'Provider One',
+          models: [
+            { id: 'default-model', name: 'Default', reasoning: { efforts: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'low' } },
+            { id: 'next-model', name: 'Next', reasoning: { efforts: [{ id: 'low' }], defaultEffort: 'low' } },
+          ],
+        }],
+      }
+      : { selected: { provider: 'p-1', model: 'next-model' } })
+    // When the user switches to it without naming a level of its own
+    await harness.connection.handleText(requestFrame(78, 'session.setModel', { sessionId: 's-1', provider: 'p-1', model: 'next-model' }))
+    // Then the stale level is withheld rather than sent, and the row is gone so the model can be switched from now on
+    expect(harness.gateway.lastArgs('session', 'selectModel')).toEqual({
+      request: { sessionId: 's-1', provider: 'p-1', model: 'next-model' },
+    })
+    expect(table.effortOf('p-1', 'next-model')).toBeUndefined()
+    expect(JSON.parse(await readFile(file, 'utf8')).efforts).toEqual([])
+    expect(logs.filter(line => line.includes('dropped p-1/next-model = high'))).toHaveLength(1)
+  })
 })
 
 describe('protocol v1 composer parity: method set', () => {

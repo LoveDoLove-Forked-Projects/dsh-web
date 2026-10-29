@@ -1856,7 +1856,8 @@ export class BridgeConnection {
    * remembers for that model: a phone that picked "high" for a model once means
    * it on the next switch too, and sending nothing would silently reset the
    * model to the harness's own default. A model this table has nothing for is
-   * sent exactly as before — no `reasoningEffort` key at all.
+   * sent exactly as before — no `reasoningEffort` key at all. The remembered
+   * level is proven against the catalog first; see {@link #rememberedEffort}.
    * @param payload - `{sessionId, provider, model, effort?}`.
    */
   async #sessionSetModel(payload: Readonly<Record<string, unknown>>): Promise<DispatchOutcome> {
@@ -1867,7 +1868,8 @@ export class BridgeConnection {
       return refusal(CODE_INVALID_ARGS, 'session.setModel requires sessionId, provider and model')
     }
     await this.#options.modelEfforts.load()
-    const effort = optionalText(payload.effort) ?? this.#options.modelEfforts.effortOf(provider, model)
+    const named = optionalText(payload.effort)
+    const effort = named ?? await this.#rememberedEffort(provider, model)
     const call = await this.#unary('session', 'selectModel', {
       sessionId,
       provider,
@@ -1878,6 +1880,36 @@ export class BridgeConnection {
     const selected = isRecord(call.value) ? selectionOf(call.value.selected) : undefined
     if (selected === undefined) return refusal(CODE_INTERNAL, 'session/selectModel returned no selected model')
     return { ok: true, r: { ok: true, current: selected } }
+  }
+
+  /**
+   * The level this host remembers for one model, proven against the catalog.
+   *
+   * A remembered level is a fact about the past: the harness can change a model's
+   * offered ladder under it, and sending a level the model no longer publishes
+   * makes `selectModel` refuse — which leaves that model unswitchable, with the
+   * slider (which only writes the session's current model) unable to heal it. So
+   * the backfill asks the catalog first and withholds a level the model does not
+   * offer, dropping the stale row on the way: one catalog read for the stale
+   * switch, then the row is gone and the next switch costs nothing.
+   * @param provider - provider id.
+   * @param model - model id.
+   * @returns the level to send, or undefined when there is none this host can prove.
+   */
+  async #rememberedEffort(provider: string, model: string): Promise<string | undefined> {
+    const remembered = this.#options.modelEfforts.effortOf(provider, model)
+    if (remembered === undefined) return undefined
+    const catalog = await this.#unary('session', 'modelCatalog')
+    // A catalog this call cannot read is not evidence the level went stale: the
+    // stored value crosses exactly as it did before this check existed.
+    if (!catalog.ok || !isRecord(catalog.value)) return remembered
+    const offered = effortIdsOf(catalog.value.groups, provider, model)
+    if (offered !== undefined && offered.includes(remembered)) return remembered
+    await this.#options.modelEfforts.forget(provider, model, `the catalog no longer offers it: ${offered === undefined ? 'no such model' : offered.join(', ') || 'no levels'}`)
+      .catch((error: unknown) => {
+        this.#options.log(`could not drop the stale remembered effort for ${provider}/${model}: ${failureText(error)}`)
+      })
+    return undefined
   }
 
   /**

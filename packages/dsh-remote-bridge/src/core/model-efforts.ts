@@ -104,15 +104,47 @@ export class ModelEffortPreferences {
    * @param effort - the level chosen for that model.
    */
   async save(provider: string, model: string, effort: string): Promise<void> {
-    const previous = this.#rows.get(keyOf(provider, model))
-    this.#rows.set(keyOf(provider, model), { provider, model, effort })
+    const key = keyOf(provider, model)
+    const previous = this.#rows.get(key)
+    const written: EffortPreference = { provider, model, effort }
+    this.#rows.set(key, written)
     try {
       await this.#persist()
     } catch (error) {
-      if (previous === undefined) this.#rows.delete(keyOf(provider, model))
-      else this.#rows.set(keyOf(provider, model), previous)
+      // Only this call's own value is rolled back: a later save that already
+      // replaced it in memory is the newer truth, and restoring the older level
+      // here would silently undo a choice nothing failed on.
+      if (this.#rows.get(key) === written) {
+        if (previous === undefined) this.#rows.delete(key)
+        else this.#rows.set(key, previous)
+      }
       throw error
     }
+  }
+
+  /**
+   * Drop one remembered level, because the catalog no longer offers it.
+   *
+   * A level a model stopped publishing is worse than none at all: the backfill in
+   * `session.setModel` would send it, the harness would refuse, and the model
+   * would become unswitchable — and because that backfill is the only writer, the
+   * row could never heal itself. Dropping it here makes the next switch plain.
+   * @param provider - provider id.
+   * @param model - model id.
+   * @param reason - why it is being dropped, for the log line.
+   */
+  async forget(provider: string, model: string, reason: string): Promise<void> {
+    const key = keyOf(provider, model)
+    const previous = this.#rows.get(key)
+    if (previous === undefined) return
+    this.#rows.delete(key)
+    try {
+      await this.#persist()
+    } catch (error) {
+      this.#rows.set(key, previous)
+      throw error
+    }
+    this.#log(`model effort table: dropped ${provider}/${model} = ${previous.effort} (${reason})`)
   }
 
   async #read(): Promise<void> {
@@ -132,12 +164,24 @@ export class ModelEffortPreferences {
       return
     }
     const rows = (parsed as { efforts?: unknown } | null)?.efforts
-    if (!Array.isArray(rows) || !rows.every(isPreference)) {
-      this.#log(`model effort table ${this.#file} has no valid effort rows; continuing with an empty table`)
+    if (!Array.isArray(rows)) {
+      this.#log(`model effort table ${this.#file} has no effort table; continuing with an empty table`)
       return
     }
-    for (const row of rows) this.#rows.set(keyOf(row.provider, row.model), { provider: row.provider, model: row.model, effort: row.effort })
-    this.#log(`model effort table ${this.#file}: ${rows.length} remembered model(s)`)
+    // One unreadable row is not a reason to lose the rest: the table is written
+    // WHOLE on the next save, so every row dropped here would be erased by that
+    // write. Keeping everything this build can read is what makes that write
+    // preserve the user's other choices.
+    let dropped = 0
+    for (const row of rows) {
+      if (!isPreference(row)) {
+        dropped += 1
+        continue
+      }
+      this.#rows.set(keyOf(row.provider, row.model), { provider: row.provider, model: row.model, effort: row.effort })
+    }
+    if (dropped > 0) this.#log(`model effort table ${this.#file}: dropped ${dropped} unreadable row(s)`)
+    this.#log(`model effort table ${this.#file}: ${rows.length - dropped} remembered model(s)`)
   }
 
   /**
