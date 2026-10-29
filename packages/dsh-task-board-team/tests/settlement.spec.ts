@@ -109,24 +109,6 @@ describe('settlement write-back', () => {
     expect(body.error.length).toBe(EXECUTION_SUMMARY_LIMIT)
   })
 
-  it('operator sees a settlement refused once the attempt no longer holds the lease', async () => {
-    // Given a claimed issue whose lease lapsed while the run was still going
-    harness = makeHarness()
-    const { taskId, executionId } = await claimedCard(harness)
-    const issue = harness.hub.issues.get('issue_1')
-    if (issue === undefined) throw new Error('the fake hub lost the issue')
-    issue.leaseToken = undefined
-    issue.attemptId = 'attempt_from_another_host'
-
-    // When the settlement arrives for the old attempt
-    harness.board.extensions.emitExecutionSettled({ taskId, executionId, outcome: 'succeeded' })
-    await flush()
-
-    // Then the hub refused it and the refusal is visible on the card, not silent
-    expect(harness.hub.issues.get('issue_1')?.status).not.toBe('in_review')
-    expect(String(harness.service().summary().cards[taskId]?.lastError)).toContain('LEASE_EXPIRED')
-  })
-
   it('operator sees a settled card release the attempt and lease it no longer holds', async () => {
     // Given a claimed card that carries its attempt and lease
     harness = makeHarness()
@@ -147,8 +129,8 @@ describe('settlement write-back', () => {
     expect(link?.hubStatus).toBe('in_review')
   })
 
-  it('operator sees a settlement the hub refused retried by the next sweep and cleared', async () => {
-    // Given a claimed card whose settlement the hub could not take
+  it('operator sees a settlement a hub outage refused kept and cleared by the next sweep retry', async () => {
+    // Given a claimed card whose settlement a hub outage refused
     harness = makeHarness()
     const { taskId, executionId } = await claimedCard(harness)
     harness.hub.failNextSettle = { status: 503, code: 'HUB_UNAVAILABLE' }
@@ -173,27 +155,34 @@ describe('settlement write-back', () => {
     expect(readTaskIssueLink(harness.tasks()[0])?.pendingSettle).toBeUndefined()
   })
 
-  it('operator sees a settlement the hub still refuses kept instead of decided locally', async () => {
-    // Given a card whose attempt the hub no longer honours
+  it('operator sees an expired settlement dropped with a visible refusal instead of retried', async () => {
+    // Given a claimed issue whose attempt the hub no longer holds
     harness = makeHarness()
     const { taskId, executionId } = await claimedCard(harness)
     const issue = harness.hub.issues.get('issue_1')
     if (issue === undefined) throw new Error('the fake hub lost the issue')
     issue.leaseToken = undefined
     issue.attemptId = 'attempt_from_another_host'
-    harness.hub.failNextSettle = { status: 503, code: 'HUB_UNAVAILABLE' }
 
-    // When the write-back is refused and the next sweep retries it
+    // When the settlement for the old attempt is refused as expired
     harness.board.extensions.emitExecutionSettled({ taskId, executionId, outcome: 'succeeded' })
     await flush()
+
+    // Then the refusal is visible and the write-back is dropped together with the
+    // credentials of the attempt it can never be reported under
+    const link = readTaskIssueLink(harness.tasks()[0])
+    expect(String(harness.service().summary().cards[taskId]?.lastError)).toContain('LEASE_EXPIRED')
+    expect(String(link?.lastError)).toContain('expired')
+    expect(link?.pendingSettle).toBeUndefined()
+    expect(link?.attemptId).toBeUndefined()
+    expect(link?.leaseToken).toBeUndefined()
+
+    // When the next sweep runs, nothing is retried because nothing could land
+    const settles = harness.hub.calls.filter(call => call.path.endsWith('/settle')).length
     await harness.service().sweep()
     await flush()
-
-    // Then the hub's own refusal stands: the issue did not move, the pending
-    // write-back stays on the card, and the reason is visible
+    expect(harness.hub.calls.filter(call => call.path.endsWith('/settle'))).toHaveLength(settles)
     expect(harness.hub.issues.get('issue_1')?.status).not.toBe('in_review')
-    expect(readTaskIssueLink(harness.tasks()[0])?.pendingSettle).toMatchObject({ outcome: 'succeeded' })
-    expect(String(harness.service().summary().cards[taskId]?.lastError)).toContain('LEASE_EXPIRED')
   })
 
   it('operator sees a card that mirrors no issue write nothing back', async () => {

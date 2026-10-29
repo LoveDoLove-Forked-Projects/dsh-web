@@ -336,9 +336,8 @@ export class TeamSyncService {
       ...(event.error === undefined ? {} : { error: event.error }),
       ...(link.attemptId === undefined ? {} : { attemptId: link.attemptId }),
     })
-    // The write-back is recorded on the card BEFORE it is sent: a hub that
-    // refuses it (a lapsed attempt answers 412) must not lose what the run
-    // produced, so the card carries it until a sweep or a reconnect places it.
+    // The write-back is recorded on the card BEFORE it is sent, so a refusal this
+    // Host may retry keeps what the run produced instead of dropping it.
     this.#writeLink(task.id, { pendingSettle: body })
     await this.#writeSettlement(task.id, link.issueId, body)
     this.#publish()
@@ -365,9 +364,21 @@ export class TeamSyncService {
         hubStatus: readStatus(settled.status),
       })
     } catch (error) {
-      // The refusal stays visible on the card and the pending settlement stays in
-      // its payload: the next sweep or reconnect retries the same body against
-      // the same hub gates, and nothing here writes the status itself.
+      if (isSettlementExpired(error)) {
+        // An expired attempt is final: the issue no longer carries the attempt
+        // this body names, so no retry of it can ever be accepted. The card keeps
+        // the refusal and forgets the credentials of a run it can no longer
+        // report, and nothing here writes the collaboration status itself.
+        this.#writeLink(taskId, { pendingSettle: undefined, attemptId: undefined, leaseToken: undefined })
+        this.#recordError(taskId, new Error(
+          'the hub no longer holds this attempt (' + describe(error) + '), so the settlement of this run expired '
+          + 'and was not retried; start the card again to report a new outcome',
+        ))
+        return
+      }
+      // Every other refusal may pass: a network failure, a 5xx or a rate limit
+      // leaves the outcome on the card for the next sweep or reconnect to place,
+      // and the hub's own gates still decide whether it lands.
       this.#recordError(taskId, error)
     }
   }
@@ -375,9 +386,11 @@ export class TeamSyncService {
   /**
    * Retry every settlement the hub has not accepted yet.
    *
-   * A refusal is not permission to decide the outcome locally: a lapsed attempt
-   * still answers 412 and a conflicting one 409, so the pending record stays on
-   * the card until the hub takes it.
+   * A refusal is not permission to decide the outcome locally: the retry presents
+   * the same body and the hub's own gates still decide whether it lands. A
+   * settlement an expired attempt made impossible was already dropped by
+   * {@link TeamSyncService.#writeSettlement}, so only a retryable refusal is
+   * carried into this pass.
    */
   async #retryPendingSettlements(): Promise<void> {
     for (const entry of this.#linked()) {
@@ -1238,6 +1251,20 @@ function readAgentConflicts(answer: unknown): Array<{ name: string; reason: stri
     rows.push({ name: row.name, reason: typeof row.reason === 'string' ? row.reason : 'the hub reported a conflict' })
   }
   return rows
+}
+
+/**
+ * Whether one settlement refusal means the attempt it names is gone for good.
+ *
+ * A hub answers 412 `LEASE_EXPIRED` when the issue no longer carries the attempt
+ * the write-back presents — a rework, a retry or another attempt replaced it — so
+ * the same body can never be accepted again and retrying it would only spend this
+ * Host's request budget. Every other refusal may still pass on the next attempt.
+ * @param error - the refusal the settlement answered with.
+ * @returns whether this settlement can never land.
+ */
+function isSettlementExpired(error: unknown): boolean {
+  return error instanceof HubError && (error.status === 412 || error.code === 'LEASE_EXPIRED')
 }
 
 /**
