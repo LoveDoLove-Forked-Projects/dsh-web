@@ -10,18 +10,21 @@ The repository also had no recorded answer to the standard CI questions: faster 
 
 ## Decision
 
-`ci.yml` runs its required checks as three independent lanes plus one fan-in job:
+`ci.yml` runs its required checks as four independent lanes plus one fan-in job:
 
 | job | name | content |
 | --- | --- | --- |
 | `static-checks` | Static checks | elastic checkout, actionlint, setup, the three text rules **before** `pnpm install`, install, lint, typecheck, build |
 | `unit-tests` | Unit tests (`shard: [1,2,3,4]`) | elastic checkout, setup, install, `node scripts/test-shard.mjs <shard> 4` — no build |
 | `consistency` | Consistency gates | elastic checkout, setup, install, then sync-shared, libs, aggregate, docs, runtime-deps and script tests — never builds |
-| `ci` | **CI checks** (unchanged name) | `if: always()`, `needs` the three lanes, fails unless every `needs.<job>.result` is exactly `success` |
+| `team-hub` | Team hub | elastic checkout, setup, a change probe, then `pnpm install --frozen-lockfile`, `pnpm typecheck` and `pnpm test` inside `team-hub/` — those steps are skipped when `team-hub/**` is unchanged and the job still ends `success` |
+| `ci` | **CI checks** (unchanged name) | `if: always()`, `needs` the four lanes, fails unless every `needs.<job>.result` is exactly `success` |
 | `plugin-mount` | (unchanged) | unchanged behavior, plus the elastic checkout and a cached pinned DSH CLI |
 | `contribution-evidence` | Validate PR contribution evidence | unchanged |
 
 `nightly.yml` keeps its two Tier-2 jobs and gains the elastic checkout; `release.yml` keeps its gated publish lane and gives `verify-release` the elastic checkout and the same cached CLI.
+
+`team-hub` is a Cloudflare Workers project that belongs to no workspace: it carries its own `pnpm-lock.yaml`, its own `pnpm-workspace.yaml`, its own tsconfig and its own workers-pool suite, so none of the three root lanes reaches it. The lane is path-filtered inside the job, because a trigger-level `on.<event>.paths` filter suppresses the entire workflow and with it the lanes and the fan-in that produce the required context: the job always runs and only its work steps are skipped, so a run that leaves `team-hub/**` alone ends `success` and the fan-in accepts it. The decision fails open — an absent or unreachable comparison commit, a failed fetch and a push deeper than the bounded fetch all run the lane — because a false "changed" costs a minute of a free runner while a false "unchanged" would silently drop this project's only typecheck and test gate. Its install is `pnpm install --frozen-lockfile` without `--ignore-workspace`: measured on a fresh copy, the flag drops `team-hub/pnpm-workspace.yaml` and exits 1 with `ERR_PNPM_IGNORED_BUILDS` (`esbuild@0.28.1`, `esbuild@0.28.2`, `workerd@1.20260815.1`, `workerd@1.20261023.1`), and before that it fails the supply-chain policy check the pinned `wrangler` needs an exclusion for, while the plain install runs both postinstalls, passes that check and leaves `pnpm typecheck` and the 160 workers-pool tests green. Isolation does not depend on the flag: `pnpm root -w` inside `team-hub` resolves to `team-hub/node_modules`, so the nested workspace file already keeps this install out of the root workspace. The pnpm-store cache is keyed by `team-hub/pnpm-lock.yaml`, the only lockfile that describes this graph.
 
 The required context names are frozen by the repository ruleset `integration-branch-policy` — `CI checks`, `plugin-mount`, `Validate PR contribution evidence`, `guard-agent-notes` — so the fan-in job carries the old name instead of the lanes becoming new required contexts, and the aggregate check is explicit rather than left to `needs` defaults: a skipped or cancelled lane must never satisfy a required check.
 
@@ -61,6 +64,8 @@ Every CI change states which item it advances, or why the item does not apply he
 | 14 | Shared module state between test files | **Not applied.** Vitest's per-file isolation is the suites' correctness boundary, and the workspace suite is already under the Tier-1 budget; the equivalent win here came from sharding wall time. Revisit if the suite outgrows the budget. |
 | 15 | Shards past the setup boundary | **Applied.** Setup is ~12s per lane, so a shard costs one checkout, one setup and one install while the required wall clock is now bounded by the static lane rather than by the suite. |
 
+The `team-hub` lane advances none of the items above: it adds a gate for a project that had none rather than shortening an existing check. Item 12 is what makes a tenth job record acceptable here — standard runner minutes are free on this repository and the required context stays one fan-in name — and item 9 stays not applicable because the lane installs its own standalone project instead of filtering the root workspace graph.
+
 ## Measured effect
 
 Baseline on `origin/dev` (run 38499514986): `CI checks` 164s, `plugin-mount` 144s, run wall 168s. Two real runs of this change's pull request (38506503973 and 38506816812):
@@ -90,7 +95,7 @@ A fourth run, carrying only a documentation commit, measured 173s with `Static c
 
 ## Consequences
 
-The required wall clock is now `max(static lane, slowest shard, consistency) + fan-in` instead of the sum of the gates, so adding a gate no longer lengthens the check linearly. The cost is runner minutes: nine job records per run instead of three, which is free on a public repository's standard runners and would be a real cost on a private fork — the trade is valid only while that holds, and a move to a private repository means revisiting item 12.
+The required wall clock is now `max(static lane, slowest shard, consistency) + fan-in` instead of the sum of the gates, so adding a gate no longer lengthens the check linearly. The cost is runner minutes: ten job records per run instead of three, which is free on a public repository's standard runners and would be a real cost on a private fork — the trade is valid only while that holds, and a move to a private repository means revisiting item 12.
 
 The Windows lane spends one job record per qualifying push — free on a public repository's standard runners and off the required path — and it buys its coverage after the merge: a Windows-only regression surfaces on `dev` or `main` rather than on the pull request that carries it, because the lane is not a required context.
 

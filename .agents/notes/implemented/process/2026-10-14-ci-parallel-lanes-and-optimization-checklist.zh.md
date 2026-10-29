@@ -10,18 +10,21 @@ Status: implemented
 
 ## Decision
 
-`ci.yml` 把必需检查拆成三条独立通道加一个汇聚 job：
+`ci.yml` 把必需检查拆成四条独立通道加一个汇聚 job：
 
 | job | 名称 | 内容 |
 | --- | --- | --- |
 | `static-checks` | Static checks | 弹性检出、actionlint、环境安装、三条文本规则在 `pnpm install` **之前**、安装、lint、typecheck、build |
 | `unit-tests` | Unit tests（`shard: [1,2,3,4]`） | 弹性检出、环境安装、依赖安装、`node scripts/test-shard.mjs <shard> 4`——不构建 |
 | `consistency` | Consistency gates | 弹性检出、环境安装、依赖安装，随后 sync-shared、libs、aggregate、docs、runtime-deps 与脚本测试——从不构建 |
-| `ci` | **CI checks**（名称不变） | `if: always()`，`needs` 上述三条通道，除非每个 `needs.<job>.result` 都恰好是 `success` 否则失败 |
+| `team-hub` | Team hub | 弹性检出、环境安装、改动探测，随后在 `team-hub/` 内 `pnpm install --frozen-lockfile`、`pnpm typecheck`、`pnpm test`——`team-hub/**` 无变动时这些步骤被跳过，job 仍以 `success` 结束 |
+| `ci` | **CI checks**（名称不变） | `if: always()`，`needs` 上述四条通道，除非每个 `needs.<job>.result` 都恰好是 `success` 否则失败 |
 | `plugin-mount` | （不变） | 行为不变，另加弹性检出与缓存化的钉版 DSH CLI |
 | `contribution-evidence` | Validate PR contribution evidence | 不变 |
 
 `nightly.yml` 保留它的两个 Tier-2 job，只加弹性检出；`release.yml` 保留受开关控制的发布通道，只给 `verify-release` 加弹性检出与同一套 CLI 缓存。
+
+`team-hub` 是一个不属于任何 workspace 的 Cloudflare Workers 工程：它自带 `pnpm-lock.yaml`、`pnpm-workspace.yaml`、tsconfig 与 workers pool 套件，上面三条根通道都碰不到它。该通道的路径过滤写在 job 内部，因为写在触发器上的 `on.<event>.paths` 过滤会连同整条 workflow 一起被抑制，也就会连同产生必需上下文的各条通道与汇聚 job 一起被抑制：job 始终运行，只有干活的那几个步骤被跳过，因此没有改动 `team-hub/**` 的一次运行以 `success` 结束，汇聚 job 照常接受。判定是失败开放的——找不到可比对的提交、fetch 失败、推送比有界抓取更深，都会照跑这条通道——因为误判「有变动」只花掉免费 runner 上的一分钟，而误判「无变动」会静默丢掉这个工程唯一的 typecheck 与测试门禁。它的安装是 `pnpm install --frozen-lockfile`，不带 `--ignore-workspace`：在一份干净副本上实测，该 flag 会丢掉 `team-hub/pnpm-workspace.yaml`，以 `ERR_PNPM_IGNORED_BUILDS` 退出 1（`esbuild@0.28.1`、`esbuild@0.28.2`、`workerd@1.20260815.1`、`workerd@1.20261023.1`），并在这之前就因为钉版 `wrangler` 需要豁免条目而卡在供应链策略校验上；不带该 flag 的安装会跑完两个 postinstall、通过该校验，并让 `pnpm typecheck` 与 160 个 workers pool 测试保持绿色。隔离并不依赖这个 flag：在 `team-hub` 内 `pnpm root -w` 解析到 `team-hub/node_modules`，嵌套的 workspace 文件本身就不让这次安装进入根 workspace。pnpm store 缓存以 `team-hub/pnpm-lock.yaml` 为键，那是唯一描述这张依赖图的 lockfile。
 
 必需检查的名字由仓库 ruleset `integration-branch-policy` 冻结——`CI checks`、`plugin-mount`、`Validate PR contribution evidence`、`guard-agent-notes`——因此沿用旧名的是汇聚 job，而不是让三条通道变成新的必需上下文；并且聚合判断是显式写出的，不依赖 `needs` 默认语义：被跳过或被取消的通道永远不能算作满足了必需检查。
 
@@ -61,6 +64,8 @@ Status: implemented
 | 14 | 跨测试文件共享模块状态 | **不落地。** vitest 的逐文件隔离是这些套件的正确性边界，而 workspace 套件本就处在 Tier-1 预算之内；本仓等价的收益来自分片墙钟。套件超出预算时再议。 |
 | 15 | 越过设置成本边界继续分片 | **已落地。** 每条通道的设置约 12s，一个分片只多付一次检出、一次环境安装与一次依赖安装，而必需检查的墙钟现在由静态通道而非套件决定。 |
 
+`team-hub` 通道不推进上表的任何一条：它是给一个原本没有门禁的工程新增门禁，而不是缩短已有检查。第 12 条是这里能接受第十条 job 记录的前提——本仓标准 runner 分钟免费，且必需上下文仍只有一个汇聚名——第 9 条则仍然不适用，因为这条通道安装的是它自己那个独立工程，而不是对根 workspace 图做过滤。
+
 ## Measured effect
 
 `origin/dev` 基线（run 38499514986）：`CI checks` 164s、`plugin-mount` 144s、整轮墙钟 168s。本次改动 PR 上的两次真实运行（38506503973、38506816812）：
@@ -90,7 +95,7 @@ Status: implemented
 
 ## Consequences
 
-必需检查的墙钟现在是 `max(静态通道, 最慢分片, 一致性通道) + 汇聚`，而不是各门禁耗时之和，因此新增一道门禁不再线性拉长检查。代价是 runner 分钟：一次运行九个 job 记录而不是三个。这在公开仓库的标准 runner 上免费，但在私有 fork 上是真实开销——该取舍只在当前前提下成立，一旦仓库转为私有就需要重议第 12 条。
+必需检查的墙钟现在是 `max(静态通道, 最慢分片, 一致性通道) + 汇聚`，而不是各门禁耗时之和，因此新增一道门禁不再线性拉长检查。代价是 runner 分钟：一次运行十个 job 记录而不是三个。这在公开仓库的标准 runner 上免费，但在私有 fork 上是真实开销——该取舍只在当前前提下成立，一旦仓库转为私有就需要重议第 12 条。
 
 Windows 通道花掉的是每次符合条件的推送一条 job 记录——在公开仓库的标准 runner 上免费，且不在必需路径上——换来的是合并之后才拿到的覆盖：只在 Windows 上出现的回归会在 `dev` 或 `main` 上暴露，而不是在携带它的那条 pull request 上，因为它不是必需上下文。
 

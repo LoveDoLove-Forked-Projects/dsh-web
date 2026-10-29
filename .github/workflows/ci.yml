@@ -22,20 +22,21 @@ concurrency:
 env:
   DSH_CLI_VERSION: 0.2.1-rc.3
 
-# Three independent gates run in parallel and a fourth job aggregates them into
+# Four independent gates run in parallel and a fifth job aggregates them into
 # the required "CI checks" context:
 #
 #   static-checks  text rules, typecheck and the build
 #   unit-tests     the workspace suite, split into four shards
 #   consistency    tree-wide consistency checks against the committed tree
-#   ci             fan-in: fails unless all three lanes returned success
+#   team-hub       the standalone Workers project under team-hub/, only when it changed
+#   ci             fan-in: fails unless all four lanes returned success
 #
 # The lanes used to be steps of one job, which serialized ~4 minutes of
 # independent work. They stay separate jobs rather than a matrix so each keeps
 # its own timeout and its own step-level failure name.
 
 jobs:
-  # Lane 1 of 3: the tree-wide text rules, the type program and the build. The
+  # Lane 1 of 4: the tree-wide text rules, the type program and the build. The
   # three rule gates run after `pnpm install` but before Typecheck and Build, so
   # a contributor's most common violation still fails in seconds instead of
   # after a compile.
@@ -144,7 +145,7 @@ jobs:
       - name: Build
         run: pnpm build
 
-  # Lane 2 of 3: the workspace suite, sharded so the four heaviest packages no
+  # Lane 2 of 4: the workspace suite, sharded so the four heaviest packages no
   # longer queue behind each other. scripts/test-shard.mjs owns the partition
   # (complete, disjoint, deterministic; asserted by scripts/test-shard.test.mjs
   # in pnpm test:scripts): it enumerates the test-bearing workspace packages,
@@ -195,7 +196,7 @@ jobs:
       - name: Unit tests (shard ${{ matrix.shard }} of 4)
         run: node scripts/test-shard.mjs ${{ matrix.shard }} 4
 
-  # Lane 3 of 3: the tree-wide consistency gates. This lane must never build:
+  # Lane 3 of 4: the tree-wide consistency gates. This lane must never build:
   # libs:check fingerprints the COMMITTED lib/ bundles against the committed
   # sources they were built from, and a build would replace the working tree
   # with freshly built bytes before the comparison -- masking exactly the stale
@@ -254,8 +255,126 @@ jobs:
       - name: Script tests
         run: pnpm test:scripts
 
+  # Lane 4 of 4: team-hub/, a standalone Cloudflare Workers project. It is its
+  # own pnpm project (own pnpm-lock.yaml, own pnpm-workspace.yaml), is absent
+  # from the root workspace, and carries its own tsconfig and workers-pool
+  # suite, so nothing in the three lanes above covers it.
+  #
+  # The install runs WITHOUT --ignore-workspace on purpose. That flag drops
+  # team-hub/pnpm-workspace.yaml, and with it the allowBuilds entries the
+  # workers pool resolves its binaries through and the minimumReleaseAgeExclude
+  # entries that keep a freshly pinned wrangler installable: on a fresh
+  # checkout the flag's install exits 1 with ERR_PNPM_IGNORED_BUILDS
+  # (esbuild@0.28.1, esbuild@0.28.2, workerd@1.20260815.1,
+  # workerd@1.20261023.1), and before that it fails the supply-chain policy
+  # check once a pinned wrangler is younger than the release-age window.
+  # Isolation does not need the flag: `pnpm root -w` inside team-hub resolves
+  # to team-hub/node_modules, so the nested workspace file already keeps this
+  # install out of the root workspace.
+  team-hub:
+    name: Team hub
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # Same elastic checkout as static-checks: 3-minute first attempt, one 5-minute retry.
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v5
+        continue-on-error: true
+        timeout-minutes: 3
+
+      - name: Drop a partial clone
+        if: steps.checkout.outcome == 'failure'
+        run: rm -rf "$GITHUB_WORKSPACE/.git"
+
+      - name: Checkout (retry)
+        if: steps.checkout.outcome == 'failure'
+        uses: actions/checkout@v5
+        timeout-minutes: 5
+
+      # This lane is path-filtered, and the filter cannot live in
+      # `on.<event>.paths`: a trigger-level filter would suppress the whole
+      # workflow, and with it every other lane and the fan-in that produces the
+      # "CI checks" context. The job therefore always runs and
+      # only its work steps are skipped, so an unchanged team-hub/ leaves a
+      # green job for the fan-in to accept.
+      #
+      # The decision fails open: every unresolvable case (no comparable commit,
+      # a failed fetch, a push deeper than the bounded fetch) runs the lane. A
+      # false "changed" costs a minute of a free runner; a false "unchanged"
+      # would silently drop this project's only typecheck and test gate.
+      - name: Detect team-hub changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          changed=true
+          base=
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # A pull_request checkout is the PR merged into its base branch, so
+            # diffing that tree against the base branch tip names exactly the
+            # changes this PR introduces -- no merge base and no deeper history.
+            if git fetch --no-tags --depth=1 origin "$BASE_REF" >/dev/null 2>&1; then
+              base=FETCH_HEAD
+            fi
+          else
+            case "$BEFORE_SHA" in
+              "" | 0000000000000000000000000000000000000000) ;;
+              *)
+                # A push names the commit it started from. 30 is a cap, not an
+                # assumption: a deeper push leaves the commit absent and the
+                # lane simply runs.
+                git fetch --no-tags --depth=30 origin "$GITHUB_REF_NAME" >/dev/null 2>&1 || true
+                if git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+                  base="$BEFORE_SHA"
+                fi
+                ;;
+            esac
+          fi
+          if [ -n "$base" ] && diff="$(git diff --name-only "$base" HEAD -- team-hub)"; then
+            if [ -z "$diff" ]; then
+              changed=false
+            fi
+          fi
+          echo "team-hub/** changed: $changed"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        if: steps.changes.outputs.changed == 'true'
+        uses: pnpm/action-setup@v5
+
+      # The pnpm store cache is keyed by team-hub/pnpm-lock.yaml, not by the
+      # root lockfile: this project resolves its own dependency graph, so the
+      # root lockfile is not a cache identity for it.
+      - name: Setup Node.js
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: team-hub/pnpm-lock.yaml
+
+      - name: Install team-hub dependencies
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: team-hub
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck team-hub
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: team-hub
+        run: pnpm typecheck
+
+      - name: Test team-hub
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: team-hub
+        run: pnpm test
+
   # Fan-in for the required "CI checks" context. Branch protection observes
-  # THIS job, and the three lanes above are independent jobs, so the aggregate
+  # THIS job, and the four lanes above are independent jobs, so the aggregate
   # fails unless every lane's result is exactly 'success'. The per-need check is
   # explicit rather than left to the default `needs` semantics: a skipped or
   # cancelled lane also leaves `needs` satisfied, and a required check must
@@ -263,7 +382,7 @@ jobs:
   ci:
     name: CI checks
     if: always()
-    needs: [static-checks, unit-tests, consistency]
+    needs: [static-checks, unit-tests, consistency, team-hub]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -273,9 +392,10 @@ jobs:
           LANE_STATIC_CHECKS: ${{ needs.static-checks.result }}
           LANE_UNIT_TESTS: ${{ needs.unit-tests.result }}
           LANE_CONSISTENCY: ${{ needs.consistency.result }}
+          LANE_TEAM_HUB: ${{ needs.team-hub.result }}
         run: |
           failed=0
-          for lane in LANE_STATIC_CHECKS LANE_UNIT_TESTS LANE_CONSISTENCY; do
+          for lane in LANE_STATIC_CHECKS LANE_UNIT_TESTS LANE_CONSISTENCY LANE_TEAM_HUB; do
             result="${!lane}"
             if [ "$result" = "success" ]; then
               echo "ok   ${lane}=${result}"
