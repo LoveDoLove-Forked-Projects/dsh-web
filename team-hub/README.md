@@ -35,7 +35,7 @@ cd team-hub
 pnpm install
 pnpm test        # vitest on @cloudflare/vitest-pool-workers (workerd, real D1/DO)
 pnpm typecheck   # tsc --noEmit
-pnpm types       # regenerate worker-configuration.d.ts from wrangler.jsonc
+pnpm types       # regenerate .cloudflare/types/index.d.ts from cloudflare.config.ts
 ```
 
 Outbound HTTP to GitHub and APNs is injected through the environment in tests
@@ -49,15 +49,15 @@ in this repository.
 ### 1. D1 database
 
 ```sh
-cf d1 create dsh-team-hub          # or: wrangler d1 create dsh-team-hub
+cf d1 create --name dsh-team-hub
 ```
 
-Put the returned id into `wrangler.jsonc` at
-`d1_databases[0].database_id`, replacing `REPLACE_WITH_D1_DATABASE_ID`.
+Put the returned id into `cloudflare.config.ts` at
+`worker.env.DB.id`, replacing `REPLACE_WITH_D1_DATABASE_ID`.
 Apply the schema to the created database:
 
 ```sh
-wrangler d1 migrations apply dsh-team-hub --remote
+cf d1 migrations apply <database_id> --dir migrations
 ```
 
 ### 2. GitHub OAuth App
@@ -82,7 +82,7 @@ Apple Developer account inputs:
 | App bundle identifier | `APNS_BUNDLE_ID` |
 
 The key is only ever read from the environment secret; no copy belongs in this
-repository or in `wrangler.jsonc`.
+repository or in `cloudflare.config.ts`.
 
 ### 4. Hub signing key
 
@@ -92,13 +92,19 @@ session access tokens. Generate one, for example `openssl rand -hex 32`.
 ### 5. Secrets
 
 ```sh
-wrangler secret put GITHUB_CLIENT_ID
-wrangler secret put GITHUB_CLIENT_SECRET
-wrangler secret put TEAM_HUB_SIGNING_SECRET
-wrangler secret put APNS_KEY_ID
-wrangler secret put APNS_TEAM_ID
-wrangler secret put APNS_BUNDLE_ID
-wrangler secret put APNS_PRIVATE_KEY_P8
+cf workers secrets update GITHUB_CLIENT_ID --worker dsh-team-hub --text <value>
+cf workers secrets update GITHUB_CLIENT_SECRET --worker dsh-team-hub --text <value>
+cf workers secrets update TEAM_HUB_SIGNING_SECRET --worker dsh-team-hub --text <value>
+cf workers secrets update APNS_KEY_ID --worker dsh-team-hub --text <value>
+cf workers secrets update APNS_TEAM_ID --worker dsh-team-hub --text <value>
+cf workers secrets update APNS_BUNDLE_ID --worker dsh-team-hub --text <value>
+cf workers secrets update APNS_PRIVATE_KEY_P8 --worker dsh-team-hub --text <value>
+```
+
+## Deployment
+
+```sh
+cf deploy
 ```
 
 ## Deviations from PROTOCOL.md
