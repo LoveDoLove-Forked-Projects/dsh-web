@@ -352,7 +352,7 @@ When automated acceptance passes on the Host, the issue transitions to `in_revie
 1. Reviewer calls `POST /api/v1/teams/:teamId/issues/:issueId/review/reject` with `instructions`.
 2. Hub stores rework instructions on the issue, clears any active lease, transitions issue status to `assigned` (or `waiting_host` if the bound Host is offline), and records `issue.rework_requested` activity.
 3. Hub delivers WebSocket event `issue.rework` with rework instructions to the bound Host as a notification signal to claim the card.
-4. Bound Host receives `issue.rework`, invokes the DSH task board extension capability `rework` (M0), generates a new `execution_attempt_id`, claims the issue via `POST /api/v1/teams/:teamId/issues/:issueId/claim`, and re-runs the task in the same session (`reuseSession`), feeding rework instructions into the session context.
+4. Bound Host receives `issue.rework`, generates a new `execution_attempt_id`, and calls `POST /api/v1/teams/:teamId/issues/:issueId/claim` to acquire an active lease; only after the claim succeeds does it invoke the DSH task board extension capability `rework` (M0) to re-run the task in the same session (`reuseSession`) feeding rework instructions into the session context; if the claim fails, the Host aborts execution and records a local error without starting the rework session.
 
 ## 9. Wire Protocol and Transport
 
