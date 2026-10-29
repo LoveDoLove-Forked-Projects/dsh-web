@@ -32,8 +32,8 @@ Human team members authenticate exclusively through GitHub OAuth. No custom pass
 
 | Platform | OAuth Flow | Mechanics |
 | --- | --- | --- |
-| Web GUI | Authorization Code Flow | Browser navigates to `GET /auth/github/authorize`. GitHub redirects to `GET /auth/github/callback`. Hub issues session cookie or token pair. |
-| iOS Whale App | Authorization Code with PKCE (RFC 7636) | App initiates `ASWebAuthenticationSession` with SHA-256 `code_challenge`. Callback scheme is `whale://auth/callback`. App exchanges `code` + `code_verifier` via `POST /auth/token`. |
+| Web GUI | Authorization Code Flow | Browser navigates to `GET /auth/github/authorize`. Hub binds `state` to a short-lived `HttpOnly` cookie `th_oauth_state`. GitHub redirects to `GET /auth/github/callback`, where `state` is verified against `th_oauth_state`. Hub sets `th_session` cookie and `th_refresh` cookie (`HttpOnly`, `Secure`, `SameSite=Lax`) and issues session tokens. |
+| iOS Whale App | Authorization Code with PKCE (RFC 7636) | App initiates `ASWebAuthenticationSession` with SHA-256 `code_challenge`. Callback scheme is `whale://auth/callback`. App exchanges `code` + `code_verifier` via `POST /auth/token`. Hub verifies `code_verifier` against the stored `code_challenge` using SHA-256 (`S256`). |
 
 #### Authorization Parameters (`GET /auth/github/authorize`)
 Clients initiate OAuth by directing user-agents to `GET /auth/github/authorize`. The request MUST supply the following query parameters:
@@ -47,6 +47,8 @@ Clients initiate OAuth by directing user-agents to `GET /auth/github/authorize`.
 | `code_challenge_method` | String | For `ios` | PKCE challenge method. Required when `client=ios` and MUST be exactly `S256`. |
 
 If any parameter is missing, invalid, or fails these validation constraints, the Hub returns HTTP `400 Bad Request` with error code `VALIDATION_FAILED`.
+
+In the Web flow, the Hub binds the generated `state` parameter to a short-lived `HttpOnly` cookie named `th_oauth_state` at authorization time and compares it against the callback parameter at `GET /auth/github/callback`. For `client=ios`, `POST /auth/token` MUST supply `code_verifier`, which the Hub independently verifies against the stored `code_challenge` using SHA-256 (`S256`).
 
 ### Hub Session Tokens
 Upon successful GitHub authentication, the Hub issues a dual-token pair. Both the initial token exchange response (`POST /auth/token`) and the token refresh response (`POST /auth/refresh`) include the authenticated `member` object alongside the token credentials:
@@ -72,10 +74,14 @@ Upon successful GitHub authentication, the Hub issues a dual-token pair. Both th
 }
 ```
 
+The `expires_in` field returned by `POST /auth/token` and `POST /auth/refresh` represents the access token lifetime in seconds (`7200`, corresponding to 2 hours), following OAuth 2.0 convention (RFC 6749). Clients MUST process and calculate expiration in seconds.
+
+In Web environments, the `th_refresh` cookie is set during web callback (`GET /auth/github/callback`) and token refresh (`POST /auth/refresh`) with `HttpOnly; Secure; SameSite=Lax`. The `th_session` cookie is also set and remains valid for Web authentication.
+
 | Token Type | Storage | Lifetime | Usage |
 | --- | --- | --- | --- |
-| Access Token | In-memory / Secure storage | 7,200,000 ms (2 hours) | Bearer token in `Authorization: Bearer <token>` for all REST and WebSocket calls. |
-| Refresh Token | D1 / Secure Keychain | 2,592,000,000 ms (30 days) | Submitted to `POST /auth/refresh` to obtain a new token pair with automatic refresh token rotation. |
+| Access Token | In-memory / Secure storage | 7200 s (2 hours) | Bearer token in `Authorization: Bearer <token>` for all REST and WebSocket calls. Returned as `expires_in: 7200` (in seconds) per OAuth convention; clients must calculate expiry in seconds. |
+| Refresh Token | D1 / Secure Keychain / `th_refresh` cookie | 2,592,000 s (30 days) | Submitted to `POST /auth/refresh` (or sent via `th_refresh` cookie) to obtain a new token pair with automatic refresh token rotation. |
 
 Calling `POST /auth/revoke` invalidates the submitted refresh token and terminates the associated session immediately.
 
@@ -364,14 +370,24 @@ When a Host node is offline, any issue assigned to an Agent bound to that Host r
 | `running` | `waiting_host` | Lease expired / Host offline | Hub system | `assignee_type='agent'`; lease timeout (60 s) expired without renewal or host missed 3 heartbeats. | `issue.host_offline` |
 | `running` | `in_review` | Settle success | Executing Host | `assignee_type='agent'`; execution finished; automated acceptance tests passed locally. | `issue.settled_in_review` |
 | `running` | `failed` | Settle failure | Executing Host | `assignee_type='agent'`; execution failed or unrecoverable error encountered. | `issue.failed` |
-| `assigned` | `in_review` | Submit for review | Human | `assignee_type='member'`; `reviewer_member_id` is set; human assignee finishes work and requests review. | `issue.submitted_for_review` |
-| `assigned` | `done` | Complete task directly | Human | `assignee_type='member'`; no `reviewer_member_id` set; human assignee marks task complete. | `issue.completed` |
+| `assigned` | `in_review` | Submit for review | Human | `assignee_type='member'`; `reviewer_member_id` is set; human assignee finishes work and requests review. Permitted only for assignee or admin. | `issue.submitted_for_review` |
+| `assigned` | `done` | Complete task directly | Human | `assignee_type='member'`; no `reviewer_member_id` set; human assignee marks task complete. Permitted only for assignee or admin. | `issue.completed` |
 | `in_review` | `done` | Approve review | Human | Human reviewer accepts the work. | `issue.approved` |
-| `in_review` | `assigned` | Reject review (rework) | Human | Reviewer provides rework instructions; instructions stored on issue. | `issue.rework_requested` |
+| `in_review` | `assigned` | Reject review (rework) | Human | Reviewer provides rework instructions; `rework_instructions` stored on issue. Non-null `rework_instructions` with `status='assigned'` signals pending rework. | `issue.rework_requested` |
 | `failed` | `assigned` | Retry execution | Human | Issue in `failed` status; human triggers retry; clears failure error. | `issue.retried` |
 | Any active state | `canceled` | Cancel task | Human | User cancels issue before completion. | `issue.canceled` |
 
-Human-driven lifecycle transitions (`submit-for-review` -> `in_review`, `complete task directly` -> `done`, `retry execution` -> `assigned`, and `cancel task` -> `canceled`) are performed via `PATCH /api/v1/teams/:teamId/issues/:issueId` with `{ status }` in the request body, and are validated strictly against the matrix preconditions. Disallowed transitions return HTTP `422 Unprocessable Entity` (`INVALID_STATE_TRANSITION`).
+Human-driven lifecycle transitions (`submit-for-review` -> `in_review`, `complete task directly` -> `done`, `retry execution` -> `assigned`, and `cancel task` -> `canceled`) are performed via `PATCH /api/v1/teams/:teamId/issues/:issueId` with `{ status }` in the request body, and are validated strictly against the matrix preconditions. Transitions `submit-for-review` (`assigned` -> `in_review`) and direct task completion (`assigned` -> `done`) are strictly restricted to the assignee themselves (`assignee_id = current_member_id` when `assignee_type='member'`) or a team administrator; calls by any other member return HTTP `403 Forbidden` (`FORBIDDEN`). Disallowed transitions return HTTP `422 Unprocessable Entity` (`INVALID_STATE_TRANSITION`).
+
+#### Claim Preconditions and Atomicity
+Claiming an issue transitions it to `running` and MUST be executed via a single conditional `UPDATE`:
+- `WHERE status IN ('assigned', 'waiting_host') AND bound host matches`, OR
+- in reconnect scenarios: `WHERE status = 'running' AND execution_attempt_id = :attempt_id AND lease_token = :lease_token`.
+
+Issues in `failed` and `todo` statuses CANNOT be claimed; any claim attempt on `failed` or `todo` returns HTTP `422 Unprocessable Entity` (`INVALID_STATE_TRANSITION`).
+
+#### Reliable Delivery of Rework
+When an issue's `rework_instructions` is non-null and `status = 'assigned'`, it indicates a pending rework execution. Whether the Host receives the card via the `issue.rework` WebSocket event or via a sweep, it MUST first claim the card successfully before invoking `rework(instructions)` on the existing mirrored card in the local task board. At any point in time, each issue permits at most one in-flight claim request (single-flight concurrency control). Once rework execution begins, the Hub clears `rework_instructions` upon settlement (`settle`).
 
 ## 5. Host Execution Protocol
 
@@ -379,17 +395,52 @@ The DSH Host plugin `@linxin666/dsh-task-board-team` coordinates local card exec
 
 ### Registration and Heartbeat
 1. At Host startup, the plugin reads configured Hub URL and Host Token.
-2. Host calls `POST /api/v1/teams/:teamId/hosts/register` with hostname, client version, and local agent definitions.
-3. Hub marks the host `online` and ensures agent records are synchronized.
+2. Host calls `POST /api/v1/teams/:teamId/hosts/register` with request body strictly using snake_case:
+   ```json
+   {
+     "hostname": "string",
+     "client_version": "string",
+     "agents": [
+       {
+         "name": "string",
+         "preset_id": "string",
+         "model": "string",
+         "reasoning_effort": "string"
+       }
+     ]
+   }
+   ```
+   `preset_id` MUST be non-empty. Any member without a preset is skipped by the Host, not reported to the Hub, and flagged with a visible local warning on the Host (executing tasks with default presets is disallowed).
+3. Hub marks the host `online`, updates agent records, and returns:
+   ```json
+   {
+     "host_id": "string",
+     "status": "online",
+     "agents": [
+       {
+         "id": "string",
+         "name": "string"
+       }
+     ]
+   }
+   ```
+   The Host uses `agents: [{ id, name }]` to map local agent member names to the Hub's registered `agent_id`.
 4. Host sends periodic heartbeats via `POST /api/v1/teams/:teamId/hosts/:hostId/heartbeat` every 15,000 ms.
 5. If Hub receives no heartbeat for 45,000 ms (3 consecutive misses), Hub marks host `offline` and marks running tasks `waiting_host`.
 
 ### Claiming Agent Cards and Lease Management
 1. Host queries `GET /api/v1/teams/:teamId/issues?assignee_host_id=:hostId&status=assigned,waiting_host`. The endpoint supports `assignee_host_id` and comma-separated `status` filters. When authenticated via Host Token, the returned issues are strictly scoped to cards assigned to agents bound to that Host.
 2. Host issues an atomic claim call: `POST /api/v1/teams/:teamId/issues/:issueId/claim`.
-3. Hub verifies the issue is assigned to an agent bound to this Host, issues a unique `lease_token` (UUIDv4), sets `lease_expires_at = now + 60000` ms, generates `execution_attempt_id`, transitions status to `running`, and returns the lease.
+   - Claiming MUST be executed via a single conditional `UPDATE`:
+     `WHERE status IN ('assigned', 'waiting_host') AND bound host matches`, OR in reconnect scenarios `WHERE status = 'running' AND execution_attempt_id = :attempt_id AND lease_token = :lease_token`.
+   - Issues in `failed` and `todo` statuses CANNOT be claimed; any claim attempt on `failed` or `todo` returns HTTP `422 Unprocessable Entity` (`INVALID_STATE_TRANSITION`).
+   - Claim requests for the same issue are strictly single-flight (at most one in-flight claim at any time).
+3. Hub verifies the preconditions, issues a unique `lease_token` (UUIDv4), sets `lease_expires_at = now + 60000` ms, generates `execution_attempt_id`, transitions status to `running`, and returns the lease.
 4. While execution is active, Host renews the lease every 20,000 ms via `POST /api/v1/teams/:teamId/issues/:issueId/renew-lease`, passing `lease_token`.
 5. Hub extends `lease_expires_at` by 60,000 ms upon each successful renewal.
+
+### Reliable Delivery of Rework
+When an issue's `rework_instructions` is non-null and `status = 'assigned'`, it represents a pending rework execution. Whether received via the `issue.rework` WebSocket event or via a sweep, the bound Host MUST first claim the card successfully before calling `rework(instructions)` on the existing mirrored card in the local task board. Claims on the issue remain single-flight. Once rework execution starts, the Hub clears `rework_instructions` when the Host calls `settle`.
 
 ### Reconnect Idempotency and Duplicate Execution Prevention
 If network connectivity drops temporarily or the Host process restarts:
@@ -400,8 +451,8 @@ If network connectivity drops temporarily or the Host process restarts:
 
 ### Settlement Write-Back
 When local execution completes:
-1. Success path: Automated acceptance passes on the Host. Host calls `POST /api/v1/teams/:teamId/issues/:issueId/settle` with `outcome: "succeeded"`, optional `execution_attempt_id`, `summary`, and verification evidence. Hub transitions status to `in_review`.
-2. Failure path: Agent fails or automated acceptance is blocked. Host calls settle endpoint with `outcome: "failed"`, optional `execution_attempt_id`, and failure text. Hub transitions status to `failed`.
+1. Success path: Automated acceptance passes on the Host. Host calls `POST /api/v1/teams/:teamId/issues/:issueId/settle` with `outcome: "succeeded"`, optional `execution_attempt_id`, `summary`, and verification evidence. Hub transitions status to `in_review` and clears `rework_instructions`.
+2. Failure path: Agent fails or automated acceptance is blocked. Host calls settle endpoint with `outcome: "failed"`, optional `execution_attempt_id`, and failure text. Hub transitions status to `failed` and clears `rework_instructions`.
 
 Late settlement and lease expiration: The `settle` endpoint accepts an optional `execution_attempt_id`. If the active lease has expired, the Hub permits late settlement write-back only when the supplied `execution_attempt_id` matches the issue's current `execution_attempt_id`; otherwise, the Hub rejects the call with HTTP `412 Precondition Failed` (`LEASE_EXPIRED`).
 
@@ -595,9 +646,11 @@ When automated acceptance passes on the Host, the issue transitions to `in_revie
 
 ### Rejection and Rework
 1. Reviewer or team administrator calls `POST /api/v1/teams/:teamId/issues/:issueId/review/reject` with `instructions`. Only the designated `reviewer_member_id` or an admin may reject and request rework; calls by other members return `403 Forbidden` (`FORBIDDEN`).
-2. Hub stores rework instructions on the issue, clears any active lease, transitions issue status to `assigned` (or `waiting_host` if the bound Host is offline), and records `issue.rework_requested` activity.
+2. Hub stores rework instructions on the issue (`rework_instructions = instructions`), clears any active lease, transitions issue status to `assigned` (or `waiting_host` if the bound Host is offline), and records `issue.rework_requested` activity. An issue with non-null `rework_instructions` and `status = 'assigned'` represents a pending rework.
 3. Hub delivers WebSocket event `issue.rework` with rework instructions to the bound Host as a notification signal to claim the card.
-4. Bound Host receives `issue.rework`, generates a new `execution_attempt_id`, and calls `POST /api/v1/teams/:teamId/issues/:issueId/claim` to acquire an active lease; only after the claim succeeds does it invoke the DSH task board extension capability `rework` (M0) to re-run the task in the same session (`reuseSession`) feeding rework instructions into the session context; if the claim fails, the Host aborts execution and records a local error without starting the rework session.
+4. Bound Host receives the card via `issue.rework` or sweep, generates a new `execution_attempt_id`, and calls `POST /api/v1/teams/:teamId/issues/:issueId/claim`. The claim is atomic and executed via a single conditional `UPDATE` (`WHERE status IN ('assigned', 'waiting_host')` matching the bound host); issues in `failed` or `todo` cannot be claimed (HTTP `422` `INVALID_STATE_TRANSITION`). The claim is strictly single-flight (at most one in-flight claim per issue).
+5. Only after the claim succeeds does the Host invoke the DSH task board extension capability `rework` (M0) to re-run the task in the same session (`reuseSession`) feeding rework instructions into the session context. If the claim fails, the Host aborts execution and records a local error without starting the rework session.
+6. Once rework execution begins, the Hub clears `rework_instructions` upon settlement (`settle`).
 
 ## 9. Wire Protocol and Transport
 
@@ -621,13 +674,13 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `GET` | `/api/v1/teams/:teamId/agents` | Member | None | `{ agents: [{ id, name, host_id, owner_member_id, host_status }] }` (revoked hosts report `host_status: "offline"`) | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/hosts/tokens` | Admin | `{ hostname }` | `{ host_id, host_token }` | 201, 403 | `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/hosts/:hostId/revoke-token` | Admin | None | `{ ok: true }` | 200, 403, 404 | `HOST_NOT_FOUND` |
-| `POST` | `/api/v1/teams/:teamId/hosts/register` | Host | `{ hostname, client_version, agents: AgentDef[] }` | `{ host_id, status }` | 200, 401 | `UNAUTHORIZED` |
+| `POST` | `/api/v1/teams/:teamId/hosts/register` | Host | `{ hostname, client_version, agents: [{ name, preset_id, model?, reasoning_effort? }] }` | `{ host_id, status, agents: [{ id, name }] }` | 200, 400, 401 | `VALIDATION_FAILED`, `UNAUTHORIZED` |
 | `POST` | `/api/v1/teams/:teamId/hosts/:hostId/heartbeat` | Host | None | `{ ok: true, server_time }` | 200, 401, 404 | `HOST_NOT_FOUND` |
 | `GET` | `/api/v1/teams/:teamId/issues` | Member/Host | None (query filters: `status` [comma-separated, e.g. `assigned,waiting_host`], `assignee`, `assignee_host_id`) | `{ issues: Issue[] }` (Host Token restricted to its bound agents) | 200, 401 | `UNAUTHORIZED` |
 | `POST` | `/api/v1/teams/:teamId/issues` | Member | `{ title, description?, assignee_type?, assignee_id?, reviewer_member_id? }` | `{ issue: Issue }` | 201, 400, 401 | `VALIDATION_FAILED` |
 | `GET` | `/api/v1/teams/:teamId/issues/:issueId` | Member/Host | None | `{ issue: Issue }` | 200, 401, 404 | `ISSUE_NOT_FOUND` |
 | `PATCH` | `/api/v1/teams/:teamId/issues/:issueId` | Member | `{ title?, description?, assignee_type?, assignee_id?, reviewer_member_id?, status? }` | `{ issue: Issue }` | 200, 400, 401, 422 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `INVALID_STATE_TRANSITION` |
-| `POST` | `/api/v1/teams/:teamId/issues/:issueId/claim` | Host | `{ execution_attempt_id?, lease_token? }` | `{ lease_token, lease_expires_at, execution_attempt_id }` | 200, 401, 409 | `LEASE_HELD_BY_OTHER`, `HOST_MISMATCH` |
+| `POST` | `/api/v1/teams/:teamId/issues/:issueId/claim` | Host | `{ execution_attempt_id?, lease_token? }` | `{ lease_token, lease_expires_at, execution_attempt_id }` | 200, 401, 409, 422 | `LEASE_HELD_BY_OTHER`, `HOST_MISMATCH`, `INVALID_STATE_TRANSITION` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/renew-lease` | Host | `{ lease_token }` | `{ lease_expires_at }` | 200, 401, 412 | `LEASE_EXPIRED` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/settle` | Host | `{ outcome, execution_attempt_id?, summary?, error?, verification_evidence? }` | `{ ok: true, status }` | 200, 400, 401, 412 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `LEASE_EXPIRED` |
 | `POST` | `/api/v1/teams/:teamId/issues/:issueId/review/approve` | Reviewer/Admin | None | `{ ok: true, status: "done" }` | 200, 401, 403, 422 | `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_STATE_TRANSITION` |
@@ -705,7 +758,14 @@ Question answer submission request body (`POST /api/v1/teams/:teamId/questions/:
 - `created_at`: Number (UTC milliseconds timestamp).
 
 ### Durable Object WebSocket Protocol
-Each team is backed by one Durable Object (`TeamChannelDO`). Clients connect to: `wss://<hub-domain>/api/v1/teams/:teamId/ws?token=<token>&since_seq=<seq>`.
+Each team is backed by one Durable Object (`TeamChannelDO`). Clients connect to: `wss://<hub-domain>/api/v1/teams/:teamId/ws?since_seq=<seq>`.
+
+#### WebSocket Authentication and Version Negotiation
+- **Authentication**: Host and iOS clients authenticate exclusively using the `Authorization: Bearer <token>` HTTP request header during the WebSocket upgrade handshake. The Hub NO LONGER accepts `?token=` query parameters (tokens must not appear in the URL). In Web scenarios, the `th_session` cookie remains valid for WebSocket upgrade authentication.
+- **Protocol Version Negotiation**: Version negotiation is uniform across all clients. The client MUST supply the protocol version through either:
+  1. The `protocol_version=1.0.0` query parameter (e.g. `wss://<hub-domain>/api/v1/teams/:teamId/ws?protocol_version=1.0.0&since_seq=<seq>`), OR
+  2. The `X-Team-Hub-Protocol-Version: 1.0.0` HTTP request header during handshake.
+  Connections omitting both or specifying an incompatible protocol version are rejected during handshake with HTTP `400 Bad Request` (`UNSUPPORTED_PROTOCOL_VERSION`).
 
 | Frame | Direction | Schema | Purpose |
 | --- | --- | --- | --- |
@@ -764,7 +824,12 @@ All error responses adhere to a single unified JSON schema:
 | `UNAUTHORIZED` | 401 | Missing, malformed, or invalid authentication token. |
 | `FORBIDDEN` | 403 | Caller lacks required role or permission for this operation. |
 | `NOT_FOUND` | 404 | Target resource (team, member, host, issue, question) does not exist. |
+| `ISSUE_NOT_FOUND` | 404 | Target issue does not exist. |
+| `HOST_NOT_FOUND` | 404 | Target execution Host does not exist. |
+| `MEMBER_NOT_FOUND` | 404 | Target team member does not exist. |
+| `USER_NOT_FOUND` | 404 | Target GitHub user not found during member invitation. |
 | `CONFLICT` | 409 | Resource state conflict (e.g. duplicate slug, question already answered). |
+| `ALREADY_MEMBER` | 409 | Target user is already a member of the team. |
 | `VALIDATION_FAILED` | 400 | Request body failed structural validation or schema constraints. |
 | `UNSUPPORTED_PROTOCOL_VERSION` | 400 | Requested protocol version major number is unsupported. |
 | `INVALID_STATE_TRANSITION` | 422 | Attempted lifecycle transition disallowed by state machine. |
@@ -776,7 +841,26 @@ All error responses adhere to a single unified JSON schema:
 | `HOST_MISMATCH` | 403 | Host is not authorized to claim, settle, or withdraw questions for this issue or host binding. |
 | `PAYLOAD_TOO_LARGE` | 413 | Request body exceeds configured byte limit. |
 | `RATE_LIMITED` | 429 | Request rate exceeded allowed quota. |
+| `NOT_CONFIGURED` | 503 | Required external service or integration (e.g. APNs, GitHub OAuth app) is not configured on the Hub. |
 | `INTERNAL_ERROR` | 500 | Unhandled internal server or database error. |
+
+### Contract Examples
+
+The `team-hub/contract/` directory provides authoritative JSON request and response contract fixtures for each Host-facing interface.
+
+The contract fixtures cover:
+- Host registration: `POST /api/v1/teams/:teamId/hosts/register` request and response (snake_case).
+- Host heartbeat: `POST /api/v1/teams/:teamId/hosts/:hostId/heartbeat` response.
+- Task claiming: `POST /api/v1/teams/:teamId/issues/:issueId/claim` request and response.
+- Lease renewal: `POST /api/v1/teams/:teamId/issues/:issueId/renew-lease` request and response.
+- Settlement: `POST /api/v1/teams/:teamId/issues/:issueId/settle` request and response.
+- Questions: `POST /api/v1/teams/:teamId/issues/:issueId/questions` request and response, and question queries.
+- Question answers: `question.answered` event payload and answer return fixtures.
+- Question withdrawal: `POST /api/v1/teams/:teamId/questions/:questionId/withdraw` response.
+- Comments: `POST /api/v1/teams/:teamId/issues/:issueId/comments` request and response.
+- WebSocket transport: HTTP upgrade handshake headers (including `Authorization: Bearer <token>` and `X-Team-Hub-Protocol-Version`) and event fixtures for every WebSocket event type (`issue.created`, `issue.updated`, `issue.status_changed`, `issue.claimed`, `issue.rework`, `comment.created`, `comment.mentioned`, `question.created`, `question.answered`, `question.expired`, `question.withdrawn`, `host.status_changed`).
+
+Hub test suites assert strictly against these contract JSON examples. The DSH Host plugin fake hub and client tests consume the exact same fixtures. Any schema or serialization drift on either side causes test failures, guaranteeing end-to-end wire compatibility.
 
 ## 10. Push Notifications (APNs)
 
@@ -850,8 +934,10 @@ The Hub communicates directly with Apple Push Notification service (APNs) over H
 | --- | --- | --- |
 | Authentication routes (`/auth/*`) | 60,000 ms (1 minute) | 20 requests per client IP |
 | Member API routes | 60,000 ms (1 minute) | 120 requests per member ID |
-| Host execution routes | 60,000 ms (1 minute) | 30 requests per host ID |
+| Host execution routes | 60,000 ms (1 minute) | 120 requests per host ID |
 | WebSocket frame transmissions | 60,000 ms (1 minute) | 60 frames per connection (violations close socket with code `1008` `RATE_LIMITED`) |
+
+Host API execution routes permit up to 120 requests per minute per host ID. On the Host side, sweep operations are coalesced to execute at most once every 5,000 ms (5 seconds). Sweeps triggered by `issue.created`, `issue.updated`, or `issue.status_changed` WebSocket events are debounced and coalesced into a single sweep execution within this 5-second interval.
 
 ### Payload Size Limits
 
@@ -889,7 +975,7 @@ The following defaults are defined by this specification for operational paramet
 | Heartbeat interval | 15,000 ms (15 seconds) | Balances real-time liveness detection against Cloudflare Worker D1 and invocation cost. |
 | Host offline detection threshold | 45,000 ms (45 seconds) | Corresponds to exactly 3 missed heartbeat intervals, preventing false positives caused by transient network jitter. |
 | Lease renewal cadence | 20,000 ms (20 seconds) | Guarantees that at least two lease renewal attempts occur before a 60,000 ms lease expires. |
-| Session access token TTL | 7,200,000 ms (2 hours) | Industry-standard duration for mobile and web session tokens, limiting the exposure window of compromised bearer tokens. |
+| Session access token TTL | 7200 s (2 hours) | Industry-standard duration for mobile and web session tokens, limiting the exposure window of compromised bearer tokens. Returned as `expires_in: 7200` (in seconds) per OAuth convention; clients must calculate expiry in seconds. |
 | Session refresh token TTL | 2,592,000,000 ms (30 days) | Provides seamless mobile login persistence without requiring daily re-authentication on iOS. |
 | Host Token TTL | Indefinite until revoked | Execution Hosts run as background daemon services and must not fail intermittently due to calendar-based credential expiration. |
 | Question expiration TTL | 86,400,000 ms (24 hours) | Gives team members a full business day to answer agent queries before the question automatically expires. |
@@ -899,6 +985,6 @@ The following defaults are defined by this specification for operational paramet
 | Issue description byte limit | 65,536 bytes (64 KiB) | Directly mirrors the DSH task board opaque `integrations` payload cap (64 KiB) defined in the extension contract. |
 | Comment text byte limit | 32,768 bytes (32 KiB) | Permits detailed markdown explanations, logs, and code snippets while guarding against database bloat. |
 | Member API rate limit | 120 requests per minute | Accommodates rapid navigation in Web and iOS clients without triggering false rate limit rejections. |
-| Host API rate limit | 30 requests per minute | Provides headroom for simultaneous heartbeats, lease renewals, and occasional comment/question traffic. |
+| Host API rate limit | 120 requests per minute | Accommodates heartbeats, lease renewals, coalesced sweeps, and question/settlement traffic while bounding abuse. Host coalesces event-triggered sweeps to at most once per 5 seconds. |
 | Auth route rate limit | 20 requests per minute per IP | Protects edge Worker authentication endpoints against brute-force attacks and abuse. |
 | Default reviewer for Agent issues | creator_member_id | When an issue is assigned to an Agent (`assignee_type='agent'`) and no explicit `reviewer_member_id` is provided, the issue creator automatically defaults to the reviewer. This guarantees that every agent-executed card has a designated human reviewer for questions, push notifications, and the `in_review` approval gate. |
