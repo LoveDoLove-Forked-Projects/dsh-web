@@ -4,7 +4,7 @@ One JSON document per Host-facing interface, plus the WebSocket handshake and
 the event catalogue. They are the interface the hub and the Host share, so both
 sides read these files instead of restating the shapes:
 
-- the hub asserts its own responses against them (`team-hub/test/contract.test.ts`);
+- the Go hub answers exactly the shapes they record;
 - the plugin's fake hub and its tests read the same files, so a change on either
   side that is not reflected here fails a test.
 

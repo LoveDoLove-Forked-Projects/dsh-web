@@ -287,7 +287,7 @@ export class FakeHub {
   }
 
   /**
-   * Claim one issue with the two legal shapes of `team-hub/src/domain/leases.ts`.
+   * Claim one issue with the two legal shapes of `team-hub/go/internal/hub/leases.go`.
    *
    * The fresh claim (`leases.ts:79`) only moves a card in `assigned` or
    * `waiting_host` and always mints its own attempt id, so the Host can never name
@@ -312,7 +312,7 @@ export class FakeHub {
       && presentedAttempt === issue.attemptId
     if (issue.status === 'assigned' || issue.status === 'waiting_host') {
       // The real hub keeps a presented attempt and lease that still match the
-      // issue (team-hub/src/domain/leases.ts:65-79): a lapsed lease does not clear
+      // issue (team-hub/go/internal/hub/leases.go:65-79): a lapsed lease does not clear
       // lease_token, so the Host whose run is still going gets the same attempt back.
       if (!reconnecting) {
         this.attempt += 1
@@ -343,7 +343,7 @@ export class FakeHub {
   }
 
   /**
-   * Write one settlement back under the rules of `team-hub/src/domain/leases.ts`.
+   * Write one settlement back under the rules of `team-hub/go/internal/hub/leases.go`.
    *
    * `failNextSettle` scripts one failure for the Host to cope with: a hub refusal,
    * a transport error before anything was stored, or a lost answer after the hub

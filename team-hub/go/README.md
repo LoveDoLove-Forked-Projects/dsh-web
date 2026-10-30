@@ -6,9 +6,9 @@ the standard library's `net/http` method-plus-path patterns,
 for the team channel, and `crypto/ecdsa` for account assertions and APNs
 provider tokens. No cgo, no Node, no Cloudflare runtime.
 
-It serves protocol 1.0.0: the same routes, request bodies, success shapes,
-UPPER_SNAKE error codes and lease state machine as the Worker, with the same
-SQLite schema the D1 deployment uses.
+It serves protocol 1.0.0: the routes, request bodies, success shapes and
+UPPER_SNAKE error codes PROTOCOL.md defines, the lease state machine recorded in
+the top-level README, and the same SQLite schema the D1 deployment used.
 
 | Path | Responsibility |
 | --- | --- |
@@ -105,8 +105,7 @@ falling back to `CF-Connecting-IP` and then the socket address.
 
 ## HTTP surface
 
-The route table is `team-hub/src/router.ts` verbatim, with the Worker's own
-policies:
+The route table is the one PROTOCOL.md section 9 defines, with these policies:
 
 - `X-Team-Hub-Protocol-Version` negotiation, with the WebSocket accepting
   `protocol_version` as a query parameter as well;
@@ -139,7 +138,7 @@ Two routes exist only here:
 
 ## Lease state machine
 
-Identical to `team-hub/src/domain/leases.ts`:
+The lease state machine:
 
 - `claim` is one conditional `UPDATE`; a card another attempt holds answers
   409 `LEASE_HELD_BY_OTHER` with the active `lease_expires_at`, a card whose
@@ -162,8 +161,7 @@ replay buffer still holds after `since_seq`, or sends `resync_required` with
 `no_sequence`, `sequence_ahead` or `sequence_too_old`.
 
 Frames, frame limits (64 KiB), the per-connection quota (60 frames per minute),
-`ping`/`pong`, `resume` and host-targeted events are the Durable Object's
-behaviour. The sequence, buffer and sockets live in memory: a restart starts the
+`ping`/`pong`, `resume` and host-targeted events are the channel's behaviour. The sequence, buffer and sockets live in memory: a restart starts the
 sequence at zero, so a client reconnecting with an old `since_seq` receives
 `resync_required` and re-fetches the snapshot, which is the recovery path the
 protocol already defines.
@@ -187,8 +185,7 @@ host. A sweep in flight is never overlapped.
 
 `go test ./...` runs the suite against the real service: a temporary SQLite file
 on disk, a real HTTP listener on an ephemeral loopback port, and real WebSocket
-clients. GitHub, the account service and APNs are one injected transport, which is
-the same seam the Worker suite uses.
+clients. GitHub, the account service and APNs are one injected transport.
 
 Covered: registration and heartbeat (including name conflicts and dropped
 agents), the three claim refusals plus concurrent claims having one winner,
@@ -201,9 +198,10 @@ four WebSocket handshake refusals, all three resync reasons, `since_seq` replay,
 live delivery, `ping`/`pong`, the `resume` frame, host-targeted delivery, and the
 three frame-limit closes.
 
-## Differences from the Worker and the Node self-host runtime
+## Porting notes
 
-Deliberate and listed for review:
+Deliberate divergences, recorded here because they are choices a reader of the
+protocol would otherwise re-open:
 
 1. This is a second implementation, not the Worker's modules bundled: the Go
    code restates the routes, domain rules and error table. The contract samples in

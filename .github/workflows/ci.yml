@@ -28,7 +28,7 @@ env:
 #   static-checks  text rules, typecheck and the build
 #   unit-tests     the workspace suite, split into four shards
 #   consistency    tree-wide consistency checks against the committed tree
-#   team-hub       the standalone Workers project under team-hub/, only when it changed
+#   team-hub       go vet and go test for the team-hub Go module
 #   ci             fan-in: fails unless all four lanes returned success
 #
 # The lanes used to be steps of one job, which serialized ~4 minutes of
@@ -255,26 +255,17 @@ jobs:
       - name: Script tests
         run: pnpm test:scripts
 
-  # Lane 4 of 4: team-hub/, a standalone Cloudflare Workers project. It is its
-  # own pnpm project (own pnpm-lock.yaml, own pnpm-workspace.yaml), is absent
-  # from the root workspace, and carries its own tsconfig and workers-pool
-  # suite, so nothing in the three lanes above covers it.
-  #
-  # The install runs WITHOUT --ignore-workspace on purpose. That flag drops
-  # team-hub/pnpm-workspace.yaml, and with it the allowBuilds entries the
-  # workers pool resolves its binaries through and the minimumReleaseAgeExclude
-  # entries that keep a freshly pinned wrangler installable: on a fresh
-  # checkout the flag's install exits 1 with ERR_PNPM_IGNORED_BUILDS
-  # (esbuild@0.28.1, esbuild@0.28.2, workerd@1.20260815.1,
-  # workerd@1.20261023.1), and before that it fails the supply-chain policy
-  # check once a pinned wrangler is younger than the release-age window.
-  # Isolation does not need the flag: `pnpm root -w` inside team-hub resolves
-  # to team-hub/node_modules, so the nested workspace file already keeps this
-  # install out of the root workspace.
+  # Lane 4 of 4: team-hub/, one Go module. It sits outside the root pnpm
+  # workspace and outside every other lane, so nothing above compiles or tests
+  # it. The lane runs its work unconditionally: the Go toolchain is a runner
+  # image concern, the module cache is keyed by team-hub/go/go.sum, and vet plus
+  # test finish in seconds. The change probe this replaces existed to avoid a
+  # one-minute dependency install, and it had to stay fail-open for every
+  # unresolvable comparison; both costs are gone with the install.
   team-hub:
-    name: Team hub
+    name: Team hub (Go)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       # Same elastic checkout as static-checks: 3-minute first attempt, one 5-minute retry.
@@ -293,85 +284,21 @@ jobs:
         uses: actions/checkout@v5
         timeout-minutes: 5
 
-      # This lane is path-filtered, and the filter cannot live in
-      # `on.<event>.paths`: a trigger-level filter would suppress the whole
-      # workflow, and with it every other lane and the fan-in that produces the
-      # "CI checks" context. The job therefore always runs and
-      # only its work steps are skipped, so an unchanged team-hub/ leaves a
-      # green job for the fan-in to accept.
-      #
-      # The decision fails open: every unresolvable case (no comparable commit,
-      # a failed fetch, a push deeper than the bounded fetch) runs the lane. A
-      # false "changed" costs a minute of a free runner; a false "unchanged"
-      # would silently drop this project's only typecheck and test gate.
-      - name: Detect team-hub changes
-        id: changes
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          changed=true
-          base=
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            # A pull_request checkout is the PR merged into its base branch, so
-            # diffing that tree against the base branch tip names exactly the
-            # changes this PR introduces -- no merge base and no deeper history.
-            if git fetch --no-tags --depth=1 origin "$BASE_REF" >/dev/null 2>&1; then
-              base=FETCH_HEAD
-            fi
-          else
-            case "$BEFORE_SHA" in
-              "" | 0000000000000000000000000000000000000000) ;;
-              *)
-                # A push names the commit it started from. 30 is a cap, not an
-                # assumption: a deeper push leaves the commit absent and the
-                # lane simply runs.
-                git fetch --no-tags --depth=30 origin "$GITHUB_REF_NAME" >/dev/null 2>&1 || true
-                if git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-                  base="$BEFORE_SHA"
-                fi
-                ;;
-            esac
-          fi
-          if [ -n "$base" ] && diff="$(git diff --name-only "$base" HEAD -- team-hub)"; then
-            if [ -z "$diff" ]; then
-              changed=false
-            fi
-          fi
-          echo "team-hub/** changed: $changed"
-          echo "changed=$changed" >> "$GITHUB_OUTPUT"
-
-      - name: Setup pnpm
-        if: steps.changes.outputs.changed == 'true'
-        uses: pnpm/action-setup@v5
-
-      # The pnpm store cache is keyed by team-hub/pnpm-lock.yaml, not by the
-      # root lockfile: this project resolves its own dependency graph, so the
-      # root lockfile is not a cache identity for it.
-      - name: Setup Node.js
-        if: steps.changes.outputs.changed == 'true'
-        uses: actions/setup-node@v5
+      # go-version-file keeps the lane on the version team-hub/go/go.mod
+      # declares, and the cache key follows that module's own sum file.
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: team-hub/pnpm-lock.yaml
+          go-version-file: team-hub/go/go.mod
+          cache-dependency-path: team-hub/go/go.sum
 
-      - name: Install team-hub dependencies
-        if: steps.changes.outputs.changed == 'true'
-        working-directory: team-hub
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck team-hub
-        if: steps.changes.outputs.changed == 'true'
-        working-directory: team-hub
-        run: pnpm typecheck
+      - name: Vet team-hub
+        working-directory: team-hub/go
+        run: go vet ./...
 
       - name: Test team-hub
-        if: steps.changes.outputs.changed == 'true'
-        working-directory: team-hub
-        run: pnpm test
+        working-directory: team-hub/go
+        run: go test ./...
 
   # Fan-in for the required "CI checks" context. Branch protection observes
   # THIS job, and the four lanes above are independent jobs, so the aggregate

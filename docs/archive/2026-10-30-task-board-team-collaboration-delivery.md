@@ -5,7 +5,7 @@
 ## 一、交付范围与各面现状
 
 ### 1. 云端中枢 team-hub
-云端中枢基于 Cloudflare Worker、D1 关系型数据库与 Durable Object 实现，每个团队独立分配一个 Durable Object 实例。服务对外通信遵循 `PROTOCOL.md` 1.0.0 规范；`contract/` 目录下维护一套标准请求与响应样例文件，由 hub 服务与插件测试套件共用以保证契约一致；`POST /api/v1/bootstrap` 端点仅在系统内尚未存在任何团队时允许调用，通过比对请求头 `X-Bootstrap-Token` 与 Worker secret 实施鉴权；部署流程基于官方 `cf` 工具，配置定义于 `team-hub/cloudflare.config.ts`，Durable Object 绑定在配置文件的 `exports` 块中显式声明；对外访问入口仅为 `*.workers.dev` 域名（`dsh-market.com` 区域根级与通配路由已被市集 Worker 占用，Worker 自定义域名路由不可用）。
+云端中枢是一个 Go 服务加一个 SQLite 文件，监听 loopback、由 systemd 保活、由反向代理终止 TLS。服务对外通信遵循 §PROTOCOL.md§ 1.0.0 规范；§contract/§ 目录下维护一套标准请求与响应样例文件，由插件的假中枢与测试套件读取以保证契约一致；§POST /api/v1/bootstrap§ 端点仅在系统内尚未存在任何团队时允许调用，通过比对请求头 §X-Bootstrap-Token§ 与 §BOOTSTRAP_TOKEN§ 环境变量实施鉴权。实现与配置见 [team-hub/go/README.md](../../team-hub/go/README.md)。
 
 ### 2. Host 插件 packages/dsh-task-board-team
 Host 侧插件完整实现「认领 → 建镜像卡 → 执行 → 自动验收 → settle 回写 hub」的状态机循环；认领任务后在本地任务看板自动创建镜像卡，并将团队协作元数据写入镜像卡的 `integrations[task-board-team]` 载荷（字段包含 `issueId`、`issueNumber`、`attemptId`、`leaseToken`、`leaseExpiresAt`、`agentId` 与 `hubStatus`）；插件在认领前执行工作区闸门校验，工作区路径按优先级解析：配置项 `workspaceId` → 关联 agent 绑定的 `team.workspaceId` → 空；若最终解析结果为空则拒绝认领任务，仅在宿主侧输出一条可见的问题提示。
@@ -35,8 +35,8 @@ Host 侧插件完整实现「认领 → 建镜像卡 → 执行 → 自动验收
 系统上线前必须按以下严格拓扑顺序执行三步操作，必须保证账号服务部署就绪并对外提供服务后，team-hub 方可开放访问：
 
 1. 部署账号服务，在生产环境中配置 `ACCOUNT_ASSERTION_KEY_JWK`（P-256 私钥 JWK，必须包含 `kid` 标识）以及 `GITHUB_CLIENT_ID` 与 `GITHUB_CLIENT_SECRET`。
-2. 对账号服务的 D1 数据库执行迁移命令，应用包含重建 `users` 表的全部数据库变更。
-3. 在 team-hub 配置 `ACCOUNT_JWKS_URL`、`ACCOUNT_ISSUER` 与 `ACCOUNT_AUDIENCE` 环境变量，对 team-hub 的 D1 数据库执行 `migrations/0004_account_identity.sql` 迁移脚本，最后部署 team-hub Worker。
+2. 对账号服务的数据库执行迁移：二进制在监听端口之前自行应用 §Server/migrations/*.sql§，没有独立的迁移命令。
+3. 在 team-hub 配置 §ACCOUNT_JWKS_URL§、§ACCOUNT_ISSUER§ 与 §ACCOUNT_AUDIENCE§ 环境变量；§migrations/0004_account_identity.sql§ 由 hub 启动时自行应用，随后拉起 hub 进程。
 
 ## 四、已知风险与未处理项
 
@@ -46,7 +46,7 @@ Host 侧插件完整实现「认领 → 建镜像卡 → 执行 → 自动验收
 - 账号服务短期断言的 `iss` 字段存在运维耦合成本，后续若变更域名需要同步调整账号服务配置与 team-hub 环境变量两处；该说明已在 `Server/README` 记录，但在架构决策记录中尚未重申。
 - iOS 客户端当前无法获得执行宿主的显示名称（hub 仅向下游下发 `host_id` 与 `host_status`），执行宿主在界面上仍直接展示为原始 ID 字符串。
 - 任务卡详情页副标题中的租约有效时间描述（"lease ends in …"）缺失真机渲染证据：线上唯一携带该载荷的历史卡片租约已严重过期，且其镜像 issue 在真实 hub 中并不存在；尝试通过本地 DEBUG fixture 注入数据补齐证据时，当前开发机上的 WhaleUITests runner 连续三次在同一位置失败（DTX 握手交接阶段 socket 被断开，runner 无法拉取 IDE 配置后返回退出码 74），尝试切换 USB 物理直连亦未恢复；鉴于同一设备在 2026-10-28 曾成功通过 UI 测试用例，该现象属于开发机环境通信层面的间歇性故障；测试用的 fixture 载荷与调试用例已按约定完整撤回，仓库内未残留任何失败的 UI 测试。
-- 开发机环境限制：当前开发机使用 `curl` 命令直接请求 `*.workers.dev` 域名会被 Clash 直连策略拦截导致连接重置，Node.js 原生 `fetch` 可正常连通；macOS 环境未提供 `setsid` 工具，通过 `launchctl submit` 提交的后台作业在退出后会周期性重新执行，调试完成后需要通过 `launchctl remove` 显式移除。
+- 开发机环境限制：macOS 环境未提供 §setsid§ 工具，通过 §launchctl submit§ 提交的后台作业在退出后会周期性重新执行，调试完成后需要通过 §launchctl remove§ 显式移除。
 
 ## 五、命名与术语规范
 
