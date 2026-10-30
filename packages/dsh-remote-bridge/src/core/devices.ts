@@ -24,13 +24,15 @@ export const DEVICE_ID_BYTES = 12
  * On-disk schema version of the roster file.
  *
  * 1 carried the six identity fields only; 2 adds the optional `push` block per
- * row (§28). The difference is additive, so a version-1 file reads as-is: no row
- * loses a field, every paired phone stays paired, and the file is rewritten as
- * version 2 the next time anything is written. The reader therefore accepts any
- * version whose row table validates rather than quarantining a file it merely
- * does not recognise — a downgrade must never un-pair every phone.
+ * row (§28); 3 adds the optional `relayToken` inside that block, the credential the
+ * hosted relay signs a delivery for instead of a local Apple key. Every step is
+ * additive, so an older file reads as-is: no row loses a field, every paired phone
+ * stays paired, and the file is rewritten as the current version the next time
+ * anything is written. The reader therefore accepts any version whose row table
+ * validates rather than quarantining a file it merely does not recognise — a
+ * downgrade must never un-pair every phone.
  */
-export const ROSTER_VERSION = 2
+export const ROSTER_VERSION = 3
 
 /** The APNs environments a device may register for. */
 export type PushEnvironment = 'sandbox' | 'production'
@@ -67,6 +69,16 @@ export interface PushRegistration {
   readonly bundle: string
   readonly locale?: string
   readonly liveActivityTokens?: readonly PushLiveActivityToken[]
+  /**
+   * The bearer the hosted relay accepts for this device's fingerprint.
+   *
+   * The App obtains it from the account service, scoped to `(userId, fingerprint)`
+   * and valid for 90 days, and hands it to this bridge through `push.register`. It
+   * is what lets a machine with no Apple signing key still deliver §28's events: the
+   * relay signs them with the key that never leaves the service. Absent is a phone
+   * whose only route is this machine's own key, which is the pre-relay behaviour.
+   */
+  readonly relayToken?: string
   readonly registeredAt: number
 }
 
@@ -161,6 +173,7 @@ function pushOf(value: unknown, log: (message: string) => void): PushRegistratio
     bundle: row.bundle,
     ...(typeof row.locale === 'string' && row.locale !== '' ? { locale: row.locale } : {}),
     ...(liveActivityTokens === undefined ? {} : { liveActivityTokens }),
+    ...(typeof row.relayToken === 'string' && row.relayToken !== '' ? { relayToken: row.relayToken } : {}),
     registeredAt: typeof row.registeredAt === 'number' ? row.registeredAt : 0,
   }
 }
@@ -381,6 +394,18 @@ export class DeviceRoster {
       targets.push({ deviceId: row.deviceId, push: row.push })
     }
     return targets
+  }
+
+  /**
+   * @returns every paired device that holds a relay token.
+   *
+   * The relay path's own reachability question: a row that registered an APNs
+   * token before the relay existed is a phone this machine cannot notify without a
+   * local key, so counting {@link pushTargets} there would claim a delivery that
+   * has no route at all.
+   */
+  relayTargets(): readonly PushTargetView[] {
+    return this.pushTargets().filter(({ push }) => push.relayToken !== undefined)
   }
 
   /**

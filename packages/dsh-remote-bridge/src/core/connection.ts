@@ -2429,7 +2429,7 @@ export class BridgeConnection {
    * accept the token, and a field claiming it did would be a lie a client might
    * render. A bridge with no signing key answers identically — a client has no
    * second code path for that difference.
-   * @param payload - `{deviceToken, environment, bundle, liveActivityTokens?, locale?}`.
+   * @param payload - `{deviceToken, environment, bundle, liveActivityTokens?, locale?, relayToken?}`.
    */
   async #pushRegister(payload: Readonly<Record<string, unknown>>): Promise<DispatchOutcome> {
     const deviceToken = payload.deviceToken
@@ -2443,6 +2443,13 @@ export class BridgeConnection {
     }
     if (typeof bundle !== 'string' || bundle === '') return refusal(CODE_INVALID_ARGS, 'bundle must be a non-empty string')
     const locale = optionalText(payload.locale)
+    // The relay credential (§28 over the hosted service). Optional and opaque: the
+    // bridge never mints, parses or reissues it — it is the App's, scoped to this
+    // pairing's fingerprint, and this row is the only place it is kept.
+    const relayToken = payload.relayToken
+    if (relayToken !== undefined && (typeof relayToken !== 'string' || relayToken === '')) {
+      return refusal(CODE_INVALID_ARGS, 'relayToken must be the non-empty string the account service issued')
+    }
     let liveActivityTokens: readonly PushLiveActivityToken[] | undefined
     if (payload.liveActivityTokens !== undefined) {
       const raw = payload.liveActivityTokens
@@ -2475,6 +2482,7 @@ export class BridgeConnection {
       bundle,
       ...(locale === undefined ? {} : { locale }),
       ...(liveActivityTokens === undefined ? {} : { liveActivityTokens }),
+      ...(relayToken === undefined ? {} : { relayToken }),
       registeredAt: this.#options.now(),
     }
     try {
