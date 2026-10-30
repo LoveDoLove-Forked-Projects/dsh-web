@@ -49,7 +49,12 @@ type Config struct {
 	BootstrapToken  string
 	GitHub          *GitHubSettings
 	Account         *AccountSettings
-	APNS            *APNSSettings
+	// AccountServiceBase and AccountAdminToken are the account-service admin API
+	// the email invite resolves through. They are kept as the raw values rather
+	// than a pointer group so the invite can name exactly which one is missing.
+	AccountServiceBase string
+	AccountAdminToken  string
+	APNS               *APNSSettings
 }
 
 // ConfigReport is the startup report: one line per setting group, and the
@@ -95,6 +100,20 @@ func integerSetting(source map[string]string, name string, fallback, minimum, ma
 		return fallback
 	}
 	return value
+}
+
+// missingInviteSettings names the account-service admin settings that close the
+// email invite, one entry per absent setting: a hub that has one and not the
+// other must say which one to set.
+func missingInviteSettings(base, adminToken string) []string {
+	missing := make([]string, 0, 2)
+	if base == "" {
+		missing = append(missing, "ACCOUNT_SERVICE_BASE")
+	}
+	if adminToken == "" {
+		missing = append(missing, "ACCOUNT_ADMIN_TOKEN")
+	}
+	return missing
 }
 
 // EnvMap converts the process environment into the lookup table LoadConfig
@@ -198,6 +217,9 @@ func LoadConfig(source map[string]string, defaultMigrationsDir string) ConfigRep
 		account = &AccountSettings{JWKSURL: jwksURL, Issuer: issuer, Audience: audience}
 	}
 
+	accountServiceBase := envText(source, "ACCOUNT_SERVICE_BASE")
+	accountAdminToken := envText(source, "ACCOUNT_ADMIN_TOKEN")
+
 	apns := (*APNSSettings)(nil)
 	keyID := envText(source, "APNS_KEY_ID")
 	teamID := envText(source, "APNS_TEAM_ID")
@@ -234,6 +256,12 @@ func LoadConfig(source map[string]string, defaultMigrationsDir string) ConfigRep
 	} else {
 		report = append(report, "ACCOUNT_JWKS_URL/ACCOUNT_ISSUER/ACCOUNT_AUDIENCE: configured")
 	}
+	if missing := missingInviteSettings(accountServiceBase, accountAdminToken); len(missing) > 0 {
+		report = append(report, strings.Join(missing, "/")+": missing -> "+
+			"POST /api/v1/teams/:teamId/members/invite answers 503 NOT_CONFIGURED")
+	} else {
+		report = append(report, "ACCOUNT_SERVICE_BASE/ACCOUNT_ADMIN_TOKEN: configured")
+	}
 	if apns == nil {
 		report = append(report, "APNS_KEY_ID/APNS_TEAM_ID/APNS_BUNDLE_ID/APNS_PRIVATE_KEY_P8: missing -> "+
 			"APNs delivery is skipped and /readyz reports push=false")
@@ -255,16 +283,18 @@ func LoadConfig(source map[string]string, defaultMigrationsDir string) ConfigRep
 
 	return ConfigReport{
 		Config: Config{
-			DatabasePath:    databasePath,
-			Host:            host,
-			Port:            port,
-			MigrationsDir:   migrationsDir,
-			SweepIntervalMS: sweepInterval,
-			SessionSecret:   sessionSecret,
-			BootstrapToken:  bootstrapToken,
-			GitHub:          github,
-			Account:         account,
-			APNS:            apns,
+			DatabasePath:       databasePath,
+			Host:               host,
+			Port:               port,
+			MigrationsDir:      migrationsDir,
+			SweepIntervalMS:    sweepInterval,
+			SessionSecret:      sessionSecret,
+			BootstrapToken:     bootstrapToken,
+			GitHub:             github,
+			Account:            account,
+			AccountServiceBase: accountServiceBase,
+			AccountAdminToken:  accountAdminToken,
+			APNS:               apns,
 		},
 		Report: report,
 		Errors: errors,

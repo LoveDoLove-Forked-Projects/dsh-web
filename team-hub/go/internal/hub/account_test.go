@@ -148,7 +148,9 @@ func TestVerifiedAssertionOpensASessionAndNeverCreatesAMember(t *testing.T) {
 
 func TestLinkRules(t *testing.T) {
 	server, key, team := boundAccountFixture(t)
-	member := server.inviteAndLogin(team.teamID, team.admin.accessToken, "hubot")
+	// The invite route binds an account, so the binding rules need the other real
+	// shape: a member that entered through GitHub and has not bound one yet.
+	member := server.unboundMemberAndLogin(team.teamID, "hubot")
 
 	taken := server.api("POST", "/auth/account/link", apiOptions{
 		token: member.accessToken,

@@ -27,50 +27,74 @@ func assertExposedKeys(t *testing.T, surface string, row map[string]any) {
 	}
 }
 
-func TestMemberRowsExposeTheAccountBinding(t *testing.T) {
-	server, key, team := boundAccountFixture(t)
+// rosterRows indexes a member list response by member id.
+func rosterRows(t *testing.T, result apiResult) map[string]map[string]any {
+	t.Helper()
+	if result.status != http.StatusOK {
+		t.Fatalf("member list: %d %s", result.status, result.text)
+	}
+	entries, _ := result.body["members"].([]any)
+	rows := make(map[string]map[string]any, len(entries))
+	for _, entry := range entries {
+		row, ok := entry.(map[string]any)
+		if !ok {
+			t.Fatalf("a member row is not an object: %s", result.text)
+		}
+		assertExposedKeys(t, "the member list", row)
+		rows[stringField(row, "id")] = row
+	}
+	return rows
+}
 
+func TestMemberRowsExposeTheAccountBinding(t *testing.T) {
+	key := newAccountKey(t)
+	server := startTestHub(t, startOptions{jwks: accountJWKS(key)})
+	// The bootstrap admin enters through GitHub, so its row starts unbound.
+	team := server.seedTeam()
+
+	before := rosterRows(t, server.api("GET", "/api/v1/teams/"+team.teamID+"/members",
+		apiOptions{token: team.admin.accessToken}))
+	adminID := stringField(team.admin.member, "id")
+	if raw, present := before[adminID]["account_user_id"]; !present || raw != nil {
+		t.Fatalf("an unbound member is not an explicit null: %v (present %t)", raw, present)
+	}
+
+	server.bindAccount(team.admin.accessToken, key)
+
+	// An invite names an email; the account service resolves it and the row lands
+	// bound, which is what lets the invitee sign in at all.
+	inviteeEmail := "hubot@example.test"
+	inviteeSub := "acct_invitee_hubot"
+	server.fake.addAccountUser(inviteeEmail, inviteeSub)
 	invited := server.api("POST", "/api/v1/teams/"+team.teamID+"/members/invite", apiOptions{
-		token: team.admin.accessToken, body: map[string]any{"github_username": "hubot", "role": "member"},
+		token: team.admin.accessToken, body: map[string]any{"email": inviteeEmail, "role": "member"},
 	})
 	if invited.status != http.StatusCreated {
 		t.Fatalf("invite: %d %s", invited.status, invited.text)
 	}
 	invitedRow, _ := invited.body["member"].(map[string]any)
-	if raw, present := invitedRow["account_user_id"]; !present || raw != nil {
-		t.Fatalf("an invited member is not an explicit null: %v (present %t) %s", raw, present, invited.text)
+	assertExposedKeys(t, "the invite response", invitedRow)
+	if value := stringField(invitedRow, "account_user_id"); value != inviteeSub {
+		t.Fatalf("the invited row reports %q, want %q", value, inviteeSub)
 	}
-	unbound := server.login("hubot")
-	if raw, present := unbound.member["account_user_id"]; !present || raw != nil {
-		t.Fatalf("an unlinked session reports %v (present %t)", raw, present)
+	if stringField(invitedRow, "display_name") != "hubot" {
+		t.Fatalf("the invited row is not named after the address: %s", invited.text)
+	}
+	if stringField(invitedRow, "status") != "active" {
+		t.Fatalf("an invited row is not active: %s", invited.text)
 	}
 
-	roster := server.api("GET", "/api/v1/teams/"+team.teamID+"/members", apiOptions{token: team.admin.accessToken})
-	if roster.status != http.StatusOK {
-		t.Fatalf("member list: %d %s", roster.status, roster.text)
+	roster := rosterRows(t, server.api("GET", "/api/v1/teams/"+team.teamID+"/members",
+		apiOptions{token: team.admin.accessToken}))
+	if len(roster) != 2 {
+		t.Fatalf("roster size %d", len(roster))
 	}
-	entries, _ := roster.body["members"].([]any)
-	if len(entries) != 2 {
-		t.Fatalf("roster size %d: %s", len(entries), roster.text)
-	}
-	rows := map[string]map[string]any{}
-	for _, entry := range entries {
-		row, ok := entry.(map[string]any)
-		if !ok {
-			t.Fatalf("a member row is not an object: %s", roster.text)
-		}
-		assertExposedKeys(t, "the member list", row)
-		rows[stringField(row, "id")] = row
-	}
-	boundRow := rows[stringField(team.admin.member, "id")]
-	if boundRow == nil {
-		t.Fatalf("the roster is missing the bound admin: %s", roster.text)
-	}
-	if value := stringField(boundRow, "account_user_id"); value != accountSubject {
+	if value := stringField(roster[adminID], "account_user_id"); value != accountSubject {
 		t.Fatalf("the bound row reports %q, want %q", value, accountSubject)
 	}
-	if raw, present := rows[stringField(unbound.member, "id")]["account_user_id"]; !present || raw != nil {
-		t.Fatalf("the unbound row reports %v (present %t)", raw, present)
+	invitedID := stringField(invitedRow, "id")
+	if value := stringField(roster[invitedID], "account_user_id"); value != inviteeSub {
+		t.Fatalf("the invited row reports %q, want %q", value, inviteeSub)
 	}
 
 	me := server.api("GET", "/api/v1/me", apiOptions{token: team.admin.accessToken})
@@ -83,14 +107,27 @@ func TestMemberRowsExposeTheAccountBinding(t *testing.T) {
 	}
 	assertExposedKeys(t, "me", meRow)
 
-	// Signing in with an assertion answers the member the assertion resolved to.
-	signedIn := server.signInAssertion(t, key.assertion(t, assertionOptions{}))
+	// Signing in with an assertion answers the member the assertion resolved to,
+	// and the invited account reaches its own row.
+	signedIn := server.signInAssertion(t, key.assertion(t, assertionOptions{sub: inviteeSub}))
 	if signedIn.status != http.StatusOK {
 		t.Fatalf("account sign-in: %d %s", signedIn.status, signedIn.text)
 	}
 	signInRow, _ := signedIn.body["member"].(map[string]any)
-	if stringField(signInRow, "account_user_id") != accountSubject {
+	if stringField(signInRow, "id") != invitedID {
+		t.Fatalf("the invited account signed in as %v: %s", signInRow["id"], signedIn.text)
+	}
+	if stringField(signInRow, "account_user_id") != inviteeSub {
 		t.Fatalf("the sign-in member reports %v: %s", signInRow["account_user_id"], signedIn.text)
 	}
 	assertExposedKeys(t, "the account sign-in", signInRow)
+
+	adminSignIn := server.signInAssertion(t, key.assertion(t, assertionOptions{}))
+	if adminSignIn.status != http.StatusOK {
+		t.Fatalf("admin sign-in: %d %s", adminSignIn.status, adminSignIn.text)
+	}
+	adminRow, _ := adminSignIn.body["member"].(map[string]any)
+	if stringField(adminRow, "id") != adminID {
+		t.Fatalf("the admin signed in as %v: %s", adminRow["id"], adminSignIn.text)
+	}
 }

@@ -208,7 +208,11 @@ func (h *Hub) handleInviteMember(c *routeContext) error {
 	if err != nil {
 		return err
 	}
-	username, err := RequireString(body, "github_username")
+	rawEmail, err := RequireString(body, "email")
+	if err != nil {
+		return err
+	}
+	email, err := inviteEmail(rawEmail)
 	if err != nil {
 		return err
 	}
@@ -219,7 +223,7 @@ func (h *Hub) handleInviteMember(c *routeContext) error {
 	if role != "admin" && role != "member" {
 		return FailWith(CodeValidationFailed, "role must be 'admin' or 'member'.", map[string]any{"field": "role"})
 	}
-	member, err := h.InviteMember(c.teamID(), c.principal, username, role, c.now)
+	member, err := h.InviteMember(c.teamID(), c.principal, email, role, c.now)
 	if err != nil {
 		return err
 	}

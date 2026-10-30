@@ -77,6 +77,8 @@ Upon successful GitHub authentication, the Hub issues a dual-token pair. Both th
 
 `account_user_id` is the Whale account subject bound to this membership, and `null` while the member is unlinked; it is read-only and never takes part in an authorization decision. The field is a backward-compatible addition - a client that predates it ignores it - and it is the only account-service attribute exposed here: no email, no account display name, no token.
 
+A member invited by email is created already bound, because `account_user_id` is what sign-in matches. `github_user_id` and `github_username` are legacy identity columns: they are `NOT NULL` and unique per team, so an email-invited row carries a reserved placeholder instead of a GitHub identity - a negative `github_user_id` (real GitHub ids are positive) and a `github_username` prefixed `account:` (a colon is not legal in a GitHub login). Neither value identifies a GitHub account, and a client must not resolve or display them as one.
+
 The `expires_in` field returned by `POST /auth/token` and `POST /auth/refresh` represents the access token lifetime in seconds (`7200`, corresponding to 2 hours), following OAuth 2.0 convention (RFC 6749). Clients MUST process and calculate expiration in seconds.
 
 In Web environments, the `th_refresh` cookie is set during web callback (`GET /auth/github/callback`) and token refresh (`POST /auth/refresh`) with `HttpOnly; Secure; SameSite=Lax`. The `th_session` cookie is also set and remains valid for Web authentication.
@@ -133,12 +135,14 @@ Execution nodes (Hosts) authenticate using a dedicated Host Token minted by a te
 | Revocation | Team administrators can revoke any Host Token immediately via `POST /api/v1/teams/:teamId/hosts/:hostId/revoke-token`. Revoked tokens return `401 Unauthorized`. In agent listings, agents bound to a revoked Host report `host_status: 'offline'`. |
 
 ### Member Invitation and Management
-Team administrators invite members by their GitHub username.
+Team administrators invite members by email address. The Hub resolves the address through the account service, so the membership is created already bound to the account the invitee signs in with.
+
+**Backward incompatible change.** The invite used to take `github_username` and let the invitee enter through GitHub OAuth. GitHub login is now closed on the Hub (`github_login=false`), so that shape could never work: the row was created `invited` and unbound, the invitee's first sign-in could not find a member bound to their account and answered `409 NOT_LINKED`, and the binding route requires an existing membership. `github_username` is therefore no longer accepted - a request that sends it instead of `email` is refused with `400 VALIDATION_FAILED` - and there is no compatibility mode. Clients MUST send `email`.
 
 | Step | Actor | Action | Result |
 | --- | --- | --- | --- |
-| 1 | Admin | Calls `POST /api/v1/teams/:teamId/members/invite` with `github_username` and `role`. Hub resolves `github_user_id` via GitHub API `GET https://api.github.com/users/:username`. | Member record created with status `invited` and resolved `github_user_id`. |
-| 2 | Invitee | Authenticates via GitHub OAuth on Web or iOS Whale App. | Hub matches GitHub username, marks status `active`, and verifies `github_user_id`. |
+| 1 | Admin | Calls `POST /api/v1/teams/:teamId/members/invite` with `email` and `role`. The Hub resolves the address with `POST {ACCOUNT_SERVICE_BASE}/v1/admin/users/lookup`, carrying `x-admin-token: {ACCOUNT_ADMIN_TOKEN}` and body `{ email }`. | Member record created `active`, bound to the resolved account user id, named after the address's local part, with the requested `role`. An address the account service does not know answers `404 USER_NOT_FOUND` and writes no row; an account that is already a member of a team on this Hub answers `409 ALREADY_MEMBER`. |
+| 2 | Invitee | Signs in with an account assertion (`POST /auth/account`). | The Hub matches `members.account_user_id` and opens a session immediately; the invite needs no second step. |
 | 3 | Admin | Calls `DELETE /api/v1/teams/:teamId/members/:memberId` to remove a member. | Member status set to `suspended`; active sessions revoked immediately. |
 
 ## 3. D1 Database Schema
@@ -682,7 +686,7 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `GET` | `/api/v1/teams/:teamId/inbox` | Member | None | `{ assigned: Issue[], review: Issue[], questions: Question[], mentions: [{ comment: Comment, issue_id }] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/inbox/mentions/:commentId/read` | Member | None | `{ ok: true }` | 200, 401, 403, 404 | `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND` |
 | `GET` | `/api/v1/teams/:teamId/members` | Member | None | `{ members: Member[] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
-| `POST` | `/api/v1/teams/:teamId/members/invite` | Admin | `{ github_username, role }` | `{ member: Member }` | 201, 400, 403, 404, 409 | `VALIDATION_FAILED`, `FORBIDDEN`, `USER_NOT_FOUND`, `ALREADY_MEMBER` |
+| `POST` | `/api/v1/teams/:teamId/members/invite` | Admin | `{ email, role }` | `{ member: Member }` | 201, 400, 403, 404, 409, 502, 503 | `VALIDATION_FAILED`, `FORBIDDEN`, `USER_NOT_FOUND`, `ALREADY_MEMBER`, `ACCOUNT_UNAVAILABLE`, `NOT_CONFIGURED` |
 | `DELETE` | `/api/v1/teams/:teamId/members/:memberId` | Admin | None | `{ ok: true }` | 200, 403, 404 | `MEMBER_NOT_FOUND` |
 | `GET` | `/api/v1/teams/:teamId/agents` | Member | None | `{ agents: [{ id, name, host_id, owner_member_id, host_status }] }` (revoked hosts report `host_status: "offline"`) | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/hosts/tokens` | Admin | `{ hostname }` | `{ host_id, host_token }` | 201, 403 | `FORBIDDEN` |
@@ -840,9 +844,9 @@ All error responses adhere to a single unified JSON schema:
 | `ISSUE_NOT_FOUND` | 404 | Target issue does not exist. |
 | `HOST_NOT_FOUND` | 404 | Target execution Host does not exist. |
 | `MEMBER_NOT_FOUND` | 404 | Target team member does not exist. |
-| `USER_NOT_FOUND` | 404 | Target GitHub user not found during member invitation. |
+| `USER_NOT_FOUND` | 404 | The invited email has no account in the account service, so no member was created. |
 | `CONFLICT` | 409 | Resource state conflict (e.g. duplicate slug, question already answered). |
-| `ALREADY_MEMBER` | 409 | Target user is already a member of the team. |
+| `ALREADY_MEMBER` | 409 | The invited account already holds a membership: `details.member_id` names it. |
 | `VALIDATION_FAILED` | 400 | Request body failed structural validation or schema constraints. |
 | `UNSUPPORTED_PROTOCOL_VERSION` | 400 | Requested protocol version major number is unsupported. |
 | `INVALID_STATE_TRANSITION` | 422 | Attempted lifecycle transition disallowed by state machine. |
@@ -854,7 +858,8 @@ All error responses adhere to a single unified JSON schema:
 | `HOST_MISMATCH` | 403 | Host is not authorized to claim, settle, or withdraw questions for this issue or host binding. |
 | `PAYLOAD_TOO_LARGE` | 413 | Request body exceeds configured byte limit. |
 | `RATE_LIMITED` | 429 | Request rate exceeded allowed quota. |
-| `NOT_CONFIGURED` | 503 | Required external service or integration (e.g. APNs, GitHub OAuth app) is not configured on the Hub. |
+| `ACCOUNT_UNAVAILABLE` | 502 | The account service could not be reached, or answered with something this Hub does not accept; the upstream body is never forwarded. |
+| `NOT_CONFIGURED` | 503 | Required external service or integration (e.g. APNs, GitHub OAuth app, the account-service admin API) is not configured on the Hub. |
 | `INTERNAL_ERROR` | 500 | Unhandled internal server or database error. |
 
 ### Contract Examples

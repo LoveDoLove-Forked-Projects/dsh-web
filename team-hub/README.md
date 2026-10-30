@@ -157,7 +157,9 @@ needed something the document does not state, each kept additive and small.
 6. **Member administration has no activity row.** Section 11 asks for an
    immutable audit record of every state change, but `activity.issue_id` is
    `NOT NULL REFERENCES issues(id)`, so invites and removals have no legal row
-   in that table. Issue-scoped actions are all recorded.
+   in that table. Issue-scoped actions are all recorded; an invite writes one
+   masked `[audit] member.joined` line to the process log instead, which is not
+   durable (`team-hub/go/README.md` owns that gap).
 7. **WebSocket violations close the socket.** Section 11 caps frames per
    connection and frame size, and the section 9 frame table has no error frame,
    so a violation closes the socket: `1008 RATE_LIMITED` or
@@ -210,12 +212,13 @@ needed something the document does not state, each kept additive and small.
       admin.
     - Host execution routes allow 120 requests per minute per host
       (supplement A4.6), not the 30 the section 11 table still shows.
-11. **One contradiction left in the specification text.** The endpoint table's
-    invite row still lists `400` among its status codes while its error codes are
+11. **The invite row no longer contradicts the error-code table.** It used to
+    list `400` among its status codes while its error codes were
     `USER_NOT_FOUND` and `ALREADY_MEMBER`, which the error-code table defines as
-    `404` and `409`. The hub follows the error-code table, which is also what
-    supplement A4.7 fixes. PROTOCOL.md is maintained by the protocol owner and is
-    not edited here.
+    `404` and `409`; the hub followed the error-code table, which is also what
+    supplement A4.7 fixes. The email invite replaces that row, so `400` now
+    belongs to it through `VALIDATION_FAILED`, and PROTOCOL.md carries the shape
+    and the backward-incompatible note.
 12. **The first team and its first admin have an endpoint of their own.**
     `POST /api/v1/bootstrap` is not in the section 9 table because a team that
     already exists never needs it: it exists so a deployment that has no team can

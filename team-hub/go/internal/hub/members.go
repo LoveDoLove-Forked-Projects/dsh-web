@@ -4,8 +4,11 @@ package hub
 // first of each.
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"net/url"
+	"strings"
 )
 
 // GetTeam resolves the team a path names, or refuses with NOT_FOUND.
@@ -113,44 +116,93 @@ func (h *Hub) FetchGithubProfile(username string) (*githubProfile, error) {
 	return profile, nil
 }
 
-// InviteMember is section 2 member management: an admin invites by GitHub
-// username, and the GitHub lookup fills the numeric id the schema requires.
-func (h *Hub) InviteMember(teamID string, actor *Principal, username, role string, now int64) (*MemberView, error) {
-	profile, err := h.FetchGithubProfile(username)
+// inviteEmail trims and checks the address an invite names.
+func inviteEmail(raw string) (string, error) {
+	email := strings.TrimSpace(raw)
+	at := strings.LastIndex(email, "@")
+	if at <= 0 || at == len(email)-1 || strings.ContainsAny(email, " \t\r\n") {
+		return "", FailWith(CodeValidationFailed,
+			"email must be a plain address such as name@example.com.", map[string]any{"field": "email"})
+	}
+	return email, nil
+}
+
+// emailLocalPart is the name an invite starts from: the account service knows
+// the address, not a display name, so the part before the at-sign names the row.
+func emailLocalPart(email string) string {
+	if at := strings.LastIndex(email, "@"); at > 0 {
+		return email[:at]
+	}
+	return email
+}
+
+// placeholderGithubIdentity is the inert GitHub identity an email-invited member
+// carries. The members table predates the account service: both github columns
+// are NOT NULL and unique per team, while the identity that signs in now lives in
+// account_user_id. A negative id can never equal a real GitHub id, and the
+// "account:" prefix marks the handle as a placeholder, because a colon is not
+// legal in a GitHub login and so can neither be typed as a mention nor match one.
+func placeholderGithubIdentity(accountUserID string) (int64, string) {
+	digest := sha256.Sum256([]byte(accountUserID))
+	raw := binary.BigEndian.Uint64(digest[:8]) >> 1
+	return -int64(raw) - 1, "account:" + accountUserID
+}
+
+// InviteMember is section 2 member management: an admin names an email, the
+// account service resolves it, and the membership lands active and bound. The
+// binding is what makes the invite work at all: sign-in matches a member by
+// account_user_id, so an invited row that is not bound answers 409 NOT_LINKED to
+// the person it just invited.
+//
+// Section 11 asks for an audit record of the change. The activity table is
+// issue-scoped (issue_id NOT NULL REFERENCES issues(id)), so a team-scoped join
+// has no legal row there and the hub writes one [audit] line to the process log
+// instead. That log is the only trace: it is not queryable, and it does not
+// survive a restart or a rotated log file. A durable audit needs a new table.
+func (h *Hub) InviteMember(teamID string, actor *Principal, email, role string, now int64) (*MemberView, error) {
+	account, err := h.LookupAccountByEmail(email)
 	if err != nil {
 		return nil, err
 	}
-	if profile == nil {
-		return nil, FailWith(CodeUserNotFound, "No GitHub user named "+username+".",
-			map[string]any{"github_username": username})
+	if account == nil {
+		return nil, FailWith(CodeUserNotFound,
+			"No Whale account exists for this email yet; ask the invitee to sign in to the Whale app "+
+				"with Apple once, then invite again.", map[string]any{"email": email})
 	}
 	existing, err := queryMember(h.db,
-		"SELECT "+memberColumns+" FROM members WHERE team_id = ? AND (github_user_id = ? OR "+
-			"github_username = ? COLLATE NOCASE)", teamID, profile.ID, profile.Login)
+		"SELECT "+memberColumns+" FROM members WHERE account_user_id = ?", account.UserID)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
-		return nil, FailWith(CodeAlreadyMember, "This GitHub user is already on the team.",
+		return nil, FailWith(CodeAlreadyMember, "This account is already a member of a team on this hub.",
 			map[string]any{"member_id": existing.ID})
 	}
-	displayName := profile.Login
-	if profile.Name != nil {
-		displayName = *profile.Name
-	}
+	githubID, githubHandle := placeholderGithubIdentity(account.UserID)
 	member := &Member{
-		ID: NewID("mem", now), TeamID: teamID, GithubUserID: profile.ID,
-		GithubUsername: profile.Login, DisplayName: displayName, AvatarURL: profile.AvatarURL,
-		Role: role, Status: "invited", CreatedAt: now, UpdatedAt: now,
+		ID: NewID("mem", now), TeamID: teamID, GithubUserID: githubID,
+		GithubUsername: githubHandle, DisplayName: emailLocalPart(email),
+		AccountUserID: strPointer(account.UserID), Role: role, Status: "active",
+		CreatedAt: now, UpdatedAt: now,
 	}
 	_, err = h.db.Exec(
 		`INSERT INTO members (id, team_id, github_user_id, github_username, display_name, avatar_url,
-		 role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 account_user_id, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.DisplayName,
-		member.AvatarURL, member.Role, member.Status, member.CreatedAt, member.UpdatedAt)
+		member.AvatarURL, member.AccountUserID, member.Role, member.Status, member.CreatedAt, member.UpdatedAt)
 	if err != nil {
+		// The partial unique index on account_user_id and a racing invite end with
+		// the same answer the pre-check gives.
+		if holder, lookupErr := queryMember(h.db,
+			"SELECT "+memberColumns+" FROM members WHERE account_user_id = ?", account.UserID); lookupErr == nil && holder != nil {
+			return nil, FailWith(CodeAlreadyMember,
+				"This account is already a member of a team on this hub.",
+				map[string]any{"member_id": holder.ID})
+		}
 		return nil, err
 	}
+	h.logf("[audit] member.joined team=%s member=%s account=%s role=%s actor=%s email=%s",
+		member.TeamID, member.ID, account.UserID, member.Role, actor.Member.ID, maskEmail(email))
 	view := toMemberView(member)
 	return &view, nil
 }

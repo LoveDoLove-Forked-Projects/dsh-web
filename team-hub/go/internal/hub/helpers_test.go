@@ -14,6 +14,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -35,6 +36,11 @@ const (
 	accountIssuer  = "https://account.example"
 	accountAudienc = "dsh-team-hub"
 	accountSubject = "acct_hubot"
+
+	// accountServiceBase is ACCOUNT_SERVICE_BASE: the host the fake outbound serves
+	// both the JWKS and the admin email lookup on.
+	accountServiceBase = "https://account.example"
+	accountAdminToken  = "{{SECRET_admininvite}}"
 )
 
 type githubAccount struct {
@@ -57,20 +63,47 @@ type recordedCall struct {
 // fakeOutbound serves the GitHub, account service and APNs contracts and records
 // every request, so a test can assert what the hub actually built.
 type fakeOutbound struct {
-	mu         sync.Mutex
-	calls      []recordedCall
-	accounts   map[string]githubAccount
-	jwks       any
-	status     int
-	pushStatus int
+	mu                sync.Mutex
+	calls             []recordedCall
+	accounts          map[string]githubAccount
+	users             map[string]string
+	jwks              any
+	status            int
+	pushStatus        int
+	lookupStatus      int
+	lookupUnreachable bool
 }
 
 func newFakeOutbound() *fakeOutbound {
-	fake := &fakeOutbound{accounts: map[string]githubAccount{}}
+	fake := &fakeOutbound{accounts: map[string]githubAccount{}, users: map[string]string{}}
 	for _, account := range []githubAccount{octocat, hubot} {
 		fake.accounts[account.Login] = account
 	}
 	return fake
+}
+
+// addAccountUser teaches the fake account service one email, so an invite can
+// resolve it to the user id its assertions carry as sub.
+func (f *fakeOutbound) addAccountUser(email, userID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.users[email] = userID
+}
+
+// setLookupStatus makes the account-service lookup answer one injected status
+// instead of resolving anything, which is how the hub's 502 path is exercised.
+func (f *fakeOutbound) setLookupStatus(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lookupStatus = status
+}
+
+// setLookupUnreachable makes the lookup fail at the transport, the other shape of
+// "the account service is not there".
+func (f *fakeOutbound) setLookupUnreachable() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lookupUnreachable = true
 }
 
 func (f *fakeOutbound) Do(request *http.Request) (*http.Response, error) {
@@ -86,6 +119,12 @@ func (f *fakeOutbound) Do(request *http.Request) (*http.Response, error) {
 	jwks := f.jwks
 	status := f.status
 	pushStatus := f.pushStatus
+	lookupStatus := f.lookupStatus
+	unreachable := f.lookupUnreachable
+	users := map[string]string{}
+	for email, userID := range f.users {
+		users[email] = userID
+	}
 	f.mu.Unlock()
 
 	parsed, err := url.Parse(request.URL.String())
@@ -127,11 +166,32 @@ func (f *fakeOutbound) Do(request *http.Request) (*http.Response, error) {
 			return write(404, map[string]any{"message": "Not Found"})
 		}
 		return write(200, account)
-	case parsed.Host == "account.example":
+	case parsed.Host == "account.example" && parsed.Path == "/jwks.json":
 		if jwks == nil {
 			return write(503, map[string]any{"error": "not_configured"})
 		}
 		return write(200, jwks)
+	case parsed.Host == "account.example" && parsed.Path == accountLookupPath:
+		if unreachable {
+			return nil, errors.New("dial tcp 203.0.113.7:443: connect: connection refused")
+		}
+		if request.Header.Get("x-admin-token") != accountAdminToken {
+			return write(401, map[string]any{"error": "unauthorized"})
+		}
+		if lookupStatus != 0 {
+			return write(lookupStatus, map[string]any{"error": "injected"})
+		}
+		var lookup struct {
+			Email string `json:"email"`
+		}
+		if err := json.Unmarshal([]byte(body), &lookup); err != nil {
+			return write(400, map[string]any{"error": "bad_request"})
+		}
+		userID, ok := users[lookup.Email]
+		if !ok {
+			return write(404, map[string]any{"error": "user_not_found"})
+		}
+		return write(200, map[string]any{"user_id": userID, "email": lookup.Email})
 	case parsed.Host == "api.push.apple.com" || parsed.Host == "api.sandbox.push.apple.com":
 		if pushStatus != 0 {
 			return write(pushStatus, map[string]any{"reason": "injected"})
@@ -156,6 +216,24 @@ type testHub struct {
 	fake   *fakeOutbound
 	dir    string
 	client *http.Client
+
+	logMu sync.Mutex
+	logs  []string
+}
+
+// recordLog keeps every line the hub logs, so a test can read an audit entry the
+// hub deliberately does not expose on the wire.
+func (h *testHub) recordLog(format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	h.logMu.Lock()
+	defer h.logMu.Unlock()
+	h.logs = append(h.logs, line)
+}
+
+func (h *testHub) loggedLines() []string {
+	h.logMu.Lock()
+	defer h.logMu.Unlock()
+	return append([]string{}, h.logs...)
 }
 
 type startOptions struct {
@@ -188,6 +266,8 @@ func startTestHub(t *testing.T, options ...startOptions) *testHub {
 		"ACCOUNT_JWKS_URL":     accountJWKSUrl,
 		"ACCOUNT_ISSUER":       accountIssuer,
 		"ACCOUNT_AUDIENCE":     accountAudienc,
+		"ACCOUNT_SERVICE_BASE": accountServiceBase,
+		"ACCOUNT_ADMIN_TOKEN":  accountAdminToken,
 		"MIGRATIONS_DIR":       migrationsDir(t),
 	}
 	for _, option := range options {
@@ -206,8 +286,18 @@ func startTestHub(t *testing.T, options ...startOptions) *testHub {
 	if len(report.Errors) > 0 {
 		t.Fatalf("test configuration is invalid: %v", report.Errors)
 	}
+	server := &testHub{
+		t: t, hub: nil, base: "", fake: fake, dir: directory,
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+			// The OAuth routes answer 302 on purpose; a test reads the location, it
+			// never follows it out of the process.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+	}
 	app, err := New(report.Config, Options{Outbound: fake, Logf: func(format string, args ...any) {
 		t.Logf("[hub] "+format, args...)
+		server.recordLog(format, args...)
 	}})
 	if err != nil {
 		t.Fatalf("new hub: %v", err)
@@ -216,15 +306,8 @@ func startTestHub(t *testing.T, options ...startOptions) *testHub {
 	if err != nil {
 		t.Fatalf("start hub: %v", err)
 	}
-	server := &testHub{
-		t: t, hub: app, base: base, fake: fake, dir: directory,
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-			// The OAuth routes answer 302 on purpose; a test reads the location, it
-			// never follows it out of the process.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
-	}
+	server.hub = app
+	server.base = base
 	t.Cleanup(func() {
 		if err := app.Close(); err != nil {
 			t.Errorf("close hub: %v", err)
@@ -405,15 +488,75 @@ func (h *testHub) seedTeam() seededTeam {
 	return seededTeam{teamID: teamID, admin: h.login("octocat")}
 }
 
-func (h *testHub) inviteAndLogin(teamID, adminToken, username string) session {
+// sessionFor mints a session for a member the hub already created. The invite
+// route binds an account but the fixtures here hold no signing key, so the token
+// is issued directly: what these callers need is a working member session, and
+// the account-service sign-in is what the account tests cover.
+func (h *testHub) sessionFor(view any) session {
 	h.t.Helper()
+	record, _ := view.(map[string]any)
+	member, err := queryMember(h.hub.DB(), "SELECT "+memberColumns+" FROM members WHERE id = ?",
+		stringField(record, "id"))
+	if err != nil || member == nil {
+		h.t.Fatalf("read the member the hub created: %v", err)
+	}
+	tokens, _, err := h.hub.issueSession(member, h.hub.now())
+	if err != nil {
+		h.t.Fatalf("issue a session for the member: %v", err)
+	}
+	return session{accessToken: tokens.AccessToken, refreshToken: tokens.RefreshToken, member: record}
+}
+
+// inviteAndLogin invites a second member by email and hands back a session for
+// them. The address resolves through the fake account service, exactly as the
+// real invite resolves it.
+func (h *testHub) inviteAndLogin(teamID, adminToken, handle string) session {
+	h.t.Helper()
+	email := handle + "@example.test"
+	h.fake.addAccountUser(email, "acct_invitee_"+handle)
 	invited := h.api("POST", "/api/v1/teams/"+teamID+"/members/invite", apiOptions{
-		token: adminToken, body: map[string]any{"github_username": username, "role": "member"},
+		token: adminToken, body: map[string]any{"email": email, "role": "member"},
 	})
 	if invited.status != http.StatusCreated {
 		h.t.Fatalf("invite failed: %d %s", invited.status, invited.text)
 	}
-	return h.login(username)
+	return h.sessionFor(invited.body["member"])
+}
+
+// unboundMemberAndLogin seeds a member that entered through GitHub and has not
+// bound an account yet. The invite route always binds one, so the binding rules
+// need the other real shape: the row the bootstrap admin starts as.
+func (h *testHub) unboundMemberAndLogin(teamID, handle string) session {
+	h.t.Helper()
+	account, ok := h.fake.accounts[handle]
+	if !ok {
+		h.t.Fatalf("unknown fixture account %q", handle)
+	}
+	now := h.hub.now()
+	member := &Member{
+		ID: NewID("mem", now), TeamID: teamID, GithubUserID: account.ID, GithubUsername: account.Login,
+		DisplayName: account.Name, Role: "member", Status: "active", CreatedAt: now, UpdatedAt: now,
+	}
+	if _, err := h.hub.DB().Exec(
+		`INSERT INTO members (id, team_id, github_user_id, github_username, display_name, avatar_url,
+		 role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.DisplayName,
+		member.AvatarURL, member.Role, member.Status, member.CreatedAt, member.UpdatedAt); err != nil {
+		h.t.Fatalf("seed an unbound member: %v", err)
+	}
+	encoded, err := json.Marshal(toMemberView(member))
+	if err != nil {
+		h.t.Fatalf("encode the seeded member: %v", err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(encoded, &record); err != nil {
+		h.t.Fatalf("decode the seeded member: %v", err)
+	}
+	tokens, _, err := h.hub.issueSession(member, now)
+	if err != nil {
+		h.t.Fatalf("issue a session for the seeded member: %v", err)
+	}
+	return session{accessToken: tokens.AccessToken, refreshToken: tokens.RefreshToken, member: record}
 }
 
 type seededHost struct {

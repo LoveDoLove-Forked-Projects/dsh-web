@@ -22,6 +22,7 @@ the top-level README, and the same SQLite schema the D1 deployment used.
 | `internal/hub/types.go` | row shapes, scans, and the wire views |
 | `internal/hub/auth.go` | signed access tokens, rotating refresh tokens, Host tokens, quotas |
 | `internal/hub/account.go` | account assertion verification, JWKS cache, sign-in and link |
+| `internal/hub/account_admin.go` | the account-service admin lookup the email invite resolves through |
 | `internal/hub/github.go` | GitHub OAuth authorize, callback, token exchange, PKCE |
 | `internal/hub/members.go` | team, roster, invites, removal, bootstrap |
 | `internal/hub/hosts.go` | Host tokens, registration, heartbeat, agent roster |
@@ -76,6 +77,7 @@ it, and the rest close their own routes.
 | `BOOTSTRAP_TOKEN` | none | `POST /api/v1/bootstrap` answers 503 `NOT_CONFIGURED`. |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | none | `GET /auth/github/*` and `POST /auth/token` answer 503 `NOT_CONFIGURED`. |
 | `ACCOUNT_JWKS_URL` / `ACCOUNT_ISSUER` / `ACCOUNT_AUDIENCE` | none | `POST /auth/account` and `POST /auth/account/link` answer 503 `NOT_CONFIGURED`. |
+| `ACCOUNT_SERVICE_BASE` / `ACCOUNT_ADMIN_TOKEN` | none | `POST /api/v1/teams/:teamId/members/invite` answers 503 `NOT_CONFIGURED` naming the setting that is absent; the route is the only caller of the account-service admin API. |
 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY_P8` | none | `POST /api/v1/push-tokens` answers 503 `NOT_CONFIGURED`; delivery is skipped. |
 | `MIGRATIONS_DIR` | `migrations` beside the working directory or the binary | Where the `.sql` files live. |
 | `SWEEP_INTERVAL_MS` | `60000` | Sweep cadence; `0` keeps the startup sweep and disables the timer. |
@@ -89,6 +91,7 @@ only whether they are configured:
 [config] TEAM_HUB_SESSION_KEY: configured
 [config] GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET: configured
 [config] ACCOUNT_JWKS_URL/ACCOUNT_ISSUER/ACCOUNT_AUDIENCE: missing -> POST /auth/account and /auth/account/link answer 503 NOT_CONFIGURED
+[config] ACCOUNT_SERVICE_BASE/ACCOUNT_ADMIN_TOKEN: configured
 [config] APNS_KEY_ID/APNS_TEAM_ID/APNS_BUNDLE_ID/APNS_PRIVATE_KEY_P8: missing -> APNs delivery is skipped and /readyz reports push=false
 [config] BOOTSTRAP_TOKEN: configured
 [config] SWEEP_INTERVAL_MS=60000 (sweep once at startup, then every 60000 ms)
@@ -172,6 +175,22 @@ protocol already defines.
 in the same `d1_migrations` table D1 uses, so the schema is interchangeable with
 a Worker database. Foreign keys are enforced, WAL is on, and the process owns one
 SQLite connection, which serialises writes.
+
+Member administration is audited only in the process log. Section 11 asks for an
+immutable audit record of every state change, but `activity.issue_id` is
+`NOT NULL REFERENCES issues(id)`, so an invite or a removal has no legal row in
+that table; the top-level README records the same deviation. An invite writes one
+line instead:
+
+```
+[audit] member.joined team=team_... member=mem_... account=acct_... role=member actor=mem_... email=a***@example.com
+```
+
+The local part of the address is masked, so the full address never enters a log.
+That line is the only trace: it is not queryable, and it is gone after a restart or
+a rotated log file, so it is not durable. Durable member-administration audit
+needs a new team-scoped table - `activity` cannot carry it without rebuilding the
+table to accept a NULL `issue_id` - and is deliberately not attempted here.
 
 ## Process timer
 
