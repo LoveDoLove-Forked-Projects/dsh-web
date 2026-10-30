@@ -305,6 +305,36 @@ describe('relay: the bodies the frozen contract names', () => {
     // And a card that names no session has nothing to relay at all
     expect(buildRelayLiveActivity({ ...target, sessionId: undefined }, notification)).toBeUndefined()
   })
+
+  it('operator reads a card dismissed on delivery only when the direct payload dismisses it', () => {
+    // Given one card and the end the direct path builds for a turn that finished
+    const target: LiveActivityAddress = {
+      activityId: 'act-1',
+      token: 'card-token-1',
+      sessionId: 's-1',
+      environment: 'sandbox',
+      bundle: BUNDLE,
+      relayToken: 'relay-token-1',
+    }
+    const ended: LiveActivityNotification = {
+      aps: {
+        timestamp: 1_700_000_000,
+        event: 'end',
+        'content-state': { phase: 'ended', statusLine: 'Turn finished', asOf: 721_692_800, runningCount: 0 },
+        'stale-date': 1_700_000_090,
+        'relevance-score': 10,
+      },
+    }
+    // Then a card the payload leaves alone carries no dismiss key at all
+    expect(buildRelayLiveActivity(target, ended)).not.toHaveProperty('dismiss')
+    // When the session left the roster, the direct payload writes the dismissal date
+    const dismissed = buildRelayLiveActivity(target, { ...ended, aps: { ...ended.aps, 'dismissal-date': 1_700_000_000 } })
+    // Then the card crosses as one that goes on delivery, and never as `false`
+    expect(dismissed).toMatchObject({ activityEvent: 'end', dismiss: true })
+    expect(Object.keys(dismissed ?? {})).toEqual(['event', 'sessionId', 'activityId', 'activityEvent', 'contentState', 'dismiss'])
+    // And an update is never dismissed, because §29.3 dismisses only an end
+    expect(buildRelayLiveActivity(target, { ...ended, aps: { ...ended.aps, event: 'update' } })).not.toHaveProperty('dismiss')
+  })
 })
 
 describe('relay: a centre that refuses', () => {
@@ -455,6 +485,85 @@ describe('relay: a centre that refuses', () => {
       { activityId: 'act-1', token: 'card-token-1' },
     ])
     expect(logs.filter(line => line.includes('was not delivered')).length).toBe(2)
+  })
+
+  it('operator reads every body the centre actually got and only the dismissed end says so', async () => {
+    // Given a card whose bridge stands on a centre that accepts everything
+    const centre = stubCentre(() => ({ status: 200, body: JSON.stringify({ ok: true, delivered: 1, dead: 0 }) }))
+    const clock = { now: 1_700_000_000_000 }
+    const liveActivity = new LiveActivityNotifier({
+      targets: () => [{
+        activityId: 'act-1',
+        token: 'card-token-1',
+        sessionId: 's-1',
+        environment: 'sandbox',
+        bundle: BUNDLE,
+        relayToken: 'relay-token-1',
+      }],
+      sender: new RelaySender({ url: 'https://relay.test', fetch: centre.fetch }),
+      available: () => true,
+      now: () => clock.now,
+    })
+    // When s-1 is listed running, its turn ends while it is still listed, and then a
+    // later listing no longer names it and its turn ends again
+    liveActivity.noteRoster([{ id: 's-1', agentRunning: true, title: 'Deck' }])
+    await settle()
+    clock.now += 10_000
+    liveActivity.noteTurnEnd('s-1', 'completed')
+    await settle()
+    clock.now += 10_000
+    liveActivity.noteRoster([{ id: 's-9', agentRunning: true, title: 'Other' }])
+    await settle()
+    clock.now += 10_000
+    liveActivity.noteTurnEnd('s-1', 'completed')
+    await settle()
+    // Then the centre received exactly three bodies: an update, an end, and an end
+    // that dismisses, whose dismissal date the service stamps itself
+    expect(centre.requests.map(request => request.body)).toEqual([
+      {
+        event: 'live-activity',
+        sessionId: 's-1',
+        activityId: 'act-1',
+        activityEvent: 'update',
+        contentState: {
+          phase: 'running',
+          statusLine: 'Running',
+          asOf: 721_692_800,
+          runningCount: 1,
+          rows: [{ name: 'Deck', status: 'Running', phase: 'running' }],
+        },
+      },
+      {
+        event: 'live-activity',
+        sessionId: 's-1',
+        activityId: 'act-1',
+        activityEvent: 'end',
+        contentState: {
+          phase: 'ended',
+          statusLine: 'Turn finished',
+          asOf: 721_692_810,
+          // A card never says zero sessions run; the state clamps it to one.
+          runningCount: 1,
+          rows: [],
+        },
+      },
+      {
+        event: 'live-activity',
+        sessionId: 's-1',
+        activityId: 'act-1',
+        activityEvent: 'end',
+        contentState: {
+          phase: 'ended',
+          statusLine: 'Turn finished',
+          asOf: 721_692_830,
+          runningCount: 1,
+          rows: [{ name: 'Other', status: 'Running', phase: 'running' }],
+        },
+        dismiss: true,
+      },
+    ])
+    // And nothing but the dismissed one names it, so no body ever says `false`
+    expect(centre.requests.map(request => 'dismiss' in request.body)).toEqual([false, false, true])
   })
 })
 

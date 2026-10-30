@@ -11,7 +11,7 @@
  *
  * - the bridge sends the EVENT, not the state: `{event, sessionId, title, workspace}`
  *   for a notification and `{event: 'live-activity', sessionId, activityId,
- *   activityEvent, contentState}` for a card. It no longer decides the APNs
+ *   activityEvent, contentState, dismiss?}` for a card. It no longer decides the APNs
  *   headers, the bundle, the environment or the alert bodies — the service does,
  *   from the registration the App made directly with it;
  * - a failure is a return value, never a rejection and never a retry: both callers
@@ -71,6 +71,14 @@ export interface RelayLiveActivityRequest {
   readonly activityId: string
   readonly activityEvent: LiveActivityNotification['aps']['event']
   readonly contentState: LiveActivityNotification['aps']['content-state']
+  /**
+   * Whether the card must go the moment this delivery lands, rather than at its
+   * `stale-date`. Only ever `true`: the key is absent when the card stays, because
+   * a `false` would be a second way to say the same thing and an older service
+   * would have to learn it. The dismissal date itself is the service's to write —
+   * it is the one that knows when the delivery landed (§29.3).
+   */
+  readonly dismiss?: boolean
 }
 
 /**
@@ -117,6 +125,11 @@ export function buildRelayLiveActivity(
     activityId: target.activityId,
     activityEvent: notification.aps.event,
     contentState: notification.aps['content-state'],
+    // The direct payload already decided this: it writes `dismissal-date` only for an
+    // `end` whose session left the roster. Reading that decision back off the payload
+    // keeps one answer to "does this card go now" for both routes, and the date is
+    // left to the service, which stamps its own delivery moment.
+    ...(notification.aps['dismissal-date'] === undefined ? {} : { dismiss: true }),
   }
 }
 
