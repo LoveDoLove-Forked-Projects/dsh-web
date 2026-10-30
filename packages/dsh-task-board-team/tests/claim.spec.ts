@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TEAM_EXTENSION_ID, readTaskIssueLink } from '../src/core/identity.ts'
-import { boundAgent, flush, makeHarness, type Harness } from './support/harness.ts'
+import { FIXTURE_WORKSPACE, boundAgent, flush, makeHarness, type Harness } from './support/harness.ts'
 
 let harness: Harness | undefined
 
@@ -330,5 +330,82 @@ describe('claiming team issues', () => {
     expect(harness.hub.registered).toEqual([])
     expect(harness.tasks()).toHaveLength(0)
     expect(harness.hub.calls.filter(call => call.path.endsWith('/claim'))).toHaveLength(0)
+  })
+
+  it('operator sees no issue claimed while this Host has no workspace to run it in', async () => {
+    // Given a member whose team pins no workspace and a mount that configures none
+    harness = makeHarness({ agents: [boundAgent({ workspaceId: undefined })] })
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1', title: 'Ship the thing' })
+
+    // When two claim sweeps run
+    await harness.service().sweep()
+    await harness.service().sweep()
+    await flush()
+
+    // Then the hub was never asked to hand the issue over, no card was created,
+    // and one problem line says why and what this Host does instead
+    expect(harness.hub.calls.filter(call => call.path.endsWith('/claim'))).toHaveLength(0)
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('assigned')
+    expect(harness.tasks()).toHaveLength(0)
+    const missingWorkspace = harness.service().summary().problems.filter(line => line.includes('no run workspace'))
+    expect(missingWorkspace).toHaveLength(1)
+    expect(missingWorkspace[0]).toContain('no team issue is claimed')
+    expect(missingWorkspace[0]).toContain('keep its issue running')
+  })
+
+  it('operator sees the configured workspace pinned on the mirror card and started', async () => {
+    // Given a mount configured with the deployment workspace and a member whose team pins another
+    harness = makeHarness({
+      agents: [boundAgent({ workspaceId: 'ws_member' })],
+      workspaceId: FIXTURE_WORKSPACE,
+    })
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+
+    // When the issue is claimed
+    await harness.service().sweep()
+    await flush()
+
+    // Then the mount's workspace won over the member's, travelled into the card
+    // and into the run the board opened for it
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('running')
+    expect(harness.tasks()).toHaveLength(1)
+    expect(harness.tasks()[0].workspaceId).toBe(FIXTURE_WORKSPACE)
+    expect(harness.creates).toHaveLength(1)
+    expect(harness.creates[0]?.workspaceId).toBe(FIXTURE_WORKSPACE)
+  })
+
+  it('operator sees the member team workspace used when the mount configures none', async () => {
+    // Given a member whose team pins the deployment workspace and a mount with none
+    harness = makeHarness({ agents: [boundAgent({ workspaceId: FIXTURE_WORKSPACE })] })
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+
+    // When the issue is claimed
+    await harness.service().sweep()
+    await flush()
+
+    // Then the card carries the member's own workspace and ran in it
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('running')
+    expect(harness.tasks()).toHaveLength(1)
+    expect(harness.tasks()[0].workspaceId).toBe(FIXTURE_WORKSPACE)
+    expect(harness.creates).toHaveLength(1)
+  })
+
+  it('operator sees the missing workspace problem go once a workspace is configured', async () => {
+    // Given a Host that already reported the missing workspace and claimed nothing
+    harness = makeHarness({ agents: [boundAgent({ workspaceId: undefined })] })
+    harness.hub.addIssue({ assigneeAgentId: 'agent_1' })
+    await harness.service().sweep()
+    expect(harness.service().summary().problems.filter(line => line.includes('no run workspace'))).toHaveLength(1)
+
+    // When the mount's live settings gain the deployment workspace
+    harness.settings.workspaceId = FIXTURE_WORKSPACE
+    await harness.service().sweep()
+    await flush()
+
+    // Then the problem is gone and the issue was claimed into a card that runs there
+    expect(harness.service().summary().problems.filter(line => line.includes('no run workspace'))).toHaveLength(0)
+    expect(harness.hub.issues.get('issue_1')?.status).toBe('running')
+    expect(harness.tasks()[0].workspaceId).toBe(FIXTURE_WORKSPACE)
+    expect(harness.creates).toHaveLength(1)
   })
 })

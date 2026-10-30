@@ -26,11 +26,14 @@ import { processTimers } from '../../src/core/timers.ts'
 import type { BoundAgent } from '../../src/host/bindings.ts'
 import { createTeamExtension } from '../../src/host/extension.ts'
 import { HubClient } from '../../src/host/hub-client.ts'
-import type { TeamSyncService } from '../../src/host/service.ts'
+import type { TeamRuntimeSettings, TeamSyncService } from '../../src/host/service.ts'
 import { FakeHub } from './fake-hub.ts'
 
 /** Fixed clock the board and the provider both read. */
 export const NOW = 1_700_000_000_000
+
+/** The workspace this deployment serves, so a claimed card really starts. */
+export const FIXTURE_WORKSPACE = 'workspace-fixture'
 
 const roots: string[] = []
 
@@ -101,6 +104,8 @@ export interface Harness {
   board: TaskBoardHostService
   ledger: HostTaskLedger
   agents: BoundAgent[]
+  /** The live settings the provider reads; a spec may change one to model a write. */
+  settings: TeamRuntimeSettings
   prompts: DeliveredPrompt[]
   creates: Array<{ workspaceId?: string; agentPreset?: string }>
   /** The capability face the board handed the extension, as the provider saw it. */
@@ -136,6 +141,11 @@ export interface HarnessOptions {
   withDraftPreset?: boolean
   /** Local fallback wait for a claimed question, in minutes; absent means none. */
   questionWaitMinutes?: number
+  /**
+   * Workspace this mount runs its cards in; absent means each member runs in the
+   * workspace its dsh-agents team pins, exactly as a real mount resolves it.
+   */
+  workspaceId?: string
 }
 
 /** One bound agent a test can reuse. */
@@ -146,6 +156,7 @@ export function boundAgent(overrides: Partial<BoundAgent> = {}): BoundAgent {
     teamName: 'Core',
     name: 'builder',
     preset: 'liangshen',
+    workspaceId: FIXTURE_WORKSPACE,
     ...overrides,
   }
 }
@@ -163,7 +174,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
     ledger,
     power: new PowerInhibitor({ platform: 'linux' }),
     now: () => NOW,
-    workspaceRegistry: fixtureWorkspaces(),
+    workspaceRegistry: fixtureWorkspaces([FIXTURE_WORKSPACE]),
   })
   const agents = [...(options.agents ?? [boundAgent()])]
   const delivered: Array<{ taskId: string; text: string }> = []
@@ -179,14 +190,19 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
     fetch: hub.fetch,
   })
 
+  // The settings a real mount reads at use time: a spec that changes one models a
+  // volatile write reaching the running provider without a remount.
+  const settings: TeamRuntimeSettings = {
+    enabled: true,
+    hostname: 'test-host',
+    bindings: [],
+    ...(options.workspaceId === undefined ? {} : { workspaceId: options.workspaceId }),
+    ...(options.questionWaitMinutes === undefined ? {} : { questionWaitMinutes: options.questionWaitMinutes }),
+  }
+
   const extension = createTeamExtension({
     hub: hubClient,
-    settings: () => ({
-      enabled: true,
-      hostname: 'test-host',
-      bindings: [],
-      ...(options.questionWaitMinutes === undefined ? {} : { questionWaitMinutes: options.questionWaitMinutes }),
-    }),
+    settings: () => settings,
     resolveAgents: async () => ({
       agents,
       problems: (options.missingMembers ?? []).map(memberId => 'the bound member ' + memberId + ' is not defined'),
@@ -268,6 +284,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
     board,
     ledger,
     agents,
+    settings,
     prompts,
     creates,
     face(): TaskBoardExtensionHost {

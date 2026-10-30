@@ -58,6 +58,8 @@ export interface TeamRuntimeSettings {
   hostname: string
   /** Configured member bindings. */
   bindings: readonly TeamAgentBinding[]
+  /** Workspace this mount runs its cards in; empty falls back to the member's team. */
+  workspaceId?: string
   /** Optional local fallback wait for a claimed question, in minutes; 0 means none. */
   questionWaitMinutes?: number
 }
@@ -138,6 +140,9 @@ export interface TeamExtensionSummary {
 
 /** The problem line published when the board serves no draft preset. */
 export const DRAFT_PIN_PROBLEM = 'this board revision cannot pin an agent preset, model or reasoning effort on a new card, so a claimed issue becomes a mirror card that is left for a human to start'
+
+/** The problem line published while this Host has no workspace to run a card in. */
+export const WORKSPACE_PROBLEM = 'no run workspace is bound to this Host, so no team issue is claimed: a mirror card without a workspace cannot be started, and the hub would keep its issue running'
 
 /** Longest comment or activity text one summary carries. */
 const VIEW_TEXT_LIMIT = 2_000
@@ -475,6 +480,17 @@ export class TeamSyncService {
     // the hub refused is retried once, before any new work is claimed.
     this.#settledThisPass.clear()
     await this.#retryPendingSettlements()
+    // A card the board cannot start is worse than no card: the claim moves the
+    // issue to `running` on the hub, this Host keeps renewing the lease, and
+    // nothing ever settles it. The board resolves a card's workspace from the
+    // card itself and refuses the run when there is none, so a mount with no
+    // workspace for any bound member asks for nothing and says why.
+    if (this.#agents.length > 0 && !this.#agents.some(agent => this.#workspaceFor(agent) !== '')) {
+      this.#raiseProblem(WORKSPACE_PROBLEM)
+      this.#publish()
+      return 0
+    }
+    this.#dropProblem(WORKSPACE_PROBLEM)
     let issues: readonly HubIssue[]
     try {
       issues = await this.#options.hub.listClaimableIssues(this.#hostId)
@@ -490,6 +506,9 @@ export class TeamSyncService {
       // keeps a wrongly listed issue from being run on the wrong machine.
       const agent = this.#agentFor(issue)
       if (agent === undefined) continue
+      // A member with no workspace to run in is skipped for the reason the whole
+      // pass above is skipped: its card would be created here and never start.
+      if (this.#workspaceFor(agent) === '') continue
       try {
         if (await this.#claimIssue(issue, agent)) claimed += 1
       } catch (error) {
@@ -820,6 +839,7 @@ export class TeamSyncService {
 
     // The guard above keeps these two defined on this path.
     if (agent === undefined || issue === undefined) return false
+    const workspaceId = this.#workspaceFor(agent)
     const mirror: MirrorAgent = {
       agentId: this.#hubAgentIdOf(agent.memberId) ?? agent.memberId,
       memberId: agent.memberId,
@@ -827,7 +847,9 @@ export class TeamSyncService {
       ...(agent.preset === undefined ? {} : { preset: agent.preset }),
       ...(agent.model === undefined ? {} : { model: agent.model }),
       ...(agent.reasoningEffort === undefined ? {} : { reasoningEffort: agent.reasoningEffort }),
-      ...(agent.workspaceId === undefined ? {} : { workspaceId: agent.workspaceId }),
+      // The card carries the workspace this Host resolved for the member, not only
+      // the one the team pins: the claim above already refused to run without one.
+      ...(workspaceId === '' ? {} : { workspaceId }),
     }
     const draft = buildMirrorDraft(issue, mirror)
     const payload = toPayload({
@@ -960,7 +982,7 @@ export class TeamSyncService {
       return true
     }
     this.#presetPin = 'missing'
-    if (!this.#problems.includes(DRAFT_PIN_PROBLEM)) this.#problems = [...this.#problems, DRAFT_PIN_PROBLEM]
+    this.#raiseProblem(DRAFT_PIN_PROBLEM)
     return false
   }
 
@@ -1237,6 +1259,21 @@ export class TeamSyncService {
     }
   }
 
+  /**
+   * The workspace a mirror card claimed for one member runs in.
+   *
+   * The mount's own setting wins, then the workspace the member's dsh-agents team
+   * pins. An empty answer means the board could not start a card created for this
+   * member, which is the state a claim must never enter.
+   * @param agent - the member the issue would be claimed for.
+   * @returns the workspace id, or an empty string when neither source names one.
+   */
+  #workspaceFor(agent: BoundAgent): string {
+    const configured = (this.#options.settings().workspaceId ?? '').trim()
+    if (configured !== '') return configured
+    return (agent.workspaceId ?? '').trim()
+  }
+
   #agentFor(issue: HubIssue): BoundAgent | undefined {
     const hubAgentId = issue.assignee_agent_id
     if (hubAgentId === undefined) return undefined
@@ -1259,6 +1296,27 @@ export class TeamSyncService {
    */
   #conflictProblems(): string[] {
     return [...this.#agentConflicts].map(([name, reason]) => name + ' is not registered: ' + reason)
+  }
+
+  /**
+   * Add one operator-visible problem line, once.
+   *
+   * A sweep repeats every few seconds, so appending the same line each pass would
+   * bury every other problem under copies of itself.
+   * @param line - the line to publish while its cause holds.
+   */
+  #raiseProblem(line: string): void {
+    if (this.#problems.includes(line)) return
+    this.#problems = [...this.#problems, line]
+  }
+
+  /**
+   * Drop one problem line whose cause is gone.
+   * @param line - the line to stop publishing.
+   */
+  #dropProblem(line: string): void {
+    if (!this.#problems.includes(line)) return
+    this.#problems = this.#problems.filter(problem => problem !== line)
   }
 
   #publish(): void {

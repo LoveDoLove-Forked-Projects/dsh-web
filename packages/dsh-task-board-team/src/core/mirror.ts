@@ -32,7 +32,7 @@ export interface MirrorAgent {
   model?: string
   /** Reasoning effort the member definition pins for that model. */
   reasoningEffort?: string
-  /** Workspace the member's team is pinned to, when it pins one. */
+  /** Workspace the card runs in, as the caller resolved it for this member. */
   workspaceId?: string
 }
 
@@ -78,7 +78,8 @@ export function buildMirrorDraft(issue: HubIssue, agent: MirrorAgent): MirrorDra
     description: body === '' ? `Team issue #${String(issue.issue_number)} mirror card.` : body,
     prompt: lines.join('\n'),
     // The member's own execution targets travel with the draft: the run has to be
-    // the member's preset, model and effort, never the deployment's defaults.
+    // the member's preset, model and effort, never the deployment's defaults, and
+    // in the workspace the caller resolved rather than one the board picks.
     ...(agent.workspaceId === undefined ? {} : { workspaceId: agent.workspaceId }),
     ...(agent.preset === undefined ? {} : { mode: agent.preset }),
     ...(agent.model === undefined ? {} : { model: agent.model }),

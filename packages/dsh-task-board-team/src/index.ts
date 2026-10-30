@@ -68,6 +68,15 @@ export interface Config {
   hubUrl?: Volatile<string>
   /** Team id the Host registers into. */
   teamId?: Volatile<string>
+  /**
+   * Workspace this mount runs its mirror cards in; empty falls back to the
+   * workspace the member's dsh-agents team pins.
+   *
+   * A card with neither cannot be started by the board, and the hub keeps its
+   * issue `running` for as long as this Host holds the lease, so this Host claims
+   * nothing until one resolves and reports that in its summary instead.
+   */
+  workspaceId?: Volatile<string>
   /** Credential reference the Host Token is stored under. */
   hostTokenRef?: Volatile<string>
   /** dsh-agents members bound as team Agents on this machine. */
@@ -91,6 +100,7 @@ export interface ConfigInput {
   announceToAgent?: boolean
   hubUrl?: string
   teamId?: string
+  workspaceId?: string
   hostTokenRef?: string
   agents?: TeamAgentBindingInput[]
   hostname?: string
@@ -113,6 +123,7 @@ export const Config: z<ConfigInput, Config> = z.object({
   announceToAgent: z.boolean().default(false).volatile(),
   hubUrl: z.string().default('').volatile(),
   teamId: z.string().default('').volatile(),
+  workspaceId: z.string().default('').volatile(),
   hostTokenRef: z.string().default(DEFAULT_TOKEN_REF).volatile(),
   agents: z.array(AgentBindingSchema).default([]).volatile(),
   hostname: z.string().default('').volatile(),
@@ -138,6 +149,7 @@ export interface TeamProviderSettings {
   announceToAgent: boolean
   hubUrl: string
   teamId: string
+  workspaceId: string
   hostTokenRef: string
   agents: readonly TeamAgentBinding[]
   hostname: string
@@ -161,6 +173,7 @@ export function resolveProviderSettings(config?: Config, hostname = ''): TeamPro
     announceToAgent: readConfigField(config?.announceToAgent, DEFAULT_ANNOUNCE_TO_AGENT),
     hubUrl: readConfigField(config?.hubUrl, '').trim(),
     teamId: readConfigField(config?.teamId, '').trim(),
+    workspaceId: readConfigField(config?.workspaceId, '').trim(),
     hostTokenRef: readConfigField(config?.hostTokenRef, DEFAULT_TOKEN_REF).trim(),
     agents: normalizeBindings(bindings),
     hostname: configured === '' ? hostname : configured,
@@ -378,6 +391,7 @@ function applyImpl(ctx: Context, config?: Config): void {
             enabled: settings().enabled,
             hostname: settings().hostname,
             bindings: settings().agents,
+            workspaceId: settings().workspaceId,
             questionWaitMinutes: settings().questionWaitMinutes,
           }),
           resolveAgents: async () => await resolveBoundAgents(settings()),
