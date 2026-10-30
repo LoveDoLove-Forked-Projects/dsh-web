@@ -1,6 +1,6 @@
 # 自托管双服务部署交接清单
 
-本文档为宝宝提供账号服务（Whale Account Service）与团队协作中枢（Team Hub Service）自托管架构在目标主机（43.153.135.11）上的生产部署交接清单与运维规范。账号服务实现细节参见 [Server/selfhost/README.md](../../../iphone_remote_use_dsh/Server/selfhost/README.md)，团队协作中枢实现细节参见 [team-hub/selfhost/README.md](../../team-hub/selfhost/README.md)。本文档聚焦跨服务拓扑协同、环境变量供给、首次上线执行次序、反向代理与进程保活配置及上线验收清单。
+本文档为宝宝提供账号服务（Whale Account Service）与团队协作中枢（Team Hub Service）自托管架构在目标主机（43.153.135.11）上的生产部署交接清单与运维规范。账号服务实现细节参见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md，团队协作中枢实现细节参见 [team-hub/selfhost/README.md](../../team-hub/selfhost/README.md)。本文档聚焦跨服务拓扑协同、环境变量供给、首次上线执行次序、反向代理与进程保活配置及上线验收清单。
 
 ## 一、网络拓扑与端口监听约定
 
@@ -23,18 +23,18 @@
 
 | 服务 | 环境变量 | 必需性与部署取舍（细节链接） |
 |---|---|---|
-| 账号服务 | `DATABASE_PATH` | 必需（缺失即 exit 1）。SQLite 数据库绝对路径，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `APPLE_BUNDLE_ID` | 必需（缺失即 exit 1）。Apple identityToken 的 aud（App bundle id），见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `PORT` / `HOST` | 可选（缺省 8787 / 127.0.0.1）。反向代理前保持本地回环，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `BUILD_REV` | 可选（缺省 null）。用于 `/healthz` 回显构建版本，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `ACCOUNT_SERVICE_ORIGIN` | 可选（未配置退回请求 origin，非法值使断言端点 503）。生产环境固定设为 `https://account.chatwithai.icu`，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `ACCOUNT_ASSERTION_KEY_JWK` | 可选（缺失使 `/v1/keys` 与 `/v1/auth/assertion` 回 503）。ES256 私钥 JWK，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 可选（缺任一关闭 GitHub 登录，端点回 503）。不影响 Apple 登录，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `ADMIN_TOKEN` | 可选（缺失使 `/admin` 恒回 403）。管理端令牌（通过 `openssl rand -hex 32` 生成），见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `CONTACT_EMAIL` | 可选（缺失时法律页占位符保留原样）。运营联系邮箱，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `APPSTORE_IAP_KEY_ID` / `APPSTORE_ISSUER_ID` / `APPSTORE_PRIVATE_KEY` | 可选（缺任一使 `/v1/me` 自愈降级为不查远端）。App Store 凭据，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY_P8` | 可选（缺任一使 `/v1/push/relay` 与 `/v1/push/status` 回 503）。APNs 凭据，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
-| 账号服务 | `RELAY_TOKEN_SECRET` | 可选（缺失使 `/v1/push/devices` 与投递回 503）。HS256 密钥（通过 `openssl rand -hex 32` 生成），见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `DATABASE_PATH` | 必需（缺失即 exit 1）。SQLite 数据库绝对路径，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `APPLE_BUNDLE_ID` | 必需（缺失即 exit 1）。Apple identityToken 的 aud（App bundle id），见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `PORT` / `HOST` | 可选（缺省 8787 / 127.0.0.1）。反向代理前保持本地回环，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `BUILD_REV` | 可选（缺省 null）。用于 `/healthz` 回显构建版本，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `ACCOUNT_SERVICE_ORIGIN` | 可选（未配置退回请求 origin，非法值使断言端点 503）。生产环境固定设为 `https://account.chatwithai.icu`，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `ACCOUNT_ASSERTION_KEY_JWK` | 可选（缺失使 `/v1/keys` 与 `/v1/auth/assertion` 回 503）。ES256 私钥 JWK，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 可选（缺任一关闭 GitHub 登录，端点回 503）。不影响 Apple 登录，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `ADMIN_TOKEN` | 可选（缺失使 `/admin` 恒回 403）。管理端令牌（通过 `openssl rand -hex 32` 生成），见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `CONTACT_EMAIL` | 可选（缺失时法律页占位符保留原样）。运营联系邮箱，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `APPSTORE_IAP_KEY_ID` / `APPSTORE_ISSUER_ID` / `APPSTORE_PRIVATE_KEY` | 可选（缺任一使 `/v1/me` 自愈降级为不查远端）。App Store 凭据，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY_P8` | 可选（缺任一使 `/v1/push/relay` 与 `/v1/push/status` 回 503）。APNs 凭据，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
+| 账号服务 | `RELAY_TOKEN_SECRET` | 可选（缺失使 `/v1/push/devices` 与投递回 503）。HS256 密钥（通过 `openssl rand -hex 32` 生成），见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
 | 团队协作中枢 | `DATABASE_PATH` | 必需（缺失即 exit 1）。SQLite 数据库绝对路径，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
 | 团队协作中枢 | `TEAM_HUB_SIGNING_SECRET` | 必需（缺失即 exit 1）。会话 HMAC 签名密钥，缺失无法建会话，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
 | 团队协作中枢 | `PORT` / `HOST` | 可选（缺省 8080 / 127.0.0.1）。生产环境必须显式配置 `PORT=8788`，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
