@@ -1,6 +1,6 @@
 # Team hub deployment handoff
 
-Written 2026-10-29 after the hub was deployed and the local profile was prepared. Everything below is a fact about the running deployment, not a proposal.
+Written 2026-10-29 after the hub was deployed, the local profile was prepared, and the end-to-end flow was verified to in_review. Everything below is a fact about the running deployment, not a proposal.
 
 ## The hub
 
@@ -13,15 +13,31 @@ Written 2026-10-29 after the hub was deployed and the local profile was prepared
 
 ## Network caveat
 
-`*.workers.dev` is not reachable with `curl` from this machine (Clash sends it direct and the TLS handshake is reset), but Node's `fetch` reaches it fine, which is what the DSH Host plugin uses. To probe with curl, go through the local proxy: `curl -x http://127.0.0.1:7890 ...`.
+`*.workers.dev` is not reachable with `curl` directly from this machine (Clash routes it direct and the TLS handshake is reset), but Node's native `fetch` reaches it fine, which is what the DSH Host plugin uses. To probe with curl, go through the local proxy: `curl -x http://127.0.0.1:7890 ...`.
 
 A custom domain on `dsh-market.com` is not available: that zone answers every hostname at any depth from the market Worker, so a Worker custom domain there never receives the request.
 
 ## Team and identity
 
-- Team: `team_dsh` / name `DSH Team` / slug `dsh-team` — seeded by hand, because a hub with no team has no way in (see "Gap" below)
-- Admin: `mem_owner`, GitHub login `zhu1090093659`, numeric id `46916148`, role `admin`, status `active`
-- GitHub OAuth App: `DSH Team Hub`, client id `Ov23liog2PFEleoU9k3v`, callback `https://dsh-team-hub.1090093659.workers.dev/auth/github/callback`
+- Team: `team_dsh` / name `DSH Team` / slug `dsh-team`, seeded by hand into D1.
+- Admin: `mem_owner`, GitHub login `zhu1090093659`, numeric id `46916148`, role `admin`, status `active`, written by hand into D1.
+- GitHub OAuth App: `DSH Team Hub`, client id `Ov23liog2PFEleoU9k3v`, callback `https://dsh-team-hub.1090093659.workers.dev/auth/github/callback`.
+
+## Local Host and agents
+
+- Local Host: `host_zclmac`, token located at `/tmp/team-hub-secrets/host_token` (72 characters), `token_hash` stored in D1.
+- Host status: `online`, `client_version` `0.4.12`, registered 4 agents (`xundong` / 寻冬, `michun` / 觅春, `zhixia` / 知夏, `luoqiu` / 落秋, each with its own preset).
+
+## Verification status
+
+- End-to-end flow verified to `in_review`: creating an issue -> Host claims (transitions to `running` + attempt + activity logged) -> automatically creates mirror card -> execution succeeds -> automated acceptance passes -> settle -> transitions to `in_review`.
+- The unverified segment is `in_review` -> human approve -> `done`, which requires an authenticated member session.
+- Mirror card automatic start depends on a run workspace; the current running build on the host is an earlier version, requiring a DSH restart with `workspaceId` configured (or setting `team.workspaceId` on the `dsh-agents` team) to restore automatic execution.
+
+## Process management caveats
+
+- macOS has no `setsid`; scripts started with `nohup` are swept when the host process group is reaped.
+- Jobs submitted via `launchctl submit` execute repeatedly and must be removed with `launchctl remove` when finished.
 
 ## What is mounted
 
@@ -29,10 +45,8 @@ A custom domain on `dsh-market.com` is not available: that zone answers every ho
 
 ## Remaining work
 
-1. Restart the host so the new row mounts.
-2. Sign in with GitHub from the Web GUI (or the Whale app) and confirm the account resolves as the `team_dsh` admin.
-3. Mint a Host Token as that admin, then paste the hub URL and the token into the task board's team settings block.
-4. Run the two-Host end-to-end acceptance, capture the Web GUI screenshots, move the proposal note to `implemented/`, and write the delivery summary.
+1. Restart the DSH host and configure `workspaceId` (or set `team.workspaceId` on the `dsh-agents` team) so mirror cards auto-start.
+2. Verify the final segment: `in_review` -> human approve -> `done` via a member session.
 
 ## Gap recorded, not fixed
 
