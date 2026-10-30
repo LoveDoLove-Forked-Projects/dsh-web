@@ -258,7 +258,7 @@ func LoadConfig(source map[string]string, defaultMigrationsDir string) ConfigRep
 	}
 	if missing := missingInviteSettings(accountServiceBase, accountAdminToken); len(missing) > 0 {
 		report = append(report, strings.Join(missing, "/")+": missing -> "+
-			"POST /api/v1/teams/:teamId/members/invite answers 503 NOT_CONFIGURED")
+			"POST /api/v1/teams/:teamId/members/invite and /api/v1/bootstrap answer 503 NOT_CONFIGURED")
 	} else {
 		report = append(report, "ACCOUNT_SERVICE_BASE/ACCOUNT_ADMIN_TOKEN: configured")
 	}

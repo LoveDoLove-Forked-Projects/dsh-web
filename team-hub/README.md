@@ -50,7 +50,7 @@ migration position.
 A hub with no team cannot be entered: sign-in only resolves members that already
 exist, and inviting one needs an admin. `POST /api/v1/bootstrap` is the one call
 that creates both, authorised by the `BOOTSTRAP_TOKEN` setting. Call it once
-against the deployed hub with the GitHub login of the person who will own it:
+against the deployed hub with the email address of the person who will own it:
 
 ```sh
 export BOOTSTRAP_TOKEN=<the value from the environment file>
@@ -59,16 +59,16 @@ curl -sS -X POST https://<hub-origin>/api/v1/bootstrap \
   -H 'Content-Type: application/json' \
   -H 'X-Team-Hub-Protocol-Version: 1.0.0' \
   -H "X-Bootstrap-Token: $BOOTSTRAP_TOKEN" \
-  -d '{"team_name": "DSH Team", "team_slug": "team-dsh", "github_username": "octocat"}'
+  -d '{"team_name": "DSH Team", "team_slug": "team-dsh", "email": "admin@example.com"}'
 ```
 
-The hub resolves the GitHub login to the numeric id the schema needs and writes
+The hub resolves the email address to the account user id the schema needs and writes
 the team and one active admin in a single transaction, answering `201`:
 
 ```json
 {
   "team": { "id": "team_01j7b5w8m4f9q2e3r6t1y8u4i7", "name": "DSH Team", "slug": "team-dsh" },
-  "member": { "id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i8", "github_username": "octocat", "role": "admin" }
+  "member": { "id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i8", "github_username": "account:acct_01j7b5w8m4f9q2e3r6t1y8u4id", "mention_handle": "admin", "account_user_id": "acct_01j7b5w8m4f9q2e3r6t1y8u4id", "role": "admin" }
 }
 ```
 
@@ -83,10 +83,11 @@ Clearing the setting afterwards is optional; it turns the answer into
 
 | Answer | Meaning |
 | --- | --- |
-| `503 NOT_CONFIGURED` | `BOOTSTRAP_TOKEN` is not set on this process |
+| `503 NOT_CONFIGURED` | `BOOTSTRAP_TOKEN`, `ACCOUNT_SERVICE_BASE` or `ACCOUNT_ADMIN_TOKEN` is not set on this process |
 | `401 UNAUTHORIZED` | the `X-Bootstrap-Token` header is missing or does not match |
-| `404 USER_NOT_FOUND` | GitHub has no user with that login |
+| `404 USER_NOT_FOUND` | the account service has no user with that email (sign in to the Whale app with Apple once first) |
 | `409 CONFLICT` | the hub already has a team; bootstrap has already run |
+| `502 ACCOUNT_UNAVAILABLE` | the account service is unreachable or returned an unexpected response |
 | `201` | the team and its first admin were created |
 
 ## Sign-in

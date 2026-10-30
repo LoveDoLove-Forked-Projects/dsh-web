@@ -13,7 +13,7 @@
     "body": {
       "team_name": "DSH Team",
       "team_slug": "team-dsh",
-      "github_username": "octocat"
+      "email": "admin@example.com"
     }
   },
   "response": {
@@ -26,16 +26,18 @@
       },
       "member": {
         "id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i8",
-        "github_username": "octocat",
+        "github_username": "account:acct_01j7b5w8m4f9q2e3r6t1y8u4id",
+        "mention_handle": "admin",
+        "account_user_id": "acct_01j7b5w8m4f9q2e3r6t1y8u4id",
         "role": "admin"
       }
     }
   },
   "notes": [
     "The endpoint only accepts a call while the teams table is empty; a second call answers 409 CONFLICT with the existing team id, so the first success is what retires it and no separate switch exists.",
-    "github_username is resolved through the GitHub API into the numeric github_user_id and display name the members table requires, so the admin can log in immediately; a login GitHub does not know answers 404 USER_NOT_FOUND.",
+    "email is resolved through the account service admin lookup into the account_user_id the members table requires, creating an active admin member row already bound to that account; the legacy github_username field is no longer accepted (answers 400 VALIDATION_FAILED).",
+    "Failure branches: an email unknown to the account service answers 404 USER_NOT_FOUND (prompting the user to sign in to the Whale app with Apple once before running bootstrap); an unreachable or unexpected account service answers 502 ACCOUNT_UNAVAILABLE; a hub missing BOOTSTRAP_TOKEN, ACCOUNT_SERVICE_BASE, or ACCOUNT_ADMIN_TOKEN answers 503 NOT_CONFIGURED; a missing or invalid X-Bootstrap-Token header answers 401 UNAUTHORIZED.",
     "The member is written as role admin with status active, which is what lets it reach every admin endpoint without an invite.",
-    "A hub without the BOOTSTRAP_TOKEN secret answers 503 NOT_CONFIGURED; a missing or different header answers 401 UNAUTHORIZED.",
-    "The team and its member are written in one D1 batch, so a hub never holds a team whose admin row is missing."
+    "The team and its member are written in one transaction, so a hub never holds a team whose admin row is missing."
   ]
 }
