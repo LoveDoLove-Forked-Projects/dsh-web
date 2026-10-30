@@ -94,6 +94,17 @@ const SKIN_CENTER_LIB = resolveFamilyAsset(
   '@linxin666/dsh-client-ui-skin-center',
   path.join(ROOT, 'packages', 'skins', 'skin-center', 'lib', 'index.js'),
 )
+/**
+ * The CSS safety transform lives in its own subpath (skin-center issue #98):
+ * the package root no longer carries lightningcss, so the host process never
+ * maps the native addon. Older published packages expose the transform at the
+ * package root instead; the build falls back to it when the subpath is
+ * missing.
+ */
+const SKIN_CENTER_CSS_SAFETY_LIB = resolveFamilyAsset(
+  '@linxin666/dsh-client-ui-skin-center/css-safety',
+  path.join(path.dirname(SKIN_CENTER_LIB), 'css-safety.js'),
+)
 const PRESET_CATALOG = path.join(PRESETS_DIR, 'catalog.json')
 const INSTALLER_SOURCE = path.join(ROOT, 'packages', 'dsh-market', 'src', 'core', 'installer.ts')
 const EDITOR_PICKS_FILE = path.join(ROOT, 'market', 'editor-picks.json')
@@ -757,8 +768,20 @@ async function main() {
     pet: new Set(pets.map(({ item }) => item.id)),
     plugin: new Set(plugins.map(({ item }) => item.id)),
   })
-  const skinCenter = await import(pathToFileURL(SKIN_CENTER_LIB).href)
-  const transformSkinCss = skinCenter.transformSkinCss
+  // Prefer the dedicated css-safety subpath; older published packages
+  // still carry the transform at the package root.
+  let transformSkinCss = null
+  if (fs.existsSync(SKIN_CENTER_CSS_SAFETY_LIB)) {
+    const cssSafety = await import(pathToFileURL(SKIN_CENTER_CSS_SAFETY_LIB).href)
+    transformSkinCss = cssSafety.transformSkinCss
+  }
+  if (typeof transformSkinCss !== 'function') {
+    const skinCenter = await import(pathToFileURL(SKIN_CENTER_LIB).href)
+    transformSkinCss = skinCenter.transformSkinCss
+  }
+  if (typeof transformSkinCss !== 'function') {
+    fail('the skin-center package exposes no transformSkinCss (neither the css-safety subpath nor the package root)')
+  }
 
   // static sources
   const files = new Map()
