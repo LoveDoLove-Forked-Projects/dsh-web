@@ -17,54 +17,32 @@
 
 两个服务的外部通信遵循既定契约：账号服务为认证源并签发短期断言，团队协作中枢校验该断言完成会话绑定。DNS 解析必须保持灰云直连，避免 CDN 代理层对 WebSocket 长连接及请求头的非预期篡改。
 
-## 二、环境变量配置矩阵
+## 二、环境变量必需性与部署取舍矩阵
 
-环境变量分为必需项（缺失则阻断进程启动并以退出码 1 退出）与可选项（缺失不影响进程启动，仅使依赖该能力的相关端点返回 HTTP 503 `NOT_CONFIGURED` / `not_configured` 或执行安全降级）。文档严禁记录任何明文私钥或口令，仅记录变量名、作用域与生成来源。
+变量名与缺省行为的权威描述在两份 README，本文只记必需性与部署取舍。
 
-### 1. 账号服务环境变量（/etc/whale/account.env）
-
-| 变量名 | 必需性 | 缺失表现 | 变量来源与提供方式 |
-|---|---|---|---|
-| `DATABASE_PATH` | 必需 | 进程校验失败退出（exit 1） | 目标宿主机绝对路径，如 `/var/lib/whale/account.db` |
-| `APPLE_BUNDLE_ID` | 必需 | 进程校验失败退出（exit 1） | 对应 iOS App 的 bundle identifier，如 `com.example.Whale` |
-| `PORT` | 可选 | 默认使用 `8787` | 显式配置为 `8787` |
-| `HOST` | 可选 | 默认使用 `127.0.0.1` | 显式配置为 `127.0.0.1` |
-| `BUILD_REV` | 可选 | `/healthz` 响应的 `rev` 字段为 `null` | CI 构建版本号或 Git commit SHA |
-| `ACCOUNT_SERVICE_ORIGIN` | 可选 | 未配置时退回请求 origin；空串或非法值时断言端点返回 503 | 生产环境固定配置为 `https://account.chatwithai.icu` |
-| `ACCOUNT_ASSERTION_KEY_JWK` | 可选 | `/.well-known/jwks.json` 与 `/v1/auth/assertion` 均返回 503 | ES256（P-256）私钥 JWK 字符串（含 `kty`、`crv`、`x`、`y`、`d`、`kid`），由 openssl/Node 生成 |
-| `GITHUB_CLIENT_ID` | 可选 | 与密钥成对存在；缺失任一关闭 GitHub 登录，端点返回 503 | GitHub OAuth App 的 Client ID |
-| `GITHUB_CLIENT_SECRET` | 可选 | 与 Client ID 成对存在；缺失任一关闭 GitHub 登录，端点返回 503 | GitHub OAuth App 生成的 Client Secret |
-| `CONTACT_EMAIL` | 可选 | 法律条款页面中的 `{{CONTACT_EMAIL}}` 占位符保留原样 | 运营联系人邮箱地址 |
-| `ADMIN_TOKEN` | 可选 | 未设置时 `/admin` 后台管理路由恒回 HTTP 403 | 管理员令牌，通过命令 `openssl rand -hex 32` 生成 |
-| `APPSTORE_IAP_KEY_ID` | 可选 | 三者缺一则 `/v1/me` 权益自愈逻辑降级为不请求 Apple 远端 | App Store Connect 后台下载的 In-App Purchase Key ID |
-| `APPSTORE_ISSUER_ID` | 可选 | 三者缺一则 `/v1/me` 权益自愈逻辑降级为不请求 Apple 远端 | App Store Connect 账户的 Issuer ID (UUID) |
-| `APPSTORE_PRIVATE_KEY` | 可选 | 三者缺一则 `/v1/me` 权益自愈逻辑降级为不请求 Apple 远端 | App Store Connect 下载的 PKCS#8 格式私钥内容 |
-| `APNS_KEY_ID` | 可选 | 四者缺一则 `/v1/push/relay` 与 `/v1/push/status` 返回 503 | Apple Developer 后台创建的 APNs Auth Key ID |
-| `APNS_TEAM_ID` | 可选 | 四者缺一则 `/v1/push/relay` 与 `/v1/push/status` 返回 503 | Apple Developer 团队 Team ID |
-| `APNS_BUNDLE_ID` | 可选 | 四者缺一则 `/v1/push/relay` 与 `/v1/push/status` 返回 503 | 推送目标应用的 Bundle ID |
-| `APNS_PRIVATE_KEY_P8` | 可选 | 四者缺一则 `/v1/push/relay` 与 `/v1/push/status` 返回 503 | Apple Developer 下载的 AuthKey_*.p8 内容 |
-| `RELAY_TOKEN_SECRET` | 可选 | 缺失时设备登记（`/v1/push/devices`）与投递返回 503 | relayToken 签名用的 HS256 密钥，通过 `openssl rand -hex 32` 生成 |
-
-### 2. 团队协作中枢环境变量（/etc/whale/team-hub.env）
-
-| 变量名 | 必需性 | 缺失表现 | 变量来源与提供方式 |
-|---|---|---|---|
-| `DATABASE_PATH` | 必需 | 进程校验失败退出（exit 1） | 目标宿主机绝对路径，如 `/var/lib/team-hub/hub.sqlite` |
-| `TEAM_HUB_SIGNING_SECRET` | 必需 | 进程校验失败退出（exit 1） | 会话签名 HMAC 密钥，从原 Worker secret 迁移或执行 `openssl rand -hex 32` |
-| `PORT` | 可选 | 默认使用 `8080` | 生产环境显式配置为 `8788` |
-| `HOST` | 可选 | 默认使用 `127.0.0.1` | 生产环境显式配置为 `127.0.0.1` |
-| `BOOTSTRAP_TOKEN` | 可选 | `POST /api/v1/bootstrap` 返回 503 `NOT_CONFIGURED` | 初始化团队所用的令牌，通过 `openssl rand -hex 32` 生成；首个团队建立后可清空以关闭该接口 |
-| `GITHUB_CLIENT_ID` | 可选 | 与密钥成对存在；缺失任一使 `/auth/github/*` 与 `/auth/token` 返回 503 | 团队协作专属 GitHub OAuth App 的 Client ID |
-| `GITHUB_CLIENT_SECRET` | 可选 | 与 Client ID 成对存在；缺失任一使 `/auth/github/*` 与 `/auth/token` 返回 503 | 团队协作专属 GitHub OAuth App 的 Client Secret |
-| `ACCOUNT_JWKS_URL` | 可选 | 三者缺一使 `/auth/account` 与 `/auth/account/link` 返回 503 | 固定配置为 `https://account.chatwithai.icu/.well-known/jwks.json` |
-| `ACCOUNT_ISSUER` | 可选 | 三者缺一使 `/auth/account` 与 `/auth/account/link` 返回 503 | 固定配置为 `https://account.chatwithai.icu`（必须与账号服务 `ACCOUNT_SERVICE_ORIGIN` 逐字相同） |
-| `ACCOUNT_AUDIENCE` | 可选 | 三者缺一使 `/auth/account` 与 `/auth/account/link` 返回 503 | 固定配置为 `dsh-team-hub`（账号服务断言签发的标准受众标识） |
-| `APNS_KEY_ID` | 可选 | 四者缺一则推送投递相关端点返回 503 `NOT_CONFIGURED` | Apple Developer 后台 APNs Key ID |
-| `APNS_TEAM_ID` | 可选 | 四者缺一则推送投递相关端点返回 503 `NOT_CONFIGURED` | Apple Developer 团队 Team ID |
-| `APNS_BUNDLE_ID` | 可选 | 四者缺一则推送投递相关端点返回 503 `NOT_CONFIGURED` | 推送目标应用的 Bundle ID |
-| `APNS_PRIVATE_KEY_P8` | 可选 | 四者缺一则推送投递相关端点返回 503 `NOT_CONFIGURED` | Apple Developer 下载的 AuthKey_*.p8 内容 |
-| `MIGRATIONS_DIR` | 可选 | 默认解析自模块相对路径 `team-hub/migrations` | 宿主机迁移脚本绝对路径，如 `/srv/team-hub/migrations` |
-| `SWEEP_INTERVAL_MS` | 可选 | 默认 `60000`（60 秒）；设为 `0` 仅在启动时执行一次全量清理 | 进程内后台清理轮询间隔（单位毫秒） |
+| 服务 | 环境变量 | 必需性与部署取舍（细节链接） |
+|---|---|---|
+| 账号服务 | `DATABASE_PATH` | 必需（缺失即 exit 1）。SQLite 数据库绝对路径，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `APPLE_BUNDLE_ID` | 必需（缺失即 exit 1）。Apple identityToken 的 aud（App bundle id），见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `PORT` / `HOST` | 可选（缺省 8787 / 127.0.0.1）。反向代理前保持本地回环，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `BUILD_REV` | 可选（缺省 null）。用于 `/healthz` 回显构建版本，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `ACCOUNT_SERVICE_ORIGIN` | 可选（未配置退回请求 origin，非法值使断言端点 503）。生产环境固定设为 `https://account.chatwithai.icu`，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `ACCOUNT_ASSERTION_KEY_JWK` | 可选（缺失使 `/v1/keys` 与 `/v1/auth/assertion` 回 503）。ES256 私钥 JWK，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 可选（缺任一关闭 GitHub 登录，端点回 503）。不影响 Apple 登录，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `ADMIN_TOKEN` | 可选（缺失使 `/admin` 恒回 403）。管理端令牌（通过 `openssl rand -hex 32` 生成），见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `CONTACT_EMAIL` | 可选（缺失时法律页占位符保留原样）。运营联系邮箱，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `APPSTORE_IAP_KEY_ID` / `APPSTORE_ISSUER_ID` / `APPSTORE_PRIVATE_KEY` | 可选（缺任一使 `/v1/me` 自愈降级为不查远端）。App Store 凭据，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY_P8` | 可选（缺任一使 `/v1/push/relay` 与 `/v1/push/status` 回 503）。APNs 凭据，见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 账号服务 | `RELAY_TOKEN_SECRET` | 可选（缺失使 `/v1/push/devices` 与投递回 503）。HS256 密钥（通过 `openssl rand -hex 32` 生成），见 [Server/selfhost/README.md#环境变量](../../../iphone_remote_use_dsh/Server/selfhost/README.md#环境变量)。 |
+| 团队协作中枢 | `DATABASE_PATH` | 必需（缺失即 exit 1）。SQLite 数据库绝对路径，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
+| 团队协作中枢 | `TEAM_HUB_SIGNING_SECRET` | 必需（缺失即 exit 1）。会话 HMAC 签名密钥，缺失无法建会话，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
+| 团队协作中枢 | `PORT` / `HOST` | 可选（缺省 8080 / 127.0.0.1）。生产环境必须显式配置 `PORT=8788`，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
+| 团队协作中枢 | `BOOTSTRAP_TOKEN` | 可选（缺失使 `POST /api/v1/bootstrap` 回 503）。用于创建首个团队，首队建立后清空，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
+| 团队协作中枢 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 可选（缺任一使 `/auth/github/*` 与 `/auth/token` 回 503）。团队专属 OAuth App，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
+| 团队协作中枢 | `ACCOUNT_JWKS_URL` / `ACCOUNT_ISSUER` / `ACCOUNT_AUDIENCE` | 可选（缺任一使 `/auth/account` 与 `/auth/account/link` 回 503）。账号断言集成三元组：JWKS 地址固定配 `https://account.chatwithai.icu/v1/keys`，ISSUER 必须与账号服务 `ACCOUNT_SERVICE_ORIGIN` 逐字相同，AUDIENCE 固定设为 `dsh-team-hub`，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
+| 团队协作中枢 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY_P8` | 可选（缺任一使推送端点回 503）。APNs 凭据，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
+| 团队协作中枢 | `MIGRATIONS_DIR` / `SWEEP_INTERVAL_MS` | 可选（缺省分别为相对路径与 60000ms）。迁移脚本目录与定时清理轮询间隔，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
 
 ## 三、首次部署执行顺序与依赖拓扑
 
@@ -98,7 +76,7 @@
 
 ### 阶段 5：验证跨服务公钥获取与断言链
 
-1. 验证账号服务 JWKS 公钥公布：`curl -s http://127.0.0.1:8787/.well-known/jwks.json`，确认包含带有 `kid` 标识的 P-256 公钥对象。
+1. 验证账号服务 JWKS 公钥公布：`curl -s http://127.0.0.1:8787/v1/keys`，确认包含带有 `kid` 标识的 P-256 公钥对象。
 2. 验证 hub 能够成功解析账号服务 JWKS 地址并就绪。
 
 ### 阶段 6：放行与重载 nginx
@@ -286,7 +264,7 @@ WantedBy=multi-user.target
 
 - [ ] **healthz/readyz 通过**：调用账号服务探针 `curl -s http://127.0.0.1:8787/healthz` 返回 HTTP 200 且响应体为 `{"ok":true,...}`，调用 `curl -s http://127.0.0.1:8787/readyz` 返回 HTTP 200 且响应体为 `{"ok":true,"db":"connected"}`；调用中枢服务探针 `curl -s http://127.0.0.1:8788/healthz` 返回 HTTP 200 且响应体包含 `"status":"ok"` 与协议版本 `1.0.0`，调用 `curl -s http://127.0.0.1:8788/readyz` 返回 HTTP 200 且 `pending_migrations` 为 0。
 - [ ] **迁移账本行数符合预期**：执行 `sqlite3 /var/lib/whale/account.db "SELECT count(*) FROM schema_migrations;"`，行数严格等于 4（完整覆盖 `0001`～`0004`）；执行 `sqlite3 /var/lib/team-hub/hub.sqlite "SELECT count(*) FROM d1_migrations;"`，行数严格等于 4（完整覆盖中枢 `0001`～`0004` 迁移）。
-- [ ] **缺密钥时对应端点 503 而不是 500**：未配置 GitHub 凭据时，调用 `curl -s -X POST http://127.0.0.1:8787/v1/auth/github` 返回 HTTP 503 与 JSON `{"error":"not_configured"}`，调用 `curl -s http://127.0.0.1:8788/auth/github/login` 返回 HTTP 503 与 JSON `{"ok":false,"error":{"code":"NOT_CONFIGURED"}}`；账号服务未配置断言私钥时，调用 `curl -s http://127.0.0.1:8787/.well-known/jwks.json` 返回 HTTP 503，无未捕获异常抛出。
+- [ ] **缺密钥时对应端点 503 而不是 500**：未配置 GitHub 凭据时，调用 `curl -s -X POST http://127.0.0.1:8787/v1/auth/github` 返回 HTTP 503 与 JSON `{"error":"not_configured"}`，调用 `curl -s http://127.0.0.1:8788/auth/github/authorize` 返回 HTTP 503 与 JSON `{"ok":false,"error":{"code":"NOT_CONFIGURED"}}`；账号服务未配置断言私钥时，调用 `curl -s http://127.0.0.1:8787/v1/keys` 返回 HTTP 503，无未捕获异常抛出。
 - [ ] **WebSocket 用 Authorization 头能连上且 since_seq 能补发**：客户端发起 `GET /api/v1/teams/<teamId>/ws?protocol_version=1.0.0` 并携带 `Authorization: Bearer <token>` 能够成功建立 WebSocket 连接（Query 中携带 Token 被立即拒绝）；携带旧 `since_seq` 重连时，若序号在重放缓冲区范围内则正确补发事件，若超出缓冲区或服务重启序号重置，服务端正确下发 `resync_required` 信令通知客户端拉取全量快照。
 - [ ] **nginx 透传后限流键不是 unknown**：从外部发起高频请求触碰限流阀值，验证返回 HTTP 429 `rate_limited`；检查账号服务数据库 `rate_limits` 表或日志，确认记录的 IP 键为真实的客户端公网 IP 而非回环地址 `127.0.0.1`；检查中枢服务日志，确认无因缺少 `X-Forwarded-For` 导致将限流键标记为 `unknown` 的告警。
 
