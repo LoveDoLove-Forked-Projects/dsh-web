@@ -25,6 +25,8 @@
 - 检测旧聚合包 `@linxin666/dsh-web-ui-all`，把更新动作转换为到 `@linxin666/dsh-web-all` 的事务迁移；网关先移除旧包、安装精确版本的新包、恢复旧聚合包的层顺序，并在 `--dump-config` 通过后才报告成功。
 - 更新前校验 DSH 运行时兼容（issue #754）：更新检查读取最新版本清单声明的 DSH 最低版本（`dsh.engines.dsh`，兼容回退读顶层 `engines.dsh`），按 node-semver 范围求值——用的正是官方启动门禁那一句 `semver.satisfies(host, range, { includePrerelease: true })`，因此 `||` 备选、`^` 与 `~`、空格分隔的多比较器与 x-range 在这里的判定与启动时完全一致——并在更新动作旁显示要求。运行 DSH 确实不满足要求时禁用更新并提示升级 DSH。宿主无法核验要求时（运行版本读不出来，或声明不是 node-semver 能解析的范围）是另一种结论，有独立文案：不预设原因，也绝不把用户推去升级一个从未参与比较的 DSH。两种结论都不放行更新，host 更新路由在两种情况下都会在启动任何 CLI 任务前返回 412。
 - npm 运行时保护下次启动：安装后网关校验依赖真实落盘、拒绝重复入口 id 认领与引用不可解析包的 insert 行，并用 CLI 的 `--dump-config` 做组合预检；冲突或失败的安装会经官方 remove 路径自动回滚，绝不触碰现有插件。
+- 在官方「插件」页列表最下方挂载「内置插件」分组，因官方页面未提供列表底部扩展槽位，该分组与检查更新工具条一样作为独立 React root 容器插入官方 DOM，在页面重绘或切换面板时自动复位或摘除。分组默认只列「没有任何已安装 bundle 的补丁所插入」的 Loader 行（本部署是 8 行），采用减法口径使 profile 补丁 insert 块中的行（例如 Computer Use 的 `computer-use` 与 `computer-use-cua-driver-native`）得以正常呈现；分组标题旁的控件可以展开，展开后在同一列表里追加其余全部 Loader 行（本部署是 230 行），每条已归属行会显示「来自 <bundle 包名>」，说明它同时出现在那个组合包的详情页里。展开/收起只切换已读取到的两个集合，不重新读取、不写入、不改任何行的启停状态；两种范围下开关行为一致：每行提供启停开关，调用官方 `pluginManager` 远端的 `setPluginEnabled` 写入 profile 补丁层并热应用（带 HMR 的 profile 无需重启）；官方 manager 判定为只读的行（`management-required` / `unaddressable`）显示为禁用开关并标明锁类型，本包不自建白名单；切换被接受后界面重读 Loader 确认状态，失败则按官方 `error.code` 呈现提示。
+- 在内置插件分组下方提供只读的「Agent 预设」区块，列出每个预设的组合行与状态（启用、停用、条件启用及表达式）；由于预设行由组合决定，此处不提供启停开关。
 
 ## 安装
 
@@ -76,6 +78,8 @@ dsh plugin --profile web add link:$(pwd)/packages/dsh-plugin-manager
 - npm 运行时的启动预检（`--dump-config`）能抓组合失败，静态 insert 检查能抓引用不存在包的 insert 行；真正的运行时 import/apply 失败仍要到下次启动才暴露。
 - 重复挂载保护（网关模式）：官方 CLI 的 bundle 对账会在任何安装/卸载后把所有声明 `dsh.bundle` 的依赖重新加进 `dsh.profile.bundles`——包括组合树里已由 patch 行挂载的包（bundle 以 patch 行挂载外部插件时），下次启动会重复挂载而失败（`duplicate prefix route`）。每次 CLI 变更成功后，网关只把「本次新增且已被 patch 行挂载」的 bundles 条目剥除（清单写入走备份 + tmp + 原子 rename），并在任务结果上为每个被剥除的条目发一条 notice；正常安装的 bundles 条目与用户此前已有的条目一律不动。
 - wire 形状镜像官方安装器协议；漂移时宽容解析器降级为错误行，不误操作。
+- 设置界面「内置插件」分区下线：本包 `cordis.patch.yml` 包含一条顶层裸行 `- id: ui-settings-plugins` 并置 `disabled: true`，聚合层在 `@deepseek-ai/dsh-web-app` 之后应用因此覆盖生效，下线原设置分区；相关管理能力集中移至官方「插件」页的「内置插件」分组，禁用本包即可恢复原设置分区。
+- 官方插件页提示文案残留：官方「插件」页说明文案仍写有「内置插件列表及运行状态可在『设置 → 内置插件』中查看」，但该设置入口已被本包下线；该提示属于官方 bundle 的既有文案，本仓库无法修改。
 
 ## 安全模型
 

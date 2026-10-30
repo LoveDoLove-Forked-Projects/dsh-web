@@ -313,3 +313,54 @@ describe('update application', () => {
     await waitFor(() => { expect(section.querySelector('[data-update-error]')?.textContent).toBe(t('failed', { reason: 'pnpm exited 1' })) })
   })
 })
+
+describe('update progress bar', () => {
+  /**
+   * Put one update in flight and hand back the bar it renders. The update never
+   * settles, so the row keeps rendering while the bar is under test.
+   */
+  async function startUpdate(status: PluginUpdatePatchInjected['status']): Promise<HTMLElement> {
+    renderPatch(face({
+      checkUpdates: async () => [updateItem],
+      update: () => new Promise<PluginUpdateResult>(() => {}),
+      status,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: t('checkUpdates') }))
+    await waitFor(() => { expect(updateAction().disabled).toBe(false) })
+    fireEvent.click(updateAction())
+    const bar = document.querySelector<HTMLElement>('[data-update-progress]')
+    if (bar === null) throw new Error('the progress row rendered no bar')
+    return bar
+  }
+
+  it('user sees a determinate bar as one scaled fraction, with no width written inline', async () => {
+    // Given an update in flight whose host reports 42 percent
+    const bar = await startUpdate(async () => ({ kind: 'install', stage: 'download', percent: 42 }))
+
+    // When the progress row renders that answer
+    await waitFor(() => { expect(bar.style.getPropertyValue('--plugin-manager-progress')).toBe('0.42') })
+
+    // Then the fraction is the stylesheet's own variable, and nothing writes a pixel width into the row it lives in
+    expect(bar.style.width).toBe('')
+    expect(bar.getAttribute('data-update-progress')).toBe('determinate')
+    expect(bar.hasAttribute('data-indeterminate')).toBe(false)
+  })
+
+  it('user sees an indeterminate bar travel the track, carrying no fraction to scale', async () => {
+    // Given an update in flight whose host reports no percentage yet
+    let polls = 0
+    const bar = await startUpdate(async () => {
+      polls += 1
+      return { kind: 'install', stage: 'download' }
+    })
+
+    // When the first progress poll answers with no percentage
+    await waitFor(() => { expect(polls).toBeGreaterThanOrEqual(1) })
+
+    // Then the travel attribute is what drives it, with no fraction and no width set on it
+    expect(bar.getAttribute('data-indeterminate')).toBe('true')
+    expect(bar.getAttribute('data-update-progress')).toBe('indeterminate')
+    expect(bar.style.getPropertyValue('--plugin-manager-progress')).toBe('')
+    expect(bar.style.width).toBe('')
+  })
+})

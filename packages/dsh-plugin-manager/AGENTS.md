@@ -7,8 +7,8 @@ packages/AGENTS.md 的全局/包级规则。
 
 - 本包向官方「插件」面板（`main` 面板 id `plugins`）声明的 `plugins.detail.section` 席位贡献
   一个「检查更新」区块（id `family-update-check`，order 30），只渲染在已安装组合包的页面上；
-  它不注册 `settings.plugins.tab`，也不拥有自己的设置分区——安装/卸载/启停由官方页面负责，
-  本包只补官方页面没有的 registry 更新检查与 DSH 运行时兼容门禁。
+  它不注册 `settings.plugins.tab`，也不拥有自己的设置分区——组合包的安装/卸载仍由官方页面负责，
+  本包补齐官方页面没有的 registry 更新检查、DSH 运行时兼容门禁、内置插件启停开关与 Agent 预设展示。
   该席位是官方 list 槽，类型由官方页面运行时声明；本包在 `PluginUpdatePatch.tsx` 内以同形
   `declare module` 重新声明（跨包禁止 value import，与家族卡片复用
   `plugins.bundle.config` 的做法一致）。宿主交付的 `PluginPageSubject`（`bundle` / `row` /
@@ -30,6 +30,18 @@ packages/AGENTS.md 的全局/包级规则。
   的标题元素，并用共享的 `body-mutations.ts`（sync-shared 副本，勿手改）自查位；
   容器自持 React root，不做 DOM 改写。页面重绘/切走时容器自动挪位或摘除，重复 apply 通过
   `TOOLBAR_MOUNT_SELECTOR` 去重。
+- **底部内置插件分组只能继续用 DOM 挂载**：官方「插件」页未提供列表底部扩展槽位（既有扩展点仅覆盖
+  `plugins.detail.*`、`plugins.item`、`plugins.bundle.config`、`plugins.row.config`、
+  `plugins.bundle.activation` 与 `plugins.tab`），因此「内置插件」分组与检查更新工具条一样，
+  只能直接插入官方页面 DOM（独立 React root），并在页面重绘与切换面板时自动复位或摘除。
+- **内置插件启停只走官方远端，不自建白名单**：内置插件行的启停开关必须调用官方 `pluginManager` 远端的
+  `setPluginEnabled`，写入 profile 补丁层并热应用（带 HMR 的 profile 无需重启）。只读状态严格沿用官方
+  manager 判定（`management-required` 与 `unaddressable` 锁）并显示锁原因，前端与 host 不得自建启停白名单；
+  操作被接受后界面重新读取 Loader 确认状态（不相信返回值），失败按官方返回的 `error.code` 展示文案。
+  下方「Agent 预设」区块因组合决定行状态而保持只读，不提供开关。
+- **设置页内置插件入口由顶层裸行下线**：`cordis.patch.yml` 中包含顶层裸行 `- id: ui-settings-plugins` +
+  `disabled: true`，聚合层在 `@deepseek-ai/dsh-web-app` 之后应用因此覆盖生效，下线原设置分区；
+  相关管理收拢至官方插件页，禁用本包即可恢复原设置分区。
 - **批量更新策略放 core，不放 host**：`src/core/updates.ts` 是唯一策略源——只更新第三方
   （非 `@deepseek-ai/`）且 `compatible !== false` 的行；官方包随 DSH 本体升级，绝不批量改写。
   单页区块（`plugins.detail.section`）仍可对官方包做单包更新，那是用户逐条确认的动作。

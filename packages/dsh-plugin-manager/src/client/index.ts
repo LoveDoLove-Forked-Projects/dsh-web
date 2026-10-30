@@ -1,8 +1,9 @@
 /**
- * Plugin-manager browser half: contributes the package's one remaining
- * surface — the check-for-updates block on the official Plugins page — and
- * provides the dual-channel face as the `'pluginManager'` cordis service for
- * sibling client plugins.
+ * Plugin-manager browser half: contributes this package's surfaces on the
+ * official Plugins page — the check-for-updates block, the list-level update
+ * toolbar, and the built-in plugin group at the list's bottom — and provides the
+ * dual-channel face as the `'pluginManager'` cordis service for sibling client
+ * plugins.
  *
  * It is dual-channel: on runtimes with the official installer services
  * (DSHCode, the 1.0.4 checkout web) every operation rides the official
@@ -30,6 +31,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { PluginUpdatePatch, type PluginUpdatePatchInjected } from './PluginUpdatePatch.tsx'
+import { mountBuiltinPluginGroup } from './builtin-plugins-mount.tsx'
+import { bridgeRemoteNamespaces, getRemoteSnapshot, subscribeRemote } from './native-faces.ts'
 import { mountPluginListToolbar } from './plugin-toolbar-mount.tsx'
 import { en, zh, type PluginManagerKey } from './locales.ts'
 import {
@@ -369,6 +372,17 @@ export function apply(ctx: ClientContext): void {
     // ignore duplicate provide
   }
 
+  // The official remote namespaces the built-in group reads are OPTIONAL faces:
+  // injecting each one keeps its arrival and withdrawal observable, so the
+  // group shows what this deployment publishes instead of assuming it.
+  try {
+    bridgeRemoteNamespaces(ctx)
+  } catch (error) {
+    // A carrier without them keeps the group's own unavailable state; the
+    // failure is logged so it is not mistaken for a deployment that has them.
+    console.warn('plugin-manager: bridging the official plugin faces failed', error)
+  }
+
   // The list-level toolbar rides the page's own "Installed" heading: the
   // official page declares no seat beside it, so the entry is inserted into
   // the heading element itself and tracks the page through the shared body
@@ -391,6 +405,37 @@ export function apply(ctx: ClientContext): void {
       return () => {}
     }
   }, 'plugin-manager: update toolbar')
+
+  // The built-in group sits at the list's bottom the way the toolbar sits beside
+  // its heading: the page declares no seat there, so it is inserted after the
+  // page's own installed panel and follows the page through the shared mutation
+  // hub. The official faces are sampled per render and the subscription below
+  // covers both a language switch and a host-side change event, so the mounted
+  // copy never holds a stale answer.
+  ctx.effect(() => {
+    try {
+      return mountBuiltinPluginGroup({
+        props: () => ({
+          remote: getRemoteSnapshot(),
+          resolveText: text => ctx.locale.resolveText(text),
+          t: ctx.locale.bind(NS),
+        }),
+        subscribe: listener => {
+          const offLocale = ctx.locale.subscribe(listener)
+          const offRemote = subscribeRemote(listener)
+          return () => {
+            offLocale()
+            offRemote()
+          }
+        },
+      })
+    } catch (error) {
+      // The group is chrome on someone else's page: a failed mount must not take
+      // the page down, but it must not disappear without a trace either.
+      console.warn('plugin-manager: mounting the built-in plugin group failed', error)
+      return () => {}
+    }
+  }, 'plugin-manager: built-in plugin group')
 
   // The official Plugins page declares this seat on its main-panel entry and
   // renders one section per contribution on each bundle / row / plugin page;

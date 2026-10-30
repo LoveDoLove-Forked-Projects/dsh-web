@@ -366,6 +366,31 @@ test('a host-only child row keeps its platform guard in the aggregate patch', ()
   assert.match(child, /disabled: !!js process\.platform !== 'win32'/u, 'the child keeps its own guard')
 })
 
+test('a child bare patch row keeps its scalar overrides and spells no empty name', () => {
+  // packages/dsh-plugin-manager retires the official `ui-settings-plugins`
+  // settings entry from a top-level bare row (`- id: …` + `disabled: true`, no
+  // `name:`) — the shape parsePatchBlocks documents for patching a row this
+  // repository does not own. Patch rows used to render through the insert path
+  // only half-way: `row.extraLines` was never written (so `disabled: true`
+  // vanished and the override did nothing) and the absent name became
+  // `name: ''`, an empty specifier inside the loader entry.
+  const child = readFileSync(join(ROOT, 'packages/dsh-plugin-manager/cordis.patch.yml'), 'utf8')
+  assert.match(
+    child,
+    /^- id: ui-settings-plugins\n {2}disabled: true$/mu,
+    'the child declares the bare patch row this case is about',
+  )
+
+  const patch = readFileSync(join(ROOT, 'packages/dsh-web-all/cordis.patch.yml'), 'utf8')
+  assert.match(
+    patch,
+    /^- id: ui-settings-plugins\n {2}disabled: true$/mu,
+    'the aggregate carries the bare patch row verbatim, override included',
+  )
+  assert.doesNotMatch(patch, /^- id: ui-settings-plugins\n {2}name:/mu, 'a bare patch row names no package')
+  assert.doesNotMatch(patch, /^ {2}name: ''$/mu, 'no row in the aggregate may carry an empty package name')
+})
+
 test('the win-bash family row and subpath use the short family name', () => {
   // The child id names its package (\`dsh-win-bash\`, pinned by that package's
   // AGENTS.md), so deriving the aggregate id would produce

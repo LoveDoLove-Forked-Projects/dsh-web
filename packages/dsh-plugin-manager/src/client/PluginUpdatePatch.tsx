@@ -18,11 +18,18 @@
  * official primitives bundle.
  * @module @linxin666/dsh-client-ui-plugin-manager/client
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InstallProgressItem, PluginUpdateItem, PluginUpdateResult } from '../core/protocol.ts'
 import { displayMinimumVersion } from '../core/version.ts'
 import css from './plugin-manager.module.css'
+
+/**
+ * The custom property carrying the determinate fraction (0 to 1). The bar is a
+ * full-width element the stylesheet scales along its own axis, so a progress
+ * tick repaints one compositor property instead of re-laying-out the row.
+ */
+const PROGRESS_VARIABLE = '--plugin-manager-progress'
 
 /** One loader row of a bundle, as the official page's subject carries it. */
 export interface PluginPageRowRef {
@@ -285,8 +292,11 @@ export function PluginUpdatePatch(props: PluginUpdatePatchProps) {
           <div className={css.progressTrack}>
             <div
               className={css.progressBar}
-              style={progress.percent === undefined ? undefined : { width: `${String(progress.percent)}%` }}
+              style={progress.percent === undefined
+                ? undefined
+                : { [PROGRESS_VARIABLE]: String(progress.percent / 100) } as CSSProperties}
               data-indeterminate={progress.percent === undefined ? 'true' : undefined}
+              data-update-progress={progress.percent === undefined ? 'indeterminate' : 'determinate'}
             />
           </div>
           <p className={css.hint}>{progressLabel(progress, t)}</p>

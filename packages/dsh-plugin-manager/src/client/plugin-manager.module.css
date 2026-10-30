@@ -139,14 +139,28 @@
   overflow: hidden;
 }
 
+/* Determinate progress is one full-width bar scaled along its own axis: the
+ * animated property is a compositor one, where a `width` transition re-lays-out
+ * the row on every frame of the same visual (KFL M6). The track keeps its 6px
+ * height, 3px radius and tokens, and the bar still fills that height, so no
+ * dimension or colour moves; `transform-origin: left center` anchors the growth
+ * at the track's start, where the width it replaces used to grow from. */
 .progressBar {
   height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(var(--plugin-manager-progress, 0));
   background: var(--dsw-alias-state-business-primary);
-  transition: width 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
+/* The indeterminate bar is a 40% slice slid across the track by the keyframes
+ * below. `transform: none` hands the property back to that animation instead of
+ * leaving the determinate scale on top of it; the slice's own width is what the
+ * travel is measured in, so it stays. */
 .progressBar[data-indeterminate='true'] {
   width: 40%;
+  transform: none;
   animation: pluginManagerIndeterminate 1.2s ease-in-out infinite;
 }
 
@@ -156,8 +170,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Neither state moves: the indeterminate slice parks at its 40% start with no
+   * leftover scale, and the determinate bar jumps to its value instead of easing
+   * there. */
+  .progressBar {
+    transition: none;
+  }
+
   .progressBar[data-indeterminate='true'] {
     animation: none;
+    transform: none;
     width: 40%;
   }
 }
@@ -309,4 +331,218 @@
 .restartRequiredLine {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
+}
+
+/* Built-in plugin group, inserted as a direct child of the official page's
+ * column right after the installed panel. The page sets that column's rhythm
+ * (32px gaps, one 960px measure) and the panel's own groups carry 14px/500
+ * headings over a 2px-gapped card list with a hairline per row; these rules
+ * hold the same rhythm with the same tokens so the block reads as one more
+ * group of that page rather than a card bolted onto it. */
+.builtinMount {
+  min-width: 0;
+}
+
+.builtinGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+}
+
+.builtinHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.builtinTitle {
+  margin: 0;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.builtinCount {
+  flex: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The heading's left cluster is the title and the count the group reports; the
+ * scope control is the one action and takes the trailing edge, the way every
+ * other group on this page keeps a single control there. It is the reader's own
+ * view choice rather than a second primary action, so it keeps the quiet
+ * treatment the toolbar summary uses. */
+.builtinScope {
+  flex: none;
+  margin-inline-start: auto;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  border: 0;
+  padding: 3px 2px;
+  color: var(--dsw-alias-label-secondary);
+  background: none;
+}
+
+.builtinScope:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.builtinScope:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+
+.builtinList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One entry: its name over the module it names and, when locked, the reason
+ * it is locked. The switch is a flex item, so every row shares one trailing
+ * edge no matter how many lines the leading column takes. */
+.builtinRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 2px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.builtinRow:last-child {
+  border-bottom: 0;
+}
+
+.builtinMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.builtinName {
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.builtinModule {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* Which installed bundle contributes this row: the reason it appears again on
+ * that bundle's own page, so it is set quieter than the row's own name. */
+.builtinOwner {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.builtinReason {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Agent presets: the same column, one level down and read-only, so it is set
+ * apart by a hairline above it instead of by a card of its own. */
+.presetGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.presetTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.presetList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.presetCard {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.presetHead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.presetName {
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.presetTag {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.presetRows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  padding-left: 12px;
+}
+
+.presetRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.presetRowName {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.presetRowState {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
 }

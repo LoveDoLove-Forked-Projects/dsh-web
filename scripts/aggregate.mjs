@@ -860,8 +860,16 @@ function renderPatch(blocks, externalRows, ownPatches, inactiveRows, retireRows,
       patchedIds.add(row.id)
       lines.push('', `${sourceHeader} (patch row ${row.id})`)
       lines.push(`- id: ${row.id}`)
-      lines.push(`  name: '${row.name}'`)
+      // A bare patch names no package: it retunes a row the harness or another
+      // bundle mounts (`- id: ui-settings-plugins` + `disabled: true`), which is
+      // the shape parsePatchBlocks documents and the only reason `name:` is
+      // optional here. Spelling the absent name as `name: ''` injected an empty
+      // specifier into the loader entry. The scalar overrides are emitted after
+      // the config block, exactly as the insert branch above does, or the patch
+      // would carry its id and lose the very key that makes it a patch.
+      if (row.name !== '') lines.push(`  name: '${row.name}'`)
       pushConfig(lines, row.configLines ?? [], 2)
+      for (const extra of row.extraLines ?? []) lines.push(extra)
     }
   }
   // Own-row config overrides: emitted after every insert so a later patch
