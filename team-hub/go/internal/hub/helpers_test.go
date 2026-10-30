@@ -41,6 +41,12 @@ const (
 	// both the JWKS and the admin email lookup on.
 	accountServiceBase = "https://account.example"
 	accountAdminToken  = "{{SECRET_admininvite}}"
+
+	// bootstrapAdminEmail is the address the first admin bootstraps with. The
+	// fake account service resolves it to accountSubject, so every seeded hub has
+	// the same enterable admin, named after the address's local part.
+	bootstrapAdminEmail = "first.admin@example.test"
+	bootstrapAdminName  = "first.admin"
 )
 
 type githubAccount struct {
@@ -476,16 +482,30 @@ type seededTeam struct {
 
 func (h *testHub) seedTeam() seededTeam {
 	h.t.Helper()
+	h.fake.addAccountUser(bootstrapAdminEmail, accountSubject)
 	created := h.api("POST", "/api/v1/bootstrap", apiOptions{
 		headers: map[string]string{"X-Bootstrap-Token": bootstrapToken},
-		body:    map[string]any{"team_name": "Team Test", "team_slug": "team-test", "github_username": "octocat"},
+		body:    map[string]any{"team_name": "Team Test", "team_slug": "team-test", "email": bootstrapAdminEmail},
 	})
 	if created.status != http.StatusCreated {
 		h.t.Fatalf("bootstrap failed: %d %s", created.status, created.text)
 	}
 	team, _ := created.body["team"].(map[string]any)
 	teamID, _ := team["id"].(string)
-	return seededTeam{teamID: teamID, admin: h.login("octocat")}
+	// The bootstrap response names the admin row it wrote; the session is minted
+	// directly because most hubs in this suite hold no assertion signing key.
+	return seededTeam{teamID: teamID, admin: h.sessionFor(created.body["member"])}
+}
+
+// setAccountAdminAPI rewrites the account-service admin settings of a running
+// hub. A hub cannot bootstrap its first admin without them, so this is the only
+// way to reach the state an operator reaches by removing the token after the
+// team exists: the team is there and the admin API is closed. The suite disables
+// the sweeper, so no other goroutine is reading the configuration here.
+func (h *testHub) setAccountAdminAPI(base, token string) {
+	h.t.Helper()
+	h.hub.config.AccountServiceBase = base
+	h.hub.config.AccountAdminToken = token
 }
 
 // sessionFor mints a session for a member the hub already created. The invite
@@ -524,8 +544,9 @@ func (h *testHub) inviteAndLogin(teamID, adminToken, handle string) session {
 }
 
 // unboundMemberAndLogin seeds a member that entered through GitHub and has not
-// bound an account yet. The invite route always binds one, so the binding rules
-// need the other real shape: the row the bootstrap admin starts as.
+// bound an account yet, then signs it in through the GitHub flow. The invite and
+// bootstrap routes always bind an account, so the binding rules need the other
+// real shape: a row carried by a GitHub identity alone.
 func (h *testHub) unboundMemberAndLogin(teamID, handle string) session {
 	h.t.Helper()
 	account, ok := h.fake.accounts[handle]
@@ -544,19 +565,7 @@ func (h *testHub) unboundMemberAndLogin(teamID, handle string) session {
 		member.AvatarURL, member.Role, member.Status, member.CreatedAt, member.UpdatedAt); err != nil {
 		h.t.Fatalf("seed an unbound member: %v", err)
 	}
-	encoded, err := json.Marshal(toMemberView(member))
-	if err != nil {
-		h.t.Fatalf("encode the seeded member: %v", err)
-	}
-	var record map[string]any
-	if err := json.Unmarshal(encoded, &record); err != nil {
-		h.t.Fatalf("decode the seeded member: %v", err)
-	}
-	tokens, _, err := h.hub.issueSession(member, now)
-	if err != nil {
-		h.t.Fatalf("issue a session for the seeded member: %v", err)
-	}
-	return session{accessToken: tokens.AccessToken, refreshToken: tokens.RefreshToken, member: record}
+	return h.login(handle)
 }
 
 type seededHost struct {

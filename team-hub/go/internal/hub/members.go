@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
-	"net/url"
 	"strings"
 )
 
@@ -72,48 +71,6 @@ func (h *Hub) DescribeMe(principal *Principal) (*meResponse, error) {
 		teams = append(teams, meTeam{TeamID: principal.Member.TeamID, Role: principal.Member.Role})
 	}
 	return &meResponse{Member: toMemberView(principal.Member), Teams: teams}, nil
-}
-
-type githubProfile struct {
-	ID        int64
-	Login     string
-	Name      *string
-	AvatarURL *string
-}
-
-// FetchGithubProfile resolves a GitHub login to the numeric id and canonical
-// login the members table needs before the invitee ever logs in.
-func (h *Hub) FetchGithubProfile(username string) (*githubProfile, error) {
-	response, err := h.callOutbound("GET", githubAPIBase+"/users/"+url.PathEscape(username), map[string]string{
-		"accept":     "application/vnd.github+json",
-		"user-agent": "dsh-team-hub",
-	}, "")
-	if err != nil {
-		return nil, FailWith(CodeUserNotFound,
-			"GitHub did not return a profile for "+username+".", map[string]any{"github_status": 0})
-	}
-	if response.Status == 404 {
-		return nil, nil
-	}
-	body, ok := response.Body.(map[string]any)
-	if response.Status != 200 || !ok {
-		return nil, FailWith(CodeUserNotFound,
-			"GitHub did not return a profile for "+username+".",
-			map[string]any{"github_status": response.Status})
-	}
-	id, idOK := body["id"].(float64)
-	login, loginOK := body["login"].(string)
-	if !idOK || !loginOK {
-		return nil, Fail(CodeUserNotFound, "GitHub returned an unusable profile for "+username+".")
-	}
-	profile := &githubProfile{ID: int64(id), Login: login}
-	if name, ok := body["name"].(string); ok {
-		profile.Name = &name
-	}
-	if avatar, ok := body["avatar_url"].(string); ok {
-		profile.AvatarURL = &avatar
-	}
-	return profile, nil
 }
 
 // inviteEmail trims and checks the address an invite names.
@@ -228,7 +185,16 @@ func (h *Hub) RemoveMember(teamID, memberID string, now int64) error {
 // BootstrapTeam creates the first team and its first admin. The teams table
 // being empty is the whole precondition: the call that fills it is also the last
 // one that succeeds.
-func (h *Hub) BootstrapTeam(teamName, teamSlug, githubUsername string, now int64) (map[string]any, error) {
+//
+// The admin is named by the email address they sign in with. The account service
+// resolves that address to the user id an assertion carries as sub, and the row
+// is written bound to it, so the first admin can enter on their first sign-in. A
+// row created from a GitHub login would leave account_user_id empty, and sign-in
+// matches on nothing else: that admin could never enter, which is the deployment
+// this call used to dead-end.
+func (h *Hub) BootstrapTeam(teamName, teamSlug, email string, now int64) (map[string]any, error) {
+	// The one-shot rule outranks everything else: a hub with a team has already
+	// bootstrapped, whether or not its account service is configured today.
 	var occupied string
 	err := h.db.QueryRow("SELECT id FROM teams LIMIT 1").Scan(&occupied)
 	if err == nil {
@@ -239,23 +205,26 @@ func (h *Hub) BootstrapTeam(teamName, teamSlug, githubUsername string, now int64
 	if err != errNoRows {
 		return nil, err
 	}
-	profile, err := h.FetchGithubProfile(githubUsername)
+	account, err := h.LookupAccountByEmail(email)
 	if err != nil {
 		return nil, err
 	}
-	if profile == nil {
-		return nil, FailWith(CodeUserNotFound, "No GitHub user named "+githubUsername+".",
-			map[string]any{"github_username": githubUsername})
+	if account == nil {
+		return nil, FailWith(CodeUserNotFound,
+			"No Whale account exists for this email yet; sign in to the Whale app with Apple once, "+
+				"then run bootstrap again.", map[string]any{"email": email})
 	}
+	// The members table predates the account service and both github columns are
+	// NOT NULL, so the admin carries the same derived placeholder an email invite
+	// carries. Deriving it from the account id keeps one account's placeholder
+	// identical in every team it joins.
+	githubID, githubHandle := placeholderGithubIdentity(account.UserID)
 	team := &Team{ID: NewID("team", now), Name: teamName, Slug: teamSlug, CreatedAt: now, UpdatedAt: now}
-	displayName := profile.Login
-	if profile.Name != nil {
-		displayName = *profile.Name
-	}
 	member := &Member{
-		ID: NewID("mem", now), TeamID: team.ID, GithubUserID: profile.ID,
-		GithubUsername: profile.Login, DisplayName: displayName, AvatarURL: profile.AvatarURL,
-		Role: "admin", Status: "active", CreatedAt: now, UpdatedAt: now,
+		ID: NewID("mem", now), TeamID: team.ID, GithubUserID: githubID,
+		GithubUsername: githubHandle, DisplayName: emailLocalPart(email),
+		AccountUserID: strPointer(account.UserID), Role: "admin", Status: "active",
+		CreatedAt: now, UpdatedAt: now,
 	}
 	// Both inserts repeat the emptiness test and run in one transaction, so two
 	// calls that raced past the check cannot both create a team, and a team never
@@ -272,10 +241,11 @@ func (h *Hub) BootstrapTeam(teamName, teamSlug, githubUsername string, now int64
 		teamChanged = changed(result)
 		_, err = tx.Exec(
 			"INSERT INTO members (id, team_id, github_user_id, github_username, display_name, avatar_url, "+
-				"role, status, created_at, updated_at) "+
-				"SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM teams WHERE id = ?)",
+				"account_user_id, role, status, created_at, updated_at) "+
+				"SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM teams WHERE id = ?)",
 			member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.DisplayName,
-			member.AvatarURL, member.Role, member.Status, member.CreatedAt, member.UpdatedAt, team.ID)
+			member.AvatarURL, member.AccountUserID, member.Role, member.Status, member.CreatedAt,
+			member.UpdatedAt, team.ID)
 		return err
 	})
 	if err != nil {
@@ -292,7 +262,8 @@ func (h *Hub) BootstrapTeam(teamName, teamSlug, githubUsername string, now int64
 	return map[string]any{
 		"team": map[string]any{"id": team.ID, "name": team.Name, "slug": team.Slug},
 		"member": map[string]any{
-			"id": member.ID, "github_username": member.GithubUsername, "role": "admin",
+			"id": member.ID, "github_username": member.GithubUsername,
+			"account_user_id": account.UserID, "role": "admin",
 		},
 	}, nil
 }

@@ -145,6 +145,42 @@ Team administrators invite members by email address. The Hub resolves the addres
 | 2 | Invitee | Signs in with an account assertion (`POST /auth/account`). | The Hub matches `members.account_user_id` and opens a session immediately; the invite needs no second step. |
 | 3 | Admin | Calls `DELETE /api/v1/teams/:teamId/members/:memberId` to remove a member. | Member status set to `suspended`; active sessions revoked immediately. |
 
+### Hub Bootstrap (`POST /api/v1/bootstrap`)
+A freshly deployed Hub has no team, and a Hub with no team has no administrator who could invite anyone. This one call creates the first team and its first administrator. It is closed unless the process holds `BOOTSTRAP_TOKEN` (sent as the `X-Bootstrap-Token` header), and it succeeds only once.
+
+The first administrator is named by an email address, exactly as an invited member is. The Hub resolves the address with `POST {ACCOUNT_SERVICE_BASE}/v1/admin/users/lookup`, carrying `x-admin-token: {ACCOUNT_ADMIN_TOKEN}` and body `{ email }`, and writes the admin row bound to the resolved account user id, `active`, named after the address's local part. The account that signs in with an assertion is therefore the administrator from its first attempt. The row carries the same reserved placeholder GitHub identity an email-invited row carries (see above), derived from the account user id, so one account's placeholder is identical in every team it joins.
+
+**Backward incompatible change.** The bootstrap request used to name a GitHub login (`github_username`): the Hub fetched that profile and created an admin row with no `account_user_id`. Sign-in matches nothing but `account_user_id`, so that administrator answered `409 NOT_LINKED` to every assertion, and the first person of a new deployment could not enter at all. The request therefore takes `email` instead - a request that still sends `github_username` is refused with `400 VALIDATION_FAILED`, and there is no compatibility mode. Resolving an address needs the account-service admin API, so bootstrap now depends on `ACCOUNT_SERVICE_BASE` and `ACCOUNT_ADMIN_TOKEN` the way the invite does: a Hub without them answers `503 NOT_CONFIGURED` here too.
+
+Request:
+```json
+{
+  "team_name": "Team Example",
+  "team_slug": "team-example",
+  "email": "admin@example.com"
+}
+```
+
+Response (`201 Created`):
+```json
+{
+  "team": { "id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5", "name": "Team Example", "slug": "team-example" },
+  "member": {
+    "id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
+    "github_username": "account:acct_01j7b5w8m4f9q2e3r6t1y8u4id",
+    "account_user_id": "acct_01j7b5w8m4f9q2e3r6t1y8u4id",
+    "role": "admin"
+  }
+}
+```
+
+| Condition | Response | Behavior |
+| --- | --- | --- |
+| The Hub already has a team | `409 CONFLICT` | `details.team_id` names the team that exists. Decided before the address is resolved, so a Hub that has bootstrapped refuses the call whatever its account service looks like. |
+| The address has no account | `404 USER_NOT_FOUND` | Nothing is written. The remedy is to sign in to the Whale app with Apple once, then repeat the call. |
+| The account service is unreachable, or answers something the Hub does not accept | `502 ACCOUNT_UNAVAILABLE` | The upstream body is never forwarded. |
+| `ACCOUNT_SERVICE_BASE` or `ACCOUNT_ADMIN_TOKEN` is missing | `503 NOT_CONFIGURED` | The message names the missing setting. |
+
 ## 3. D1 Database Schema
 
 Data persistence uses Cloudflare D1 (SQLite-compatible relational database). All timestamps are stored as UTC milliseconds (`INTEGER NOT NULL`). All identifiers use typed prefix strings (`<prefix>_<id>`).
@@ -682,6 +718,7 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `POST` | `/auth/token` | Public | `{ code, code_verifier, redirect_uri }` | `{ access_token, refresh_token, token_type, expires_in, member: Member }` | 200, 400 | `INVALID_PKCE`, `INVALID_OAUTH_CODE` |
 | `POST` | `/auth/refresh` | Public | `{ refresh_token }` | `{ access_token, refresh_token, token_type, expires_in, member: Member }` | 200, 401 | `INVALID_REFRESH_TOKEN` |
 | `POST` | `/auth/revoke` | Member | `{ refresh_token }` | `{ ok: true }` | 200, 401 | `UNAUTHORIZED` |
+| `POST` | `/api/v1/bootstrap` | Public (`X-Bootstrap-Token`) | `{ team_name, team_slug, email }` | `{ team: { id, name, slug }, member: { id, github_username, account_user_id, role } }` | 201, 400, 401, 404, 409, 502, 503 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `USER_NOT_FOUND`, `CONFLICT`, `ACCOUNT_UNAVAILABLE`, `NOT_CONFIGURED` |
 | `GET` | `/api/v1/me` | Member | None | `{ member: Member, teams: [{ team_id, role }] }` | 200, 401 | `UNAUTHORIZED` |
 | `GET` | `/api/v1/teams/:teamId/inbox` | Member | None | `{ assigned: Issue[], review: Issue[], questions: Question[], mentions: [{ comment: Comment, issue_id }] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/inbox/mentions/:commentId/read` | Member | None | `{ ok: true }` | 200, 401, 403, 404 | `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND` |
@@ -844,7 +881,7 @@ All error responses adhere to a single unified JSON schema:
 | `ISSUE_NOT_FOUND` | 404 | Target issue does not exist. |
 | `HOST_NOT_FOUND` | 404 | Target execution Host does not exist. |
 | `MEMBER_NOT_FOUND` | 404 | Target team member does not exist. |
-| `USER_NOT_FOUND` | 404 | The invited email has no account in the account service, so no member was created. |
+| `USER_NOT_FOUND` | 404 | The email has no account in the account service, so nothing was created (invite and bootstrap). |
 | `CONFLICT` | 409 | Resource state conflict (e.g. duplicate slug, question already answered). |
 | `ALREADY_MEMBER` | 409 | The invited account already holds a membership: `details.member_id` names it. |
 | `VALIDATION_FAILED` | 400 | Request body failed structural validation or schema constraints. |

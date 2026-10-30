@@ -164,11 +164,15 @@ func (h *Hub) handleBootstrap(c *routeContext) error {
 	if err != nil {
 		return err
 	}
-	username, err := RequireString(body, "github_username")
+	rawEmail, err := RequireString(body, "email")
 	if err != nil {
 		return err
 	}
-	result, err := h.BootstrapTeam(teamName, teamSlug, username, c.now)
+	email, err := inviteEmail(rawEmail)
+	if err != nil {
+		return err
+	}
+	result, err := h.BootstrapTeam(teamName, teamSlug, email, c.now)
 	if err != nil {
 		return err
 	}

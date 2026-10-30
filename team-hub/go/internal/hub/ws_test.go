@@ -238,7 +238,7 @@ func TestHostTargetedEventsReachOnlyTheirHost(t *testing.T) {
 		t.Fatalf("the bound host did not receive the mention: %+v", mentioned)
 	}
 	if stringField(mentioned.payload, "issue_id") != stringField(issue, "id") ||
-		stringField(mentioned.payload, "author") != "Octo Cat" {
+		stringField(mentioned.payload, "author") != bootstrapAdminName {
 		t.Fatalf("mention payload: %v", mentioned.payload)
 	}
 

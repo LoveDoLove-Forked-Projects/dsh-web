@@ -184,10 +184,13 @@ func TestInviteWhenTheAccountServiceFailsIsAccountUnavailable(t *testing.T) {
 
 func TestInviteWithoutTheAccountServiceSettingsIsNotConfigured(t *testing.T) {
 	t.Run("both settings missing", func(t *testing.T) {
-		server := startTestHub(t, startOptions{env: map[string]string{
-			"ACCOUNT_SERVICE_BASE": "", "ACCOUNT_ADMIN_TOKEN": "",
-		}})
+		server := startTestHub(t)
 		team := server.seedTeam()
+		// Bootstrap resolves the first admin's address through the same admin API, so
+		// a hub that never had these settings cannot reach this state at all. The
+		// settings are closed on the running hub instead: that is what an operator
+		// who removes the token after the team exists leaves behind.
+		server.setAccountAdminAPI("", "")
 		closed := inviteRequest(server, team.teamID, team.admin.accessToken, "anyone@example.test", "member")
 		if closed.status != http.StatusServiceUnavailable || errorCode(closed.body) != string(CodeNotConfigured) {
 			t.Fatalf("invite without settings: %d %s", closed.status, closed.text)
@@ -201,8 +204,9 @@ func TestInviteWithoutTheAccountServiceSettingsIsNotConfigured(t *testing.T) {
 	})
 
 	t.Run("only the admin token missing", func(t *testing.T) {
-		server := startTestHub(t, startOptions{env: map[string]string{"ACCOUNT_ADMIN_TOKEN": ""}})
+		server := startTestHub(t)
 		team := server.seedTeam()
+		server.setAccountAdminAPI(accountServiceBase, "")
 		closed := inviteRequest(server, team.teamID, team.admin.accessToken, "anyone@example.test", "member")
 		if closed.status != http.StatusServiceUnavailable || errorCode(closed.body) != string(CodeNotConfigured) {
 			t.Fatalf("invite without the token: %d %s", closed.status, closed.text)

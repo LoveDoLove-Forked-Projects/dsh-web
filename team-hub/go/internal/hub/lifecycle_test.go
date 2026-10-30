@@ -79,16 +79,19 @@ func TestBootstrapRunsOnce(t *testing.T) {
 
 	badToken := server.api("POST", "/api/v1/bootstrap", apiOptions{
 		headers: map[string]string{"X-Bootstrap-Token": "wrong"},
-		body:    map[string]any{"team_name": "Team", "team_slug": "team", "github_username": "octocat"},
+		body:    map[string]any{"team_name": "Team", "team_slug": "team", "email": "first.admin@example.test"},
 	})
 	if badToken.status != http.StatusUnauthorized || errorCode(badToken.body) != string(CodeUnauthorized) {
 		t.Fatalf("bad bootstrap token: %d %s", badToken.status, badToken.text)
 	}
 
 	team := server.seedTeam()
+	// The address is one the account service does not know, and the answer is still
+	// CONFLICT: a hub that already bootstrapped refuses the call before it looks
+	// anything up.
 	second := server.api("POST", "/api/v1/bootstrap", apiOptions{
 		headers: map[string]string{"X-Bootstrap-Token": bootstrapToken},
-		body:    map[string]any{"team_name": "Team Two", "team_slug": "team-two", "github_username": "octocat"},
+		body:    map[string]any{"team_name": "Team Two", "team_slug": "team-two", "email": "nobody@example.test"},
 	})
 	if second.status != http.StatusConflict || errorCode(second.body) != string(CodeConflict) {
 		t.Fatalf("second bootstrap: %d %s", second.status, second.text)
@@ -101,7 +104,7 @@ func TestBootstrapRunsOnce(t *testing.T) {
 func TestBootstrapClosedWhenTokenMissing(t *testing.T) {
 	server := startTestHub(t, startOptions{env: map[string]string{"BOOTSTRAP_TOKEN": ""}})
 	result := server.api("POST", "/api/v1/bootstrap", apiOptions{
-		body: map[string]any{"team_name": "Team", "team_slug": "team", "github_username": "octocat"},
+		body: map[string]any{"team_name": "Team", "team_slug": "team", "email": "first.admin@example.test"},
 	})
 	if result.status != http.StatusServiceUnavailable || errorCode(result.body) != string(CodeNotConfigured) {
 		t.Fatalf("bootstrap without token: %d %s", result.status, result.text)
@@ -410,10 +413,14 @@ func TestReviewRejectionReturnsCardToBoundHost(t *testing.T) {
 func TestCommentsAuditFeedAndInbox(t *testing.T) {
 	server := startTestHub(t)
 	team := server.seedTeam()
-	adminID := stringField(team.admin.member, "id")
+	// A member bound to an account carries the "account:" placeholder handle, which
+	// a mention cannot express, so the mention legs need the other member shape: a
+	// row carried by a GitHub identity.
+	mentioned := server.unboundMemberAndLogin(team.teamID, "octocat")
+	mentionedID := stringField(mentioned.member, "id")
 	other := server.inviteAndLogin(team.teamID, team.admin.accessToken, "hubot")
 	issue := server.createIssue(team.teamID, team.admin.accessToken, map[string]any{
-		"title": "thread", "assignee_type": "member", "assignee_id": adminID,
+		"title": "thread", "assignee_type": "member", "assignee_id": mentionedID,
 	})
 	issueID := stringField(issue, "id")
 
@@ -482,7 +489,7 @@ func TestCommentsAuditFeedAndInbox(t *testing.T) {
 		t.Fatalf("bad cursor: %d %s", badCursor.status, badCursor.text)
 	}
 
-	inbox := server.api("GET", "/api/v1/teams/"+team.teamID+"/inbox", apiOptions{token: team.admin.accessToken})
+	inbox := server.api("GET", "/api/v1/teams/"+team.teamID+"/inbox", apiOptions{token: mentioned.accessToken})
 	if inbox.status != http.StatusOK {
 		t.Fatalf("inbox: %d %s", inbox.status, inbox.text)
 	}
@@ -494,12 +501,12 @@ func TestCommentsAuditFeedAndInbox(t *testing.T) {
 	commentRecord, _ := mention["comment"].(map[string]any)
 	commentID := stringField(commentRecord, "id")
 	read := server.api("POST", "/api/v1/teams/"+team.teamID+"/inbox/mentions/"+commentID+"/read", apiOptions{
-		token: team.admin.accessToken,
+		token: mentioned.accessToken,
 	})
 	if read.status != http.StatusOK {
 		t.Fatalf("mark read: %d %s", read.status, read.text)
 	}
-	after := server.api("GET", "/api/v1/teams/"+team.teamID+"/inbox", apiOptions{token: team.admin.accessToken})
+	after := server.api("GET", "/api/v1/teams/"+team.teamID+"/inbox", apiOptions{token: mentioned.accessToken})
 	afterMentions, _ := after.body["mentions"].([]any)
 	if len(afterMentions) != 0 {
 		t.Fatalf("mention still unread: %s", after.text)

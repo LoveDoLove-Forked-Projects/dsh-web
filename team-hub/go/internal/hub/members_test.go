@@ -49,17 +49,34 @@ func rosterRows(t *testing.T, result apiResult) map[string]map[string]any {
 func TestMemberRowsExposeTheAccountBinding(t *testing.T) {
 	key := newAccountKey(t)
 	server := startTestHub(t, startOptions{jwks: accountJWKS(key)})
-	// The bootstrap admin enters through GitHub, so its row starts unbound.
+	// The bootstrap admin is named by an email, so its row is bound from the first
+	// write: the address resolves to the account whose assertion signs in.
 	team := server.seedTeam()
-
-	before := rosterRows(t, server.api("GET", "/api/v1/teams/"+team.teamID+"/members",
-		apiOptions{token: team.admin.accessToken}))
 	adminID := stringField(team.admin.member, "id")
-	if raw, present := before[adminID]["account_user_id"]; !present || raw != nil {
-		t.Fatalf("an unbound member is not an explicit null: %v (present %t)", raw, present)
+
+	roster := rosterRows(t, server.api("GET", "/api/v1/teams/"+team.teamID+"/members",
+		apiOptions{token: team.admin.accessToken}))
+	if value := stringField(roster[adminID], "account_user_id"); value != accountSubject {
+		t.Fatalf("the bootstrap admin reports %q, want %q", value, accountSubject)
 	}
 
-	server.bindAccount(team.admin.accessToken, key)
+	// A member carried by a GitHub identity alone carries no binding, and the wire
+	// says so with an explicit null rather than an absent field.
+	late := server.unboundMemberAndLogin(team.teamID, "hubot")
+	lateID := stringField(late.member, "id")
+	unbound := rosterRows(t, server.api("GET", "/api/v1/teams/"+team.teamID+"/members",
+		apiOptions{token: team.admin.accessToken}))
+	if raw, present := unbound[lateID]["account_user_id"]; !present || raw != nil {
+		t.Fatalf("an unbound member is not an explicit null: %v (present %t)", raw, present)
+	}
+	lateSub := "acct_late_joiner"
+	linked := server.api("POST", "/auth/account/link", apiOptions{
+		token: late.accessToken,
+		body:  map[string]any{"assertion": key.assertion(t, assertionOptions{sub: lateSub})},
+	})
+	if linked.status != http.StatusOK {
+		t.Fatalf("account link: %d %s", linked.status, linked.text)
+	}
 
 	// An invite names an email; the account service resolves it and the row lands
 	// bound, which is what lets the invitee sign in at all.
@@ -84,13 +101,13 @@ func TestMemberRowsExposeTheAccountBinding(t *testing.T) {
 		t.Fatalf("an invited row is not active: %s", invited.text)
 	}
 
-	roster := rosterRows(t, server.api("GET", "/api/v1/teams/"+team.teamID+"/members",
+	roster = rosterRows(t, server.api("GET", "/api/v1/teams/"+team.teamID+"/members",
 		apiOptions{token: team.admin.accessToken}))
-	if len(roster) != 2 {
+	if len(roster) != 3 {
 		t.Fatalf("roster size %d", len(roster))
 	}
-	if value := stringField(roster[adminID], "account_user_id"); value != accountSubject {
-		t.Fatalf("the bound row reports %q, want %q", value, accountSubject)
+	if value := stringField(roster[lateID], "account_user_id"); value != lateSub {
+		t.Fatalf("the linked row reports %q, want %q", value, lateSub)
 	}
 	invitedID := stringField(invitedRow, "id")
 	if value := stringField(roster[invitedID], "account_user_id"); value != inviteeSub {
@@ -122,6 +139,15 @@ func TestMemberRowsExposeTheAccountBinding(t *testing.T) {
 	}
 	assertExposedKeys(t, "the account sign-in", signInRow)
 
+	lateSignIn := server.signInAssertion(t, key.assertion(t, assertionOptions{sub: lateSub}))
+	if lateSignIn.status != http.StatusOK {
+		t.Fatalf("the linked account signs in: %d %s", lateSignIn.status, lateSignIn.text)
+	}
+	lateRow, _ := lateSignIn.body["member"].(map[string]any)
+	if stringField(lateRow, "id") != lateID {
+		t.Fatalf("the linked account signed in as %v: %s", lateRow["id"], lateSignIn.text)
+	}
+
 	adminSignIn := server.signInAssertion(t, key.assertion(t, assertionOptions{}))
 	if adminSignIn.status != http.StatusOK {
 		t.Fatalf("admin sign-in: %d %s", adminSignIn.status, adminSignIn.text)
@@ -129,5 +155,8 @@ func TestMemberRowsExposeTheAccountBinding(t *testing.T) {
 	adminRow, _ := adminSignIn.body["member"].(map[string]any)
 	if stringField(adminRow, "id") != adminID {
 		t.Fatalf("the admin signed in as %v: %s", adminRow["id"], adminSignIn.text)
+	}
+	if stringField(adminRow, "role") != "admin" {
+		t.Fatalf("the admin signed in as %v: %s", adminRow["role"], adminSignIn.text)
 	}
 }
