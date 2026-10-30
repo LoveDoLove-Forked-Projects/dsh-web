@@ -11,6 +11,7 @@ import { LIANGSHEN_PRESET_ID } from './core/subtask.ts'
 import { workspaceOwningSession } from './core/workspace-target.ts'
 import { PowerInhibitor } from './power-inhibitor.ts'
 import { TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardEventPayload, type TaskBoardSnapshot } from './protocol.ts'
+import { projectSnapshotForWire } from './core/wire-projection.ts'
 import type { CardDefaults } from './core/card-defaults.ts'
 import { TaskBoardExtensionRegistry } from './host/extension-registry.ts'
 import type { TaskBoardExtension } from './core/extension.ts'
@@ -451,11 +452,20 @@ export class TaskBoardHostService {
     this.emit()
   }
 
+  /**
+   * The board's published snapshot.
+   *
+   * Every read path serializes this object — the HTTP `state` answer, the
+   * `action` answer through {@link apply}, and the remote bridge's
+   * `board.snapshot` — so a provider's integration credentials are stripped
+   * once, here, instead of at each exit. The ledger keeps them verbatim for the
+   * provider's own in-process read.
+   */
   snapshot(): TaskBoardSnapshot {
     const state = this.ledger.state()
     const published = this.extensions.published()
     const cardDefaults = cardDefaultsOf(this.cardDefaults())
-    return {
+    return projectSnapshotForWire({
       schemaVersion: TASK_BOARD_SCHEMA_VERSION,
       revision: state.revision,
       tasks: state.tasks,
@@ -472,7 +482,7 @@ export class TaskBoardHostService {
       // re-reads them for the create it submits.
       ...(cardDefaults === undefined ? {} : { cardDefaults }),
       ...(Object.keys(published).length === 0 ? {} : { extensions: published }),
-    }
+    })
   }
 
   /**
@@ -565,7 +575,10 @@ export class TaskBoardHostService {
     if (action.kind === 'extension-action') {
       return this.handleExtensionAction(action)
     }
-    return this.applyBoardAction(requestId, action, initiator)
+    // The answer to a write is a read like any other — it crosses the same wire
+    // (the HTTP action route and the remote bridge's board.apply) — so it leaves
+    // through the same projection as snapshot().
+    return projectSnapshotForWire(this.applyBoardAction(requestId, action, initiator))
   }
 
   /**
