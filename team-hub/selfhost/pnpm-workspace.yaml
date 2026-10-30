@@ -1,0 +1,12 @@
+# This directory is its own pnpm project so installs here never touch the
+# repository root lockfile or team-hub/pnpm-lock.yaml. pnpm discovers the
+# nearest pnpm-workspace.yaml, which is this file, so the lockfile lands beside
+# it at team-hub/selfhost/pnpm-lock.yaml.
+packages:
+  - .
+
+# better-sqlite3 ships a native binding built by its install script, and esbuild
+# unpacks the platform binary its install script downloads.
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true

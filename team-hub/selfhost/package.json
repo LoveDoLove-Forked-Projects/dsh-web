@@ -1,0 +1,29 @@
+{
+  "name": "dsh-team-hub-selfhost",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted Node runtime for the DSH team hub: same HTTP/WebSocket protocol as the Worker, on better-sqlite3, one process, no external services.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "hono": "^4.13.14",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.28.2",
+    "typescript": "~5.7.2",
+    "vitest": "^4.1.11"
+  }
+}
