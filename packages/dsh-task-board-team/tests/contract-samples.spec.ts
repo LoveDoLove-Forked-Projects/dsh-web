@@ -24,6 +24,15 @@ const REST_INTERFACES = [
   'comments.list',
 ]
 
+/**
+ * Samples the hub publishes for its own operators.
+ *
+ * This Host never calls them, but they are part of the frozen directory, so a
+ * deleted or renamed file still fails here instead of narrowing what the hub and
+ * this plugin share.
+ */
+const HUB_SIDE_INTERFACES = ['hub.bootstrap']
+
 /** Every event the hub can push, as `ws-events.json` catalogues them. */
 const HUB_EVENTS = [
   'comment.created',
@@ -51,13 +60,13 @@ describe('published contract samples', () => {
     // Then every interface is published, parses, and describes both halves of its
     // call, and the two WebSocket documents are published alongside them
     expect(samples.present).toBe(true)
-    expect(rest.map(entry => entry.interface).sort()).toEqual([...REST_INTERFACES].sort())
+    expect(rest.map(entry => entry.interface).sort()).toEqual([...REST_INTERFACES, ...HUB_SIDE_INTERFACES].sort())
     for (const sample of rest) {
       expect(typeof sample.path, sample.file + ' declares no path').toBe('string')
       expect(Object.keys(sample.response.body ?? {}).length, sample.file + ' declares no response body').toBeGreaterThan(0)
     }
     expect(samples.samples.map(entry => entry.interface).sort())
-      .toEqual(['websocket.events', 'websocket.handshake', ...REST_INTERFACES].sort())
+      .toEqual(['websocket.events', 'websocket.handshake', ...REST_INTERFACES, ...HUB_SIDE_INTERFACES].sort())
   })
 
   it('operator sees the channel handshake and the event catalogue readable and complete', () => {
