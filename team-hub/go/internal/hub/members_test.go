@@ -14,8 +14,8 @@ import (
 // travel with the binding.
 var memberWireKeys = map[string]bool{
 	"id": true, "team_id": true, "github_user_id": true, "github_username": true,
-	"display_name": true, "avatar_url": true, "account_user_id": true, "role": true,
-	"status": true, "created_at": true, "updated_at": true,
+	"mention_handle": true, "display_name": true, "avatar_url": true, "account_user_id": true,
+	"role": true, "status": true, "created_at": true, "updated_at": true,
 }
 
 func assertExposedKeys(t *testing.T, surface string, row map[string]any) {

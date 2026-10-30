@@ -10,8 +10,9 @@ import (
 // CommentLimitBytes is section 13's comment cap.
 const CommentLimitBytes = 32_768
 
-// mentionPattern is section 7's mention syntax: an at-sign followed by a
-// username or agent name at a word boundary.
+// mentionPattern is section 7's mention syntax: an at-sign followed by a member
+// handle or agent name at a word boundary. No dot is in the class, so the full stop
+// that closes a sentence is not taken for part of the handle.
 var mentionPattern = regexp.MustCompile(`(^|\s)@([a-zA-Z0-9_-]+)`)
 
 // ExtractMentionHandles returns every distinct handle in a comment body.
@@ -36,12 +37,19 @@ type mentionTarget struct {
 }
 
 // resolveMentionTargets resolves each handle against members first, then agents.
+// A member answers to its mention_handle, the one field a comment may name.
+// github_username stays an accepted input because it was the only identifier a
+// mention ever matched, so a body written against an older roster still resolves;
+// a handle always wins when the two disagree. display_name takes no part: it is
+// free text, and two members may well share it.
 func (h *Hub) resolveMentionTargets(teamID, content string) ([]mentionTarget, error) {
 	targets := make([]mentionTarget, 0)
 	for _, handle := range ExtractMentionHandles(content) {
 		member, err := queryMember(h.db,
-			"SELECT "+memberColumns+" FROM members WHERE team_id = ? AND github_username = ? COLLATE NOCASE LIMIT 1",
-			teamID, handle)
+			"SELECT "+memberColumns+" FROM members WHERE team_id = ? "+
+				"AND (mention_handle = ? COLLATE NOCASE OR github_username = ? COLLATE NOCASE) "+
+				"ORDER BY CASE WHEN mention_handle = ? COLLATE NOCASE THEN 0 ELSE 1 END, created_at LIMIT 1",
+			teamID, handle, handle, handle)
 		if err != nil {
 			return nil, err
 		}

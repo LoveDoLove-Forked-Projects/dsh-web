@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -93,6 +95,43 @@ func emailLocalPart(email string) string {
 	return email
 }
 
+// mentionHandleFolds matches every run of characters a mention cannot carry: section
+// 7's [a-zA-Z0-9_-], stored lowercase because resolution folds case. The dot an
+// address holds is not one of them - a handle has to stay distinguishable from the
+// full stop that ends a sentence - so "mei.lin" folds to "mei-lin".
+var mentionHandleFolds = regexp.MustCompile(`[^a-z0-9_-]+`)
+
+// sanitizeMentionHandle folds free text into the characters a mention can carry:
+// lowercase [a-z0-9_-], every run of anything else collapsed into one hyphen, both
+// ends trimmed. Nothing left yields the generic name, because a member without a
+// handle could never be mentioned.
+func sanitizeMentionHandle(raw string) string {
+	handle := strings.Trim(mentionHandleFolds.ReplaceAllString(strings.ToLower(raw), "-"), "-")
+	if handle == "" {
+		return "member"
+	}
+	return handle
+}
+
+// uniqueMentionHandle keeps one team's handles distinct: the base when nobody holds
+// it, and base-2, base-3 ... otherwise. The lookup folds case because a mention does.
+func (h *Hub) uniqueMentionHandle(teamID, base string) (string, error) {
+	candidate := base
+	for suffix := 2; ; suffix++ {
+		var holder string
+		err := h.db.QueryRow(
+			"SELECT id FROM members WHERE team_id = ? AND mention_handle = ? COLLATE NOCASE LIMIT 1",
+			teamID, candidate).Scan(&holder)
+		if err == errNoRows {
+			return candidate, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		candidate = base + "-" + strconv.Itoa(suffix)
+	}
+}
+
 // placeholderGithubIdentity is the inert GitHub identity an email-invited member
 // carries. The members table predates the account service: both github columns
 // are NOT NULL and unique per team, while the identity that signs in now lives in
@@ -136,17 +175,25 @@ func (h *Hub) InviteMember(teamID string, actor *Principal, email, role string, 
 			map[string]any{"member_id": existing.ID})
 	}
 	githubID, githubHandle := placeholderGithubIdentity(account.UserID)
+	// The GitHub columns are the placeholder above and can never be mentioned, so the
+	// address is what names the row a comment may @.
+	mentionHandle, err := h.uniqueMentionHandle(teamID, sanitizeMentionHandle(emailLocalPart(email)))
+	if err != nil {
+		return nil, err
+	}
 	member := &Member{
 		ID: NewID("mem", now), TeamID: teamID, GithubUserID: githubID,
-		GithubUsername: githubHandle, DisplayName: emailLocalPart(email),
-		AccountUserID: strPointer(account.UserID), Role: role, Status: "active",
-		CreatedAt: now, UpdatedAt: now,
+		GithubUsername: githubHandle, MentionHandle: mentionHandle,
+		DisplayName: emailLocalPart(email), AccountUserID: strPointer(account.UserID),
+		Role: role, Status: "active", CreatedAt: now, UpdatedAt: now,
 	}
 	_, err = h.db.Exec(
-		`INSERT INTO members (id, team_id, github_user_id, github_username, display_name, avatar_url,
-		 account_user_id, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.DisplayName,
-		member.AvatarURL, member.AccountUserID, member.Role, member.Status, member.CreatedAt, member.UpdatedAt)
+		`INSERT INTO members (id, team_id, github_user_id, github_username, mention_handle,
+		 display_name, avatar_url, account_user_id, role, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.MentionHandle,
+		member.DisplayName, member.AvatarURL, member.AccountUserID, member.Role, member.Status,
+		member.CreatedAt, member.UpdatedAt)
 	if err != nil {
 		// The partial unique index on account_user_id and a racing invite end with
 		// the same answer the pre-check gives.
@@ -220,11 +267,17 @@ func (h *Hub) BootstrapTeam(teamName, teamSlug, email string, now int64) (map[st
 	// identical in every team it joins.
 	githubID, githubHandle := placeholderGithubIdentity(account.UserID)
 	team := &Team{ID: NewID("team", now), Name: teamName, Slug: teamSlug, CreatedAt: now, UpdatedAt: now}
+	// The first row of an empty team cannot collide, and it derives its handle the way
+	// every later invite does.
+	mentionHandle, err := h.uniqueMentionHandle(team.ID, sanitizeMentionHandle(emailLocalPart(email)))
+	if err != nil {
+		return nil, err
+	}
 	member := &Member{
 		ID: NewID("mem", now), TeamID: team.ID, GithubUserID: githubID,
-		GithubUsername: githubHandle, DisplayName: emailLocalPart(email),
-		AccountUserID: strPointer(account.UserID), Role: "admin", Status: "active",
-		CreatedAt: now, UpdatedAt: now,
+		GithubUsername: githubHandle, MentionHandle: mentionHandle,
+		DisplayName: emailLocalPart(email), AccountUserID: strPointer(account.UserID),
+		Role: "admin", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}
 	// Both inserts repeat the emptiness test and run in one transaction, so two
 	// calls that raced past the check cannot both create a team, and a team never
@@ -240,12 +293,12 @@ func (h *Hub) BootstrapTeam(teamName, teamSlug, email string, now int64) (map[st
 		}
 		teamChanged = changed(result)
 		_, err = tx.Exec(
-			"INSERT INTO members (id, team_id, github_user_id, github_username, display_name, avatar_url, "+
-				"account_user_id, role, status, created_at, updated_at) "+
-				"SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM teams WHERE id = ?)",
-			member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.DisplayName,
-			member.AvatarURL, member.AccountUserID, member.Role, member.Status, member.CreatedAt,
-			member.UpdatedAt, team.ID)
+			"INSERT INTO members (id, team_id, github_user_id, github_username, mention_handle, "+
+				"display_name, avatar_url, account_user_id, role, status, created_at, updated_at) "+
+				"SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM teams WHERE id = ?)",
+			member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.MentionHandle,
+			member.DisplayName, member.AvatarURL, member.AccountUserID, member.Role, member.Status,
+			member.CreatedAt, member.UpdatedAt, team.ID)
 		return err
 	})
 	if err != nil {
@@ -263,6 +316,7 @@ func (h *Hub) BootstrapTeam(teamName, teamSlug, email string, now int64) (map[st
 		"team": map[string]any{"id": team.ID, "name": team.Name, "slug": team.Slug},
 		"member": map[string]any{
 			"id": member.ID, "github_username": member.GithubUsername,
+			"mention_handle":  member.MentionHandle,
 			"account_user_id": account.UserID, "role": "admin",
 		},
 	}, nil

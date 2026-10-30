@@ -83,33 +83,36 @@ func TestApplyMigrationsIsIdempotent(t *testing.T) {
 	}
 	defer database.Close()
 
+	// The count is a guard, not a description: a new file under migrations/ has to be
+	// counted here and in the readyz check on purpose, so a migration cannot slip in
+	// unnoticed. Five is 0001 through 0005.
 	applied, newly, err := ApplyMigrations(database, migrationsDir(t))
 	if err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
-	if len(applied) != 4 || len(newly) != 4 {
-		t.Fatalf("expected four migrations, got applied=%v newly=%v", applied, newly)
+	if len(applied) != 5 || len(newly) != 5 {
+		t.Fatalf("expected five migrations, got applied=%v newly=%v", applied, newly)
 	}
 	again, secondNewly, err := ApplyMigrations(database, migrationsDir(t))
 	if err != nil {
 		t.Fatalf("re-apply migrations: %v", err)
 	}
-	if len(again) != 4 || len(secondNewly) != 0 {
+	if len(again) != 5 || len(secondNewly) != 0 {
 		t.Fatalf("second run was not a no-op: applied=%v newly=%v", again, secondNewly)
 	}
 	done, pending, err := MigrationStatus(database, migrationsDir(t))
 	if err != nil {
 		t.Fatalf("migration status: %v", err)
 	}
-	if len(done) != 4 || len(pending) != 0 {
+	if len(done) != 5 || len(pending) != 0 {
 		t.Fatalf("status wrong: done=%v pending=%v", done, pending)
 	}
 	var rows int
 	if err := database.QueryRow("SELECT COUNT(*) FROM d1_migrations").Scan(&rows); err != nil {
 		t.Fatalf("count ledger: %v", err)
 	}
-	if rows != 4 {
-		t.Fatalf("expected four ledger rows, got %d", rows)
+	if rows != 5 {
+		t.Fatalf("expected five ledger rows, got %d", rows)
 	}
 }
 
@@ -118,7 +121,7 @@ func TestMigrationsComeFromTheRepositoryDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read migrations: %v", err)
 	}
-	if len(entries) != 4 {
-		t.Fatalf("expected the four repository migrations, got %d", len(entries))
+	if len(entries) != 5 {
+		t.Fatalf("expected the five repository migrations, got %d", len(entries))
 	}
 }

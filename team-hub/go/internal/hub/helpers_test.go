@@ -546,7 +546,8 @@ func (h *testHub) inviteAndLogin(teamID, adminToken, handle string) session {
 // unboundMemberAndLogin seeds a member that entered through GitHub and has not
 // bound an account yet, then signs it in through the GitHub flow. The invite and
 // bootstrap routes always bind an account, so the binding rules need the other
-// real shape: a row carried by a GitHub identity alone.
+// real shape: a row carried by a GitHub identity alone, which is a row whose
+// mention handle is its login, exactly as 0005 backfills one.
 func (h *testHub) unboundMemberAndLogin(teamID, handle string) session {
 	h.t.Helper()
 	account, ok := h.fake.accounts[handle]
@@ -556,13 +557,15 @@ func (h *testHub) unboundMemberAndLogin(teamID, handle string) session {
 	now := h.hub.now()
 	member := &Member{
 		ID: NewID("mem", now), TeamID: teamID, GithubUserID: account.ID, GithubUsername: account.Login,
-		DisplayName: account.Name, Role: "member", Status: "active", CreatedAt: now, UpdatedAt: now,
+		MentionHandle: strings.ToLower(account.Login),
+		DisplayName:   account.Name, Role: "member", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := h.hub.DB().Exec(
-		`INSERT INTO members (id, team_id, github_user_id, github_username, display_name, avatar_url,
-		 role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.DisplayName,
-		member.AvatarURL, member.Role, member.Status, member.CreatedAt, member.UpdatedAt); err != nil {
+		`INSERT INTO members (id, team_id, github_user_id, github_username, mention_handle, display_name,
+		 avatar_url, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		member.ID, member.TeamID, member.GithubUserID, member.GithubUsername, member.MentionHandle,
+		member.DisplayName, member.AvatarURL, member.Role, member.Status, member.CreatedAt,
+		member.UpdatedAt); err != nil {
 		h.t.Fatalf("seed an unbound member: %v", err)
 	}
 	return h.login(handle)

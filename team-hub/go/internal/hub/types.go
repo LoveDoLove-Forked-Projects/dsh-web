@@ -26,6 +26,7 @@ type Member struct {
 	TeamID         string
 	GithubUserID   int64
 	GithubUsername string
+	MentionHandle  string
 	DisplayName    string
 	AvatarURL      *string
 	AccountUserID  *string
@@ -35,14 +36,14 @@ type Member struct {
 	UpdatedAt      int64
 }
 
-const memberColumns = `id, team_id, github_user_id, github_username, display_name, avatar_url,
-	account_user_id, role, status, created_at, updated_at`
+const memberColumns = `id, team_id, github_user_id, github_username, mention_handle, display_name,
+	avatar_url, account_user_id, role, status, created_at, updated_at`
 
 func scanMember(sc scanner) (*Member, error) {
 	member := &Member{}
 	var avatar, account sql.NullString
 	err := sc.Scan(&member.ID, &member.TeamID, &member.GithubUserID, &member.GithubUsername,
-		&member.DisplayName, &avatar, &account, &member.Role, &member.Status,
+		&member.MentionHandle, &member.DisplayName, &avatar, &account, &member.Role, &member.Status,
 		&member.CreatedAt, &member.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -393,12 +394,14 @@ func scanOAuthState(sc scanner) (*OAuthState, error) {
 
 // MemberView is a member as section 9 exposes it; no token material. The
 // account binding is the opaque subject only, never the account's email, name
-// or credentials.
+// or credentials. mention_handle is the name a comment may @; it travels because a
+// client has to render the one identifier that resolves, which display_name is not.
 type MemberView struct {
 	ID             string  `json:"id"`
 	TeamID         string  `json:"team_id"`
 	GithubUserID   int64   `json:"github_user_id"`
 	GithubUsername string  `json:"github_username"`
+	MentionHandle  string  `json:"mention_handle"`
 	DisplayName    string  `json:"display_name"`
 	AvatarURL      *string `json:"avatar_url"`
 	AccountUserID  *string `json:"account_user_id"`
@@ -575,7 +578,7 @@ func derefInt(value *int64) int64 {
 func toMemberView(row *Member) MemberView {
 	return MemberView{
 		ID: row.ID, TeamID: row.TeamID, GithubUserID: row.GithubUserID,
-		GithubUsername: row.GithubUsername, DisplayName: row.DisplayName,
+		GithubUsername: row.GithubUsername, MentionHandle: row.MentionHandle, DisplayName: row.DisplayName,
 		AvatarURL: row.AvatarURL, AccountUserID: row.AccountUserID, Role: row.Role,
 		Status: row.Status, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}

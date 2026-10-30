@@ -28,7 +28,8 @@ func TestHealthAndReadiness(t *testing.T) {
 		t.Fatalf("readyz database: %s", ready.text)
 	}
 	migrations, _ := ready.body["migrations"].(map[string]any)
-	if numberField(migrations, "applied") != 4 {
+	// Same guard as config_test: 0001 through 0005.
+	if numberField(migrations, "applied") != 5 {
 		t.Fatalf("readyz migrations: %s", ready.text)
 	}
 	if pending, ok := migrations["pending"].([]any); !ok || len(pending) != 0 {
@@ -413,9 +414,9 @@ func TestReviewRejectionReturnsCardToBoundHost(t *testing.T) {
 func TestCommentsAuditFeedAndInbox(t *testing.T) {
 	server := startTestHub(t)
 	team := server.seedTeam()
-	// A member bound to an account carries the "account:" placeholder handle, which
-	// a mention cannot express, so the mention legs need the other member shape: a
-	// row carried by a GitHub identity.
+	// A member bound to an account keeps the "account:" placeholder in github_username,
+	// which a mention cannot express; what a mention names is mention_handle, and this
+	// row is the GitHub shape, whose handle is its login.
 	mentioned := server.unboundMemberAndLogin(team.teamID, "octocat")
 	mentionedID := stringField(mentioned.member, "id")
 	other := server.inviteAndLogin(team.teamID, team.admin.accessToken, "hubot")

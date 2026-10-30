@@ -64,6 +64,7 @@ Upon successful GitHub authentication, the Hub issues a dual-token pair. Both th
     "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
     "github_user_id": 1234567,
     "github_username": "octocat",
+    "mention_handle": "octocat",
     "display_name": "Mona Lisa Octocat",
     "avatar_url": "https://avatars.githubusercontent.com/u/1234567",
     "account_user_id": "acct_01j7b5w8m4f9q2e3r6t1y8u4id",
@@ -78,6 +79,8 @@ Upon successful GitHub authentication, the Hub issues a dual-token pair. Both th
 `account_user_id` is the Whale account subject bound to this membership, and `null` while the member is unlinked; it is read-only and never takes part in an authorization decision. The field is a backward-compatible addition - a client that predates it ignores it - and it is the only account-service attribute exposed here: no email, no account display name, no token.
 
 A member invited by email is created already bound, because `account_user_id` is what sign-in matches. `github_user_id` and `github_username` are legacy identity columns: they are `NOT NULL` and unique per team, so an email-invited row carries a reserved placeholder instead of a GitHub identity - a negative `github_user_id` (real GitHub ids are positive) and a `github_username` prefixed `account:` (a colon is not legal in a GitHub login). Neither value identifies a GitHub account, and a client must not resolve or display them as one.
+
+`mention_handle` is the name a comment can `@` (section 7), and the only field mention resolution reads: lowercase `[a-z0-9_-]`, unique within its team, matched case-insensitively. A GitHub identity member takes its login. An email-invited member takes the local part of its address with every run of any other character folded into one `-` and both ends trimmed - `mei.lin@example.com` is mentioned as `mei-lin`, because the dot a mention cannot carry and the full stop that ends a sentence are the same character - and `member` when nothing survives; a name its team already answers to counts up `-2`, `-3`. `display_name` stays free text and takes no part in resolution, and two members may share it. The `account:` placeholder above stays a placeholder - a mention can never carry a colon, and a client that wants to show a name to type reads `mention_handle` instead.
 
 The `expires_in` field returned by `POST /auth/token` and `POST /auth/refresh` represents the access token lifetime in seconds (`7200`, corresponding to 2 hours), following OAuth 2.0 convention (RFC 6749). Clients MUST process and calculate expiration in seconds.
 
@@ -105,6 +108,7 @@ Response (`200 OK`):
     "team_id": "team_01j7b5w8m4f9q2e3r6t1y8u4i5",
     "github_user_id": 1234567,
     "github_username": "octocat",
+    "mention_handle": "octocat",
     "display_name": "Mona Lisa Octocat",
     "avatar_url": "https://avatars.githubusercontent.com/u/1234567",
     "account_user_id": "acct_01j7b5w8m4f9q2e3r6t1y8u4id",
@@ -168,6 +172,7 @@ Response (`201 Created`):
   "member": {
     "id": "mem_01j7b5w8m4f9q2e3r6t1y8u4i6",
     "github_username": "account:acct_01j7b5w8m4f9q2e3r6t1y8u4id",
+    "mention_handle": "admin",
     "account_user_id": "acct_01j7b5w8m4f9q2e3r6t1y8u4id",
     "role": "admin"
   }
@@ -625,12 +630,14 @@ Tool execution permission approvals (such as `approval/request`, terminal comman
 The comment stream supports collaboration between human members and autonomous agents.
 
 ### Mention Syntax and Resolution
-Comments are formatted in Markdown. Mentions are parsed using the regular expression `/(?:^|\s)@([a-zA-Z0-9_-]+)/`.
+Comments are formatted in Markdown. Mentions are parsed using the regular expression `/(?:^|\s)@([a-zA-Z0-9_-]+)/`. A handle carries no dot, so the full stop that closes a sentence is not read as part of the one above.
 
 | Target Type | Identifier | Delivery Mechanism |
 | --- | --- | --- |
-| Human Member | GitHub username | Hub emits WebSocket event `comment.created` and APNs notification with category `mentioned`. |
+| Human Member | `mention_handle`; `github_username` is accepted as well, and a match on either one resolves the member. Both fold case, and a handle wins when the two disagree. | Hub emits WebSocket event `comment.created` and APNs notification with category `mentioned`. |
 | Agent | Agent name | Hub resolves the agent's bound Host, emits WebSocket event `comment.mentioned` to that Host. |
+
+A handle no member and no agent answers to is not a mention: the comment is stored and no `comment_mentions` row is written for it.
 
 When a comment is written (via `POST /api/v1/teams/:teamId/issues/:issueId/comments`), the Hub parses `@` mentions in the same D1 batch transaction as the comment creation, resolving targets and writing records into `comment_mentions`:
 - For mentioned human members: `target_type = 'member'`, `target_member_id = member.id`, `read_at = NULL`.
@@ -718,7 +725,7 @@ All HTTP requests and responses use JSON format with UTF-8 encoding.
 | `POST` | `/auth/token` | Public | `{ code, code_verifier, redirect_uri }` | `{ access_token, refresh_token, token_type, expires_in, member: Member }` | 200, 400 | `INVALID_PKCE`, `INVALID_OAUTH_CODE` |
 | `POST` | `/auth/refresh` | Public | `{ refresh_token }` | `{ access_token, refresh_token, token_type, expires_in, member: Member }` | 200, 401 | `INVALID_REFRESH_TOKEN` |
 | `POST` | `/auth/revoke` | Member | `{ refresh_token }` | `{ ok: true }` | 200, 401 | `UNAUTHORIZED` |
-| `POST` | `/api/v1/bootstrap` | Public (`X-Bootstrap-Token`) | `{ team_name, team_slug, email }` | `{ team: { id, name, slug }, member: { id, github_username, account_user_id, role } }` | 201, 400, 401, 404, 409, 502, 503 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `USER_NOT_FOUND`, `CONFLICT`, `ACCOUNT_UNAVAILABLE`, `NOT_CONFIGURED` |
+| `POST` | `/api/v1/bootstrap` | Public (`X-Bootstrap-Token`) | `{ team_name, team_slug, email }` | `{ team: { id, name, slug }, member: { id, github_username, mention_handle, account_user_id, role } }` | 201, 400, 401, 404, 409, 502, 503 | `VALIDATION_FAILED`, `UNAUTHORIZED`, `USER_NOT_FOUND`, `CONFLICT`, `ACCOUNT_UNAVAILABLE`, `NOT_CONFIGURED` |
 | `GET` | `/api/v1/me` | Member | None | `{ member: Member, teams: [{ team_id, role }] }` | 200, 401 | `UNAUTHORIZED` |
 | `GET` | `/api/v1/teams/:teamId/inbox` | Member | None | `{ assigned: Issue[], review: Issue[], questions: Question[], mentions: [{ comment: Comment, issue_id }] }` | 200, 401, 403 | `UNAUTHORIZED`, `FORBIDDEN` |
 | `POST` | `/api/v1/teams/:teamId/inbox/mentions/:commentId/read` | Member | None | `{ ok: true }` | 200, 401, 403, 404 | `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND` |
