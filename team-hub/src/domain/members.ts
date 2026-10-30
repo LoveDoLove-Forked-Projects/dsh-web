@@ -89,6 +89,7 @@ export async function inviteMember(
     github_username: profile.login,
     display_name: profile.name ?? profile.login,
     avatar_url: profile.avatar_url,
+    account_user_id: null,
     role: body.role,
     status: 'invited',
     created_at: now,

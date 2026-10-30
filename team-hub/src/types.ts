@@ -19,6 +19,8 @@ export interface MemberRow {
   github_username: string
   display_name: string
   avatar_url: string | null
+  /** Account service user id the member bound; null while the binding is still missing. */
+  account_user_id: string | null
   role: 'admin' | 'member'
   status: 'invited' | 'active' | 'suspended'
   created_at: number

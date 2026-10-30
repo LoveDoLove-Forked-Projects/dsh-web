@@ -32,6 +32,7 @@ import {
   type Principal,
 } from './auth/session'
 import { GITHUB_CALLBACK_PATH } from './outbound'
+import { linkAccountIdentity, signInWithAccountAssertion } from './auth/account'
 import { beginAuthorize, completeAuthorizationCode, handleCallback, sessionCookies } from './auth/github'
 import { requireBootstrapToken } from './auth/bootstrap'
 import { consumeQuota } from './rate-limit'
@@ -159,6 +160,22 @@ const ROUTES: Route[] = [
     if (presented === null || presented === '') fail('UNAUTHORIZED', 'refresh_token is required.')
     await revokeSession(env, presented, now)
     return ok()
+  }),
+  // The assertion is the credential itself: on the first login through the
+  // account service no hub session exists yet. A verified assertion opens a
+  // session for a member that is already bound to it and never creates one.
+  route('POST', '/auth/account', 'public', async ({ request, env, now }) => {
+    const body = await readJsonBody(request)
+    const result = await signInWithAccountAssertion(env, requireString(body, 'assertion'), now)
+    return json({ ...result.tokens, member: toMemberView(result.member) })
+  }),
+  // Transition entry: a member that signed in through GitHub binds the account
+  // that becomes their only identity once GitHub login is retired.
+  route('POST', '/auth/account/link', 'member', async ({ request, env, principal, now }) => {
+    const actor = memberPrincipal(principal)
+    const body = await readJsonBody(request)
+    const member = await linkAccountIdentity(env, actor.member, requireString(body, 'assertion'), now)
+    return json({ member: toMemberView(member) })
   }),
 
   route('POST', '/api/v1/bootstrap', 'public', async ({ request, env, now }) => {

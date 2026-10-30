@@ -1,7 +1,7 @@
 import { env as workerEnv } from 'cloudflare:workers'
 import worker from '../src/index'
 import { issueSession } from '../src/auth/session'
-import { newId } from '../src/ids'
+import { newId, randomHex } from '../src/ids'
 import { PROTOCOL_HEADER, PROTOCOL_VERSION } from '../src/constants'
 import type { InjectableOutbound, OutboundTransport } from '../src/outbound'
 import type { AgentRow, HostRow, MemberRow } from '../src/types'
@@ -120,6 +120,7 @@ export async function seedTeam(env: Env, now: number = T0): Promise<SeededTeam> 
     github_username: 'octocat',
     display_name: 'Octo Cat',
     avatar_url: null,
+    account_user_id: null,
     role: 'admin',
     status: 'active',
     created_at: now,
@@ -132,6 +133,7 @@ export async function seedTeam(env: Env, now: number = T0): Promise<SeededTeam> 
     github_username: 'hubot',
     display_name: 'Hub Ot',
     avatar_url: null,
+    account_user_id: null,
     role: 'member',
     status: 'active',
     created_at: now,
@@ -191,6 +193,7 @@ export async function seedExtraMember(
     github_username: options.username,
     display_name: options.username,
     avatar_url: null,
+    account_user_id: null,
     role: options.role ?? 'member',
     status: 'active',
     created_at: now,
@@ -326,6 +329,8 @@ export function apnsHandler(options: { unregistered?: string[] } = {}): (call: R
 export interface ExternalOptions {
   github: GithubFakeOptions
   apns?: { unregistered?: string[] }
+  /** JWKS the account service publishes; omit it to serve an unconfigured one. */
+  account?: { jwks: unknown }
 }
 
 /** One transport serving both external services, recording every request. */
@@ -336,6 +341,10 @@ export function externalTransport(options: ExternalOptions): RecordedTransport {
     const host = new URL(call.url).host
     if (host === 'github.com' || host === 'api.github.com') return github(call)
     if (host === 'api.push.apple.com' || host === 'api.sandbox.push.apple.com') return apns(call)
+    if (host === 'account.example') {
+      if (options.account === undefined) return Response.json({ error: 'not_configured' }, { status: 503 })
+      return Response.json(options.account.jwks)
+    }
     return Response.json({ message: 'unexpected outbound host ' + host }, { status: 404 })
   })
 }
@@ -411,3 +420,76 @@ export async function webAuthorize(
   const cookie = raw.split(';')[0] ?? ''
   return { state, cookie }
 }
+
+/** Account service settings the hub reads; the tests fake the host they name. */
+export const ACCOUNT_JWKS_URL = 'https://account.example/v1/keys'
+export const ACCOUNT_ISSUER = 'https://account.example'
+export const ACCOUNT_AUDIENCE = 'dsh-team-hub'
+
+export interface AccountKey {
+  kid: string
+  privateKey: CryptoKey
+  publicJwk: JsonWebKey
+}
+
+/** A real P-256 key pair: assertions are signed for real and verified for real. */
+export async function accountKey(kid = 'account-test-kid'): Promise<AccountKey> {
+  const pair = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair
+  const publicJwk = (await crypto.subtle.exportKey('jwk', pair.publicKey)) as JsonWebKey
+  return { kid, privateKey: pair.privateKey, publicJwk }
+}
+
+/** The JWKS document the account service publishes for that key. */
+export function accountJwks(key: AccountKey): { keys: Record<string, string>[] } {
+  return {
+    keys: [
+      {
+        kty: 'EC',
+        crv: 'P-256',
+        kid: key.kid,
+        alg: 'ES256',
+        x: key.publicJwk.x as string,
+        y: key.publicJwk.y as string,
+      },
+    ],
+  }
+}
+
+export interface AssertionOptions {
+  sub?: string
+  /** Header kid; differs from the signing key's own kid only in the negative cases. */
+  kid?: string
+  iss?: string
+  aud?: string
+  /** Millisecond instant the assertion is issued at; defaults to T0. */
+  now?: number
+  /** Lifetime in seconds; a negative value produces an already expired assertion. */
+  ttl?: number
+}
+
+/** Sign one ES256 assertion with the claims the account service issues. */
+export async function accountAssertion(key: AccountKey, options: AssertionOptions = {}): Promise<string> {
+  const iat = Math.floor((options.now ?? T0) / 1000)
+  const header = { alg: 'ES256', typ: 'JWT', kid: options.kid ?? key.kid }
+  const claims = {
+    iss: options.iss ?? ACCOUNT_ISSUER,
+    aud: options.aud ?? ACCOUNT_AUDIENCE,
+    sub: options.sub ?? 'acct_hubot',
+    name: 'Account Holder',
+    iat,
+    exp: iat + (options.ttl ?? 300),
+    jti: randomHex(8),
+  }
+  const encode = (value: unknown) => base64urlOf(new TextEncoder().encode(JSON.stringify(value)))
+  const signingInput = encode(header) + '.' + encode(claims)
+  const signature = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key.privateKey,
+    new TextEncoder().encode(signingInput),
+  )
+  return signingInput + '.' + base64urlOf(new Uint8Array(signature))
+}
+

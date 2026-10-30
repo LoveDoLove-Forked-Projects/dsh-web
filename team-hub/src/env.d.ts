@@ -23,6 +23,12 @@ interface Env {
   APNS_BUNDLE_ID: string
   /** PEM encoded EC private key for APNs provider tokens. */
   APNS_PRIVATE_KEY_P8: string
+  /** JWKS document of the account service; absent closes POST /auth/account. */
+  ACCOUNT_JWKS_URL?: string
+  /** Issuer the account service stamps on its assertions. */
+  ACCOUNT_ISSUER?: string
+  /** Audience this hub accepts on an assertion. */
+  ACCOUNT_AUDIENCE?: string
 }
 
 declare namespace Cloudflare {
@@ -35,5 +41,8 @@ declare namespace Cloudflare {
     APNS_TEAM_ID: string
     APNS_BUNDLE_ID: string
     APNS_PRIVATE_KEY_P8: string
+    ACCOUNT_JWKS_URL?: string
+    ACCOUNT_ISSUER?: string
+    ACCOUNT_AUDIENCE?: string
   }
 }

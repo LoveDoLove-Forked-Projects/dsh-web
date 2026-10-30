@@ -31,6 +31,9 @@ export type ErrorCode =
   | 'HOST_NOT_FOUND'
   | 'ISSUE_NOT_FOUND'
   | 'NOT_CONFIGURED'
+  | 'NOT_LINKED'
+  | 'IDENTITY_TAKEN'
+  | 'ACCOUNT_UNAVAILABLE'
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
   UNAUTHORIZED: 401,
@@ -58,6 +61,9 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   HOST_NOT_FOUND: 404,
   ISSUE_NOT_FOUND: 404,
   NOT_CONFIGURED: 503,
+  NOT_LINKED: 409,
+  IDENTITY_TAKEN: 409,
+  ACCOUNT_UNAVAILABLE: 502,
 }
 
 export class HubError extends Error {

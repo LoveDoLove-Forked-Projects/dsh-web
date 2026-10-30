@@ -16,7 +16,7 @@ supplied by the operator.
 | --- | --- |
 | `src/index.ts` | Worker entry: request boundary, error envelope, cron sweep |
 | `src/router.ts` | Route table, protocol version gate, role matrix, quotas |
-| `src/auth/` | GitHub OAuth (Web code flow and iOS PKCE), session and Host tokens |
+| `src/auth/` | GitHub OAuth (Web code flow and iOS PKCE), account-service assertions, session and Host tokens |
 | `src/domain/` | Issues, leases, questions, comments, inbox, hosts, members, sweep |
 | `src/durable/team-channel.ts` | One Durable Object per team: sequence, replay buffer, sockets |
 | `src/push/apns.ts` | APNs provider JWT (ES256, cached 50 minutes) and delivery |
@@ -38,8 +38,9 @@ pnpm typecheck   # tsc --noEmit
 pnpm types       # regenerate .cloudflare/types/index.d.ts from cloudflare.config.ts
 ```
 
-Outbound HTTP to GitHub and APNs is injected through the environment in tests
-(`TEAM_HUB_OUTBOUND`), so the suite never reaches the network.
+Outbound HTTP to GitHub, APNs and the account service JWKS is injected through the
+environment in tests (`TEAM_HUB_OUTBOUND`), so the suite never reaches the
+network.
 
 ## Deployment prerequisites
 
@@ -106,6 +107,28 @@ cf workers secrets update BOOTSTRAP_TOKEN --worker dsh-team-hub --text <value>
 [Deployment](#deployment); generate it with the rest, for example
 `openssl rand -hex 32`.
 
+### 6. Account service trust
+
+The hub trusts short-lived assertions signed by the Whale account service. Three
+settings, stored the same way as the client id above: none of them is a secret,
+and the hub declares no plain variables at all.
+
+| Setting | Value |
+| --- | --- |
+| `ACCOUNT_JWKS_URL` | the account service JWKS document, `https://account.dsh-market.com/v1/keys` |
+| `ACCOUNT_ISSUER` | the account service origin, `https://account.dsh-market.com` |
+| `ACCOUNT_AUDIENCE` | `dsh-team-hub` |
+
+```sh
+cf workers secrets update ACCOUNT_JWKS_URL --worker dsh-team-hub --text https://account.dsh-market.com/v1/keys
+cf workers secrets update ACCOUNT_ISSUER --worker dsh-team-hub --text https://account.dsh-market.com
+cf workers secrets update ACCOUNT_AUDIENCE --worker dsh-team-hub --text dsh-team-hub
+```
+
+Any one of them missing closes `POST /auth/account` and `POST /auth/account/link`
+with `503 NOT_CONFIGURED`. The GitHub flow reads none of them, so leaving them
+out cannot break it.
+
 ## Deployment
 
 ```sh
@@ -156,6 +179,38 @@ Deleting the secret afterwards is optional; it turns the answer into
 | `404 USER_NOT_FOUND` | GitHub has no user with that login |
 | `409 CONFLICT` | the hub already has a team; bootstrap has already run |
 | `201` | the team and its first admin were created |
+
+## Sign-in
+
+Two paths reach a member, and only one of them will survive the transition.
+
+**Account service (the destination).** `POST /auth/account { assertion }` is the
+credential itself. The JWT is signed with ES256 by the account service, its
+header names a `kid` that the JWKS at `ACCOUNT_JWKS_URL` publishes, and its claims
+must name `ACCOUNT_ISSUER` as `iss`, `ACCOUNT_AUDIENCE` as `aud`, an `exp` still
+ahead of the hub clock, and the account user id as `sub`. A verified assertion
+opens the existing session pair (`access_token` / `refresh_token` /
+`expires_in`) for the member whose `account_user_id` equals `sub`, and touches that
+row's `updated_at`, which is the only last-seen timestamp the section 3 schema
+gives a member. It never creates a member: an account no member has bound answers
+`409 NOT_LINKED`, every failed check answers `401 UNAUTHORIZED`, and a JWKS
+document that cannot be fetched answers `502 ACCOUNT_UNAVAILABLE` (an upstream
+fault, not a bad assertion).
+
+**GitHub (the transition entry point).** `GET /auth/github/authorize`,
+`GET /auth/github/callback` and `POST /auth/token` are unchanged, and a member that
+signs in that way calls `POST /auth/account/link { assertion }` with their hub
+session to bind `account_user_id`. An account another member already holds is
+`409 IDENTITY_TAKEN`, repeating the same binding is a no-op, and a member that
+already carries another account is `409 CONFLICT` — rebinding would silently move
+an identity between people.
+
+Retirement: once every member has bound an account, GitHub login leaves by
+deleting those three routes, `POST /auth/account/link` and `src/auth/github.ts`.
+`/auth/refresh` and `/auth/revoke` stay: they rotate and revoke a session, they do
+not mint an identity. `members.github_user_id` and `members.github_username`
+outlive the routes for now, because section 3 makes both `NOT NULL`; relaxing
+them is a schema change of its own.
 
 ## Deviations from PROTOCOL.md
 
@@ -264,3 +319,14 @@ needed something the document does not state, each kept additive and small.
     secret, and the `apns-topic` header always carries the registered
     `bundle_id`, so a device registered for a different bundle is still
     addressed correctly.
+14. **Account-service identity.** PROTOCOL.md defines session tokens the hub mints
+    itself and no identity provider at all. `POST /auth/account` accepts a
+    short-lived ES256 assertion signed by the account service (`ACCOUNT_JWKS_URL`,
+    `ACCOUNT_ISSUER`, `ACCOUNT_AUDIENCE`), resolves the member whose
+    `members.account_user_id` equals its `sub`, and issues the existing session
+    pair; it refuses with `409 NOT_LINKED` rather than creating a member.
+    `POST /auth/account/link` performs that binding from a session that entered
+    through GitHub, which stays as the transition entry point. The only storage
+    this adds is `members.account_user_id` with a partial unique index
+    (`migrations/0004_account_identity.sql`), and a member's last-seen time is that
+    row's `updated_at` because section 3 has no separate column for it.

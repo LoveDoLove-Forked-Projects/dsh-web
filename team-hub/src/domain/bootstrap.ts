@@ -42,6 +42,7 @@ export async function bootstrapTeam(env: Env, body: BootstrapBody, now: number):
     github_username: profile.login,
     display_name: profile.name ?? profile.login,
     avatar_url: profile.avatar_url,
+    account_user_id: null,
     role: 'admin',
     status: 'active',
     created_at: now,
