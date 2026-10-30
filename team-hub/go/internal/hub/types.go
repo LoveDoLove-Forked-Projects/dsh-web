@@ -391,7 +391,9 @@ func scanOAuthState(sc scanner) (*OAuthState, error) {
 
 // ---- wire views (PROTOCOL.md section 9) ----
 
-// MemberView is a member as section 9 exposes it; no token material.
+// MemberView is a member as section 9 exposes it; no token material. The
+// account binding is the opaque subject only, never the account's email, name
+// or credentials.
 type MemberView struct {
 	ID             string  `json:"id"`
 	TeamID         string  `json:"team_id"`
@@ -399,6 +401,7 @@ type MemberView struct {
 	GithubUsername string  `json:"github_username"`
 	DisplayName    string  `json:"display_name"`
 	AvatarURL      *string `json:"avatar_url"`
+	AccountUserID  *string `json:"account_user_id"`
 	Role           string  `json:"role"`
 	Status         string  `json:"status"`
 	CreatedAt      int64   `json:"created_at"`
@@ -573,8 +576,8 @@ func toMemberView(row *Member) MemberView {
 	return MemberView{
 		ID: row.ID, TeamID: row.TeamID, GithubUserID: row.GithubUserID,
 		GithubUsername: row.GithubUsername, DisplayName: row.DisplayName,
-		AvatarURL: row.AvatarURL, Role: row.Role, Status: row.Status,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		AvatarURL: row.AvatarURL, AccountUserID: row.AccountUserID, Role: row.Role,
+		Status: row.Status, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
 

@@ -66,6 +66,7 @@ Upon successful GitHub authentication, the Hub issues a dual-token pair. Both th
     "github_username": "octocat",
     "display_name": "Mona Lisa Octocat",
     "avatar_url": "https://avatars.githubusercontent.com/u/1234567",
+    "account_user_id": "acct_01j7b5w8m4f9q2e3r6t1y8u4id",
     "role": "member",
     "status": "active",
     "created_at": 1700000000000,
@@ -73,6 +74,8 @@ Upon successful GitHub authentication, the Hub issues a dual-token pair. Both th
   }
 }
 ```
+
+`account_user_id` is the Whale account subject bound to this membership, and `null` while the member is unlinked; it is read-only and never takes part in an authorization decision. The field is a backward-compatible addition - a client that predates it ignores it - and it is the only account-service attribute exposed here: no email, no account display name, no token.
 
 The `expires_in` field returned by `POST /auth/token` and `POST /auth/refresh` represents the access token lifetime in seconds (`7200`, corresponding to 2 hours), following OAuth 2.0 convention (RFC 6749). Clients MUST process and calculate expiration in seconds.
 
@@ -102,6 +105,7 @@ Response (`200 OK`):
     "github_username": "octocat",
     "display_name": "Mona Lisa Octocat",
     "avatar_url": "https://avatars.githubusercontent.com/u/1234567",
+    "account_user_id": "acct_01j7b5w8m4f9q2e3r6t1y8u4id",
     "role": "member",
     "status": "active",
     "created_at": 1700000000000,
