@@ -87,7 +87,7 @@ repository or in `cloudflare.config.ts`.
 
 ### 4. Hub signing key
 
-`TEAM_HUB_SIGNING_SECRET` is an HMAC key the hub uses to sign OAuth state and
+`TEAM_HUB_SESSION_KEY` is an HMAC key the hub uses to sign OAuth state and
 session access tokens. Generate one, for example `openssl rand -hex 32`.
 
 ### 5. Secrets
@@ -95,7 +95,7 @@ session access tokens. Generate one, for example `openssl rand -hex 32`.
 ```sh
 cf workers secrets update GITHUB_CLIENT_ID --worker dsh-team-hub --text <value>
 cf workers secrets update GITHUB_CLIENT_SECRET --worker dsh-team-hub --text <value>
-cf workers secrets update TEAM_HUB_SIGNING_SECRET --worker dsh-team-hub --text <value>
+cf workers secrets update TEAM_HUB_SESSION_KEY --worker dsh-team-hub --text <value>
 cf workers secrets update APNS_KEY_ID --worker dsh-team-hub --text <value>
 cf workers secrets update APNS_TEAM_ID --worker dsh-team-hub --text <value>
 cf workers secrets update APNS_BUNDLE_ID --worker dsh-team-hub --text <value>

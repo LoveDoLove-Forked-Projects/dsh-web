@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LEASE_DURATION_MS, QUESTION_TTL_MS } from '../../src/constants'
-import { loadConfig, SESSION_SECRET_ENV } from '../src/config'
+import { loadConfig, SESSION_KEY_ENV } from '../src/config'
 import { createSweeper } from '../src/scheduler'
 import { api, createIssue, one, seedHost, seedTeam, startTestHub, type TestHub } from './helpers'
 
@@ -57,7 +57,7 @@ describe('service health', () => {
     const report = loadConfig({})
 
     expect(report.errors.some((line) => line.includes('DATABASE_PATH'))).toBe(true)
-    expect(report.errors.some((line) => line.includes(SESSION_SECRET_ENV))).toBe(true)
+    expect(report.errors.some((line) => line.includes(SESSION_KEY_ENV))).toBe(true)
     expect(report.report.join('\n')).toContain('503 NOT_CONFIGURED')
   })
 })

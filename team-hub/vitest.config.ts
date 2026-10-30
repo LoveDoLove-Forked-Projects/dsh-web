@@ -43,7 +43,7 @@ export default defineConfig({
           TEST_MIGRATIONS: migrations,
           GITHUB_CLIENT_ID: 'test-github-client-id',
           GITHUB_CLIENT_SECRET: 'test-github-client-secret',
-          TEAM_HUB_SIGNING_SECRET: 'test-signing-secret-for-local-tests-only',
+          TEAM_HUB_SESSION_KEY: 'test-signing-secret-for-local-tests-only',
           APNS_KEY_ID: 'ABC1234567',
           APNS_TEAM_ID: 'TEAM123456',
           APNS_BUNDLE_ID: 'com.example.whale',

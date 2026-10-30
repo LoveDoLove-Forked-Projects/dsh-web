@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import WebSocket from 'ws'
 import { PROTOCOL_HEADER, PROTOCOL_VERSION } from '../../src/constants'
 import type { OutboundTransport } from '../../src/outbound'
-import { loadConfig, SESSION_SECRET_ENV } from '../src/config'
+import { loadConfig, SESSION_KEY_ENV } from '../src/config'
 import { createHub, type Hub } from '../src/server'
 import type { SqliteDatabase } from '../src/db'
 
@@ -132,7 +132,7 @@ export async function startTestHub(options: StartOptions = {}): Promise<TestHub>
     HOST: '127.0.0.1',
     PORT: '0',
     SWEEP_INTERVAL_MS: '0',
-    [SESSION_SECRET_ENV]: 'test-session-signing-key',
+    [SESSION_KEY_ENV]: 'test-session-signing-key',
     BOOTSTRAP_TOKEN,
     GITHUB_CLIENT_ID: 'test-github-client-id',
     GITHUB_CLIENT_SECRET: 'test-github-client-secret',

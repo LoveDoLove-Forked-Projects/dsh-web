@@ -7,7 +7,7 @@ Written 2026-10-29 after the hub was deployed, the local profile was prepared, a
 - URL: `https://dsh-team-hub.1090093659.workers.dev`
 - Worker name: `dsh-team-hub`; D1 database `dsh-team-hub` (`add4f9cc-163a-4eac-90d7-91663d1b6d10`), three migrations applied
 - Durable Object class `TeamChannelDO` (SQLite), created on the first deploy; cron `* * * * *`
-- Secrets present: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `TEAM_HUB_SIGNING_SECRET`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, `APNS_PRIVATE_KEY_P8`
+- Secrets present: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `TEAM_HUB_SESSION_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, `APNS_PRIVATE_KEY_P8`
 - `BOOTSTRAP_TOKEN` is deliberately unset: a team already exists, so `POST /api/v1/bootstrap` answers 503 and the endpoint stays closed. Set it only on a hub that has no team yet.
 - Deployment tool is `cf` (`team-hub/cloudflare.config.ts`); `cf deploy --secrets-file <file>` carries the secrets in one version.
 

@@ -36,7 +36,7 @@
 | 账号服务 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY_P8` | 可选（缺任一使 `/v1/push/relay` 与 `/v1/push/status` 回 503）。APNs 凭据，见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
 | 账号服务 | `RELAY_TOKEN_SECRET` | 可选（缺失使 `/v1/push/devices` 与投递回 503）。HS256 密钥（通过 `openssl rand -hex 32` 生成），见 iphone_remote_use_dsh 仓库的 Server/selfhost/README.md（环境变量一节）。 |
 | 团队协作中枢 | `DATABASE_PATH` | 必需（缺失即 exit 1）。SQLite 数据库绝对路径，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
-| 团队协作中枢 | `TEAM_HUB_SIGNING_SECRET` | 必需（缺失即 exit 1）。会话 HMAC 签名密钥，缺失无法建会话，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
+| 团队协作中枢 | `TEAM_HUB_SESSION_KEY` | 必需（缺失即 exit 1）。会话 HMAC 签名密钥，缺失无法建会话，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
 | 团队协作中枢 | `PORT` / `HOST` | 可选（缺省 8080 / 127.0.0.1）。生产环境必须显式配置 `PORT=8788`，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
 | 团队协作中枢 | `BOOTSTRAP_TOKEN` | 可选（缺失使 `POST /api/v1/bootstrap` 回 503）。用于创建首个团队，首队建立后清空，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |
 | 团队协作中枢 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 可选（缺任一使 `/auth/github/*` 与 `/auth/token` 回 503）。团队专属 OAuth App，见 [team-hub/selfhost/README.md#configuration](../../team-hub/selfhost/README.md#configuration)。 |

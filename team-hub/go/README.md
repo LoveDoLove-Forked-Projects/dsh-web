@@ -72,7 +72,7 @@ it, and the rest close their own routes.
 | `DATABASE_PATH` | none | Required. The process refuses to start. |
 | `HOST` | `127.0.0.1` | Loopback by default; a non-loopback value is reported as a warning. |
 | `PORT` | `8080` | Invalid values refuse to start. |
-| `SESSION_SECRET` | none | Required. HMAC key for session access tokens; `SESSION_SECRET_KEY` is accepted as a second spelling. |
+| `TEAM_HUB_SESSION_KEY` | none | Required. HMAC key for session access tokens. |
 | `BOOTSTRAP_TOKEN` | none | `POST /api/v1/bootstrap` answers 503 `NOT_CONFIGURED`. |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | none | `GET /auth/github/*` and `POST /auth/token` answer 503 `NOT_CONFIGURED`. |
 | `ACCOUNT_JWKS_URL` / `ACCOUNT_ISSUER` / `ACCOUNT_AUDIENCE` | none | `POST /auth/account` and `POST /auth/account/link` answer 503 `NOT_CONFIGURED`. |
@@ -86,7 +86,7 @@ only whether they are configured:
 ```
 [config] DATABASE_PATH=/var/lib/team-hub/hub.sqlite
 [config] PORT=8080 HOST=127.0.0.1
-[config] SESSION_SECRET: configured
+[config] TEAM_HUB_SESSION_KEY: configured
 [config] GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET: configured
 [config] ACCOUNT_JWKS_URL/ACCOUNT_ISSUER/ACCOUNT_AUDIENCE: missing -> POST /auth/account and /auth/account/link answer 503 NOT_CONFIGURED
 [config] APNS_KEY_ID/APNS_TEAM_ID/APNS_BUNDLE_ID/APNS_PRIVATE_KEY_P8: missing -> APNs delivery is skipped and /readyz reports push=false

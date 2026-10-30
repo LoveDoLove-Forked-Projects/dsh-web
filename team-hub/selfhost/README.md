@@ -58,7 +58,7 @@ serves a half-configured hub.
 | `DATABASE_PATH` | none | Required. The process refuses to start. |
 | `HOST` | `127.0.0.1` | Loopback by default; TLS belongs to the reverse proxy. |
 | `PORT` | `8080` | Invalid values refuse to start. |
-| `TEAM_HUB_SIGNING_SECRET` | none | Required. HMAC key for session access tokens; without it no session can be signed or verified, so the process refuses to start. The name is the same secret the Worker reads. |
+| `TEAM_HUB_SESSION_KEY` | none | Required. HMAC key for session access tokens; without it no session can be signed or verified, so the process refuses to start. The name is the same secret the Worker reads. |
 | `BOOTSTRAP_TOKEN` | none | `POST /api/v1/bootstrap` answers 503 `NOT_CONFIGURED`. |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | none | `GET /auth/github/*` and `POST /auth/token` answer 503 `NOT_CONFIGURED`. |
 | `ACCOUNT_JWKS_URL` / `ACCOUNT_ISSUER` / `ACCOUNT_AUDIENCE` | none | `POST /auth/account` and `POST /auth/account/link` answer 503 `NOT_CONFIGURED`. |
@@ -71,7 +71,7 @@ The startup report is one line per setting group, for example:
 ```
 [config] DATABASE_PATH=/var/lib/team-hub/hub.sqlite
 [config] PORT=8080 HOST=127.0.0.1
-[config] SESSION_SECRET...: configured
+[config] TEAM_HUB_SESSION_KEY: configured
 [config] GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET: missing -> GET /auth/github/* and POST /auth/token answer 503 NOT_CONFIGURED
 [config] ACCOUNT_JWKS_URL/ACCOUNT_ISSUER/ACCOUNT_AUDIENCE: missing -> POST /auth/account and /auth/account/link answer 503 NOT_CONFIGURED
 [config] APNS_KEY_ID/APNS_TEAM_ID/APNS_BUNDLE_ID/APNS_PRIVATE_KEY_P8: missing -> APNs delivery answers 503 NOT_CONFIGURED

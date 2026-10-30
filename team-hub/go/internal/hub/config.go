@@ -15,11 +15,7 @@ import (
 
 // SessionSecretEnv names the HMAC key that signs session access tokens. It is
 // required: without it no session token can be signed or verified.
-const SessionSecretEnv = "SESSION_SECRET"
-
-// SessionSecretAliasEnv is accepted as a second spelling of the same secret, so
-// one environment file can serve this runtime and the Node one.
-const SessionSecretAliasEnv = "SESSION_SECRET_KEY"
+const SessionSecretEnv = "TEAM_HUB_SESSION_KEY"
 
 // GitHubSettings is the OAuth App the browser and token routes need.
 type GitHubSettings struct {
@@ -182,9 +178,6 @@ func LoadConfig(source map[string]string, defaultMigrationsDir string) ConfigRep
 	sweepInterval := integerSetting(source, "SWEEP_INTERVAL_MS", 60_000, 0, 86_400_000, &errors)
 
 	sessionSecret := envText(source, SessionSecretEnv)
-	if sessionSecret == "" {
-		sessionSecret = envText(source, SessionSecretAliasEnv)
-	}
 	if sessionSecret == "" {
 		errors = append(errors, SessionSecretEnv+" is required: without the HMAC key no session token can be "+
 			"signed or verified, so every authenticated route would answer 503.")

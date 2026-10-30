@@ -79,8 +79,8 @@ function timingSafeEquals(left: string, right: string): boolean {
 }
 
 async function signingKey(env: Env): Promise<CryptoKey> {
-  const secret = env.TEAM_HUB_SIGNING_SECRET
-  if (!secret) fail('NOT_CONFIGURED', 'TEAM_HUB_SIGNING_SECRET is not configured on this hub.')
+  const secret = env.TEAM_HUB_SESSION_KEY
+  if (!secret) fail('NOT_CONFIGURED', 'TEAM_HUB_SESSION_KEY is not configured on this hub.')
   return crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
     'sign',
   ])

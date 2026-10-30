@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
  * Name of the HMAC key that signs session access tokens. It is the same secret
  * the Worker reads, so an operator migrating from the Worker keeps one name.
  */
-export const SESSION_SECRET_ENV = "TEAM_HUB_SIGNING_SECRET"
+export const SESSION_KEY_ENV = "TEAM_HUB_SESSION_KEY"
 
 export interface GithubSettings {
   clientId: string
@@ -117,10 +117,10 @@ export function loadConfig(source: ConfigSource, options: LoadOptions = {}): Con
   const migrationsDir = options.migrationsDir ?? text(source, 'MIGRATIONS_DIR') ?? DEFAULT_MIGRATIONS_DIR
   const sweepIntervalMs = integerSetting(source, 'SWEEP_INTERVAL_MS', 60_000, 0, 86_400_000, errors)
 
-  const sessionSecret = text(source, SESSION_SECRET_ENV)
+  const sessionSecret = text(source, SESSION_KEY_ENV)
   if (sessionSecret === null) {
     errors.push(
-      SESSION_SECRET_ENV +
+      SESSION_KEY_ENV +
         ' is required: without the HMAC key no session token can be signed or verified, so every authenticated route would answer 503.',
     )
   }
@@ -161,8 +161,8 @@ export function loadConfig(source: ConfigSource, options: LoadOptions = {}): Con
   report.push('PORT=' + port + ' HOST=' + host)
   report.push(
     sessionSecret === null
-      ? SESSION_SECRET_ENV + ': missing'
-      : SESSION_SECRET_ENV + ': configured',
+      ? SESSION_KEY_ENV + ': missing'
+      : SESSION_KEY_ENV + ': configured',
   )
   report.push(
     github === null
@@ -216,7 +216,7 @@ export function loadConfig(source: ConfigSource, options: LoadOptions = {}): Con
  */
 export function envValues(config: HubConfig): Record<string, string> {
   const values: Record<string, string> = {}
-  if (config.sessionSecret !== null) values[SESSION_SECRET_ENV] = config.sessionSecret
+  if (config.sessionSecret !== null) values[SESSION_KEY_ENV] = config.sessionSecret
   if (config.bootstrapToken !== null) values.BOOTSTRAP_TOKEN = config.bootstrapToken
   if (config.github !== null) {
     values.GITHUB_CLIENT_ID = config.github.clientId
