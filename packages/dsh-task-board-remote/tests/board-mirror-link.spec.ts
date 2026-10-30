@@ -110,7 +110,7 @@ function snapshotOf(board: BoardFace): Record<string, unknown> {
 }
 
 describe('a mirror card reaches the phone with its provider payload', () => {
-  it('forwards the team payload unchanged inside board.snapshot', () => {
+  it('user receives the mirror card with its team payload unchanged inside board.snapshot', () => {
     // Given a ledger holding the mirror card the team provider created
     const { face, dispose } = boardOver([mirrorCard, localCard])
     try {
@@ -137,7 +137,7 @@ describe('a mirror card reaches the phone with its provider payload', () => {
     }
   })
 
-  it('adds no payload to a card that has none', () => {
+  it('user receives a card that has no payload and nothing is invented for it', () => {
     // Given a board whose only card is local
     const { face, dispose } = boardOver([localCard])
     try {

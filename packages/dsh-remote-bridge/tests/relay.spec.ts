@@ -240,6 +240,7 @@ describe('relay: which road the channel stands on', () => {
   })
 
   it('operator moves the relay with one environment variable and reads the default otherwise', () => {
+    // Given no environment variable names a relay
     // Then the default is the account service the App already signs into
     expect(relayUrlFromEnv({})).toBe(RELAY_DEFAULT_URL)
     expect(RELAY_DEFAULT_URL).toBe('https://account.dsh-market.com')
@@ -249,6 +250,8 @@ describe('relay: which road the channel stands on', () => {
   })
 
   it('operator reads one mount line per road and each names the credential it reads', () => {
+    // Given the three roads a bridge can stand on
+    // When each road is turned into the line the host prints
     // Then the three roads are three lines, and each says what it stands on
     expect(pushChannelLine({ route: 'direct', keyId: 'ABC123DEFG', teamId: 'TEAM123456' }))
       .toBe('push: direct (APNs key ABC123DEFG of team TEAM123456)')
@@ -369,6 +372,7 @@ describe('relay: a centre that refuses', () => {
       st: 'approval' as const,
       url: 'whale://session/s-1',
     }
+    // When each centre is asked to deliver it
     // Then each is a failure this bridge can log, and none of them throws
     expect(await five.sender.send(relayAddress(), delivery)).toEqual({ ok: false, status: 500, reason: 'relay answered 500' })
     expect(await timeout.sender.send(relayAddress(), delivery)).toEqual({
@@ -400,6 +404,7 @@ describe('relay: a centre that refuses', () => {
   it('operator reads a delivery that landed on nothing and it is reported rather than claimed', async () => {
     // Given a centre that delivered to nobody and retired nothing
     const { sender } = senderOver(() => ({ status: 200, body: JSON.stringify({ ok: true, delivered: 0, dead: 0 }) }))
+    // When one delivery is attempted for that row
     // Then the failure is the honest answer
     expect(await sender.send(relayAddress(), {
       aps: { alert: { title: 'x', body: 'y' }, sound: 'default' },
