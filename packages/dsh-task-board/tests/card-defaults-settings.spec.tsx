@@ -378,7 +378,8 @@ describe('task-board settings: new-card defaults of the create dialog', () => {
     // And every model row names the provider beside the model, so two
     // providers offering the same model name stay distinguishable.
     expect([...field(container, MODEL_FIELD).options].map(option => option.textContent))
-      .toEqual([t('exec.model.default'), 'alpha · Fast', 'alpha · Smart', 'beta · Plain'])  })
+      .toEqual([t('exec.model.default'), 'Fast · alpha', 'Smart · alpha', 'Plain · beta'])
+  })
 
   it('operator switching the default model to one that cannot honour the level sees the level dropped', async () => {
     // Given a board whose default model/level pair is configured

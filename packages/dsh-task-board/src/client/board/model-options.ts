@@ -9,6 +9,12 @@
  * picker re-reading the wire shape. The fallback discovery path carries no
  * capability metadata at all; its rows stay silent about reasoning rather than
  * claiming a model supports none.
+ *
+ * This module also owns the one display form a model row is shown in: the
+ * model name, then the provider that publishes it. Two providers may publish
+ * one model name, and they are two different routes, so a picker that shows
+ * only the name offers two identical rows. Every picker and every collapsed
+ * summary reads the label from here, so they cannot drift apart.
  */
 import type { ExecutionModelOption } from '../../core/controller.ts'
 import type { TaskBoardKey } from '../locales.ts'
@@ -107,8 +113,32 @@ export function modelOptionsFromDiscoveredModels(value: unknown): ExecutionModel
 }
 
 /**
+ * The display form of one model row: the model name first, then the provider
+ * that publishes it, joined by " · ".
+ *
+ * Two providers publishing one model name are two different routes, so the
+ * provider belongs in the label — otherwise the picker offers two identical
+ * rows and the operator cannot tell which route a card would pin. A row
+ * without a provider (the flat discovery fallback names models only) keeps
+ * its bare name, and a row that carries no name of its own shows the model
+ * part of its own qualified route, so the provider is never printed twice.
+ * @param model - the roster row.
+ * @returns the label every model picker row and every collapsed summary shows.
+ */
+export function modelDisplayLabel(model: ExecutionModelOption): string {
+  const provider = model.provider === undefined || model.provider === '' ? undefined : model.provider
+  const name = model.name !== undefined && model.name !== ''
+    ? model.name
+    : provider !== undefined && model.id.startsWith(provider + '/')
+      ? model.id.slice(provider.length + 1)
+      : model.id
+  if (provider === undefined) return name
+  return name + ' · ' + provider
+}
+
+/**
  * The picker rows of a model roster: the qualified `provider/model` route as
- * the value a pin stores, and the provider beside the model name so two
+ * the value a pin stores, and the shared display form as the label, so two
  * providers offering one model name stay distinguishable.
  * @param models - the roster rows.
  * @returns the choice rows, in roster order.
@@ -116,7 +146,7 @@ export function modelOptionsFromDiscoveredModels(value: unknown): ExecutionModel
 export function modelChoiceRows(models: readonly ExecutionModelOption[]): Array<{ value: string; label: string }> {
   return models.map(model => ({
     value: model.id,
-    label: (model.provider === undefined ? '' : model.provider + ' · ') + (model.name ?? model.id),
+    label: modelDisplayLabel(model),
   }))
 }
 

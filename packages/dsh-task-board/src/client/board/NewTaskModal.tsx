@@ -18,7 +18,7 @@ import { formatHostTimestamp } from './TaskCard.tsx'
 import { readParseModelPreference, writeParseModelPreference } from './parse-model-pref.ts'
 import { inheritPresetLabel, presetChoiceRows, presetLabel } from './preset-label.ts'
 import { ReasoningEffortField } from './ReasoningEffortField.tsx'
-import { reconcileReasoningEffort } from './model-options.ts'
+import { modelDisplayLabel, reconcileReasoningEffort } from './model-options.ts'
 import css from '../board.module.css'
 
 export interface NewTaskModalProps {
@@ -324,9 +324,13 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
       ? t('exec.permission.default')
       : t('exec.permission.inheritParent', { permission: t(`exec.permission.${inheritedPermission}` as TaskBoardKey) })
     : t(`exec.permission.${permission}` as TaskBoardKey)
+  // The pinned model is shown in the shared display form, so a model two
+  // providers publish stays tellable apart in the collapsed line too. A
+  // route the roster does not describe keeps its own id: the display never
+  // invents a provider for a route it cannot resolve.
   const modelLabel = model === ''
     ? t('exec.model.default')
-    : (options.models ?? []).find(item => item.id === model)?.name ?? model
+    : modelDisplayLabel(models.find(item => item.id === model) ?? { id: model })
   // The effort is part of the model pin, so a pinned one rides the model's own
   // summary entry instead of standing as a region-level value of its own.
   const modelSummary = reasoningEffort === '' ? modelLabel : `${modelLabel} · ${reasoningEffort}`
@@ -408,7 +412,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
               >
                 <option value="">{t('exec.model.default')}</option>
                 {models.map(option => (
-                  <option key={option.id} value={option.id}>{option.name ?? option.id}</option>
+                  <option key={option.id} value={option.id}>{modelDisplayLabel(option)}</option>
                 ))}
               </select>
               {parsePending
@@ -540,7 +544,7 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
             <option value="">{t('exec.model.default')}</option>
             {!modelKnown && <option value={model}>{model}{t('exec.model.unknown')}</option>}
             {models.map(item => (
-              <option key={item.id} value={item.id}>{item.name ?? item.id}</option>
+              <option key={item.id} value={item.id}>{modelDisplayLabel(item)}</option>
             ))}
           </select>
         </label>

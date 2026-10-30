@@ -25,7 +25,7 @@ import { NewTaskModal } from './NewTaskModal.tsx'
 import { useDialog, usePresence, type OverlayPhase } from './overlay.tsx'
 import { inheritPresetLabel, presetLabel } from './preset-label.ts'
 import { ReasoningEffortField } from './ReasoningEffortField.tsx'
-import { reconcileReasoningEffort } from './model-options.ts'
+import { modelDisplayLabel, reconcileReasoningEffort } from './model-options.ts'
 import { formatHostTimestamp, formatTime } from './TaskCard.tsx'
 import { STATUS_KEY } from './status-key.ts'
 import { ClampedMarkdown } from './ClampedMarkdown.tsx'
@@ -300,7 +300,7 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
           <option value="">{t('exec.model.default')}</option>
           {!modelKnown && <option value={model}>{model}{t('exec.model.unknown')}</option>}
           {models.map(item => (
-            <option key={item.id} value={item.id}>{item.name ?? item.id}</option>
+            <option key={item.id} value={item.id}>{modelDisplayLabel(item)}</option>
           ))}
         </select>
       </label>

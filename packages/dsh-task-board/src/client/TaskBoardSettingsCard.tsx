@@ -18,6 +18,7 @@ import { CardDefaultPresetField } from './CardDefaultPresetField.tsx'
 import { PluginSettingsCard, BooleanField, ChoiceField, ValueField } from './PluginSettingsCard.tsx'
 import {
   modelChoiceRows,
+  modelDisplayLabel,
   modelOptionsFromCatalog,
   reasoningEffortsFor,
   reasoningHintKey,
@@ -416,7 +417,16 @@ export function TaskBoardSettingsCard(props: TaskBoardSettingsCardProps) {
     },
     ...catalog.groups.flatMap(group => group.models.map(model => ({
       value: group.id + '/' + model.id,
-      label: (group.name ?? group.id) + ' · ' + (model.name ?? model.id),
+      // The shared display form: the model name first, then the provider
+      // that publishes it, so two providers offering one model name stay
+      // tellable apart.
+      label: modelDisplayLabel({
+        id: group.id + '/' + model.id,
+        name: model.name ?? model.id,
+        // The provider is the group id — the same token the route pins,
+        // and the one every other model picker names.
+        provider: group.id,
+      }),
     }))),
   ]
   const stagedRoute = parseModelRoute(stagedSettings.model) ?? (inheritRoute === undefined ? undefined : { provider: inheritRoute.provider, model: inheritRoute.model })

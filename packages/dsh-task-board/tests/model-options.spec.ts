@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { inject } from '../src/client/index.ts'
 import type { ExecutionModelOption } from '../src/core/controller.ts'
-import { modelOptionsFromCatalog, modelOptionsFromDiscoveredModels, reasoningEffortsFor, reasoningHintKey, reasoningOfModel, reasoningPickerEnabled, reconcileReasoningEffort } from '../src/client/board/model-options.ts'
+import { modelChoiceRows, modelDisplayLabel, modelOptionsFromCatalog, modelOptionsFromDiscoveredModels, reasoningEffortsFor, reasoningHintKey, reasoningOfModel, reasoningPickerEnabled, reconcileReasoningEffort } from '../src/client/board/model-options.ts'
 
 describe('task-board client inject', () => {
   it('declares remote.session in inject to avoid Cordis proxy property access refusal', () => {
@@ -192,6 +192,58 @@ const ROSTER: ExecutionModelOption[] = [
   { id: 'acme/plain', name: 'Plain', reasoning: { supported: false } },
   { id: 'acme/silent', name: 'Silent', reasoning: { supported: true } },
 ]
+
+describe('the display form of one model row', () => {
+  it('operator sees two providers publishing one model name as two different rows', () => {
+    // Given a roster where two providers publish the same model name
+    const roster: ExecutionModelOption[] = [
+      { id: 'alpha/shared', name: 'Shared', provider: 'alpha' },
+      { id: 'beta/shared', name: 'Shared', provider: 'beta' },
+    ]
+
+    // When the picker builds its choice rows from that roster
+    const rows = modelChoiceRows(roster)
+
+    // Then each row names its own provider, and the stored route is untouched
+    expect(rows).toEqual([
+      { value: 'alpha/shared', label: 'Shared · alpha' },
+      { value: 'beta/shared', label: 'Shared · beta' },
+    ])
+  })
+
+  it('operator on a row that names no provider sees the bare model name', () => {
+    // Given a roster row from the flat discovery list, which names no provider
+    const roster: ExecutionModelOption[] = [{ id: 'bare', name: 'Bare' }]
+
+    // When the picker builds its choice rows from that roster
+    const rows = modelChoiceRows(roster)
+
+    // Then the row keeps its name alone instead of claiming a provider
+    expect(rows).toEqual([{ value: 'bare', label: 'Bare' }])
+  })
+
+  it('operator on a row that names no model sees the model part of its own route', () => {
+    // Given a row whose only name is its qualified route
+    const roster: ExecutionModelOption[] = [{ id: 'alpha/fast', provider: 'alpha' }]
+
+    // When the picker builds its choice rows from that roster
+    const rows = modelChoiceRows(roster)
+
+    // Then the provider is named once, beside the model it publishes
+    expect(rows).toEqual([{ value: 'alpha/fast', label: 'fast · alpha' }])
+  })
+
+  it('operator reading one row directly sees the same form the pickers render', () => {
+    // Given a row carrying a provider and a row carrying none
+    const labelled = modelDisplayLabel({ id: 'alpha/shared', name: 'Shared', provider: 'alpha' })
+    const bare = modelDisplayLabel({ id: 'bare', name: 'Bare' })
+
+    // When the label is read for each of them
+    // Then the labelled row names both halves and the bare row only its name
+    expect(labelled).toBe('Shared · alpha')
+    expect(bare).toBe('Bare')
+  })
+})
 
 describe('reasoning effort offered for the picked model', () => {
   it('operator pinning a reasoning model gets its declared efforts and keeps a listed one', () => {
