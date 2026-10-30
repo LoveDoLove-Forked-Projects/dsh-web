@@ -5,7 +5,7 @@ import type { TaskBoardHostService } from '../src/host-service.ts'
 import type { TaskBoardSnapshot } from '../src/protocol.ts'
 
 const snapshot: TaskBoardSnapshot = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   revision: 0,
   tasks: [],
   scheduler: { timeZone: 'UTC' },
@@ -36,6 +36,8 @@ describe('task-board HTTP routes', () => {
     const service = {
       snapshot: () => snapshot,
       apply,
+      applyVerified: apply,
+      ledger: { allTasks: () => [] },
       subscribe: () => () => undefined,
     } as unknown as TaskBoardHostService
     const routes = makeTaskBoardRoutes(service)
@@ -124,6 +126,8 @@ describe('task-board HTTP routes', () => {
     const service = {
       snapshot: () => snapshot,
       apply,
+      applyVerified: apply,
+      ledger: { allTasks: () => [] },
       subscribe: () => () => undefined,
     } as unknown as TaskBoardHostService
     const routes = makeTaskBoardRoutes(service, { trustedProxyHosts: ['tasks.example.test'], proxyToken: 'server-secret' })

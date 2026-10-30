@@ -17,7 +17,7 @@ import { isForwardedLoopbackRequest, isLoopbackRequest } from '../src/loopback.t
 import { Config, DEFAULT_TRUST_FORWARDED_PROXY, readConfigField, resolveProxyAccess } from '../src/index.ts'
 
 const snapshot: TaskBoardSnapshot = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   revision: 0,
   tasks: [],
   scheduler: { timeZone: 'UTC' },

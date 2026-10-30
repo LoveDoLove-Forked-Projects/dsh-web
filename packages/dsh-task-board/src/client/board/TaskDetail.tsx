@@ -14,6 +14,8 @@ import { canEditTaskContent } from '../../core/use-cases/task-update.ts'
 import { requiresPermissionConfirmation } from '../../core/handover.ts'
 import { DEFAULT_SUBTASK_DEPTH, descendantTasks, directSubtasks, joinsCascadeRun, taskDepth } from '../../core/subtask.ts'
 import { t, type TaskBoardKey } from '../locales.ts'
+import { attachmentImageUrl } from '../host-api.ts'
+import { formatAttachmentBytes } from './AttachmentField.tsx'
 import { SCHEDULE_PRESETS } from '../schedule-presets.ts'
 import { budgetLabel, defaultZonedInputValue, endedLabel, nextRunLabel, parseZonedInput, runCapOption, skippedLabel, zonedInputValue, zoneChoices } from '../schedule-zone.ts'
 import css from '../board.module.css'
@@ -953,6 +955,32 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
                       </span>
                     ))}
                   </div>
+                </section>
+              )}
+
+              {current.attachments !== undefined && current.attachments.length > 0 && (
+                <section className={css.detailSection}>
+                  <h4>{t('detail.attachments')}</h4>
+                  <ul className={css.attachmentList}>
+                    {current.attachments.map(attachment => (
+                      <li className={css.attachmentRow} key={attachment.attachmentId}>
+                        {attachment.kind === 'image'
+                          ? <img className={css.attachmentThumb} src={attachmentImageUrl(attachment.attachmentId)} alt={attachment.name} />
+                          : null}
+                        <span className={css.attachmentName}>
+                          {attachment.name}
+                          <span className={css.attachmentMeta}>
+                            {' '}
+                            {formatAttachmentBytes(attachment.bytes)}
+                            {attachment.kind === 'image' && attachment.width !== undefined && attachment.height !== undefined
+                              ? ` · ${attachment.width}×${attachment.height}`
+                              : ''}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className={css.detailMeta}>{t('detail.attachments.removeHint')}</p>
                 </section>
               )}
 

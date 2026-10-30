@@ -6,7 +6,7 @@ import type { TaskBoardEventPayload, TaskBoardSnapshot } from '../src/protocol.t
 
 function snapshot(revision: number, tasks: TaskRecord[] = [], ledgerId = 'ledger-a'): TaskBoardSnapshot {
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     revision,
     tasks,
     scheduler: { timeZone: 'UTC', ledgerId },

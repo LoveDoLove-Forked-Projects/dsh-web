@@ -123,7 +123,7 @@ describe('the published taskBoard service', () => {
     // When a consumer reads the board
     const snapshot = board.face.snapshot()
     // Then it sees the ledger's own shape, revision included
-    expect(snapshot.schemaVersion).toBe(6)
+    expect(snapshot.schemaVersion).toBe(7)
     expect(snapshot.revision).toBeGreaterThan(0)
     expect(snapshot.tasks.map(task => task.id)).toEqual(['card'])
   })

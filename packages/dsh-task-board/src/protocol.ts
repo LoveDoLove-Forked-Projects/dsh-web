@@ -7,13 +7,16 @@ import { sanitizeFreezeSnapshot, type FreezeSnapshot } from './core/freeze-snaps
 import { sanitizeHandover, type TaskHandoverInput } from './core/handover.ts'
 import { TASK_BOARD_MESSAGE_MAX_LENGTH, isTaskBoardExtensionPayload, normalizeTaskIntegrations, type TaskBoardExtensionPayload } from './core/extension.ts'
 import { normalizeVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
+import { isTaskAttachmentList, TASK_ATTACHMENT_LIMIT, TASK_ATTACHMENT_MAX_BYTES, TASK_ATTACHMENT_TOTAL_MAX_BYTES } from './core/attachment.ts'
 
 /** Freeze payload carried by create/update actions after the gate (redacted in place). */
 type FreezePayload = FreezeSnapshot & { redacted?: boolean; frozenBy?: string }
 
-export const TASK_BOARD_SCHEMA_VERSION = 6 as const
-/** Ledger documents written before v6; loaded once and migrated on startup. */
-export const TASK_BOARD_LEGACY_SCHEMA_VERSION = 5 as const
+export const TASK_BOARD_SCHEMA_VERSION = 7 as const
+/** Ledger documents written before v7; loaded once and migrated on startup. */
+export const TASK_BOARD_LEGACY_SCHEMA_VERSION = 6 as const
+/** Ledger documents written before v6 (the scheduling mode and run budget). */
+export const TASK_BOARD_PRE_RUN_BUDGET_SCHEMA_VERSION = 5 as const
 /** Ledger documents written before v5; migrated through the v5 normalization too. */
 export const TASK_BOARD_PRE_ACCEPTANCE_SCHEMA_VERSION = 4 as const
 /** Ledger documents written before v4; migrated through the v4 normalization too. */
@@ -29,12 +32,14 @@ export const TASK_BOARD_OLDEST_SCHEMA_VERSION = 2 as const
 export const TASK_BOARD_ZONE_STAMP_SCHEMA_VERSION = 4 as const
 /**
  * Every older generation the loader migrates in place. v5 only added the
- * per-execution acceptance block and v6 only added the scheduling mode and run
- * budget, so the migration is the normalization pass that re-validates each
- * row; a document from any listed generation upgrades losslessly.
+ * per-execution acceptance block, v6 only added the scheduling mode and run
+ * budget, and v7 only added the card attachment metadata, so the migration is
+ * the normalization pass that re-validates each row; a document from any
+ * listed generation upgrades losslessly.
  */
 export const TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS: readonly number[] = [
   TASK_BOARD_LEGACY_SCHEMA_VERSION,
+  TASK_BOARD_PRE_RUN_BUDGET_SCHEMA_VERSION,
   TASK_BOARD_PRE_ACCEPTANCE_SCHEMA_VERSION,
   TASK_BOARD_OLDER_SCHEMA_VERSION,
   TASK_BOARD_OLDEST_SCHEMA_VERSION,
@@ -101,6 +106,26 @@ export interface TaskBoardSnapshot {
    * The board forwards them verbatim; it never interprets their shape.
    */
   extensions?: Record<string, unknown>
+  /**
+   * The attachment limits this deployment enforces, so the browser can refuse
+   * an oversized selection before it uploads anything. The board's own caps
+   * are the ceiling; a deployment whose attachment storage publishes stricter
+   * image limits lowers the bounds it publishes here.
+   */
+  attachmentLimits?: {
+    /** Maximum number of attachments one card may carry. */
+    maxAttachments: number
+    /** Maximum byte length of one attachment. */
+    maxBytes: number
+    /** Maximum byte length of all attachments of one card together. */
+    maxTotalBytes: number
+    /** Maximum number of IMAGES one card may carry (the official per-message budget). */
+    maxImages: number
+    /** Maximum byte length of one image. */
+    maxImageBytes: number
+    /** Maximum byte length of all images of one card together (the official per-message budget). */
+    maxMessageImageBytes: number
+  }
 }
 
 /**
@@ -276,6 +301,9 @@ function validImportedKnownFields(value: Record<string, unknown>): boolean {
   // non-string value is refused here like the other carried known fields.
   if (value.model !== undefined && typeof value.model !== 'string') return false
   if (value.integrations !== undefined && normalizeTaskIntegrations(value.integrations) === undefined) return false
+  // 安全门（对抗场景 e）：import 不接受附件——旧版浏览器导出从不携带附件，
+  // 一条声称携带附件的导入必须被拒绝，而不是让未经校验的引用进入账本。
+  if (value.attachments !== undefined) return false
   if (value.schedule !== undefined && !validImportedSchedule(value.schedule)) return false
   if (value.executions !== undefined) {
     if (!Array.isArray(value.executions)) return false
@@ -392,7 +420,7 @@ function handoverPayload(value: unknown): TaskHandoverInput | undefined {
 
 function createInput(value: unknown): value is NewTaskInput {
   const input = record(value)
-  if (input === undefined || !exactKeys(input, ['title', 'description', 'prompt', 'parentId', 'workspaceId', 'mode', 'permission', 'schedule', 'freeze', 'handover', 'model', 'reasoningEffort', 'applyCardDefaults', 'reuseSession', 'goalRun', 'skipVerification', 'tags', 'integrations'])) return false
+  if (input === undefined || !exactKeys(input, ['title', 'description', 'prompt', 'parentId', 'workspaceId', 'mode', 'permission', 'schedule', 'freeze', 'handover', 'model', 'reasoningEffort', 'applyCardDefaults', 'reuseSession', 'goalRun', 'skipVerification', 'tags', 'integrations', 'attachments'])) return false
   if (input.parentId !== undefined && (typeof input.parentId !== 'string' || input.parentId.trim() === '')) return false
   if (typeof input.title !== 'string' || typeof input.description !== 'string' || typeof input.prompt !== 'string') return false
   // The reasoning effort is an adapter-owned id the Host resolves against the
@@ -407,6 +435,10 @@ function createInput(value: unknown): value is NewTaskInput {
   if (input.permission !== undefined && !isTaskPermission(input.permission)) return false
   if (input.tags !== undefined && !isTaskTagList(input.tags)) return false
   if (input.integrations !== undefined && normalizeTaskIntegrations(input.integrations) === undefined) return false
+  // Attachments are host-verified against the official storage before the
+  // ledger sees them; the wire gate only keeps a malformed, duplicated or
+  // oversized list off the action.
+  if (input.attachments !== undefined && !isTaskAttachmentList(input.attachments)) return false
   if (input.freeze !== undefined && freezePayload(input.freeze) === undefined) return false
   if (input.handover !== undefined && handoverPayload(input.handover) === undefined) return false
   if (input.schedule !== undefined) {
@@ -426,7 +458,7 @@ function createInput(value: unknown): value is NewTaskInput {
 
 function updatePatch(value: unknown): boolean {
   const patch = record(value)
-  if (patch === undefined || !exactKeys(patch, ['title', 'description', 'prompt', 'workspaceId', 'mode', 'permission', 'freeze', 'handover', 'model', 'reasoningEffort', 'reuseSession', 'goalRun', 'skipVerification', 'tags'])) return false
+  if (patch === undefined || !exactKeys(patch, ['title', 'description', 'prompt', 'workspaceId', 'mode', 'permission', 'freeze', 'handover', 'model', 'reasoningEffort', 'reuseSession', 'goalRun', 'skipVerification', 'tags', 'attachments'])) return false
   // null (or false) clears the reuse opt-in; only a real boolean is accepted.
   if (patch.reuseSession !== undefined && patch.reuseSession !== null && typeof patch.reuseSession !== 'boolean') return false
   // The goal opt-in is tri-state: null/true return the card to its default
@@ -441,6 +473,9 @@ function updatePatch(value: unknown): boolean {
   if (patch.permission !== undefined && !isTaskPermission(patch.permission)) return false
   // null clears the label set; a present array must be a well-formed list.
   if (patch.tags !== undefined && patch.tags !== null && !isTaskTagList(patch.tags)) return false
+  // null clears the attachment set; a present array replaces it wholesale and
+  // must be a well-formed list within the card-wide limits.
+  if (patch.attachments !== undefined && patch.attachments !== null && !isTaskAttachmentList(patch.attachments)) return false
   // null clears the snapshot; an object must pass the freeze gate.
   if (patch.freeze !== undefined && patch.freeze !== null && freezePayload(patch.freeze) === undefined) return false
   // Same convention for the handover bundle.

@@ -1,4 +1,5 @@
 import { degradedRowOf, ledgerOwnerPid } from '../core/degraded-reason.ts'
+import { isTaskAttachment, type TaskAttachment, type TaskAttachmentKind } from '../core/attachment.ts'
 import { TASK_BOARD_PACKAGE } from '../core/package-name.ts'
 import type { TaskRecord } from '../core/tasks.ts'
 import { t } from './locales.ts'
@@ -27,6 +28,8 @@ const IMPORT_MARKER = 'dsh.taskBoard.v2.hostImported'
 const SOURCE_KEY = 'dsh.taskBoard.v2.sourceId'
 const IMPORT_REQUEST_KEY = 'dsh.taskBoard.v2.importRequestId'
 const REQUEST_TIMEOUT_MS = 15_000
+/** An upload moves real bytes, so it gets a wider budget than a JSON call. */
+const UPLOAD_TIMEOUT_MS = 120_000
 /** Re-notify the panel at most this often while the event stream stays broken. */
 const STREAM_ERROR_NOTIFY_MS = 15_000
 /** Mirrors the Host's own parse budget; only used to phrase the timeout. */
@@ -196,6 +199,22 @@ export interface TaskBoardHostTransport {
   subscribe(listener: (event?: TaskBoardEventPayload) => void): () => void
   /** One-shot model parse of pasted text (issue #1540). */
   parseDraft(request: TaskBoardParseRequest, signal?: AbortSignal): Promise<TaskBoardParseDraft>
+  /**
+   * Upload one file or image into the Host's attachment storage. Optional: a
+   * deployment that serves no attachment storage omits it, and the form then
+   * refuses to stage an attachment at all.
+   */
+  uploadAttachment?(file: File, kind: TaskAttachmentKind): Promise<TaskAttachment>
+}
+
+/**
+ * The URL of one stored image. The board serves it only for an id a card of
+ * this board references, so the URL is useless on its own.
+ * @param attachmentId - the stored object's identifier.
+ * @returns the document-relative URL of the image.
+ */
+export function attachmentImageUrl(attachmentId: string): string {
+  return `${CLIENT_API_PREFIX}/attachments/image?id=${encodeURIComponent(attachmentId)}`
 }
 
 export class HttpTaskBoardHostTransport implements TaskBoardHostTransport {
@@ -303,6 +322,50 @@ export class HttpTaskBoardHostTransport implements TaskBoardHostTransport {
     if (code === 'timeout') throw new HostApiError('timeout', t('new.aiParseTimeout', { seconds: String(TASK_PARSE_TIMEOUT_SECONDS) }), response.status)
     const detail = typeof record?.error === 'string' && record.error !== '' ? record.error : String(response.status)
     throw new HostApiError('rejected', t('new.aiParseFailed', { error: detail }), response.status)
+  }
+
+  /**
+   * Upload one attachment into the Host's attachment storage.
+   *
+   * The bytes travel as the raw request body: the Host measures the ACTUAL
+   * stream, publishes the object and answers with the host-computed metadata
+   * (size, type and digest) that the card will record.
+   * @param file - the picked file.
+   * @param kind - whether the file is stored as an image or verbatim.
+   * @returns the metadata the Host computed for the stored object.
+   */
+  async uploadAttachment(file: File, kind: TaskAttachmentKind): Promise<TaskAttachment> {
+    const controller = new AbortController()
+    const timer = globalThis.setTimeout(() => { controller.abort() }, UPLOAD_TIMEOUT_MS)
+    try {
+      const query = new URLSearchParams({ kind, name: file.name, mediaType: file.type })
+      const response = await fetch(`${CLIENT_API_PREFIX}/attachments/upload?${query.toString()}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+        signal: controller.signal,
+      })
+      const text = await response.text()
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        parsed = undefined
+      }
+      const record = parsed as { ok?: unknown; attachment?: unknown; error?: unknown } | undefined
+      if (response.ok) {
+        if (record !== undefined && isTaskAttachment(record.attachment)) return record.attachment
+        throw new HostApiError('unexpected', t('board.hostError.unexpected', { status: String(response.status) }), response.status)
+      }
+      const detail = typeof record?.error === 'string' && record.error !== '' ? record.error : String(response.status)
+      throw new HostApiError('rejected', detail, response.status)
+    } catch (error) {
+      if (error instanceof HostApiError) throw error
+      if (controller.signal.aborted) throw new HostApiError('timeout', t('board.hostError.timeout', { seconds: String(UPLOAD_TIMEOUT_MS / 1000) }))
+      throw new HostApiError('unreachable', t('board.hostError.unreachable'))
+    } finally {
+      globalThis.clearTimeout(timer)
+    }
   }
 
   subscribe(listener: (event?: TaskBoardEventPayload) => void): () => void {

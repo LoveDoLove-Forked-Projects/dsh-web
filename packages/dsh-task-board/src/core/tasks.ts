@@ -8,6 +8,7 @@ import type { FreezeSnapshot } from './freeze-snapshot.ts'
 import type { ExecutionVerification } from './verification.ts'
 import type { TaskHandover, TaskHandoverInput } from './handover.ts'
 import { normalizeTaskIntegrations, type TaskBoardExtensionPayload } from './extension.ts'
+import { normalizeAttachments, type TaskAttachment } from './attachment.ts'
 
 /** Task lifecycle status, one per kanban column. */
 export type TaskStatus = 'backlog' | 'todo' | 'running' | 'done' | 'failed'
@@ -563,6 +564,14 @@ export interface TaskRecord {
    * absent means on-board.
    */
   hidden?: boolean
+  /**
+   * Files and images the card carries (issue #1979). Metadata only: the bytes
+   * live in the official attachment storage, and this record names the stored
+   * object, its size and the digest of the exact bytes the Host verified
+   * there. Additive and absent on every card written before the field
+   * existed, so an old card keeps running exactly as it did.
+   */
+  attachments?: TaskAttachment[]
 }
 
 /**
@@ -664,6 +673,12 @@ export interface NewTaskInput {
   status?: TaskStatus
   /** Create the card off-board (held in the ledger, never rendered). */
   hidden?: boolean
+  /**
+   * Files and images the new card carries (issue #1979). The metadata is
+   * host-verified against the official attachment storage before it reaches
+   * the ledger, so a create never records a claim the storage cannot prove.
+   */
+  attachments?: TaskAttachment[]
 }
 
 /** The five kanban columns, in display order. */
@@ -762,6 +777,7 @@ export function freezeOf(
 export function createTask(input: NewTaskInput, now: number, id: string): TaskRecord {
   const tags = normalizeTags(input.tags)
   const integrations = normalizeTaskIntegrations(input.integrations)
+  const attachments = normalizeAttachments(input.attachments)
   return {
     id,
     title: input.title.trim(),
@@ -790,6 +806,7 @@ export function createTask(input: NewTaskInput, now: number, id: string): TaskRe
     ...(input.handover === undefined ? {} : { handover: { ...input.handover, bundledAt: now } }),
     ...(tags === undefined ? {} : { tags }),
     ...(integrations === undefined ? {} : { integrations }),
+    ...(attachments === undefined ? {} : { attachments }),
     ...(input.hidden === true ? { hidden: true } : {}),
   }
 }

@@ -18,6 +18,13 @@ import type { TaskBoardExtension } from './core/extension.ts'
 import { isTaskPermission, normalizeTargetId, type ExecutionOutcome, type ExecutionSummary, type ScheduleMode, type TaskRecord, type TaskStatus } from './core/tasks.ts'
 import { passedAttempt, resolveContract, verificationNeverInvoked, verificationOnlyInvalid, verificationRequired, withAcceptanceDetailCleared, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 import type { TaskPermission } from './core/handover.ts'
+import type { TaskAttachment } from './core/attachment.ts'
+import {
+  publishedAttachmentLimits,
+  verifyAttachments,
+  type ModelInfoResolver,
+  type TaskBoardAttachmentStore,
+} from './host/attachments.ts'
 
 /** Ceiling for the roster-poll failure backoff: a broken session tree is retried at most once a minute. */
 const POLL_FAILURE_MAX_BACKOFF_MS = 60_000
@@ -211,10 +218,24 @@ const ACTION_KINDS: Readonly<Record<TaskBoardAction['kind'], true>> = {
   'extension-action': true,
 }
 
+/**
+ * The attachments an action carries, or undefined when it carries none.
+ *
+ * Only a create and an update can carry attachments: an import refuses them
+ * outright, and every other action kind has no attachment surface at all.
+ */
+function attachmentsOfAction(action: Exclude<TaskBoardAction, { kind: 'extension-action' }>): TaskAttachment[] | undefined {
+  if (action.kind === 'create') return action.input.attachments
+  if (action.kind === 'update') return action.patch.attachments ?? undefined
+  return undefined
+}
+
 export class TaskBoardHostService {
   readonly ledger: HostTaskLedger
   readonly runner: HostExecutionRunner
   readonly power: PowerInhibitor
+  /** The official attachment storage, read live so a late mount is honoured. */
+  private readonly attachmentStore: () => TaskBoardAttachmentStore | undefined
   private readonly listeners = new Set<() => void>()
   /** The one recurring timer: the session-roster poll. */
   private pollTimer: (() => void) | undefined
@@ -337,6 +358,18 @@ export class TaskBoardHostService {
      * no readable usage ledger. Defaults to the family usage ledger reader.
      */
     spendUsedToday?: (now: number) => number | undefined
+    /**
+     * The official attachment storage, read at request time. Absent means the
+     * deployment stores no attachments: every attachment action is then
+     * refused and the board publishes no attachment limits.
+     */
+    attachments?: () => TaskBoardAttachmentStore | undefined
+    /**
+     * The model-info reader the image preflight uses. Absent means the
+     * deployment serves no model information, and a route whose modalities are
+     * unknown is allowed.
+     */
+    modelInfo?: () => ModelInfoResolver | undefined
   } = {}) {
     this.ledger = options.ledger ?? new HostTaskLedger(undefined, undefined, {
       sessionDefaultPermission: options.sessionDefaultPermission,
@@ -345,7 +378,11 @@ export class TaskBoardHostService {
       spendBudgetTokens: options.spendBudgetTokens,
       spendUsedToday: options.spendUsedToday,
     })
-    this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry, undefined, options.ownerPeer)
+    this.attachmentStore = options.attachments ?? (() => undefined)
+    this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry, undefined, options.ownerPeer, {
+      attachments: this.attachmentStore,
+      llm: options.modelInfo,
+    })
     this.workspaceRegistry = options.workspaceRegistry
     this.timers = options.timers ?? PROCESS_TIMERS
     this.power = options.power ?? new PowerInhibitor()
@@ -481,6 +518,9 @@ export class TaskBoardHostService {
       // is: the create dialog prefills from them, and each creating session
       // re-reads them for the create it submits.
       ...(cardDefaults === undefined ? {} : { cardDefaults }),
+      // The attachment limits travel with the snapshot so the browser can
+      // refuse an oversized selection before it uploads anything.
+      ...(this.attachmentStore() === undefined ? {} : { attachmentLimits: publishedAttachmentLimits(this.attachmentStore()) }),
       ...(Object.keys(published).length === 0 ? {} : { extensions: published }),
     })
   }
@@ -555,6 +595,43 @@ export class TaskBoardHostService {
     return { ...action, input: { ...input, workspaceId } }
   }
 
+  /**
+   * Apply an action whose attachments the Host proved against the official
+   * storage first.
+   *
+   * This is the board's trust boundary for attachment metadata: the browser
+   * asserts the size, the type and the digest of every object it uploaded, and
+   * the Host reads the stored objects back (an image is compared, a file is
+   * streamed and its digest recomputed) before the ledger commits the claim.
+   * An attachment the storage cannot prove is refused, so a spoofed client
+   * claim never becomes a stored fact.
+   */
+  async applyVerified(requestId: string, action: TaskBoardAction, initiator?: string): Promise<TaskBoardSnapshot> {
+    if (!this.active) throw new Error('task board is disabled')
+    // A provider action never carries attachments: it is routed through the
+    // registry exactly like every other extension call.
+    if (action.kind === 'extension-action') return await this.apply(requestId, action, initiator)
+    await this.verifyActionAttachments(action)
+    return projectSnapshotForWire(this.applyBoardAction(requestId, action, initiator, true))
+  }
+
+  /**
+   * Prove every attachment of an action against the official storage.
+   *
+   * An action without attachments is untouched: the board keeps working in a
+   * deployment that serves no attachment storage at all.
+   */
+  private async verifyActionAttachments(action: Exclude<TaskBoardAction, { kind: 'extension-action' }>): Promise<void> {
+    const attachments = attachmentsOfAction(action)
+    if (attachments === undefined || attachments.length === 0) return
+    const store = this.attachmentStore()
+    if (store === undefined) throw new Error('this deployment serves no attachment storage')
+    // The failure keeps its CLASS: a storage that is unavailable must reach
+    // the caller as "the storage is unavailable" (503), not as a generic
+    // rejected action (400).
+    await verifyAttachments(store, attachments)
+  }
+
   apply(requestId: string, action: Extract<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): Promise<TaskBoardSnapshot>
   apply(requestId: string, action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): TaskBoardSnapshot
   apply(requestId: string, action: TaskBoardAction, initiator?: string): TaskBoardSnapshot | Promise<TaskBoardSnapshot>
@@ -586,7 +663,14 @@ export class TaskBoardHostService {
    * calls and the same-origin wire both land here, so the two surfaces can
    * never disagree about a card.
    */
-  private applyBoardAction(requestId: string, action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): TaskBoardSnapshot {
+  private applyBoardAction(requestId: string, action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string, attachmentVerified = false): TaskBoardSnapshot {
+    // Attachments reach the ledger only through the VERIFIED action path: the
+    // in-process capability face, the agent tools and the legacy import never
+    // carry them, and an action that does is refused here rather than
+    // committed without the storage proof.
+    if (!attachmentVerified && attachmentsOfAction(action) !== undefined) {
+      throw new Error('attachments must be applied through the verified attachment action route')
+    }
     const before = this.statusMap()
     if (action.kind === 'run' || action.kind === 'rerun' || action.kind === 'rework') this.assertSpendCap()
     const result = this.ledger.applyRequest(requestId, this.withInheritedWorkspace(action, initiator), initiator)

@@ -23,7 +23,7 @@ import type { TaskBoardSnapshot } from '../src/protocol.ts'
 import { resolveConnectionTrust } from '../src/index.ts'
 
 const snapshot: TaskBoardSnapshot = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   revision: 0,
   tasks: [],
   scheduler: { timeZone: 'UTC' },
@@ -74,6 +74,11 @@ async function startBoard(access: TaskBoardRouteAccess, remoteAddress?: string):
       applied += 1
       return snapshot
     },
+    applyVerified: () => {
+      applied += 1
+      return snapshot
+    },
+    ledger: { allTasks: () => [] },
     subscribe: () => () => undefined,
   } as unknown as TaskBoardHostService
   const routes = makeTaskBoardRoutes(service, access)

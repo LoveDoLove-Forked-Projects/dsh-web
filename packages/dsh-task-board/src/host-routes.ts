@@ -12,6 +12,18 @@ import {
   type TaskBoardParseDraft,
   type TaskBoardParseRequest,
 } from './protocol.ts'
+import {
+  attachmentErrorStatus,
+  effectiveImageByteLimit,
+  imageRefOf,
+  readRequestBytes,
+  requestChunks,
+  sanitizeAttachmentName,
+  storeFile,
+  storeImage,
+  TaskBoardAttachmentError,
+  type TaskBoardAttachmentStore,
+} from './host/attachments.ts'
 
 const ACTION_LIMIT = 64 * 1024
 const IMPORT_LIMIT = 2 * 1024 * 1024
@@ -64,6 +76,13 @@ export interface TaskBoardRouteAccess {
  */
 export interface TaskBoardRouteOptions {
   parseTask?: (request: TaskBoardParseRequest, signal: AbortSignal) => Promise<TaskBoardParseDraft>
+  /**
+   * The official attachment storage, read at request time so a deployment that
+   * mounts it after these routes still gains the attachment surface. Absent
+   * means this deployment stores no attachments, and every attachment route
+   * answers with a typed "storage unavailable" failure.
+   */
+  attachments?: () => TaskBoardAttachmentStore | undefined
 }
 
 interface ResolvedRouteAccess {
@@ -235,6 +254,18 @@ async function readBody(req: IncomingMessage): Promise<{ raw: string; value: unk
   return { raw, value: JSON.parse(raw) }
 }
 
+/**
+ * The query parameters of one request, read against a fixed base so a
+ * relative request target still parses.
+ */
+function requestQuery(req: IncomingMessage): URLSearchParams {
+  try {
+    return new URL(req.url ?? '/', 'http://localhost').searchParams
+  } catch {
+    return new URLSearchParams()
+  }
+}
+
 export function makeTaskBoardRoutes(
   service: TaskBoardHostService,
   access: TaskBoardRouteAccess = {},
@@ -271,9 +302,19 @@ export function makeTaskBoardRoutes(
         if (parsed.action.kind !== 'import' && Buffer.byteLength(body.raw) > ACTION_LIMIT) {
           return writeJson(res, 413, { ok: false, error: 'body-too-large' }, { 'cache-control': 'no-store' })
         }
-        writeJson(res, 200, await service.apply(parsed.requestId, parsed.action, parsed.initiator), { 'cache-control': 'no-store' })
+        // The verified path: an action that carries attachments is proven
+        // against the official storage BEFORE the ledger commits it, so a
+        // spoofed claim can never become a stored fact.
+        writeJson(res, 200, await service.applyVerified(parsed.requestId, parsed.action, parsed.initiator), { 'cache-control': 'no-store' })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
+        // An attachment failure keeps its own class: a storage that is
+        // unavailable answers 503 exactly like the upload route does, instead
+        // of being flattened into a generic rejected action.
+        if (error instanceof TaskBoardAttachmentError) {
+          writeJson(res, attachmentErrorStatus(error.code), { ok: false, code: error.code, error: message }, { 'cache-control': 'no-store' })
+          return
+        }
         writeJson(res, message === 'body-too-large' ? 413 : 400, { ok: false, error: message }, { 'cache-control': 'no-store' })
       }
     },
@@ -365,5 +406,84 @@ export function makeTaskBoardRoutes(
       }
     },
   }
-  return [state, action, events, parse, verification]
+  const attachmentUpload: WebRoute = {
+    kind: 'exact',
+    path: `${TASK_BOARD_API_PREFIX}/attachments/upload`,
+    handler: async (req, res): Promise<void> => {
+      if (req.method !== 'POST') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
+      if (!guard(req, res)) return
+      const store = options.attachments?.()
+      if (store === undefined) {
+        return writeJson(res, 503, { ok: false, code: 'storage-unavailable', error: 'this deployment serves no attachment storage' }, { 'cache-control': 'no-store' })
+      }
+      const query = requestQuery(req)
+      const kind = query.get('kind')
+      if (kind !== 'image' && kind !== 'file') {
+        return writeJson(res, 400, { ok: false, code: 'invalid-request', error: 'the attachment kind must be image or file' }, { 'cache-control': 'no-store' })
+      }
+      const name = sanitizeAttachmentName(query.get('name'))
+      const mediaType = query.get('mediaType') ?? ''
+      try {
+        if (kind === 'image') {
+          // The declared type is what the storage checks the decoded bytes
+          // against, so it is required rather than guessed: a guess would
+          // store a mislabelled object or fail with the storage's own
+          // mismatch error.
+          if (mediaType === '') {
+            return writeJson(res, 400, { ok: false, code: 'invalid-request', error: 'an image upload must declare its media type' }, { 'cache-control': 'no-store' })
+          }
+          const limit = effectiveImageByteLimit(store)
+          const bytes = await readRequestBytes(req, limit)
+          const attachment = await storeImage(store, bytes, name, mediaType)
+          writeJson(res, 200, { ok: true, attachment }, { 'cache-control': 'no-store' })
+          return
+        }
+        const stored = await storeFile(store, requestChunks(req), name, mediaType)
+        writeJson(res, 200, { ok: true, attachment: stored.attachment }, { 'cache-control': 'no-store' })
+      } catch (error) {
+        // The body is drained so the refusal reaches the caller instead of a
+        // closed socket.
+        req.resume()
+        const failure = error instanceof TaskBoardAttachmentError
+          ? error
+          : new TaskBoardAttachmentError('storage-unavailable', 'the attachment storage is unavailable', { cause: error })
+        writeJson(res, attachmentErrorStatus(failure.code), { ok: false, code: failure.code, error: failure.message }, { 'cache-control': 'no-store' })
+      }
+    },
+  }
+  const attachmentImage: WebRoute = {
+    kind: 'exact',
+    path: `${TASK_BOARD_API_PREFIX}/attachments/image`,
+    handler: async (req, res): Promise<void> => {
+      if (req.method !== 'GET') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
+      if (!guard(req, res)) return
+      const store = options.attachments?.()
+      if (store === undefined) {
+        return writeJson(res, 503, { ok: false, code: 'storage-unavailable', error: 'this deployment serves no attachment storage' }, { 'cache-control': 'no-store' })
+      }
+      const id = requestQuery(req).get('id') ?? ''
+      // An image is served only when a card of THIS board references it: an
+      // unreferenced identifier must never become a readable object.
+      const referenced = service.ledger.allTasks().flatMap(task => task.attachments ?? [])
+        .find(attachment => attachment.kind === 'image' && attachment.attachmentId === id)
+      if (referenced === undefined) {
+        return writeJson(res, 404, { ok: false, code: 'not-found', error: 'no card references this attachment' }, { 'cache-control': 'no-store' })
+      }
+      try {
+        const stored = await store.readImage(imageRefOf(referenced))
+        res.writeHead(200, {
+          'content-type': stored.ref.mediaType,
+          'content-length': String(stored.data.byteLength),
+          'cache-control': 'no-store',
+        })
+        res.end(Buffer.from(stored.data))
+      } catch (error) {
+        const failure = error instanceof TaskBoardAttachmentError
+          ? error
+          : new TaskBoardAttachmentError('unreadable', 'the stored attachment could not be read back', { cause: error })
+        writeJson(res, attachmentErrorStatus(failure.code), { ok: false, code: failure.code, error: failure.message }, { 'cache-control': 'no-store' })
+      }
+    },
+  }
+  return [state, action, events, parse, verification, attachmentUpload, attachmentImage]
 }

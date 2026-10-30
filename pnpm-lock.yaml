@@ -1210,6 +1210,9 @@ importers:
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: ^0.2.1-rc.3
         version: 0.2.1-rc.3(c1c1dec24bb3aa2ff0d809ecb03d5494)
+      '@deepseek-ai/dsh-attachment':
+        specifier: ^0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-brand@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
       '@deepseek-ai/dsh-client-connection':
         specifier: ^0.2.1-rc.3
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))

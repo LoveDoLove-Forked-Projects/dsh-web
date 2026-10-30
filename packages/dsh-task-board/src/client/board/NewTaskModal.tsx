@@ -13,6 +13,8 @@ import { t, type TaskBoardKey } from '../locales.ts'
 import { SCHEDULE_PRESETS } from '../schedule-presets.ts'
 import { defaultZonedInputValue, nextRunLabel, parseZonedInput, runCapOption, zonedInputValue, zoneChoices } from '../schedule-zone.ts'
 import { CollapsibleSection, ModalShell, TaskContentFields, TaskTagFields, cleanTags } from './TaskForm.tsx'
+import { AttachmentField, type AttachmentSelection } from './AttachmentField.tsx'
+import { dedupeAttachments, type TaskAttachment } from '../../core/attachment.ts'
 import type { OverlayPhase } from './overlay.tsx'
 import { formatHostTimestamp } from './TaskCard.tsx'
 import { readParseModelPreference, writeParseModelPreference } from './parse-model-pref.ts'
@@ -41,6 +43,20 @@ export interface NewTaskModalProps {
   parentTask?: TaskRecord
   /** Which leg of the enter/exit motion pair the surface is on. */
   phase?: OverlayPhase
+}
+
+/**
+ * Mark one staged attachment row: the upload state and the failure reason.
+ */
+function markStaged(
+  selection: AttachmentSelection,
+  id: string,
+  patch: { pending?: boolean; error?: string },
+): AttachmentSelection {
+  return {
+    ...selection,
+    staged: selection.staged.map(staged => staged.id === id ? { ...staged, ...patch } : staged),
+  }
 }
 
 /** New-task form overlay. */
@@ -101,6 +117,14 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
     initialTask?.handover?.references !== undefined ? initialTask.handover.references.join('\n') : '',
   )
   const [tags, setTags] = useState<TaskTag[]>(initialTask?.tags ?? [])
+  // The card's attachments: what a duplicated card already carries, plus the
+  // files staged locally. A staged file is a local preview until the card is
+  // SAVED: the upload happens on save, never on selection.
+  const [attachments, setAttachments] = useState<AttachmentSelection>({
+    persisted: initialTask?.attachments ?? [],
+    staged: [],
+  })
+  const [attachmentError, setAttachmentError] = useState<string | undefined>(undefined)
   const [archiveOriginal, setArchiveOriginal] = useState(true)
   const [error, setError] = useState<string | undefined>(undefined)
   const [pending, setPending] = useState(false)
@@ -228,6 +252,24 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
     // empty name, and an empty list is expressed by omitting the field.
     const tagList = cleanTags(tags)
     setPending(true)
+    // The staged files are uploaded NOW, because the card is being saved: the
+    // upload is what turns a local file into a stored object the card can
+    // reference. A card the user abandons never uploads anything.
+    const uploaded: TaskAttachment[] = []
+    for (const staged of attachments.staged) {
+      setAttachments(current => markStaged(current, staged.id, { pending: true, error: undefined }))
+      try {
+        const attachment = await controller.uploadAttachment(staged.file, staged.kind)
+        if (attachment === undefined) throw new Error(t('new.attachments.unavailable'))
+        uploaded.push(attachment)
+      } catch (uploadError) {
+        const message = uploadError instanceof Error ? uploadError.message : String(uploadError)
+        setAttachments(current => markStaged(current, staged.id, { pending: false, error: message }))
+        setPending(false)
+        setError(message)
+        return
+      }
+    }
     const task = await controller.createTaskConfirmed({
       title,
       description,
@@ -248,6 +290,11 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
       ...(goalRun ? { goalRun: true } : {}),
       ...(skipVerification ? { skipVerification: true } : {}),
       ...(tagList.length > 0 ? { tags: tagList } : {}),
+      ...(attachments.persisted.length + uploaded.length > 0
+        // The storage is content-addressed: the same content uploaded twice
+        // answers with one identifier, and the card may claim it once.
+        ? { attachments: dedupeAttachments([...attachments.persisted, ...uploaded]) }
+        : {}),
       schedule: scheduleEnabled
         ? scheduleMode === 'once'
           ? {
@@ -344,6 +391,12 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
     permissionLabel,
     ...(model === '' ? [] : [modelSummary]),
   ].join(' · ')
+  // The collapsed line of the attachment region: how many objects the card
+  // will carry once it is saved.
+  const attachmentCount = attachments.persisted.length + attachments.staged.length
+  const attachmentSummary = attachmentCount === 0
+    ? t('new.summary.none')
+    : t('new.summary.attachmentCount', { count: String(attachmentCount) })
   const tagCount = cleanTags(tags).length
   const labelsSummary = tagCount === 0 ? t('new.summary.none') : t('new.summary.labelCount', { count: String(tagCount) })
   const runSummary = [
@@ -468,6 +521,21 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
 
       <CollapsibleSection title={t('new.section.labels')} summary={labelsSummary}>
         <TaskTagFields tags={tags} knownTags={collectKnownTags(controller.getSnapshot().tasks)} onChange={setTags} />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title={t('new.section.attachments')}
+        summary={attachmentSummary}
+        forceOpen={attachmentError !== undefined}
+      >
+        <AttachmentField
+          selection={attachments}
+          onChange={setAttachments}
+          limits={controller.getSnapshot().host?.attachmentLimits}
+          disabled={pending}
+          onError={message => { setAttachmentError(message) }}
+        />
+        {attachmentError !== undefined && <p className={css.formError}>{attachmentError}</p>}
       </CollapsibleSection>
 
       <CollapsibleSection title={t('new.section.execution')} summary={executionSummary}>

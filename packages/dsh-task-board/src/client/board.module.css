@@ -2533,6 +2533,72 @@
   align-self: flex-start;
 }
 
+/* --- card attachments (#1979) ------------------------------------------------- */
+
+.attachmentDrop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--dsw-alias-border-secondary);
+  border-radius: 8px;
+}
+
+.attachmentDrop[data-state='active'] {
+  border-color: var(--dsw-alias-border-focus);
+  background: var(--dsw-alias-surface-raised);
+}
+
+.attachmentDropHint {
+  flex: 1 1 12em;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.attachmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachmentRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid var(--dsw-alias-border-subtle);
+  border-radius: 6px;
+}
+
+.attachmentThumb {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--dsw-alias-surface-raised);
+}
+
+.attachmentName {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.attachmentMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
 /* --- project partition (#1536) ------------------------------------------------ */
 
 .projectFilter {
