@@ -43,15 +43,31 @@ func mentionedAlert(authorName string, issueNumber int64) string {
 	return authorName + " mentioned you on #" + strconv.FormatInt(issueNumber, 10)
 }
 
+// pemToDER reads the p8 key material in every shape a deployment produces: a
+// PEM document with real newlines, the same document with literal backslash-n
+// (systemd's EnvironmentFile does not expand them), and the bare base64 body of
+// the DER key. The account service reads its copy the same way.
 func pemToDER(pemText string) ([]byte, error) {
-	block, _ := pem.Decode([]byte(pemText))
-	if block == nil {
+	normalized := strings.ReplaceAll(pemText, "\\n", "\n")
+	if block, _ := pem.Decode([]byte(normalized)); block != nil {
+		if len(block.Bytes) == 0 {
+			return nil, Fail(CodeNotConfigured, "APNS_PRIVATE_KEY_P8 is empty.")
+		}
+		return block.Bytes, nil
+	}
+	stripped := strings.NewReplacer(
+		"-----BEGIN PRIVATE KEY-----", "",
+		"-----END PRIVATE KEY-----", "",
+	).Replace(normalized)
+	stripped = strings.Join(strings.Fields(stripped), "")
+	der, err := base64.StdEncoding.DecodeString(stripped)
+	if err != nil {
 		return nil, Fail(CodeNotConfigured, "APNS_PRIVATE_KEY_P8 is not a PEM document.")
 	}
-	if len(block.Bytes) == 0 {
+	if len(der) == 0 {
 		return nil, Fail(CodeNotConfigured, "APNS_PRIVATE_KEY_P8 is empty.")
 	}
-	return block.Bytes, nil
+	return der, nil
 }
 
 func base64URLBytes(value []byte) string {
