@@ -37,7 +37,7 @@ The obvious-looking fix is to let the notification carry the fact, so a phone ne
 
 ## Configuration and the default-off rule
 
-- Three environment variables name the credential: `DSH_REMOTE_BRIDGE_APNS_KEY_FILE`, `DSH_REMOTE_BRIDGE_APNS_KEY_ID` and `DSH_REMOTE_BRIDGE_APNS_TEAM_ID`. If any one is missing there is no `ApnsSender` at all, `PushNotifier.enabled` is false, and every notification path is a no-op; the mount log states which side of that line the process is on.
+- Three environment variables name the credential: `DSH_REMOTE_BRIDGE_APNS_KEY_FILE`, `DSH_REMOTE_BRIDGE_APNS_KEY_ID` and `DSH_REMOTE_BRIDGE_APNS_TEAM_ID`. If any one is missing there is no `ApnsSender` at all, `PushNotifier.enabled` is false, and every notification path is a no-op; the mount log states which side of that line the process is on. A machine without them can still deliver through the hosted relay, which [the relay note](2026-10-30-remote-bridge-push-relay.md) owns; with neither a key nor a relay token the channel is off exactly as that sentence describes.
 - `push.register` still answers `{ok:true}` on such a bridge. Whether a key is configured is a deployment fact, not a protocol error: a `push-unavailable` code would force every client to keep two code paths for a difference it cannot act on, and the write is worth keeping either way.
 - The signing key is never copied, logged or written into the roster; only the JWT derived from it leaves the process.
 

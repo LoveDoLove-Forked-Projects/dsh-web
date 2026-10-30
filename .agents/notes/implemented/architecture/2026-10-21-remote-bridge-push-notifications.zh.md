@@ -37,7 +37,7 @@ Status: implemented
 
 ## 配置与默认关闭
 
-- 三个环境变量给出凭据：`DSH_REMOTE_BRIDGE_APNS_KEY_FILE`、`DSH_REMOTE_BRIDGE_APNS_KEY_ID` 与 `DSH_REMOTE_BRIDGE_APNS_TEAM_ID`。少任何一个就根本没有 `ApnsSender`，`PushNotifier.enabled` 为假，每条通知路径都是 no-op；挂载日志会写明进程站在哪一边。
+- 三个环境变量给出凭据：`DSH_REMOTE_BRIDGE_APNS_KEY_FILE`、`DSH_REMOTE_BRIDGE_APNS_KEY_ID` 与 `DSH_REMOTE_BRIDGE_APNS_TEAM_ID`。少任何一个就根本没有 `ApnsSender`，`PushNotifier.enabled` 为假，每条通知路径都是 no-op；挂载日志会写明进程站在哪一边。没有这些变量的机器仍可经中心代发投递，那条路由[中继记录](2026-10-30-remote-bridge-push-relay.zh.md)承载；两条路都没有时，通道正如那句话所说关闭。
 - 这样的桥上 `push.register` 仍然答 `{ok:true}`。配没配密钥是部署事实，不是协议错误：一个 `push-unavailable` 码会逼每个客户端为一个它无法应对的差别维护两条代码路径，而这次写无论如何都值得留下。
 - 签名密钥从不被复制、不被记进日志、不写进名册；离开进程的只有由它导出的 JWT。
 
