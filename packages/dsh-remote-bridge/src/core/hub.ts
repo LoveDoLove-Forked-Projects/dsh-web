@@ -590,10 +590,17 @@ export class BridgeHub {
     // one can be shown a card, and a claim held for the phone that was never there
     // would make the agent wait out a window for a decision nobody can give.
     if (this.pairedClients > 0) return 'nobody'
-    // No key, no sender: an alert that cannot be sent is not a delivery, so the
-    // question is not claimed for a phone that would never learn it exists.
-    if (this.#options.push?.enabled !== true) return 'nobody'
-    return this.#options.roster.pushTargets().length > 0 ? 'offline' : 'nobody'
+    // No key and no relay token, no sender: an alert that cannot be sent is not a
+    // delivery, so the question is not claimed for a phone that would never learn
+    // it exists.
+    const push = this.#options.push
+    if (push?.enabled !== true) return 'nobody'
+    // Which rows count as reachable is the route's own question. Over the relay a
+    // registration without a relay token is a phone this machine cannot tell
+    // anything — the token is the whole credential there — while on the direct
+    // route the APNs token on the same row is.
+    const targets = push.mode === 'relay' ? this.#options.roster.relayTargets() : this.#options.roster.pushTargets()
+    return targets.length > 0 ? 'offline' : 'nobody'
   }
 
   /**
@@ -640,7 +647,12 @@ export class BridgeHub {
     if (dead.length === 0) return
     // The roster still lists these rows — the cleanup is a file write — so they are
     // subtracted here rather than waited out: a claim decision may not block on a disk.
-    const survivors = this.#options.roster.pushTargets().filter(({ push }) => !dead.includes(push.deviceToken))
+    // Counted on the same road the question was claimed on, so a row that never held
+    // the relay's token cannot outlive the only registration it had.
+    const reachable = this.#options.push?.mode === 'relay'
+      ? this.#options.roster.relayTargets()
+      : this.#options.roster.pushTargets()
+    const survivors = reachable.filter(({ push }) => !dead.includes(push.deviceToken))
     void this.#forgetDeadTokens(dead)
     if (survivors.length > 0) return
     this.#releaseOfflineClaim(callId, 'APNs refused every device token on the roster')

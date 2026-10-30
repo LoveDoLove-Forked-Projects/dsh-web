@@ -55,7 +55,7 @@ import { BridgeHub, OFFLINE_QUESTION_CLAIM_TTL_MS } from './core/hub.ts'
 import { createOwnerPeer } from './core/owner-peer.ts'
 import { PairingService } from './core/pairing.ts'
 import { LiveActivityNotifier } from './core/liveactivity.ts'
-import { PushNotifier } from './core/push.ts'
+import { PushNotifier, type PushRoute } from './core/push.ts'
 import { QuestionClaims } from './core/questions.ts'
 import { UiCards } from './core/ui.ts'
 import { WS_PATH } from './core/protocol.ts'
@@ -68,6 +68,7 @@ import { UsageStatsReader } from './core/usage-stats.ts'
 import { wireArgs, type GatewayPeer } from './core/wire.ts'
 import { dshHome } from './host/dsh-home.ts'
 import { ApnsSender, apnsConfigFromEnv } from './host/apns.ts'
+import { pushChannelLine, pushRouteOf, RelaySender, relayUrlFromEnv, type PushChannelDescription } from './host/relay.ts'
 import { StandingWatchers } from './host/watchers.ts'
 import { LoopbackSquads } from './host/squads.ts'
 import { mountOnce } from './mount-once.ts'
@@ -401,32 +402,60 @@ function applyImpl(ctx: Context): void {
   const usageRoutes = new LoopbackUsage({ origin: () => hostWebOrigin(ctx.webServer), log })
   const usageStats = new UsageStatsReader({ transport: () => usageRoutes, now: () => Date.now(), log })
   const usage = new UsageService({ faces: () => usageFaces(ctx, ownerPeer, log), now: () => Date.now(), stats: usageStats, log })
-  // The push channel is OFF unless this machine holds an Apple signing key: no
-  // key, no sender, and every notification path is a no-op — which is what keeps
-  // the protocol byte-identical for every deployment that has none (§28).
+  // The push channel takes one of two roads and is off when it has neither (§28):
+  // this machine's own Apple key, or the hosted relay that signs with the key no
+  // deployment may ship. The local key always wins — a developer's delivery never
+  // travels through the service — and the relay exists because an App distributed
+  // to everyone cannot carry a private key to every machine.
   const apns = apnsConfigFromEnv()
+  const relayUrl = relayUrlFromEnv()
   // One client for both channels: an APNs provider token is minted per key and
   // then reused, so a second client would only double the mint rate Apple
   // throttles (core/push.ts, host/apns.ts).
   const apnsSender = apns === undefined ? undefined : new ApnsSender({ config: apns, log })
+  // Only one road is ever built. The relay's credential is not on this machine at
+  // all until a phone registers it, so the relay is armed per event rather than
+  // decided once at mount: a bridge with neither route is as inert as one with no
+  // key ever was.
+  const relaySender = apnsSender === undefined ? new RelaySender({ url: relayUrl }) : undefined
+  const pushSender = apnsSender ?? relaySender
+  const pushMode: PushRoute = apnsSender === undefined ? 'relay' : 'direct'
+  const relayArmed = (): boolean => roster.relayTargets().length > 0
+  // What one event is addressed to. On the direct road every registration is a
+  // target; on the relay only a row holding the token that road signs with, because
+  // a registration from before the relay existed is a phone this machine cannot
+  // reach at all. One mapping for both channels, so a notification and a card can
+  // never disagree about who is reachable.
+  const pushTargets = () => (apnsSender === undefined ? roster.relayTargets() : roster.pushTargets())
+  // What the mount log says once the roster has been read. `off` is a real answer
+  // rather than a failure: it is the channel a deployment with no key and no
+  // registered relay token has always had (§28).
+  const pushChannelDescription = (): PushChannelDescription => {
+    const route = pushRouteOf(apnsSender !== undefined, relayArmed())
+    if (route === 'direct') return { route, ...(apns === undefined ? {} : { keyId: apns.keyId, teamId: apns.teamId }) }
+    return route === 'relay' ? { route, relayUrl } : { route }
+  }
   const push = new PushNotifier({
-    targets: () => roster.pushTargets().map(({ push: registration }) => ({
+    targets: () => pushTargets().map(({ push: registration }) => ({
       deviceToken: registration.deviceToken,
       environment: registration.environment,
       bundle: registration.bundle,
       ...(registration.locale === undefined ? {} : { locale: registration.locale }),
+      ...(registration.relayToken === undefined ? {} : { relayToken: registration.relayToken }),
     })),
-    ...(apnsSender === undefined ? {} : { sender: apnsSender }),
+    ...(pushSender === undefined ? {} : { sender: pushSender }),
+    mode: pushMode,
+    ...(relaySender === undefined ? {} : { available: relayArmed }),
     titles: id => sessionMeta.title(id),
     now: () => Date.now(),
     log,
   })
   // The lock-screen card path (§29). It reads the same roster, through the same
-  // client, and is inert for exactly the same reason: no key, no sender, no card.
-  // A token APNs reports dead is dropped from its device row here, which is the
-  // whole of the recovery — the next card registers a fresh one.
+  // client, and is inert for exactly the same reason: no route, no sender, no card.
+  // A token APNs — or the relay — reports dead is dropped from its device row here,
+  // which is the whole of the recovery: the next card registers a fresh one.
   const liveActivity = new LiveActivityNotifier({
-    targets: () => roster.pushTargets().flatMap(({ push: registration }) => (registration.liveActivityTokens ?? []).map(({ activityId, token, sessionId }) => ({
+    targets: () => pushTargets().flatMap(({ push: registration }) => (registration.liveActivityTokens ?? []).map(({ activityId, token, sessionId }) => ({
       activityId,
       token,
       // The session is the card's address (§29.9). A registration written before
@@ -434,8 +463,10 @@ function applyImpl(ctx: Context): void {
       ...(sessionId === undefined ? {} : { sessionId }),
       environment: registration.environment,
       bundle: registration.bundle,
+      ...(registration.relayToken === undefined ? {} : { relayToken: registration.relayToken }),
     }))),
-    ...(apnsSender === undefined ? {} : { sender: apnsSender }),
+    ...(pushSender === undefined ? {} : { sender: pushSender }),
+    ...(relaySender === undefined ? {} : { available: relayArmed }),
     now: () => Date.now(),
     log,
     retire: async (activityId, token) => {
@@ -466,7 +497,7 @@ function applyImpl(ctx: Context): void {
   // never from a client frame.
   const watchedSessions = (): readonly string[] => {
     const sessions = new Set<string>()
-    for (const { push: registration } of roster.pushTargets()) {
+    for (const { push: registration } of pushTargets()) {
       for (const token of registration.liveActivityTokens ?? []) {
         if (token.sessionId !== undefined) sessions.add(token.sessionId)
       }
@@ -477,7 +508,11 @@ function applyImpl(ctx: Context): void {
     gateway: ctx.typertGateway,
     peer: ownerPeer,
     sessions: watchedSessions,
-    ...(apnsSender === undefined ? {} : { liveActivity, push }),
+    // Both channels are handed over on either road: a watcher is what makes a turn
+    // end reach a suspended phone when the bridge can tell it at all, and the
+    // notifiers are inert until their route is armed.
+    liveActivity,
+    push,
     turnEndQuiet,
     log,
   })
@@ -537,19 +572,19 @@ function applyImpl(ctx: Context): void {
   }
 
   ctx.effect(() => {
-    // A registration that arrived before this row mounted is still on disk: the
-    // watchers are reconciled from what the roster holds, not from what a live
-    // connection happened to send.
-    void roster.load().then(() => { watchers.sync() }).catch(() => undefined)
     const disposeUpgrade = ctx.webServer.registerUpgrade({
       path: WS_PATH,
       handler: makeUpgradeHandler(hub, roster, log),
     })
     const disposeRoute = ctx.webServer.register(makePairTokenRoute({ pairing, log }))
     log(`protocol v1 listening on ${WS_PATH}`)
-    log(apns === undefined
-      ? `push: off (set ${'DSH_REMOTE_BRIDGE_APNS_KEY_FILE'}, ${'DSH_REMOTE_BRIDGE_APNS_KEY_ID'} and ${'DSH_REMOTE_BRIDGE_APNS_TEAM_ID'} to enable APNs)`
-      : `push: on (APNs key ${apns.keyId} of team ${apns.teamId})`)
+    // Where the channel stands is only knowable once the roster is read: a relay
+    // token may already be on disk, and a line written before that read would
+    // claim a route the bridge is not on. One line, after the one disk read.
+    void roster.load()
+      .then(() => { watchers.sync() })
+      .catch(() => undefined)
+      .finally(() => { log(pushChannelLine(pushChannelDescription())) })
     return () => {
       disposeUpgrade()
       disposeRoute()

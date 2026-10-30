@@ -30,6 +30,17 @@ import { basename } from 'node:path'
 /** One thing a notification can be about. */
 export type PushEvent = 'turn-end' | 'turn-error' | 'question' | 'approval'
 
+/**
+ * Which way this bridge delivers a notification.
+ *
+ * `direct` signs for APNs with this machine's own Apple key, `relay` asks the
+ * hosted service to sign with the one key no deployment may hold, and `off` is a
+ * bridge with neither route — the channel's original shape, byte for byte. The two
+ * routes are exclusive rather than a fallback chain: a machine holding a key keeps
+ * using it, so a developer's delivery never travels through the service.
+ */
+export type PushRoute = 'direct' | 'relay' | 'off'
+
 /** Window inside which the same `(sessionId, event)` is one notification. */
 export const PUSH_DEDUPE_MS = 30_000
 /** Shortest gap between two notifications about the same session. */
@@ -61,6 +72,14 @@ export interface PushAddress {
   readonly environment: 'sandbox' | 'production'
   readonly bundle: string
   readonly locale?: string
+  /**
+   * The relay credential that same row registered, when it registered one.
+   *
+   * Present on the address rather than looked up by the sender so the two routes
+   * stay one decision: a row carries the token only in relay mode, and the sender
+   * that reads it is the only one this bridge built.
+   */
+  readonly relayToken?: string
 }
 
 /** The request body one APNs delivery carries (protocol §28.4). */
@@ -79,10 +98,19 @@ export interface PushNotification {
 /** What one delivery attempt reported. */
 export interface PushSendResult {
   readonly ok: boolean
-  /** The status APNs answered, when it answered at all. */
+  /** The status APNs answered, or the relay did, when it answered at all. */
   readonly status?: number
   /** The reason APNs named, or this bridge's own note. */
   readonly reason?: string
+  /**
+   * Whether the answer said this registration will never work again.
+   *
+   * APNs says it in a status and a reason this module can read; the relay says it
+   * in a count of tokens it just retired, which names no status of its own. The
+   * sender that learned it reports the fact here instead of borrowing an APNs
+   * status it did not receive.
+   */
+  readonly dead?: boolean
 }
 
 /** One delivery a sender refused, in the words the bridge needs to read it. */
@@ -93,6 +121,8 @@ export interface PushDeliveryFailure {
   readonly status?: number
   /** The reason APNs named, or this bridge's own note. */
   readonly reason?: string
+  /** Whether this failure was final about the registration behind it. */
+  readonly dead?: boolean
 }
 
 /** What one {@link PushNotifier.notify} ended up doing, once every attempt settled. */
@@ -114,6 +144,7 @@ export interface PushDeliveryReport {
  * a claim held for it is a claim held for a phone that cannot come back.
  */
 export function isDeadPushToken(failure: PushDeliveryFailure): boolean {
+  if (failure.dead === true) return true
   const reason = failure.reason ?? ''
   if (reason === 'Unregistered' || reason === 'BadDeviceToken') return true
   return failure.status === 410
@@ -141,6 +172,18 @@ export interface PushNotifierOptions {
   readonly targets: () => readonly PushAddress[]
   /** The sender; absent is a bridge with no signing key, and then nothing happens. */
   readonly sender?: PushSender
+  /**
+   * Whether the configured route can reach a phone right now.
+   *
+   * Absent means "the sender is reason enough", which is what a machine holding its
+   * own Apple key is: the key is configured or it is not. The relay has a second
+   * fact in front of the credential — some paired row must still hold a relay
+   * token — and reading it per event is what keeps a bridge with neither route
+   * exactly as inert as one with no key at all.
+   */
+  readonly available?: () => boolean
+  /** Which route this notifier stands on; `direct` by default, as before the relay existed. */
+  readonly mode?: PushRoute
   /** The session's own title (§26's source), read per event. */
   readonly titles?: (sessionId: string) => string | undefined
   readonly now?: () => number
@@ -232,9 +275,31 @@ export class PushNotifier {
     this.#log = options.log ?? (() => undefined)
   }
 
-  /** @returns whether this bridge will actually deliver anything. */
+  /**
+   * @returns whether this bridge will actually deliver anything.
+   *
+   * Read by every entrance — a delta path, a claim, a watcher — so a bridge whose
+   * route is not armed is indistinguishable from one that never had a channel: no
+   * target is read, no clock is consulted and no timer is armed.
+   */
   get enabled(): boolean {
-    return this.#options.sender !== undefined
+    return this.#available() && this.#options.sender !== undefined
+  }
+
+  /** @returns which road a delivery would take: this machine's key or the hosted relay. */
+  get mode(): PushRoute {
+    return this.#options.mode ?? 'direct'
+  }
+
+  /** @returns whether the route in front of the sender is reachable; a throwing probe reaches nothing. */
+  #available(): boolean {
+    const available = this.#options.available
+    if (available === undefined) return true
+    try {
+      return available()
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -279,7 +344,7 @@ export class PushNotifier {
    * was attempted: no sender, no target, or a rate limit that dropped this event.
    */
   notify(event: PushEvent, sessionId: string, onReport?: (report: PushDeliveryReport) => void): void {
-    if (this.#options.sender === undefined) return
+    if (!this.enabled) return
     try {
       this.#announce(event, sessionId, onReport)
     } catch (error) {
@@ -330,6 +395,7 @@ export class PushNotifier {
             deviceToken: target.deviceToken,
             ...(result.status === undefined ? {} : { status: result.status }),
             ...(result.reason === undefined ? {} : { reason: result.reason }),
+            ...(result.dead === true ? { dead: true } : {}),
           })
         })
         .catch((error: unknown) => {

@@ -262,6 +262,8 @@ export interface LiveActivityAddress {
   readonly environment: 'sandbox' | 'production'
   /** The app bundle id; the topic is this bundle plus the Live Activity suffix. */
   readonly bundle: string
+  /** The relay credential this card's device row holds, when the bridge stands on the relay. */
+  readonly relayToken?: string
 }
 
 /** Whatever actually reaches a card; the APNs client implements this. */
@@ -291,6 +293,11 @@ export interface LiveActivityNotifierOptions {
   readonly targets: () => readonly LiveActivityAddress[]
   /** The sender; absent is a bridge with no signing key, and then nothing happens. */
   readonly sender?: LiveActivitySender
+  /**
+   * Whether the configured route is reachable right now; the same probe the alert
+   * channel beside it reads, so a bridge with neither route sends no card either.
+   */
+  readonly available?: () => boolean
   readonly now?: () => number
   readonly log?: (message: string) => void
   /**
@@ -345,7 +352,14 @@ export class LiveActivityNotifier {
 
   /** @returns whether this bridge will actually deliver anything. */
   get enabled(): boolean {
-    return this.#options.sender !== undefined
+    if (this.#options.sender === undefined) return false
+    const available = this.#options.available
+    if (available === undefined) return true
+    try {
+      return available()
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -647,7 +661,7 @@ export class LiveActivityNotifier {
   #failed(target: LiveActivityAddress, event: LiveActivityEvent, result: PushSendResult): void {
     const reason = result.reason ?? ''
     this.#log(`live activity ${event} for ${target.activityId} was not delivered (${result.status ?? '-'} ${reason === '' ? 'no reason' : reason})`)
-    const dead = result.status === 410 || reason === 'Unregistered' || reason === 'BadDeviceToken'
+    const dead = result.dead === true || result.status === 410 || reason === 'Unregistered' || reason === 'BadDeviceToken'
     if (!dead) return
     const retire = this.#options.retire
     if (retire === undefined) return
